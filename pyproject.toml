@@ -1,0 +1,136 @@
+# --- build system ---
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# --- project & dependencies ---
+
+[project]
+name = "daglite"
+description = "Lightweight Python framework for building static DAGs with explicit bindings."
+dynamic = ["version"]
+requires-python = ">=3.12"
+readme = "README.md"
+dependencies = []
+
+[dependency-groups]
+dev = ["mypy", "nox", "poethepoet", "pre-commit", "ruff"]
+test = ["pytest", "pytest-cov", "pytest-mock"]
+repl = ["ipython"]
+notebook = ["ipykernel"]
+
+# --- tool.coverage ---
+
+[tool.coverage.paths]
+source = ["./src", "*/site-packages"]
+
+[tool.coverage.report]
+exclude_also = [
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "class \\(.*\\bProtocol.*\\):",
+    "@(abc\\.)?abstractmethod",
+    "@overload",
+]
+fail_under = 0
+
+[tool.coverage.run]
+branch = true
+sigterm = true
+
+# --- tool.setuptools ---
+
+[tool.mypy]
+namespace_packages = true
+explicit_package_bases = true
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+ignore_missing_imports = true
+strict = false
+show_error_codes = true
+warn_unreachable = true
+warn_no_return = true
+warn_unused_ignores = true
+mypy_path = "src"
+
+# --- tool.poe ---
+
+[tool.poe.tasks]
+format = "ruff format src tests"
+lint = "pre-commit run --all-files"
+test = "pytest"
+test-cov = "pytest --cov=daglite --cov-report=term-missing"
+
+# --- tool.pytest ---
+
+[tool.pytest.ini_options]
+addopts = "-ra --verbose --strict-markers --strict-config --import-mode importlib"
+testpaths = ["tests"]
+
+# --- tool.ruff ---
+
+[tool.ruff]
+line-length = 100
+show-fixes = true
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+    "D",    # pydocstyle errors
+    "D200", # One-liner docstring should fit within a single line
+    "D213", # Multi-line docstring summary should start at second line
+    "D400", # First line should end with a period
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+]
+ignore = [
+    "D100", # Missing docstring in public module
+    "D104", # Missing docstring in public package
+    "D105", # Missing docstring in magic method
+    "D107", # Missing docstring in __init__
+    "D202", # No blank lines allowed after function docstring
+    "D212", # Multi-line docstring summary should start at the first line
+]
+
+[tool.ruff.lint.isort]
+force-single-line = true
+single-line-exclusions = ["typing", "typing_extensions"]
+
+[tool.ruff.lint.per-file-ignores]
+"noxfile.py" = ["D"]
+"tests/**" = ["D"]
+"test*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+ignore-decorators = [
+    "typing.overload",
+    "typing.no_type_check",
+    "pydantic.field_validator",
+]
+
+# --- tool.setuptools ---
+
+[tool.setuptools.dynamic.version]
+attr = "daglite.__version__"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"daglite" = ["py.typed"]
+
+# --- tool.uv ---
+
+[tool.uv]
+default-groups = ["dev", "test"]
