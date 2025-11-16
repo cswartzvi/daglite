@@ -1,69 +1,72 @@
 {
-    "[c]": {
-        "editor.rulers": [
-            100
-        ]
-    },
-    "[cpp]": {
-        "editor.rulers": [
-            100
-        ]
-    },
-    "[csharp]": {
-        "editor.maxTokenizationLineLength": 2500,
-        "editor.rulers": [
-            120
-        ]
-    },
-    "[json]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode"
-    },
-    "[jsonc]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode"
-    },
-    "[pyproject-toml]": {
-        "editor.defaultFormatter": "tamasfe.even-better-toml"
-    },
-    "[python]": {
-        "editor.defaultFormatter": "charliermarsh.ruff",
-        "editor.rulers": [
-            100
-        ]
-    },
-    "[toml]": {
-        "editor.defaultFormatter": "tamasfe.even-better-toml"
-    },
-    "[yaml]": {
-        "editor.defaultFormatter": "esbenp.prettier-vscode"
-    },
-    "files.associations": {
-        "coveragerc": "ini"
-    },
-    "files.exclude": {
-        "**/*.egg-info": true,
-        "**/.coverage": true,
-        "**/.ipynb_checkpoints": true,
-        "**/.mypy_cache": true,
-        "**/.nox": true,
-        "**/.pytest_cache": true,
-        "**/.ruff_cache": true,
-        "**/__pycache__": true,
-        "**/ruff_cache": true
-    },
-    "material-icon-theme.files.associations": {
-        ".coveragerc": "python-misc",
-        "mypy.ini": "python-misc",
-        "poe_tasks.toml": "Makefile",
-        "pytest.ini": "python-misc"
-    },
-    "python-envs.pythonProjects": [],
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportUnnecessaryTypeIgnoreComment": "error"
-    },
-    "python.analysis.typeCheckingMode": "standard",
-    "python.testing.pytestArgs": [
-        "tests"
-    ],
-    "python.testing.pytestEnabled": true,
-    "python.testing.unittestEnabled": false
+  "[c]": {
+    "editor.rulers": [
+      100
+    ]
+  },
+  "[cpp]": {
+    "editor.rulers": [
+      100
+    ]
+  },
+  "[csharp]": {
+    "editor.maxTokenizationLineLength": 2500,
+    "editor.rulers": [
+      120
+    ]
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[pyproject-toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.rulers": [
+      100
+    ]
+  },
+  "[toml]": {
+    "editor.defaultFormatter": "tamasfe.even-better-toml"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "cSpell.words": [
+    "daglite"
+  ],
+  "files.associations": {
+    "coveragerc": "ini"
+  },
+  "files.exclude": {
+    "**/*.egg-info": true,
+    "**/.coverage": true,
+    "**/.ipynb_checkpoints": true,
+    "**/.mypy_cache": true,
+    "**/.nox": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/__pycache__": true,
+    "**/ruff_cache": true
+  },
+  "material-icon-theme.files.associations": {
+    ".coveragerc": "python-misc",
+    "mypy.ini": "python-misc",
+    "poe_tasks.toml": "Makefile",
+    "pytest.ini": "python-misc"
+  },
+  "python-envs.pythonProjects": [],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportUnnecessaryTypeIgnoreComment": "error"
+  },
+  "python.analysis.typeCheckingMode": "standard",
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false
 }

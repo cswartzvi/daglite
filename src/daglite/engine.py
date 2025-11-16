@@ -1,69 +1,95 @@
-from collections.abc import MutableMapping
-from typing import Any, TypeVar
+from __future__ import annotations
 
-from daglite.nodes import CallNode
-from daglite.nodes import Node
+import abc
+from collections.abc import MutableMapping
+from dataclasses import dataclass
+from dataclasses import field
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from uuid import UUID
+
+if TYPE_CHECKING:
+    from .tasks import EvaluatableTask
+else:
+    EvaluatableTask = object  # type: ignore[misc]
+
 
 T = TypeVar("T")
 
 
-def evaluate(expr: Node[T]) -> T:
+def evaluate(future: EvaluatableTask[T], backend: Backend | str | None = None) -> T:
     """
     Evaluate a Node[T] expression to a concrete T.
 
-    This is a simple single-process evaluator with memoization. It:
-      - walks the graph recursively,
-      - evaluates dependencies first,
-      - calls underlying Task functions with concrete values,
-      - caches each node's result so it is only computed once.
+    Args:
+        future (daglite.tasks.EvaluatableTask[T]):
+            Task future to be evaluated into a concrete value of type T.
+        backend (daglite.backends.Backend | str, optional):
+            Backend to use for evaluation. If a string is provided, it is used to look up
+            a backend via `find_backend()`. If None, the LocalBackend is used.
+    """
+    from daglite.backends import find_backend
+    from daglite.backends.local import LocalBackend
+
+    if backend is None:
+        backend = LocalBackend()
+    elif isinstance(backend, str):
+        backend = find_backend(backend)
+    elif not isinstance(backend, Backend):
+        raise TypeError(f"backend must be a Backend instance or str, got {type(backend)}")
+    engine = Engine(backend=backend)
+    return engine.evaluate(future)
+
+
+@dataclass(frozen=True)
+class Engine:
+    """
+    Engine for evaluating task futures.
+
+    NOTE: This class is intended for internal use by the evaluation engine only. User code should
+    should directly interact with either the the `evaluate` function or the `Engine` class.
     """
 
-    memo: MutableMapping[int, Any] = {}
+    backend: Backend
+    cache: MutableMapping[UUID, Any] = field(default_factory=dict)
 
-    def _evaluate(node: Any) -> Any:
-        """Internal recursive evaluator with memoization."""
+    def evaluate(self, future: EvaluatableTask[T]) -> T:
+        """
+        Evaluates a task future to a concrete value.
 
-        # Non-node values are returned as-is.
-        if not isinstance(node, Node):
-            return node
+        Args:
+            future (daglite.tasks.EvaluatableTask[T]):
+                Task future to be evaluated into a concrete value of type T.
 
-        node_id = id(node)
-        if node_id in memo:
-            return memo[node_id]
-
-        if isinstance(node, CallNode):
-            resolved: dict[str, Any] = {}
-            for name, value in node.kwargs.items():
-                if isinstance(value, Node):
-                    resolved[name] = _evaluate(value)  # node dependency
-                else:
-                    resolved[name] = value  # literal value, leave as-is
-            result = node.task._fn(**resolved)
-
-        # elif isinstance(node, MapNode):
-        #     # Resolve the sequence to map over.
-        #     if isinstance(node.values, Lazy):
-        #         seq = _eval(node.values)
-        #     else:
-        #         seq = node.values
-
-        #     # We expect 'seq' to be a concrete sequence here.
-        #     concrete_list: List[Any] = list(seq)
-
-        #     results: List[Any] = []
-        #     for item in concrete_list:
-        #         # Each item might itself be Lazy (nested mapping), so evaluate it.
-        #         arg_val = _eval(item) if isinstance(item, Lazy) else item
-        #         # Build kwargs for this call: just the mapped param.
-        #         call_kwargs = {node.param: arg_val}
-        #         results.append(node.task._fn(**call_kwargs))
-
-        #     result = results
-
-        else:
-            raise TypeError(f"Unknown node type: {type(node)!r}")
-
-        memo[node_id] = result
+        Returns:
+            T: Evaluated concrete value.
+        """
+        if future.id in self.cache:
+            return self.cache[future.id]
+        result = future._evaluate(self)
+        self.cache[future.id] = result
         return result
 
-    return _evaluate(expr)
+
+class Backend(abc.ABC):
+    """Abstract base class for execution backends."""
+
+    @abc.abstractmethod
+    def run_task(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
+        """
+        Runs a single function call on the execution backend.
+
+        Args:
+            fn (Callable[..., T]):
+                Function to be called.
+            kwargs (dict[str, Any]):
+                Keyword arguments to be passed to fn.
+        """
+        raise NotImplementedError()
+
+    def run_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[T]:
+        """
+        Runs multiple function calls on the execution backend.
+
+        Default: just loop using run_task().
+        """
+        raise NotImplementedError()
