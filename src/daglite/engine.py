@@ -51,6 +51,7 @@ class Engine:
 
     backend: Backend
     cache: MutableMapping[UUID, Any] = field(default_factory=dict)
+    _evaluating: set[UUID] = field(default_factory=set)
 
     def evaluate(self, future: EvaluatableTask[T]) -> T:
         """
@@ -62,16 +63,39 @@ class Engine:
 
         Returns:
             T: Evaluated concrete value.
+
+        Raises:
+            RuntimeError: If a circular dependency is detected.
         """
         if future.id in self.cache:
             return self.cache[future.id]
-        result = future._evaluate(self)
-        self.cache[future.id] = result
-        return result
+
+        if future.id in self._evaluating:
+            raise RuntimeError(
+                f"Circular dependency detected: task {future.id} depends on itself. "
+                "Check your task bindings for cycles."
+            )
+
+        self._evaluating.add(future.id)
+        try:
+            result = future._evaluate(self)
+            self.cache[future.id] = result
+            return result
+        finally:
+            self._evaluating.discard(future.id)
 
 
 class Backend(abc.ABC):
-    """Abstract base class for execution backends."""
+    """
+    Abstract base class for execution backends.
+
+    Backend Resolution Order:
+    When a task is executed, the backend is selected in the following priority order:
+    1. Backend explicitly passed to evaluate() function
+    2. Backend specified in the task definition (@task decorator)
+    3. Backend specified in MapTaskFuture.extend()/zip()/map()/join()
+    4. Default LocalBackend (if no backend is specified anywhere)
+    """
 
     @abc.abstractmethod
     def run_task(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
@@ -90,6 +114,16 @@ class Backend(abc.ABC):
         """
         Runs multiple function calls on the execution backend.
 
-        Default: just loop using run_task().
+        Default implementation: sequentially loop using run_task().
+        Subclasses can override this to provide parallel execution.
+
+        Args:
+            fn (Callable[..., T]):
+                Function to be called multiple times.
+            calls (list[dict[str, Any]]):
+                List of keyword argument dicts, one per call.
+
+        Returns:
+            list[T]: Results from each call, in the same order as calls.
         """
-        raise NotImplementedError()
+        return [self.run_task(fn, kwargs) for kwargs in calls]

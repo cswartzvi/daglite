@@ -157,7 +157,10 @@ class Task(Generic[P, R]):
                 Keyword arguments mapping parameter names to sequences; can contain a combination
                 of concrete values and TaskFutures. All combinations of the sequences will be called
                 in a Cartesian product fashion. Passing scalar values (concrete or Lazy) is not
-                allowed and will raise a `ValueError`.
+                allowed and will raise a `ValueError`. Empty sequences are not allowed.
+
+        Raises:
+            ValueError: If no kwargs provided or if any sequence is empty.
         """
 
         if not kwargs:
@@ -175,8 +178,12 @@ class Task(Generic[P, R]):
             kwargs (Mapping[str, Sequence | LazyValue[Sequence]]):
                 Keyword arguments mapping parameter names to sequences; can contain a combination
                 of concrete values and TaskFutures. All sequences will be called in a pairwise zip
-                fashion. Passing scalar values (concrete or Lazy) is not allowed and will raise a
-                `ValueError`.
+                fashion. All sequences must have the same length. Passing scalar values (concrete
+                or Lazy) is not allowed and will raise a `ValueError`. Empty sequences are not allowed.
+
+        Raises:
+            ValueError: If no kwargs provided, if any sequence is empty, or if sequences have
+                different lengths.
         """
 
         if not kwargs:
@@ -238,7 +245,7 @@ class PartialTask(Generic[R]):
                 Keyword arguments mapping parameter names to sequences; can contain a combination
                 of concrete values and TaskFutures. All combinations of the sequences will be called
                 in a Cartesian product fashion. Passing scalar values (concrete or Lazy) is not
-                allowed and will raise a `ValueError`.
+                allowed and will raise a `ValueError`. Empty sequences are not allowed.
 
         Examples:
         >>> # The following creates 4 calls with y=seed, x=1,2,3,4
@@ -247,6 +254,9 @@ class PartialTask(Generic[R]):
         >>> # 4 calls with (x,z)=(1,10),(1,20),(2,10),(2,20)
         >>> multi = base.extend(x=[1, 2], z=[10, 20])
 
+        Raises:
+            ValueError: If no kwargs provided, if any sequence is empty, or if parameters
+                are already bound.
         """
         if not kwargs:
             raise ValueError("extend() requires at least one sequence argument.")
@@ -282,8 +292,8 @@ class PartialTask(Generic[R]):
             kwargs (Mapping[str, Sequence | LazyValue[Sequence]]):
                 Keyword arguments mapping parameter names to sequences; can contain a combination
                 of concrete values and TaskFutures. All sequences will be called in a pairwise zip
-                fashion. Passing scalar values (concrete or Lazy) is not allowed and will raise a
-                `ValueError`.
+                fashion. All sequences must have the same length. Passing scalar values (concrete
+                or Lazy) is not allowed and will raise a `ValueError`. Empty sequences are not allowed.
 
         Examples:
         >>> # The following creates 3 calls with y=seed, x=1,2,3
@@ -291,6 +301,10 @@ class PartialTask(Generic[R]):
         >>>
         >>> # The following creates 3 calls with (x,y)=(1,10), (2,20), (3,30)
         >>> pairs = base.zip(x=[1, 2, 3], y=[10, 20, 30])
+
+        Raises:
+            ValueError: If no kwargs provided, if any sequence is empty, if sequences have
+                different lengths, or if parameters are already bound.
         """
         if not kwargs:
             raise ValueError("zip() requires at least one sequence argument.")
@@ -528,6 +542,14 @@ class MapTaskFuture(BaseTaskFuture, Generic[R], EvaluatableTask[Sequence[R]]):
             names = [n for n, _ in items]
             lists = [vals for _, vals in items]
 
+            # Check for empty sequences
+            empty_params = [name for name, vals in zip(names, lists) if len(vals) == 0]
+            if empty_params:
+                raise ValueError(
+                    f"Cannot extend() with empty sequences. "
+                    f"Parameters {empty_params} have no values."
+                )
+
             for combo in itertools.product(*lists):
                 kw = dict(fixed_kwargs)
                 for param_name, val in zip(names, combo):
@@ -538,8 +560,18 @@ class MapTaskFuture(BaseTaskFuture, Generic[R], EvaluatableTask[Sequence[R]]):
             # Pairwise zip over all sequences
             lengths = {len(vals) for vals in seq_values.values()}
             if len(lengths) > 1:
-                raise ValueError(f"All zip() sequences must have the same length; got {lengths}.")
+                # Provide detailed error message showing which parameters have which lengths
+                length_details = {name: len(vals) for name, vals in seq_values.items()}
+                raise ValueError(
+                    f"All zip() sequences must have the same length. "
+                    f"Got different lengths for parameters: {length_details}"
+                )
             n = lengths.pop() if lengths else 0
+            if n == 0:
+                raise ValueError(
+                    f"Cannot zip() empty sequences. Parameters {list(seq_values.keys())} "
+                    "are all empty or no sequences were provided."
+                )
             for i in range(n):
                 kw = dict(fixed_kwargs)
                 for param_name, vals in seq_values.items():
