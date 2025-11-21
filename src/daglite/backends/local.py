@@ -1,3 +1,4 @@
+import os
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Any, Callable, TypeVar, override
@@ -19,6 +20,15 @@ def _get_global_thread_pool() -> ThreadPoolExecutor:
         max_workers = settings.max_backend_threads if settings else None
         _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
     return _GLOBAL_THREAD_POOL
+
+
+def _get_global_pool_size() -> int:
+    """Get the actual size of the global thread pool."""
+    settings = get_global_settings()
+    if settings.max_backend_threads is not None:
+        return settings.max_backend_threads
+    # Default ThreadPoolExecutor size is min(32, (os.cpu_count() or 1) + 4)
+    return min(32, (os.cpu_count() or 1) + 4)
 
 
 class SequentialBackend(Backend):
@@ -93,8 +103,11 @@ class ThreadBackend(Backend):
             futures = [executor.submit(fn, **kw) for kw in calls]
             return [f.result() for f in futures]
 
-        # Limit concurrency: keep only max_workers tasks in-flight at any time
-        max_concurrent = self._max_workers
+        # Limit concurrency to the smaller of:
+        # - User's requested max_workers
+        # - Global pool size (to avoid excessive queueing in the executor)
+        global_pool_size = _get_global_pool_size()
+        max_concurrent = min(self._max_workers, global_pool_size)
         results: list[T | None] = [None] * len(calls)
         futures_map: dict[Any, int] = {}  # future -> index in results
 
