@@ -46,7 +46,7 @@ def flow(backend: str | Backend) -> None:
 
 
 print("=== Local evaluate (Engine + LocalBackend) ===")
-flow(backend="local")
+flow(backend="sequential")
 
 print("\n=== Threaded Engine (ThreadBackend) ===")
 flow(backend="threading")

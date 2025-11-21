@@ -71,11 +71,11 @@ def nested_zip_flow(backend: str | Backend) -> None:
 
 # --- Run with LocalBackend ----------------------------------------------
 
-print("=== Local Backend ===")
+print("=== Sequential Backend ===")
 print("\n--- Nested extend flow ---")
-nested_extend_flow(backend="local")
+nested_extend_flow(backend="sequential")
 print("\n--- Nested zip flow ---")
-nested_zip_flow(backend="local")
+nested_zip_flow(backend="sequential")
 
 
 # --- Run with ThreadBackend ---------------------------------------------
