@@ -339,7 +339,7 @@ class PartialTask(Generic[R]):
                     f"Previously bound parameters: {list(self.fixed_kwargs.keys())}"
                 )
             merged[name] = val
-        return TaskFuture(self.task, merged, self.backend)
+        return TaskFuture(self.task, merged, backend)
 
     def extend(
         self,

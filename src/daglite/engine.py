@@ -43,7 +43,6 @@ def evaluate(
     expr: GraphBuilder,
     default_backend: str | Backend = "sequential",
     use_async: bool = False,
-    settings: DagliteSettings | None = None,
 ) -> Any:
     """
     Evaluate a task graph.
@@ -58,8 +57,10 @@ def evaluate(
             If True, use async execution for sibling parallelism. This enables concurrent execution
             of independent nodes using asyncio. Best for I/O-bound workloads (network, disk
             operations).
-        settings (dagliteSettings | None, optional):
-            Optional daglite configuration settings. If None, default settings are used.
+
+    Note:
+        Global settings (thread pool size, etc.) are configured via set_global_settings().
+        These must be set before the first task execution.
 
     Returns:
         The result of evaluating the root task

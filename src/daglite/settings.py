@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 
 _GLOBAL_DAGLITE_SETTINGS: DagliteSettings | None = None
+_SETTINGS_LOCK = threading.RLock()
 
 
 @dataclass(frozen=True)
@@ -26,22 +28,28 @@ class DagliteSettings:
 
 def get_global_settings() -> DagliteSettings:
     """
-    Get the global daglite settings instance.
+    Get the global daglite settings instance (thread-safe).
 
     If no global settings have been set, returns a default instance.
     """
-    global _GLOBAL_DAGLITE_SETTINGS
-    if _GLOBAL_DAGLITE_SETTINGS is None:
-        _GLOBAL_DAGLITE_SETTINGS = DagliteSettings()
-    return _GLOBAL_DAGLITE_SETTINGS
+    with _SETTINGS_LOCK:
+        global _GLOBAL_DAGLITE_SETTINGS
+        if _GLOBAL_DAGLITE_SETTINGS is None:
+            _GLOBAL_DAGLITE_SETTINGS = DagliteSettings()
+        return _GLOBAL_DAGLITE_SETTINGS
 
 
 def set_global_settings(settings: DagliteSettings) -> None:
     """
-    Set the global daglite settings instance.
+    Set the global daglite settings instance (thread-safe).
+
+    Note: Settings should be configured before any task execution begins.
+    Changing settings after thread pool creation may not take effect until
+    the program restarts.
 
     Args:
         settings (DagliteSettings): Settings to set as global.
     """
-    global _GLOBAL_DAGLITE_SETTINGS
-    _GLOBAL_DAGLITE_SETTINGS = settings
+    with _SETTINGS_LOCK:
+        global _GLOBAL_DAGLITE_SETTINGS
+        _GLOBAL_DAGLITE_SETTINGS = settings

@@ -94,7 +94,7 @@ class ThreadBackend(Backend):
             return [f.result() for f in futures]
 
         # Limit concurrency: keep only max_workers tasks in-flight at any time
-        max_concurrent = min(self._max_workers, executor._max_workers)
+        max_concurrent = self._max_workers
         results: list[T | None] = [None] * len(calls)
         futures_map: dict[Any, int] = {}  # future -> index in results
 
