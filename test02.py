@@ -39,9 +39,9 @@ def double(x: int) -> int:
 
 def flow(backend: str | Backend) -> None:
     initial = prepare.extend(n=[3, 4])  # pure fan-out
-    doubled = initial.map(double)  # map over sequence
+    doubled = initial.map(double, backend=backend)  # map over sequence
     total = doubled.join(sum_list)  # join with default param
-    result = evaluate(total, backend=backend)
+    result = evaluate(total)
     print(f"Final result2: {result}")
 
 

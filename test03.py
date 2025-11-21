@@ -35,15 +35,15 @@ def nested_extend_flow(backend: str | Backend) -> None:
     start_time = time.time()
 
     # Level 1 fan-out
-    inner_seq = inner.extend(x=[1, 2, 3, 4, 5])
+    inner_seq = inner.extend(x=[1, 2, 3, 4, 5], backend=backend)
 
     # Level 2 fan-out over the results of Level 1 (nested extend)
-    outer_seq = outer.extend(y=inner_seq, z=[100, 200, 300])
+    outer_seq = outer.extend(y=inner_seq, z=[100, 200, 300], backend=backend)
 
     # Collapse the final results
     total = sum_list.bind(xs=outer_seq)
 
-    result = evaluate(total, backend=backend)
+    result = evaluate(total)
 
     elapsed = time.time() - start_time
     print(f"Final result {result}")
@@ -54,15 +54,15 @@ def nested_zip_flow(backend: str | Backend) -> None:
     start_time = time.time()
 
     # Level 1 fan-out
-    inner_seq = inner.zip(x=[1, 2, 3, 4, 5])
+    inner_seq = inner.zip(x=[1, 2, 3, 4, 5], backend=backend)
 
     # Level 2 fan-out over the results of Level 1 (nested zip)
-    outer_seq = outer.zip(y=inner_seq, z=[100, 200, 300, 400, 500])
+    outer_seq = outer.zip(y=inner_seq, z=[100, 200, 300, 400, 500], backend=backend)
 
     # Collapse the final results
     total = sum_list.bind(xs=outer_seq)
 
-    result = evaluate(total, backend=backend)
+    result = evaluate(total)
 
     elapsed = time.time() - start_time
     print(f"Final result {result}")

@@ -1,29 +1,26 @@
-from typing import TYPE_CHECKING
-
 from daglite.backends.local import LocalBackend
 from daglite.backends.threading import ThreadBackend
 
-if TYPE_CHECKING:
-    from daglite.engine import Backend
-else:
-    Backend = object  # type: ignore[misc]
+from .base import Backend
 
 
-__all__ = ["LocalBackend", "ThreadBackend"]
-
-
-def find_backend(name: str | None = None) -> Backend:
+def find_backend(backend: str | Backend | None = None) -> Backend:
     """
     Find a backend class by name.
 
     Args:
-        name (str):
-            Name of the backend to find.
+        backend (daglite.engine.Backend | str, optional):
+            Name or instance of the backend to find. If an instance is given, it is
+            returned directly. If None, defaults to "local".
 
     Returns:
         Backend class.
     """
-    name = name if name is not None else "local"
+
+    if isinstance(backend, Backend):
+        return backend
+
+    backend = backend if backend is not None else "local"
 
     backends = {
         "local": LocalBackend,
@@ -33,6 +30,6 @@ def find_backend(name: str | None = None) -> Backend:
 
     # TODO : dynamic discovery of backends from entry points
 
-    if name not in backends:
-        raise ValueError(f"Unknown backend '{name}'; available: {list(backends.keys())}")
-    return backends[name]()
+    if backend not in backends:
+        raise ValueError(f"Unknown backend '{backend}'; available: {list(backends.keys())}")
+    return backends[backend]()

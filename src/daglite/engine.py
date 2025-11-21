@@ -1,129 +1,258 @@
+# daglite/engine.py
 from __future__ import annotations
 
-import abc
-from collections.abc import MutableMapping
+import asyncio
 from dataclasses import dataclass
 from dataclasses import field
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
-if TYPE_CHECKING:
-    from .tasks import EvaluatableTask
-else:
-    EvaluatableTask = object  # type: ignore[misc]
+from daglite.backends.base import Backend
+from daglite.backends.threading import ThreadBackend
+from daglite.graph.base import GraphBuilder
+from daglite.graph.base import GraphNode
+from daglite.graph.builder import build_graph
+from daglite.tasks import MapTaskFuture
+from daglite.tasks import TaskFuture
 
-
+P = ParamSpec("P")
+R = TypeVar("R")
 T = TypeVar("T")
 
 
-def evaluate(future: EvaluatableTask[T], backend: Backend | str | None = None) -> T:
+# region API
+
+
+@overload
+def evaluate(
+    expr: TaskFuture[T], *, default_backend: str | Backend = "local", use_async: bool = False
+) -> T: ...
+
+
+@overload
+def evaluate(
+    expr: MapTaskFuture[T], *, default_backend: str | Backend = "local", use_async: bool = False
+) -> list[T]: ...
+
+
+def evaluate(
+    expr: GraphBuilder,
+    default_backend: str | Backend = "local",
+    use_async: bool = False,
+) -> Any:
     """
-    Evaluate a Node[T] expression to a concrete T.
+    Evaluate a task graph.
 
     Args:
-        future (daglite.tasks.EvaluatableTask[T]):
-            Task future to be evaluated into a concrete value of type T.
-        backend (daglite.backends.Backend | str, optional):
-            Backend to use for evaluation. If a string is provided, it is used to look up
-            a backend via `find_backend()`. If None, the LocalBackend is used.
+        expr (daglite.graph.base.GraphBuilder):
+            The task graph to evaluate.
+        default_backend (str | daglite.backends.Backend, optional):
+            Default backend for task execution. If a node does not have a specific backend
+            assigned, this backend will be used. Defaults to "local".
+        use_async (bool, optional):
+            If True, use async execution for sibling parallelism. This enables concurrent execution
+            of independent nodes using asyncio. Best for I/O-bound workloads (network, disk
+            operations).
+
+    Returns:
+        The result of evaluating the root task
+
+    Examples:
+        >>> # Sequential execution (default)
+        >>> result = evaluate(my_task)
+
+        >>> # Async execution with sibling parallelism
+        >>> result = evaluate(my_task, use_async=True)
+
+        >>> # With custom backend
+        >>> result = evaluate(my_task, default_backend_name="threading", use_async=True)
     """
-    from daglite.backends import find_backend
-    from daglite.backends.local import LocalBackend
-
-    if backend is None:
-        backend = LocalBackend()
-    elif isinstance(backend, str):
-        backend = find_backend(backend)
-    elif not isinstance(backend, Backend):
-        raise TypeError(f"backend must be a Backend instance or str, got {type(backend)}")
-    engine = Engine(backend=backend)
-    return engine.evaluate(future)
+    engine = Engine(default_backend=default_backend, use_async=use_async)
+    return engine.evaluate(expr)
 
 
-@dataclass(frozen=True)
+# endregion
+
+
+# region Engine
+
+
+@dataclass
 class Engine:
     """
-    Engine for evaluating task futures.
+    Engine to evaluate a GraphBuilder.
 
-    NOTE: This class is intended for internal use by the evaluation engine only. User code should
-    should directly interact with either the the `evaluate` function or the `Engine` class.
+    The Engine compiles a GraphBuilder into a GraphNode dict, then executes
+    it in topological order.
+
+    Execution Modes:
+        - use_async=False: Sequential execution (single-threaded)
+        - use_async=True: Async execution with sibling parallelism
+
+    Sibling Parallelism:
+        When use_async=True, independent nodes at the same level of the DAG
+        execute concurrently using asyncio. This is particularly beneficial for
+        I/O-bound tasks (network requests, file operations).
+
+        Sync task functions are automatically wrapped with asyncio.to_thread()
+        to avoid blocking the event loop. ThreadBackend tasks run directly
+        since they manage their own parallelism.
+
+    Backend Resolution Priority:
+        1. Node-specific backend from task/task-future operations (bind, extend, ...)
+        2. Default task backend from `@task` decorator
+        3. Engine's default_backend_name
     """
 
-    backend: Backend
-    cache: MutableMapping[UUID, Any] = field(default_factory=dict)
-    _evaluating: set[UUID] = field(default_factory=set)
+    default_backend: str | Backend
+    """Default backend name or instance for nodes without a specific backend."""
 
-    def evaluate(self, future: EvaluatableTask[T]) -> T:
-        """
-        Evaluates a task future to a concrete value.
+    use_async: bool = False
+    """If True, use async/await for sibling parallelism."""
 
-        Args:
-            future (daglite.tasks.EvaluatableTask[T]):
-                Task future to be evaluated into a concrete value of type T.
+    # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
+    # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
 
-        Returns:
-            T: Evaluated concrete value.
+    _backend_cache: dict[str | Backend, Backend] = field(default_factory=dict, init=False)
 
-        Raises:
-            RuntimeError: If a circular dependency is detected.
-        """
-        if future.id in self.cache:
-            return self.cache[future.id]
+    def evaluate(self, root: GraphBuilder) -> Any:
+        """Compiles the lazy expression into a graph and execute it."""
+        nodes = build_graph(root)
 
-        if future.id in self._evaluating:
-            raise RuntimeError(
-                f"Circular dependency detected: task {future.id} depends on itself. "
-                "Check your task bindings for cycles."
-            )
+        if self.use_async:
+            return asyncio.run(self._run_async(nodes, root.id))
+        else:
+            return self._run_sequential(nodes, root.id)
 
-        self._evaluating.add(future.id)
-        try:
-            result = future._evaluate(self)
-            self.cache[future.id] = result
+    def _resolve_node_backend(self, node: GraphNode) -> Backend:
+        """Decide which Backend instance to use for this node's *internal* work."""
+        from daglite.backends import find_backend
+
+        backend_key = node.backend or self.default_backend
+        if backend_key not in self._backend_cache:
+            self._backend_cache[backend_key] = find_backend(backend_key)
+        return self._backend_cache[backend_key]
+
+    def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
+        """Sequential execution (original implementation)."""
+        indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
+        successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
+
+        for nid, node in nodes.items():
+            for dep in node.deps():
+                indegree[nid] += 1
+                successors.setdefault(dep, set()).add(nid)
+
+        values: dict[UUID, Any] = {}
+        ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
+
+        # Fast path: single-node graph
+        if len(nodes) == 1 and ready == [root_id]:
+            node = nodes[root_id]
+            backend = self._resolve_node_backend(node)
+            result = node.run(backend, values)
+            values[root_id] = result
             return result
-        finally:
-            self._evaluating.discard(future.id)
 
+        # Sequential execution
+        while ready:
+            nid = ready.pop()
+            node = nodes[nid]
+            backend = self._resolve_node_backend(node)
+            result = node.run(backend, values)
+            values[nid] = result
 
-class Backend(abc.ABC):
-    """
-    Abstract base class for execution backends.
+            for succ in successors.get(nid, ()):
+                indegree[succ] -= 1
+                if indegree[succ] == 0:
+                    ready.append(succ)
 
-    Backend Resolution Order:
-    When a task is executed, the backend is selected in the following priority order:
-    1. Backend explicitly passed to evaluate() function
-    2. Backend specified in the task definition (@task decorator)
-    3. Backend specified in MapTaskFuture.extend()/zip()/map()/join()
-    4. Default LocalBackend (if no backend is specified anywhere)
-    """
+        return values[root_id]
 
-    @abc.abstractmethod
-    def run_task(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
+    async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """
-        Runs a single function call on the execution backend.
+        Async execution with sibling parallelism.
 
-        Args:
-            fn (Callable[..., T]):
-                Function to be called.
-            kwargs (dict[str, Any]):
-                Keyword arguments to be passed to fn.
+        Runs independent sibling nodes concurrently using asyncio.
+        Sync task functions are executed in threads via asyncio.to_thread().
         """
-        raise NotImplementedError()
+        indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
+        successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
-    def run_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[T]:
+        for nid, node in nodes.items():
+            for dep in node.deps():
+                indegree[nid] += 1
+                successors.setdefault(dep, set()).add(nid)
+
+        values: dict[UUID, Any] = {}
+        ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
+
+        # Fast path: single-node graph
+        if len(nodes) == 1 and ready == [root_id]:
+            node = nodes[root_id]
+            backend = self._resolve_node_backend(node)
+            result = await self._run_node_async(root_id, node, backend, values)
+            values[root_id] = result
+            return result
+
+        # Async execution: run siblings concurrently
+        while ready:
+            task_map: dict[asyncio.Task, UUID] = {}
+
+            # Create tasks for all ready nodes
+            for nid in ready:
+                node = nodes[nid]
+                backend = self._resolve_node_backend(node)
+                task = asyncio.create_task(self._run_node_async(nid, node, backend, values))
+                task_map[task] = nid
+
+            ready = []
+
+            try:
+                # Wait for all siblings to complete concurrently
+                done, _ = await asyncio.wait(task_map.keys())
+
+                for task in done:
+                    nid = task_map[task]
+                    try:
+                        result = task.result()  # Re-raises exception if task failed
+                        values[nid] = result
+
+                        # Check successors
+                        for succ in successors.get(nid, ()):
+                            indegree[succ] -= 1
+                            if indegree[succ] == 0:
+                                ready.append(succ)
+                    except Exception:
+                        # Cancel all remaining tasks on first failure
+                        for t in task_map.keys():
+                            if not t.done():
+                                t.cancel()
+                        raise  # Re-raise the original exception
+
+            except asyncio.CancelledError:
+                # Propagate cancellation to all tasks
+                for task in task_map.keys():
+                    if not task.done():
+                        task.cancel()
+                raise
+
+        return values[root_id]
+
+    async def _run_node_async(
+        self, nid: UUID, node: GraphNode, backend: Backend, values: dict[UUID, Any]
+    ) -> Any:
         """
-        Runs multiple function calls on the execution backend.
+        Run a single node asynchronously.
 
-        Default implementation: sequentially loop using run_task().
-        Subclasses can override this to provide parallel execution.
-
-        Args:
-            fn (Callable[..., T]):
-                Function to be called multiple times.
-            calls (list[dict[str, Any]]):
-                List of keyword argument dicts, one per call.
-
-        Returns:
-            list[T]: Results from each call, in the same order as calls.
+        If the backend is ThreadBackend, runs directly since it handles
+        parallelism internally. Otherwise, wraps in asyncio.to_thread()
+        to avoid blocking the event loop.
         """
-        return [self.run_task(fn, kwargs) for kwargs in calls]
+        # If backend is already threaded, we don't need to_thread()
+        if isinstance(backend, ThreadBackend):
+            # Run directly - backend handles parallelism internally
+            return node.run(backend, values)
+        else:
+            # Wrap sync operation in thread for non-blocking execution
+            return await asyncio.to_thread(node.run, backend, values)

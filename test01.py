@@ -25,12 +25,15 @@ def length(info: dict) -> int:
     return info["length"]
 
 
-reveal_type(download)
-
 # Straight-line DAG wiring with .bind
 raw = download.bind(url="https://example.com")
 info = parse.bind(raw=raw)
 length_val = length.bind(info=info)
+
+reveal_type(download)
+reveal_type(raw)
+reveal_type(info)
+reveal_type(length_val)
 
 result = evaluate(length_val)
 print("RESULT:", result)
