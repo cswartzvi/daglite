@@ -1,5 +1,6 @@
 from daglite.backends.local import LocalBackend
 from daglite.backends.threading import ThreadBackend
+from daglite.exceptions import BackendError
 
 from .base import Backend
 
@@ -31,5 +32,5 @@ def find_backend(backend: str | Backend | None = None) -> Backend:
     # TODO : dynamic discovery of backends from entry points
 
     if backend not in backends:
-        raise ValueError(f"Unknown backend '{backend}'; available: {list(backends.keys())}")
+        raise BackendError(f"Unknown backend '{backend}'; available: {list(backends.keys())}")
     return backends[backend]()
