@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_GLOBAL_DAGLITE_SETTINGS: DagLiteSettings | None = None
+_GLOBAL_DAGLITE_SETTINGS: DagliteSettings | None = None
 
 
 @dataclass(frozen=True)
-class DagLiteSettings:
-    """Configuration settings for DAGLite."""
+class DagliteSettings:
+    """Configuration settings for daglite."""
 
     max_backend_threads: int | None = None
     """
@@ -24,24 +24,24 @@ class DagLiteSettings:
     """
 
 
-def get_global_settings() -> DagLiteSettings:
+def get_global_settings() -> DagliteSettings:
     """
-    Get the global DagLite settings instance.
+    Get the global daglite settings instance.
 
     If no global settings have been set, returns a default instance.
     """
     global _GLOBAL_DAGLITE_SETTINGS
     if _GLOBAL_DAGLITE_SETTINGS is None:
-        _GLOBAL_DAGLITE_SETTINGS = DagLiteSettings()
+        _GLOBAL_DAGLITE_SETTINGS = DagliteSettings()
     return _GLOBAL_DAGLITE_SETTINGS
 
 
-def set_global_settings(settings: DagLiteSettings) -> None:
+def set_global_settings(settings: DagliteSettings) -> None:
     """
-    Set the global DagLite settings instance.
+    Set the global daglite settings instance.
 
     Args:
-        settings (DagLiteSettings): Settings to set as global.
+        settings (DagliteSettings): Settings to set as global.
     """
     global _GLOBAL_DAGLITE_SETTINGS
     _GLOBAL_DAGLITE_SETTINGS = settings

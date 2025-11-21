@@ -52,7 +52,7 @@ class ThreadBackend(Backend):
     ThreadBackend executes multiple task invocations concurrently using Python threads from a
     single global ThreadPoolExecutor. This avoids creating multiple thread pools and allows better
     resource management across the entire application.The global pool size is controlled by
-    DagLiteSettings.max_backend_threads. All ThreadBackend instances share the same pool.
+    DagliteSettings.max_backend_threads. All ThreadBackend instances share the same pool.
     Max_workers parameter in the constructor only limits the number of concurrent tasks submitted
     during map operations.
 

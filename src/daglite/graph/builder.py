@@ -1,4 +1,4 @@
-"""Graph building utilities for DAGLite Intermediate Representation (IR)."""
+"""Graph building utilities for daglite Intermediate Representation (IR)."""
 
 from uuid import UUID
 

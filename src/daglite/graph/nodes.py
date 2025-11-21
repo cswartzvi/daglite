@@ -1,4 +1,4 @@
-"""Defines graph nodes for the DAGLite Intermediate Representation (IR)."""
+"""Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
 from collections.abc import Mapping
 from dataclasses import dataclass

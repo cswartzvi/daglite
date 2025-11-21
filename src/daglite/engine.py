@@ -12,7 +12,7 @@ from daglite.backends.local import ThreadBackend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph
-from daglite.settings import DagLiteSettings
+from daglite.settings import DagliteSettings
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -43,7 +43,7 @@ def evaluate(
     expr: GraphBuilder,
     default_backend: str | Backend = "sequential",
     use_async: bool = False,
-    settings: DagLiteSettings | None = None,
+    settings: DagliteSettings | None = None,
 ) -> Any:
     """
     Evaluate a task graph.
@@ -58,8 +58,8 @@ def evaluate(
             If True, use async execution for sibling parallelism. This enables concurrent execution
             of independent nodes using asyncio. Best for I/O-bound workloads (network, disk
             operations).
-        settings (DagLiteSettings | None, optional):
-            Optional DagLite configuration settings. If None, default settings are used.
+        settings (dagliteSettings | None, optional):
+            Optional daglite configuration settings. If None, default settings are used.
 
     Returns:
         The result of evaluating the root task
@@ -117,8 +117,8 @@ class Engine:
     use_async: bool = False
     """If True, use async/await for sibling parallelism."""
 
-    settings: DagLiteSettings = field(default_factory=DagLiteSettings)
-    """DagLite configuration settings."""
+    settings: DagliteSettings = field(default_factory=DagliteSettings)
+    """Daglite configuration settings."""
 
     # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
     # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
@@ -226,7 +226,7 @@ class Engine:
                     try:
                         result = task.result()
                         values[nid] = result
-    
+
                         for succ in successors.get(nid, ()):
                             indegree[succ] -= 1
                             if indegree[succ] == 0:
