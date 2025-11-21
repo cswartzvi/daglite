@@ -2,11 +2,11 @@
 
 import threading
 import time
-from collections import defaultdict
 
-from daglite import evaluate, task
+from daglite import task
 from daglite.backends.local import ThreadBackend
-from daglite.settings import DagliteSettings, set_global_settings
+from daglite.settings import DagliteSettings
+from daglite.settings import set_global_settings
 
 # Track concurrent executions
 concurrent_count = 0
@@ -83,7 +83,7 @@ def test_with_limit():
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
     print(f"Max concurrent tasks: {max_concurrent}")
-    print(f"Expected: 3 concurrent (limited by max_workers)")
+    print("Expected: 3 concurrent (limited by max_workers)")
     print()
 
     # With limit of 3, max concurrent should be close to 3
@@ -119,9 +119,9 @@ def test_timing_difference():
     time_limited = time.time() - start
     print(f"Limited to 2: {time_limited:.2f}s (max concurrent: {max_concurrent})")
 
-    print(f"\nWith 10 tasks at 0.1s each:")
-    print(f"  - Unlimited should take ~0.1s (all parallel)")
-    print(f"  - Limited to 2 should take ~0.5s (10 tasks / 2 workers * 0.1s)")
+    print("\nWith 10 tasks at 0.1s each:")
+    print("  - Unlimited should take ~0.1s (all parallel)")
+    print("  - Limited to 2 should take ~0.5s (10 tasks / 2 workers * 0.1s)")
     print()
 
     # Limited should take significantly longer

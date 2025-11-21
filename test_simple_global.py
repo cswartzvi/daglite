@@ -17,7 +17,7 @@ def square(x: int) -> int:
 future = square.bind(x=5)
 result = evaluate(future)
 print(f"Result: {result}")
-print(f"Expected: 25")
+print("Expected: 25")
 assert result == 25
 
 print("\n✓ Basic test passed!")

@@ -143,6 +143,7 @@ class ParamInput:
             assert self.ref is not None
             return values[self.ref]
         from daglite.exceptions import ExecutionError
+
         raise ExecutionError(
             f"Cannot resolve parameter of kind '{self.kind}' as a scalar value. "
             f"Expected 'value' or 'ref', but got '{self.kind}'. "
@@ -166,6 +167,7 @@ class ParamInput:
             assert self.ref is not None
             return list(values[self.ref])
         from daglite.exceptions import ExecutionError
+
         raise ExecutionError(
             f"Cannot resolve parameter of kind '{self.kind}' as a sequence. "
             f"Expected 'sequence' or 'sequence_ref', but got '{self.kind}'. "

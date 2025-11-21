@@ -1,15 +1,21 @@
 """Test improved error messages and exception handling."""
 
-from daglite import DagliteError, ParameterError, BackendError, task, evaluate
-
+from daglite import BackendError
+from daglite import DagliteError
+from daglite import ParameterError
+from daglite import evaluate
+from daglite import task
 
 print("=== Testing Improved Error Messages ===\n")
 
 # Test 1: Empty extend()
 print("1. Testing empty extend() error:")
+
+
 @task
 def process(x: int) -> int:
     return x * 2
+
 
 try:
     result = process.extend()
@@ -28,15 +34,19 @@ except ParameterError as e:
 print("3. Testing unknown backend error:")
 try:
     from daglite.backends import find_backend
+
     backend = find_backend("nonexistent")
 except BackendError as e:
     print(f"✓ Caught BackendError: {e}\n")
 
 # Test 4: Mismatched zip lengths
 print("4. Testing zip length mismatch:")
+
+
 @task
 def combine(x: int, y: int) -> int:
     return x + y
+
 
 try:
     result = evaluate(combine.zip(x=[1, 2, 3], y=[10, 20]))

@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, TypeVar, override
+from typing import Any, TypeVar, override
 from uuid import UUID
 
 from daglite.engine import Backend
@@ -113,6 +113,7 @@ class MapTaskNode(GraphNode):
             lengths = {len(v) for v in mapped.values()}
             if len(lengths) > 1:
                 from daglite.exceptions import ParameterError
+
                 length_details = {name: len(vals) for name, vals in mapped.items()}
                 raise ParameterError(
                     f"zip() requires all sequences to have the same length. "
@@ -127,6 +128,7 @@ class MapTaskNode(GraphNode):
                 calls.append(kw)
         else:
             from daglite.exceptions import ExecutionError
+
             raise ExecutionError(
                 f"Unknown map mode '{self.mode}'. Expected 'extend' or 'zip'. "
                 f"This indicates an internal error in graph construction."

@@ -1,7 +1,8 @@
 """Test cycle detection in graph construction."""
 
 from functools import cached_property
-from uuid import UUID, uuid4
+from uuid import UUID
+from uuid import uuid4
 
 from daglite import task
 from daglite.exceptions import GraphConstructionError

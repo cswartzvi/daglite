@@ -2,9 +2,7 @@
 
 import threading
 import time
-from collections import defaultdict
 
-from daglite import evaluate
 from daglite import task
 from daglite.backends.local import ThreadBackend
 from daglite.settings import DagliteSettings
@@ -57,8 +55,8 @@ def test_respects_pool_size():
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
     print(f"Max concurrent tasks: {max_concurrent}")
-    print(f"Requested: 20 workers, Pool size: 5")
-    print(f"Expected: Limited to 5 concurrent (respects pool size)")
+    print("Requested: 20 workers, Pool size: 5")
+    print("Expected: Limited to 5 concurrent (respects pool size)")
     print()
 
     # Should be limited to 5, not 20
@@ -94,8 +92,8 @@ def test_smaller_request_still_works():
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
     print(f"Max concurrent tasks: {max_concurrent}")
-    print(f"Requested: 3 workers, Pool size: 10")
-    print(f"Expected: Limited to 3 concurrent (respects request)")
+    print("Requested: 3 workers, Pool size: 10")
+    print("Expected: Limited to 3 concurrent (respects request)")
     print()
 
     # Should be limited to 3, not 10
