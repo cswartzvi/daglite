@@ -38,7 +38,12 @@ def task(fn: Callable[P, R]) -> Task[P, R]: ...
 
 
 @overload
-def task(*, name: str | None = None) -> Callable[[Callable[P, R]], Task[P, R]]: ...
+def task(
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    backend: str | Backend | None = None,
+) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
 def task(
@@ -63,7 +68,7 @@ def task(
             For lambda functions, defaults to "unnamed_task".
         description (str, optional): Task description. Defaults to the function's docstring.
         backend (str | Backend | None): Backend for executing this task. Can be a backend
-            name ("local", "threading") or a Backend instance. If None, uses the engine's
+            name ("sequential", "threading") or a Backend instance. If None, uses the engine's
             default backend.
 
     Returns:

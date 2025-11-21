@@ -8,10 +8,11 @@ from typing import Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
 from daglite.backends.base import Backend
-from daglite.backends.threading import ThreadBackend
+from daglite.backends.local import ThreadBackend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph
+from daglite.settings import DagLiteSettings
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -25,20 +26,24 @@ T = TypeVar("T")
 
 @overload
 def evaluate(
-    expr: TaskFuture[T], *, default_backend: str | Backend = "local", use_async: bool = False
+    expr: TaskFuture[T], *, default_backend: str | Backend = "sequential", use_async: bool = False
 ) -> T: ...
 
 
 @overload
 def evaluate(
-    expr: MapTaskFuture[T], *, default_backend: str | Backend = "local", use_async: bool = False
+    expr: MapTaskFuture[T],
+    *,
+    default_backend: str | Backend = "sequential",
+    use_async: bool = False,
 ) -> list[T]: ...
 
 
 def evaluate(
     expr: GraphBuilder,
-    default_backend: str | Backend = "local",
+    default_backend: str | Backend = "sequential",
     use_async: bool = False,
+    settings: DagLiteSettings | None = None,
 ) -> Any:
     """
     Evaluate a task graph.
@@ -48,11 +53,13 @@ def evaluate(
             The task graph to evaluate.
         default_backend (str | daglite.backends.Backend, optional):
             Default backend for task execution. If a node does not have a specific backend
-            assigned, this backend will be used. Defaults to "local".
+            assigned, this backend will be used. Defaults to "sequential".
         use_async (bool, optional):
             If True, use async execution for sibling parallelism. This enables concurrent execution
             of independent nodes using asyncio. Best for I/O-bound workloads (network, disk
             operations).
+        settings (DagLiteSettings | None, optional):
+            Optional DagLite configuration settings. If None, default settings are used.
 
     Returns:
         The result of evaluating the root task
@@ -110,6 +117,9 @@ class Engine:
     use_async: bool = False
     """If True, use async/await for sibling parallelism."""
 
+    settings: DagLiteSettings = field(default_factory=DagLiteSettings)
+    """DagLite configuration settings."""
+
     # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
     # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
 
@@ -130,7 +140,8 @@ class Engine:
 
         backend_key = node.backend or self.default_backend
         if backend_key not in self._backend_cache:
-            self._backend_cache[backend_key] = find_backend(backend_key)
+            backend = find_backend(backend_key)
+            self._backend_cache[backend_key] = backend
         return self._backend_cache[backend_key]
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
@@ -198,8 +209,6 @@ class Engine:
         # Async execution: run siblings concurrently
         while ready:
             task_map: dict[asyncio.Task, UUID] = {}
-
-            # Create tasks for all ready nodes
             for nid in ready:
                 node = nodes[nid]
                 backend = self._resolve_node_backend(node)
@@ -215,10 +224,9 @@ class Engine:
                 for task in done:
                     nid = task_map[task]
                     try:
-                        result = task.result()  # Re-raises exception if task failed
+                        result = task.result()
                         values[nid] = result
-
-                        # Check successors
+    
                         for succ in successors.get(nid, ()):
                             indegree[succ] -= 1
                             if indegree[succ] == 0:
@@ -228,7 +236,7 @@ class Engine:
                         for t in task_map.keys():
                             if not t.done():
                                 t.cancel()
-                        raise  # Re-raise the original exception
+                        raise
 
             except asyncio.CancelledError:
                 # Propagate cancellation to all tasks
