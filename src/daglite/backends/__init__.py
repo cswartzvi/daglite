@@ -15,7 +15,7 @@ def find_backend(backend: str | Backend | None = None) -> Backend:
             returned directly. If None, defaults to "sequential".
 
     Returns:
-        Backend class.
+        An instance of the requested backend class (or the default).
     """
 
     if isinstance(backend, Backend):
