@@ -1,4 +1,5 @@
 import os
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Any, Callable, TypeVar, override
@@ -9,16 +10,19 @@ from .base import Backend
 
 T = TypeVar("T")
 
+
 _GLOBAL_THREAD_POOL: ThreadPoolExecutor | None = None
+_POOL_LOCK = threading.RLock()
 
 
 def _get_global_thread_pool() -> ThreadPoolExecutor:
-    """Get or create the global thread pool."""
-    settings = get_global_settings()
     global _GLOBAL_THREAD_POOL
     if _GLOBAL_THREAD_POOL is None:
-        max_workers = settings.max_backend_threads if settings else None
-        _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
+        with _POOL_LOCK:
+            if _GLOBAL_THREAD_POOL is None:  # Double-check pattern
+                settings = get_global_settings()
+                max_workers = settings.max_backend_threads
+                _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
     return _GLOBAL_THREAD_POOL
 
 
