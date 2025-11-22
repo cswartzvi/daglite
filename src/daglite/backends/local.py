@@ -156,7 +156,7 @@ def _submit_many_limited(
             try:
                 result = done.result()
                 futures[idx].set_result(result)
-            except Exception as e:
+            except Exception as e:  # pragma: no cover
                 futures[idx].set_exception(e)
 
     return futures
