@@ -11,10 +11,13 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
 from uuid import UUID
+
+from daglite.exceptions import ExecutionError
 
 if TYPE_CHECKING:
     from daglite.engine import Backend
@@ -67,13 +70,19 @@ class GraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def run(self, backend: Backend, values: Mapping[UUID, Any]) -> Any:
+    def submit(
+        self, backend: Backend, values: Mapping[UUID, Any]
+    ) -> Future[Any] | list[Future[Any]]:
         """
-        Execute this node, using the given backend and previously-computed values.
+        Submit this node's work to the backend.
 
         Args:
-            backend (Backend): Backend to use for executing this node.
-            values (Mapping[UUID, Any]): Mapping from node IDs to previously-computed values.
+            backend (Backend): Backend instance to use for execution.
+            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
+
+        Returns:
+            - TaskNode: Single Future[T]
+            - MapTaskNode: list[Future[T]]
         """
         ...
 
@@ -148,7 +157,6 @@ class ParamInput:
         if self.kind == "ref":
             assert self.ref is not None
             return values[self.ref]
-        from daglite.exceptions import ExecutionError
 
         raise ExecutionError(
             f"Cannot resolve parameter of kind '{self.kind}' as a scalar value. "

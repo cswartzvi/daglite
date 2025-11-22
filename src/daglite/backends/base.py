@@ -1,50 +1,33 @@
 import abc
+from concurrent.futures import Future
 from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
 
 class Backend(abc.ABC):
-    """
-    Abstract base class for task execution backends.
-
-    Backends define how task functions are executed within the DAG. They provide
-    two execution modes:
-
-    1. run_single(): Execute a single task call (used by TaskNode)
-    2. run_many(): Execute multiple calls of the same task (used by MapTaskNode)
-
-    Examples:
-        Sequential execution:
-            >>> backend = LocalBackend()
-            >>> result = backend.run_single(my_function, {"x": 1, "y": 2})
-
-        Parallel execution:
-            >>> backend = ThreadBackend(max_workers=8)
-            >>> calls = [{"x": 1}, {"x": 2}, {"x": 3}]
-            >>> results = backend.run_many(my_function, calls)
-    """
+    """Abstract base class for task execution backends."""
 
     @abc.abstractmethod
-    def run_single(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
+    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
         """
-        Executes a single function call on this backend.
+        Submit a single function call for execution.
 
-        Args:
-            fn (Callable[..., T]): The function to call.
-            kwargs (dict[str, Any]): Keyword arguments for the function.
+        Returns:
+            Future representing the execution
         """
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def run_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[T]:
+    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
         """
-        Executes a function multiple times with different arguments on this backend.
+        Submit multiple function calls for execution.
 
         Args:
-            fn (Callable[..., T]):
-                The function to call.
-            calls (list[dict[str, Any]]):
-                List of keyword argument dicts for each call.
+            fn: Function to execute
+            calls: List of keyword argument dicts, one per call
+
+        Returns:
+            List of Futures, one per call (in same order as calls)
         """
         raise NotImplementedError()

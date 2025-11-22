@@ -1,6 +1,7 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
 from collections.abc import Mapping
+from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Callable, TypeVar, override
@@ -38,9 +39,10 @@ class TaskNode(GraphNode):
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
 
     @override
-    def run(self, backend: Backend, values: Mapping[UUID, Any]) -> Any:
+    def submit(self, backend: Backend, values: Mapping[UUID, Any]) -> Future[Any]:
+        """Submit single task execution."""
         kwargs = {name: p.resolve(values) for name, p in self.kwargs.items()}
-        return backend.run_single(self.func, kwargs)
+        return backend.submit(self.func, **kwargs)
 
 
 @dataclass(frozen=True)
@@ -81,13 +83,16 @@ class MapTaskNode(GraphNode):
         return out
 
     @override
-    def run(self, backend: Backend, values: Mapping[UUID, Any]) -> list[Any]:
+    def submit(self, backend: Backend, values: Mapping[UUID, Any]) -> list[Future[Any]]:
+        """Submit multiple task executions."""
         fixed = {k: p.resolve(values) for k, p in self.fixed_kwargs.items()}
         mapped = {k: p.resolve_sequence(values) for k, p in self.mapped_kwargs.items()}
 
+        # Build calls list (same logic as before)
         from itertools import product
 
         calls: list[dict[str, Any]] = []
+
         if self.mode == "extend":
             items = list(mapped.items())
             names, lists = zip(*items) if items else ([], [])
@@ -121,4 +126,4 @@ class MapTaskNode(GraphNode):
                 f"This indicates an internal error in graph construction."
             )
 
-        return backend.run_many(self.func, calls)
+        return backend.submit_many(self.func, calls)

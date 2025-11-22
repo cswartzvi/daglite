@@ -255,7 +255,7 @@ class Task(BaseTask[P, R]):
 
     @override
     def extend(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
+        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
             raise ParameterError(
                 "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."
@@ -264,7 +264,7 @@ class Task(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
+        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
             raise ParameterError(
                 "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."
@@ -301,7 +301,7 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
+        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
             raise ParameterError(
                 "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."
@@ -324,7 +324,7 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
+        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
             raise ParameterError(
                 "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."

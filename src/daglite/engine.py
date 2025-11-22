@@ -146,7 +146,7 @@ class Engine:
         return self._backend_cache[backend_key]
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """Sequential execution (original implementation)."""
+        """Sequential execution - block on futures."""
         indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
         successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
@@ -158,22 +158,25 @@ class Engine:
         values: dict[UUID, Any] = {}
         ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
 
-        # Fast path: single-node graph
-        if len(nodes) == 1 and ready == [root_id]:
-            node = nodes[root_id]
-            backend = self._resolve_node_backend(node)
-            result = node.run(backend, values)
-            values[root_id] = result
-            return result
-
-        # Sequential execution
         while ready:
             nid = ready.pop()
             node = nodes[nid]
             backend = self._resolve_node_backend(node)
-            result = node.run(backend, values)
+
+            # Submit work - returns Future or list[Future]
+            future_or_futures = node.submit(backend, values)
+
+            # Wait for completion
+            if isinstance(future_or_futures, list):
+                # MapTaskNode - gather all results
+                result = [f.result() for f in future_or_futures]
+            else:
+                # TaskNode - single result
+                result = future_or_futures.result()
+
             values[nid] = result
 
+            # Update dependencies
             for succ in successors.get(nid, ()):
                 indegree[succ] -= 1
                 if indegree[succ] == 0:
@@ -182,12 +185,7 @@ class Engine:
         return values[root_id]
 
     async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """
-        Async execution with sibling parallelism.
-
-        Runs independent sibling nodes concurrently using asyncio.
-        Sync task functions are executed in threads via asyncio.to_thread().
-        """
+        """Async execution - await futures."""
         indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
         successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
@@ -199,69 +197,43 @@ class Engine:
         values: dict[UUID, Any] = {}
         ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
 
-        # Fast path: single-node graph
-        if len(nodes) == 1 and ready == [root_id]:
-            node = nodes[root_id]
-            backend = self._resolve_node_backend(node)
-            result = await self._run_node_async(root_id, node, backend, values)
-            values[root_id] = result
-            return result
-
-        # Async execution: run siblings concurrently
         while ready:
-            task_map: dict[asyncio.Task, UUID] = {}
+            # Submit all ready siblings and wrap their futures
+            pending: dict[asyncio.Future, UUID] = {}
+            loop = asyncio.get_event_loop()
+
             for nid in ready:
                 node = nodes[nid]
                 backend = self._resolve_node_backend(node)
-                task = asyncio.create_task(self._run_node_async(nid, node, backend, values))
-                task_map[task] = nid
+
+                # Submit work - returns Future or list[Future]
+                future_or_futures = node.submit(backend, values)
+
+                # Convert to asyncio-compatible future
+                if isinstance(future_or_futures, list):
+                    # MapTaskNode - wrap all futures and gather
+                    wrapped = [asyncio.wrap_future(f, loop=loop) for f in future_or_futures]
+                    combined = asyncio.gather(*wrapped)
+                else:
+                    # TaskNode - wrap single future
+                    combined = asyncio.wrap_future(future_or_futures, loop=loop)
+
+                pending[combined] = nid
 
             ready = []
 
-            try:
-                # Wait for all siblings to complete concurrently
-                done, _ = await asyncio.wait(task_map.keys())
+            # Wait for all siblings to complete
+            done, _ = await asyncio.wait(pending.keys())
 
-                for task in done:
-                    nid = task_map[task]
-                    try:
-                        result = task.result()
-                        values[nid] = result
+            for future in done:
+                nid = pending[future]
+                result = future.result()
+                values[nid] = result
 
-                        for succ in successors.get(nid, ()):
-                            indegree[succ] -= 1
-                            if indegree[succ] == 0:
-                                ready.append(succ)
-                    except Exception:
-                        # Cancel all remaining tasks on first failure
-                        for t in task_map.keys():
-                            if not t.done():
-                                t.cancel()
-                        raise
-
-            except asyncio.CancelledError:
-                # Propagate cancellation to all tasks
-                for task in task_map.keys():
-                    if not task.done():
-                        task.cancel()
-                raise
+                # Update dependencies
+                for succ in successors.get(nid, ()):
+                    indegree[succ] -= 1
+                    if indegree[succ] == 0:
+                        ready.append(succ)
 
         return values[root_id]
-
-    async def _run_node_async(
-        self, nid: UUID, node: GraphNode, backend: Backend, values: dict[UUID, Any]
-    ) -> Any:
-        """
-        Run a single node asynchronously.
-
-        If the backend is ThreadBackend, runs directly since it handles
-        parallelism internally. Otherwise, wraps in asyncio.to_thread()
-        to avoid blocking the event loop.
-        """
-        # If backend is already threaded, we don't need to_thread()
-        if isinstance(backend, ThreadBackend):
-            # Run directly - backend handles parallelism internally
-            return node.run(backend, values)
-        else:
-            # Wrap sync operation in thread for non-blocking execution
-            return await asyncio.to_thread(node.run, backend, values)

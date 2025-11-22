@@ -1,5 +1,8 @@
 import os
 import threading
+from concurrent.futures import Executor
+from concurrent.futures import Future
+from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
 from typing import Any, Callable, TypeVar, override
@@ -12,6 +15,7 @@ T = TypeVar("T")
 
 
 _GLOBAL_THREAD_POOL: ThreadPoolExecutor | None = None
+_GLOBAL_PROCESS_POOL: ProcessPoolExecutor | None = None
 _POOL_LOCK = threading.RLock()
 
 
@@ -26,7 +30,18 @@ def _get_global_thread_pool() -> ThreadPoolExecutor:
     return _GLOBAL_THREAD_POOL
 
 
-def _get_global_pool_size() -> int:
+def _get_global_process_pool() -> ProcessPoolExecutor:
+    global _GLOBAL_PROCESS_POOL
+    if _GLOBAL_PROCESS_POOL is None:
+        with _POOL_LOCK:
+            if _GLOBAL_PROCESS_POOL is None:  # Double-check pattern
+                settings = get_global_settings()
+                max_workers = settings.max_parallel_processes
+                _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers)
+    return _GLOBAL_PROCESS_POOL
+
+
+def _get_global_thread_pool_size() -> int:
     """Get the actual size of the global thread pool."""
     settings = get_global_settings()
     if settings.max_backend_threads is not None:
@@ -35,103 +50,113 @@ def _get_global_pool_size() -> int:
     return min(32, (os.cpu_count() or 1) + 4)
 
 
+def _get_global_process_pool_size() -> int:
+    """Get the actual size of the global process pool."""
+    settings = get_global_settings()
+    if settings.max_parallel_processes is not None:
+        return settings.max_parallel_processes
+    return os.cpu_count() or 1
+
+
 class SequentialBackend(Backend):
-    """
-    Sequential execution backend that runs tasks in the current process and thread.
-
-    LocalBackend provides simple, synchronous execution with no parallelism. This is
-    the default backend and is suitable for:
-    - CPU-bound tasks where parallelism doesn't help (due to Python's GIL)
-    - Development and debugging (predictable execution order)
-    - Tasks with no I/O waits
-    - Small workloads where overhead of parallelism isn't worth it
-
-    For I/O-bound tasks or when you want parallelism within map operations,
-    consider using ThreadBackend instead.
-    """
+    """Executes immediately in current thread, returns completed futures."""
 
     @override
-    def run_single(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
-        return fn(**kwargs)
+    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
+        future: Future[T] = Future()
+        try:
+            result = fn(**kwargs)
+            future.set_result(result)
+        except Exception as e:
+            future.set_exception(e)
+        return future
 
     @override
-    def run_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[T]:
-        return [self.run_single(fn, kwargs) for kwargs in calls]
+    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
+        futures: list[Future[T]] = []
+        for kwargs in calls:
+            future: Future[T] = Future()
+            try:
+                result = fn(**kwargs)
+                future.set_result(result)
+            except Exception as e:
+                future.set_exception(e)
+            futures.append(future)
+        return futures
 
 
 class ThreadBackend(Backend):
-    """
-    Parallel execution backend using a shared global thread pool.
-
-    ThreadBackend executes multiple task invocations concurrently using Python threads from a
-    single global ThreadPoolExecutor. This avoids creating multiple thread pools and allows better
-    resource management across the entire application.The global pool size is controlled by
-    DagliteSettings.max_backend_threads. All ThreadBackend instances share the same pool.
-    Max_workers parameter in the constructor only limits the number of concurrent tasks submitted
-    during map operations.
-
-    Note that due to Python's Global Interpreter Lock (GIL), ThreadBackend provides limited
-    benefits for CPU-bound pure Python code. For CPU-bound tasks, consider using a process-based
-    backend (future feature) or ensure tasks release the GIL (e.g., NumPy operations, I/O,
-    C extensions).
-
-    Best Use Cases:
-    - Network requests (HTTP APIs, database queries)
-    - File I/O operations
-    - Tasks that block on external services
-    - Large fan-out operations with I/O-bound tasks
-
-    Args:
-        max_workers (int | None):
-            Maximum number of threads to run in this backend instance. Note that all
-            ThreadBackend instances share the same global pool, so this parameter only affects
-            number of chunks submitted during map operations.
-    """
+    """Executes in thread pool, returns pending futures."""
 
     def __init__(self, max_workers: int | None = None):
         self._max_workers = max_workers
 
     @override
-    def run_single(self, fn: Callable[..., T], kwargs: dict[str, Any]) -> T:
-        return fn(**kwargs)
+    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
+        executor = _get_global_thread_pool()
+        return executor.submit(fn, **kwargs)
 
     @override
-    def run_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[T]:
-        # NOTE:If max_workers is set, limits the number of concurrent tasks to that value,
-        # submitting new tasks as previous ones complete. Otherwise, submits all tasks
-        # at once (limited only by the global pool size).
-
+    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
         executor = _get_global_thread_pool()
-
         if self._max_workers is None:
-            futures = [executor.submit(fn, **kw) for kw in calls]
-            return [f.result() for f in futures]
+            return [executor.submit(fn, **kw) for kw in calls]
+        max_concurrent = min(self._max_workers, _get_global_thread_pool_size())
+        futures = _submit_many_limited(executor, fn, calls, max_concurrent)
+        return futures
 
-        # Limit concurrency to the smaller of:
-        # - User's requested max_workers
-        # - Global pool size (to avoid excessive queueing in the executor)
-        global_pool_size = _get_global_pool_size()
-        max_concurrent = min(self._max_workers, global_pool_size)
-        results: list[T | None] = [None] * len(calls)
-        futures_map: dict[Any, int] = {}  # future -> index in results
 
-        remaining = list(enumerate(calls))
-        in_flight: set[Any] = set()
+class ProcessBackend(Backend):
+    """Executes in process pool, returns pending futures."""
 
-        while remaining or in_flight:
-            # Submit new tasks up to the concurrency limit
-            while remaining and len(in_flight) < max_concurrent:
-                idx, kwargs = remaining.pop(0)
-                future = executor.submit(fn, **kwargs)
-                futures_map[future] = idx
-                in_flight.add(future)
+    def __init__(self, max_workers: int | None = None):
+        self._max_workers = max_workers
 
-            # Wait for at least one task to complete
-            if in_flight:
-                done = next(as_completed(in_flight))
-                idx = futures_map[done]
-                results[idx] = done.result()
-                in_flight.remove(done)
-                del futures_map[done]
+    @override
+    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
+        executor = _get_global_process_pool()
+        return executor.submit(fn, **kwargs)
 
-        return results  # type: ignore[return-value]
+    @override
+    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
+        executor = _get_global_process_pool()
+        if self._max_workers is None:
+            return [executor.submit(fn, **kw) for kw in calls]
+        max_concurrent = min(self._max_workers, _get_global_process_pool_size())
+        futures = _submit_many_limited(executor, fn, calls, max_concurrent)
+        return futures
+
+
+def _submit_many_limited(
+    executor: Executor,
+    fn: Callable[..., T],
+    calls: list[dict[str, Any]],
+    max_concurrent: int,
+) -> list[Future[T]]:
+    """Submit calls to executor with concurrency limit."""
+    # Pre-create all futures
+    futures: list[Future[T]] = [Future() for _ in calls]
+
+    remaining = list(enumerate(calls))
+    in_flight: dict[Future, int] = {}  # executor future -> output index
+
+    while remaining or in_flight:
+        # Submit up to limit
+        while remaining and len(in_flight) < max_concurrent:
+            idx, kwargs = remaining.pop(0)
+            exec_future = executor.submit(fn, **kwargs)
+            in_flight[exec_future] = idx
+
+        # Wait for one to complete
+        if in_flight:
+            done = next(as_completed(in_flight.keys()))
+            idx = in_flight.pop(done)
+
+            # Transfer result to output future
+            try:
+                result = done.result()
+                futures[idx].set_result(result)
+            except Exception as e:
+                futures[idx].set_exception(e)
+
+    return futures
