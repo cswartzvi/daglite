@@ -49,6 +49,8 @@ exclude_also = [
 fail_under = 0
 
 [tool.coverage.run]
+source = ["daglite", "tests"]
+omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
 
@@ -80,6 +82,7 @@ test-cov = "pytest --cov=daglite --cov-report=term-missing"
 [tool.pytest.ini_options]
 addopts = "-ra --verbose --strict-markers --strict-config --import-mode importlib"
 testpaths = ["tests"]
+markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
 # --- tool.ruff ---
 
