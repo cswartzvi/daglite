@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar, overlo
 from uuid import UUID
 from uuid import uuid4
 
+from daglite.exceptions import GraphConstructionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import GraphBuildContext
 from daglite.graph.base import GraphBuilder
@@ -114,7 +115,7 @@ def task(
 
 @dataclass(frozen=True)
 class BaseTask(abc.ABC, Generic[P, R]):
-    """Base class for all task futures, representing unevaluated task invocations."""
+    """Base class for all tasks, providing common functionality for task composition."""
 
     name: str
     """Name of the task."""
@@ -220,13 +221,13 @@ class Task(BaseTask[P, R]):
     func: Callable[P, R]
     """Task function to be wrapped into a Task."""
 
-    # NOTE: We should no define `__call__` in order to avoid confusing type checkers. We want
+    # NOTE: We should not define `__call__` in order to avoid confusing type checkers. We want
     # them to view this object as a `Task[P, R]` and not as a `Callable[P, R]` (which some type
     # checkers would do if we defined `__call__`).
 
     def fix(self, **kwargs: Any) -> "FixedParamTask[P, R]":
         """
-        Fix some parameters of this task, returning a `PartialTask`.
+        Fix some parameters of this task, returning a `FixedParamTask`.
 
         Args:
             **kwargs (Any):
@@ -254,18 +255,19 @@ class Task(BaseTask[P, R]):
 
     @override
     def extend(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not kwargs:
+        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
             raise ParameterError(
-                "extend() requires at least one sequence parameter. "
+                "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."
             )
         return self.fix().extend(**kwargs)
 
     @override
     def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not kwargs:
+        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
             raise ParameterError(
-                "zip() requires at least one sequence parameter. Use .bind() for scalar parameters."
+                "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
+                "Use .bind() for scalar parameters."
             )
         return self.fix().zip(**kwargs)
 
@@ -282,7 +284,7 @@ class FixedParamTask(BaseTask[P, R]):
     """The underlying task to be called."""
 
     fixed_kwargs: Mapping[str, Any]
-    """The parameters already bound in this PartialTask; can contain other TaskFutures."""
+    """The parameters already bound in this FixedParamTask; can contain other TaskFutures."""
 
     @override
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
@@ -291,7 +293,7 @@ class FixedParamTask(BaseTask[P, R]):
         for name, val in kwargs.items():
             if name in merged:
                 raise ParameterError(
-                    f"Parameter '{name}' is already bound in this PartialTask. "
+                    f"Parameter '{name}' is already bound in this FixedParamTask. "
                     f"Previously bound parameters: {list(self.fixed_kwargs.keys())}"
                 )
             merged[name] = val
@@ -299,17 +301,17 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not kwargs:
+        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
             raise ParameterError(
-                "extend() requires at least one sequence parameter. "
+                "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
                 "Use .bind() for scalar parameters."
             )
 
         invalid_params = self.fixed_kwargs.keys() & kwargs.keys()
         if invalid_params:
             raise ParameterError(
-                f"Cannot use extend() with already-bound parameters: {sorted(invalid_params)}. "
-                f"These parameters were bound in .partial(): {list(self.fixed_kwargs.keys())}"
+                f"Cannot use .extend() with already-bound parameters: {sorted(invalid_params)}. "
+                f"These parameters were bound in .fix(): {list(self.fixed_kwargs.keys())}"
             )
 
         return MapTaskFuture(
@@ -322,17 +324,17 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not kwargs:
+        if not all(isinstance(v, (Iterable, TaskFuture)) for v in kwargs.values()):
             raise ParameterError(
-                "`.zip()` requires at least one sequence parameter. Use `.bind()` for scalar "
-                "parameters."
+                "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
+                "Use .bind() for scalar parameters."
             )
 
         invalid_params = self.fixed_kwargs.keys() & kwargs.keys()
         if invalid_params:
             raise ParameterError(
-                f"Cannot use `.zip()` with already-bound parameters: {sorted(invalid_params)}. "
-                f"These parameters were bound in `.partial()`: {list(self.fixed_kwargs.keys())}"
+                f"Cannot use .zip() with already-bound parameters: {sorted(invalid_params)}. "
+                f"These parameters were bound in .fix(): {list(self.fixed_kwargs.keys())}"
             )
 
         return MapTaskFuture(
@@ -427,7 +429,7 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
     """
     Mapping of parameter names to fixed values applied to every call.
 
-    Note that fix parameters can be a combination of concrete values and TaskFutures.
+    Note that fixed parameters can be a combination of concrete values and TaskFutures.
     """
 
     mapped_kwargs: Mapping[str, Any]
@@ -449,6 +451,9 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
                 `Task` with exactly ONE parameter, or a `FixedParamTask` where one parameter
                 remains unbound.
 
+        Raises:
+            ParameterError: If the provided task does not have exactly one unbound parameter.
+
         Examples:
         Single-parameter task
         >>> @task
@@ -460,10 +465,7 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         >>> @task
         >>> def scale(x: int, factor: int) -> int:
         >>>     return x * factor
-        >>> results = numbers.map(scale.partial(factor=10))
-
-        Raises:
-            ParameterError: If task has multiple unbound parameters.
+        >>> results = numbers.map(scale.fix(factor=10))
         """
 
         if isinstance(mapped_task, FixedParamTask):
@@ -474,7 +476,7 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
             if len(unbound_params) != 1:
                 raise ParameterError(
                     f"FixedParamTask must have exactly ONE unbound parameter for .map(), "
-                    f"but has '{mapped_task.name}' {len(unbound_params)}: {unbound_params}. "
+                    f"but '{mapped_task.name}' has {len(unbound_params)}: {unbound_params}. "
                     f"Bound parameters: {list(bound_params)}"
                 )
             param_name = unbound_params[0]
@@ -489,8 +491,8 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
                 raise ParameterError(
                     f"Task '{mapped_task.name}' must have exactly ONE parameter for .map(), "
                     f"but has {len(params)}: {params}. "
-                    f"Use .partial() to fix some parameters first:\n"
-                    f"  results.map({mapped_task.name}.partial(param2=value, ...))"
+                    f"Use .fix() to fix some parameters first:\n"
+                    f"  results.map({mapped_task.name}.fix(param2=value, ...))"
                 )
             param_name = params[0]
             actual_task = mapped_task
@@ -513,6 +515,9 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
                 `Task` with exactly ONE parameter (the sequence), or a `FixedParamTask` with
                 one unbound parameter.
 
+        Raises:
+            ParameterError: If the provided task does not have exactly one unbound parameter.
+
         Examples:
             # Simple reducer
             >>> @task
@@ -524,7 +529,7 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
             >>> @task
             >>> def weighted_sum(xs: list[int], weight: float) -> float:
             >>>    return sum(xs) * weight
-            >>> total = numbers.join(weighted_sum.partial(weight=0.5))
+            >>> total = numbers.join(weighted_sum.fix(weight=0.5))
         """
 
         if isinstance(reducer_task, FixedParamTask):
@@ -550,8 +555,8 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
                 raise ParameterError(
                     f"Task '{reducer_task.name}' must have exactly ONE parameter for .join(), "
                     f"but has {len(params)}: {params}. "
-                    f"Use .partial() to fix some parameters first:\n"
-                    f"  total = numbers.join({reducer_task.name}.partial(param2=value, ...))"
+                    f"Use .fix() to fix some parameters first:\n"
+                    f"  total = numbers.join({reducer_task.name}.fix(param2=value, ...))"
                 )
             param_name = params[0]
             actual_task = reducer_task
@@ -569,6 +574,9 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
     @override
     def to_graph(self, ctx: GraphBuildContext, visit: GraphBuildVisiter) -> MapTaskNode:
         from daglite.graph.nodes import MapTaskNode
+
+        if self.mode not in {"extend", "zip"}:
+            raise GraphConstructionError(f"Invalid MapTaskFuture mode: '{self.mode}'")
 
         fixed_kwargs: dict[str, ParamInput] = {}
         mapped_kwargs: dict[str, ParamInput] = {}
