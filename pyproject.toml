@@ -12,11 +12,19 @@ description = "Lightweight Python framework for building static DAGs with explic
 dynamic = ["version"]
 requires-python = ">=3.12"
 readme = "README.md"
-dependencies = []
+dependencies = [
+    "typing-extensions>=4.15.0",
+]
 
 [dependency-groups]
 dev = ["mypy", "nox", "poethepoet", "pre-commit", "ruff"]
-test = ["pytest", "pytest-cov", "pytest-mock"]
+test = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pyrefly",
+    "pyright>=1.1.407",
+]
 repl = ["ipython"]
 notebook = ["ipykernel"]
 
