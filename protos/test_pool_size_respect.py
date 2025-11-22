@@ -50,7 +50,7 @@ def test_respects_pool_size():
     calls = [{"x": i, "delay": 0.1} for i in range(20)]
 
     start = time.time()
-    results = backend.run_many(track_concurrency.fn, calls)
+    results = backend.run_many(track_concurrency.func, calls)
     elapsed = time.time() - start
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
@@ -87,7 +87,7 @@ def test_smaller_request_still_works():
     calls = [{"x": i, "delay": 0.1} for i in range(10)]
 
     start = time.time()
-    results = backend.run_many(track_concurrency.fn, calls)
+    results = backend.run_many(track_concurrency.func, calls)
     elapsed = time.time() - start
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")

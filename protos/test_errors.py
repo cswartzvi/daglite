@@ -25,7 +25,7 @@ except ParameterError as e:
 # Test 2: Duplicate parameter in PartialTask
 print("2. Testing duplicate parameter error:")
 try:
-    partial = process.partial(x=5)
+    partial = process.fix(x=5)
     result = partial.bind(x=10)  # x already bound
 except ParameterError as e:
     print(f"✓ Caught ParameterError: {e}\n")

@@ -40,7 +40,7 @@ def test_cycle_detection():
             return TaskNode(
                 id=self.id,
                 task=identity,
-                params={"x": ParamInput(kind="value", value=42)},
+                kwargs={"x": ParamInput(kind="value", value=42)},
                 backend=None,
             )
 

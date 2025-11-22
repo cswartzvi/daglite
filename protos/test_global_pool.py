@@ -48,7 +48,7 @@ def test_settings_integration():
 
     # Create a map operation that will use multiple threads
     numbers = list(range(10))
-    future = get_thread_id.partial(x=0).extend(x=numbers)
+    future = get_thread_id.fix(x=0).extend(x=numbers)
 
     start = time.time()
     results = evaluate(future)

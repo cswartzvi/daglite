@@ -4,14 +4,14 @@ from daglite import evaluate
 from daglite import task
 
 
-@task
+@task(backend="threading")
 def left() -> str:
     print("Starting left task...")
     time.sleep(1)
     return "left"
 
 
-@task
+@task(backend="threading")
 def right() -> str:
     print("Starting right task...")
     time.sleep(1)

@@ -24,8 +24,6 @@ def length(info: dict) -> int:
     print("[length] computing length")
     return info["length"]
 
-
-# Straight-line DAG wiring with .bind
 raw = download.bind(url="https://example.com")
 info = parse.bind(raw=raw)
 length_val = length.bind(info=info)

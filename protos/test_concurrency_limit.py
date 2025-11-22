@@ -49,7 +49,7 @@ def test_no_limit():
     calls = [{"x": i, "delay": 0.1} for i in range(10)]
 
     start = time.time()
-    results = backend.run_many(track_concurrency.fn, calls)
+    results = backend.run_many(track_concurrency.func, calls)
     elapsed = time.time() - start
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
@@ -78,7 +78,7 @@ def test_with_limit():
     calls = [{"x": i, "delay": 0.1} for i in range(10)]
 
     start = time.time()
-    results = backend.run_many(track_concurrency.fn, calls)
+    results = backend.run_many(track_concurrency.func, calls)
     elapsed = time.time() - start
 
     print(f"Processed {len(results)} tasks in {elapsed:.2f}s")
@@ -105,7 +105,7 @@ def test_timing_difference():
     calls = [{"x": i, "delay": 0.1} for i in range(10)]
 
     start = time.time()
-    backend_unlimited.run_many(track_concurrency.fn, calls)
+    backend_unlimited.run_many(track_concurrency.func, calls)
     time_unlimited = time.time() - start
     print(f"Unlimited: {time_unlimited:.2f}s (max concurrent: {max_concurrent})")
 
@@ -115,7 +115,7 @@ def test_timing_difference():
     backend_limited = ThreadBackend(max_workers=2)
 
     start = time.time()
-    backend_limited.run_many(track_concurrency.fn, calls)
+    backend_limited.run_many(track_concurrency.func, calls)
     time_limited = time.time() - start
     print(f"Limited to 2: {time_limited:.2f}s (max concurrent: {max_concurrent})")
 
