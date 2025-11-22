@@ -493,14 +493,21 @@ class TaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
     def to_graph(self, ctx: GraphBuildContext, visit: GraphBuildVisiter) -> TaskNode:
         from daglite.graph.nodes import TaskNode
 
-        params: dict[str, ParamInput] = {}
+        kwargs: dict[str, ParamInput] = {}
         for name, value in self.kwargs.items():
             if isinstance(value, BaseTaskFuture):
                 ref_id = visit(value)  # type: ignore[arg-type]
-                params[name] = ParamInput.from_ref(ref_id)
+                kwargs[name] = ParamInput.from_ref(ref_id)
             else:
-                params[name] = ParamInput.from_value(value)
-        return TaskNode(id=self.id, task=self.task, params=params, backend=self.backend)
+                kwargs[name] = ParamInput.from_value(value)
+        return TaskNode(
+            id=self.id,
+            name=self.task.name,
+            description=self.task.description,
+            func=self.task.fn,
+            kwargs=kwargs,
+            backend=self.backend,
+        )
 
 
 @dataclass(frozen=True)
@@ -649,7 +656,9 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
 
         return MapTaskNode(
             id=self.id,
-            task=self.task,
+            name=self.task.name,
+            description=self.task.description,
+            func=self.task.fn,
             mode=self.mode,
             fixed_kwargs=fixed_kwargs,
             mapped_kwargs=mapped_kwargs,

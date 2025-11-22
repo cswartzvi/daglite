@@ -2,8 +2,8 @@
 Contains base classes and protocols for graph Intermediate Representation (IR).
 
 Note that the graph IR is considered an internal implementation detail and is not part of the
-public API. Therefore, the interfaces defined here use non-generic protocols for maximum
-flexibility.
+public API. Therefore, the interfaces defined here use non-generic base classes and/or protocols
+for maximum flexibility.
 """
 
 from __future__ import annotations
@@ -25,14 +25,21 @@ ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "choose", "loop", "artifact"]
 
 
-class GraphNode(Protocol):
+@dataclass(frozen=True)
+class GraphNode(abc.ABC):
     """Represents a node in the compiled graph Intermediate Representation (IR)."""
 
     id: UUID
     """Unique identifier for this node."""
 
+    name: str
+    """Human-readable name for this node."""
+
+    description: str | None
+    """Optional human-readable description for this node."""
+
     backend: str | Backend | None
-    """Backend name or instance for this node, if any."""
+    """Optional backend name or instance for this node."""
 
     @cached_property
     @abc.abstractmethod
@@ -126,7 +133,6 @@ class ParamInput:
         """Returns `True` if this input is a reference to another node's output."""
         return self.kind in ("ref", "sequence_ref")
 
-    # scalar resolution
     def resolve(self, values: Mapping[UUID, Any]) -> Any:
         """
         Resolves this input to a scalar value.
@@ -150,7 +156,6 @@ class ParamInput:
             f"This may indicate an internal error in graph construction."
         )
 
-    # sequence resolution
     def resolve_sequence(self, values: Mapping[UUID, Any]) -> Sequence[Any]:
         """
         Resolves this input to a sequence value.
@@ -174,7 +179,6 @@ class ParamInput:
             f"This may indicate an internal error in graph construction."
         )
 
-    # constructors
     @classmethod
     def from_value(cls, v: Any) -> ParamInput:
         """Creates a ParamInput from a concrete value."""

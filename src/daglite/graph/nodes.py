@@ -3,34 +3,26 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, TypeVar, override
+from typing import Any, Callable, TypeVar, override
 from uuid import UUID
 
 from daglite.engine import Backend
 from daglite.graph.base import GraphNode
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
-from daglite.tasks import Task
 
 T_co = TypeVar("T_co", covariant=True)
 
 
 @dataclass(frozen=True)
 class TaskNode(GraphNode):
-    """
-    Task node representation for graph IR.
+    """Basic function task node representation within the graph IR."""
 
-    Attributes:
-        id (UUID): Unique identifier for the task node.
-        task (daglite.tasks.Task[Any, T_co]): Task associated with this node.
-        params (Mapping[str, ParamInput]): Parameters for the task, as ParamInputs.
-        backend (str | Backend | None): Backend name or instance for this node, if any.
-    """
+    func: Callable
+    """Function to be executed for this task node."""
 
-    id: UUID
-    task: Task[Any, Any]
-    params: Mapping[str, ParamInput]
-    backend: str | Backend | None
+    kwargs: Mapping[str, ParamInput]
+    """Keyword parameters for the task function."""
 
     @cached_property
     @override
@@ -39,38 +31,33 @@ class TaskNode(GraphNode):
 
     @override
     def inputs(self) -> list[tuple[str, ParamInput]]:
-        return list(self.params.items())
+        return list(self.kwargs.items())
 
     @override
     def deps(self) -> set[UUID]:
-        return {p.ref for p in self.params.values() if p.is_ref and p.ref is not None}
+        return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
 
     @override
     def run(self, backend: Backend, values: Mapping[UUID, Any]) -> Any:
-        kwargs = {name: p.resolve(values) for name, p in self.params.items()}
-        return backend.run_single(self.task.fn, kwargs)
+        kwargs = {name: p.resolve(values) for name, p in self.kwargs.items()}
+        return backend.run_single(self.func, kwargs)
 
 
 @dataclass(frozen=True)
 class MapTaskNode(GraphNode):
-    """
-    Map task node representation for graph IR.
+    """Map function task node representation within the graph IR."""
 
-    Attributes:
-        id (UUID): Unique identifier for the map task node.
-        task (daglite.tasks.Task[Any, T_co]): Task to be mapped.
-        mode (str): Mapping mode, either "extend" or "zip".
-        fixed_kwargs (Mapping[str, ParamInput]): Fixed parameters for the task, as ParamInputs.
-        mapped_kwargs (Mapping[str, ParamInput]): Mapped parameters for the task., as ParamInputs.
-        backend (str | Backend, optional): Backend name or instance for this node, if any.
-    """
+    func: Callable
+    """Function to be executed for each map iteration."""
 
-    id: UUID
-    task: Task[Any, Any]
     mode: str
+    """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
+
     fixed_kwargs: Mapping[str, ParamInput]
+    """Fixed keyword arguments for the mapped function."""
+
     mapped_kwargs: Mapping[str, ParamInput]
-    backend: str | Backend | None
+    """Mapped keyword arguments for the mapped function."""
 
     @cached_property
     @override
@@ -134,4 +121,4 @@ class MapTaskNode(GraphNode):
                 f"This indicates an internal error in graph construction."
             )
 
-        return backend.run_many(self.task.fn, calls)
+        return backend.run_many(self.func, calls)
