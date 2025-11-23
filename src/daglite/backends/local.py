@@ -29,19 +29,19 @@ def _get_global_thread_pool() -> ThreadPoolExecutor:
 def _get_global_process_pool() -> ProcessPoolExecutor:
     global _GLOBAL_PROCESS_POOL
     if _GLOBAL_PROCESS_POOL is None:
+        import multiprocessing as mp
+        from multiprocessing.context import BaseContext
+
         settings = get_global_settings()
         max_workers = settings.max_parallel_processes
         # Use 'spawn' on Windows (required) and macOS (fork deprecated)
-        # Use fork on Linux (default, avoids import issues with pytest)
+        # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
+        mp_context: BaseContext
         if os.name == "nt" or sys.platform == "darwin":
-            import multiprocessing as mp
-
-            ctx = mp.get_context("spawn")
-            _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(
-                max_workers=max_workers, mp_context=ctx
-            )
+            mp_context = mp.get_context("spawn")
         else:
-            _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers)
+            mp_context = mp.get_context("fork")
+        _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers, mp_context=mp_context)
     return _GLOBAL_PROCESS_POOL
 
 
