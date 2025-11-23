@@ -97,6 +97,9 @@ def task(
     def decorator(fn: Callable[P, R]) -> Task[P, R]:
         from daglite.backends import find_backend
 
+        if inspect.isclass(fn) or not callable(fn):
+            raise TypeError("`@task` can only be applied to callable functions.")
+
         return Task(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
