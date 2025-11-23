@@ -146,12 +146,12 @@ class Engine:
         return self._backend_cache[backend_key]
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """Sequential execution - block on futures."""
+        """Sequential blocking execution."""
         indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
         successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
         for nid, node in nodes.items():
-            for dep in node.deps():
+            for dep in node.dependencies():
                 indegree[nid] += 1
                 successors.setdefault(dep, set()).add(nid)
 
@@ -190,7 +190,7 @@ class Engine:
         successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
         for nid, node in nodes.items():
-            for dep in node.deps():
+            for dep in node.dependencies():
                 indegree[nid] += 1
                 successors.setdefault(dep, set()).add(nid)
 

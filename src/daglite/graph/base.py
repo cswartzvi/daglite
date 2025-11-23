@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
 from daglite.exceptions import ExecutionError
@@ -60,7 +60,7 @@ class GraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def deps(self) -> set[UUID]:
+    def dependencies(self) -> set[UUID]:
         """
         IDs of nodes that the current node depends on (its direct predecessors).
 

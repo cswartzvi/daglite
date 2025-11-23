@@ -35,7 +35,7 @@ class TaskNode(GraphNode):
         return list(self.kwargs.items())
 
     @override
-    def deps(self) -> set[UUID]:
+    def dependencies(self) -> set[UUID]:
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
 
     @override
@@ -71,7 +71,7 @@ class MapTaskNode(GraphNode):
         return [*self.fixed_kwargs.items(), *self.mapped_kwargs.items()]
 
     @override
-    def deps(self) -> set[UUID]:
+    def dependencies(self) -> set[UUID]:
         out: set[UUID] = set()
         # Add fixed and mapped kwargs refs
         for p in self.fixed_kwargs.values():
