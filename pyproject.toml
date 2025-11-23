@@ -80,7 +80,7 @@ test-cov = "pytest --cov=daglite --cov-report=term-missing"
 # --- tool.pytest ---
 
 [tool.pytest.ini_options]
-addopts = "-ra --verbose --strict-markers --strict-config --import-mode importlib"
+addopts = "-ra --strict-markers --strict-config --import-mode importlib"
 testpaths = ["tests"]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 
