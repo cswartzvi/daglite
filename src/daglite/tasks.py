@@ -327,12 +327,14 @@ class FixedParamTask(BaseTask[P, R]):
                 f"(use `.fix()` to set scalar parameters): {missing_map_params}"
             )
 
-        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
+        merged = {**self.fixed_kwargs, **kwargs}
+
+        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
             raise ParameterError(
                 f"Invalid parameters for task '{self.name}' in `.extend()`: {invalid_params}"
             )
 
-        if missing_params := _find_missing_parameters(signature.parameters, kwargs):
+        if missing_params := _find_missing_parameters(signature.parameters, merged):
             raise ParameterError(
                 f"Missing parameters for task '{self.name}' in `.extend()`: {missing_params}"
             )
@@ -362,12 +364,14 @@ class FixedParamTask(BaseTask[P, R]):
                 f"(use `.fix()` to set scalar parameters): {missing_map_params}"
             )
 
-        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
+        merged = {**self.fixed_kwargs, **kwargs}
+
+        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
             raise ParameterError(
                 f"Invalid parameters for task '{self.name}' in `.zip()`: {invalid_params}"
             )
 
-        if missing_params := _find_missing_parameters(signature.parameters, kwargs):
+        if missing_params := _find_missing_parameters(signature.parameters, merged):
             raise ParameterError(
                 f"Missing parameters for task '{self.name}' in `.zip()`: {missing_params}"
             )
