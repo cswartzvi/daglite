@@ -5,7 +5,6 @@ from daglite import task
 class TestSinglePathExecution:
     """Tests engine evaluation of single path tasks."""
 
-
     def test_single_task_evaluation_empty(self) -> None:
         """Evaluation succeeds for tasks without parameters."""
 
@@ -161,4 +160,345 @@ class TestSinglePathExecution:
         result_chain = evaluate(current)
 
         assert result_chain == 2 * (2**chain_depth)
+
+
+class TestMultiPathEvaluation:
+    """Tests engine evaluation of multi-path tasks."""
+
+    def test_task_extend_evaluation_single_parameter(self) -> None:
+        """Evaluation succeeds for single parameter task with extend (fan-out) behavior."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        multiplied_seq = double.extend(x=[1, 2, 3])
+        result = evaluate(multiplied_seq)
+        assert result == [2, 4, 6]
+
+    def test_task_extend_evaluation_multiple_parameters(self) -> None:
+        """Evaluation succeeds for multiple parameter task with extend (fan-out) behavior."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        added_seq = add.extend(x=[1, 2, 3], y=[10, 20, 30])
+        result = evaluate(added_seq)
+        assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]  # Cartesian product
+
+    def test_mixed_extend_with_fixed_parameters(self) -> None:
+        """Evaluation succeeds for extend tasks with some fixed parameters."""
+
+        @task
+        def power(base: int, exponent: int) -> int:
+            return base**exponent
+
+        fixed_power = power.fix(exponent=2)
+        powered_seq = fixed_power.extend(base=[1, 2, 3, 4])
+        result = evaluate(powered_seq)
+        assert result == [1, 4, 9, 16]  # Squares of 1, 2, 3, 4
+
+    def test_task_extend_evaluation_with_map(self) -> None:
+        """Evaluation succeeds for extend tasks with mapping behavior."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        @task
+        def triple(x: int) -> int:
+            return x * 3
+
+        doubled = double.extend(x=[1, 2, 3])
+        tripled = doubled.map(triple)
+        result = evaluate(tripled)
+        assert result == [6, 12, 18]  # = [2*3, 4*3, 6*3]
+
+    def test_task_extend_evaluation_with_fix_and_map(self) -> None:
+        """Evaluation succeeds for extend tasks with both fixed parameters and mapping."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def square(z: int) -> int:
+            return z**2
+
+        fixed_add = add.fix(y=5)
+        added_seq = fixed_add.extend(x=[1, 2, 3])
+        squared_seq = added_seq.map(square)
+        result = evaluate(squared_seq)
+        assert result == [36, 49, 64]  # = [(1+5)^2, (2+5)^2, (3+5)^2]
+
+    def test_task_extend_with_join(self) -> None:
+        """Evaluation succeeds for extend followed by join (fan-out then fan-in)."""
+
+        @task
+        def square(x: int) -> int:
+            return x**2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        squared_seq = square.extend(x=[1, 2, 3, 4])
+        total = squared_seq.join(sum_all)
+        result = evaluate(total)
+        assert result == 30  # 1 + 4 + 9 + 16
+
+    def test_task_extend_with_map_and_join(self) -> None:
+        """Evaluation succeeds for extend with map then join (fan-out, transform, fan-in)."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def triple(z: int) -> int:
+            return z * 3
+
+        @task
+        def max_value(values: list[int]) -> int:
+            return max(values)
+
+        added_seq = add.extend(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        tripled_seq = added_seq.map(triple)  # [33, 63, 36, 66]
+        maximum = tripled_seq.join(max_value)
+        result = evaluate(maximum)
+        assert result == 66
+
+    def test_nested_task_extend_evaluation(self) -> None:
+        """Evaluation succeeds for nested extend tasks."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(z: int, factor: int) -> int:
+            return z * factor
+
+        added_seq = add.extend(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        multiplied_seq = multiply.extend(z=added_seq, factor=[2, 3])  # Cartesian product
+        result = evaluate(multiplied_seq)
+        assert result == [22, 33, 42, 63, 24, 36, 44, 66]
+
+    def test_task_extend_with_empty_sequence(self) -> None:
+        """Evaluation succeeds for extend with empty sequence."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        doubled_seq = double.extend(x=[])
+        result = evaluate(doubled_seq)
+        assert result == []
+
+    def test_task_extend_with_single_element(self) -> None:
+        """Evaluation succeeds for extend with single element sequence."""
+
+        @task
+        def triple(x: int) -> int:
+            return x * 3
+
+        tripled_seq = triple.extend(x=[5])
+        result = evaluate(tripled_seq)
+        assert result == [15]
+
+    def test_task_extend_with_future_input(self) -> None:
+        """Evaluation succeeds for extend with TaskFuture as input."""
+
+        @task
+        def generate_range() -> list[int]:
+            return [1, 2, 3]
+
+        @task
+        def square(x: int) -> int:
+            return x**2
+
+        range_future = generate_range.bind()
+        squared_seq = square.extend(x=range_future)
+        result = evaluate(squared_seq)
+        assert result == [1, 4, 9]
+
+    def test_task_zip_evaluation_single_parameter(self) -> None:
+        """Evaluation succeeds for single parameter task with zip (aligned sequences)."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        doubled_seq = double.zip(x=[1, 2, 3])
+        result = evaluate(doubled_seq)
+        assert result == [2, 4, 6]
+
+    def test_task_zip_evaluation_multiple_parameters(self) -> None:
+        """Evaluation succeeds for multiple parameter task with zip (aligned sequences)."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+        result = evaluate(added_seq)
+        assert result == [11, 22, 33]  # Aligned: (1,10), (2,20), (3,30)
+
+    def test_task_zip_with_three_parameters(self) -> None:
+        """Evaluation succeeds for zip with three aligned sequences."""
+
+        @task
+        def sum_three(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        summed_seq = sum_three.zip(x=[1, 2], y=[10, 20], z=[100, 200])
+        result = evaluate(summed_seq)
+        assert result == [111, 222]  # (1+10+100), (2+20+200)
+
+    def test_task_zip_with_fixed_parameters(self) -> None:
+        """Evaluation succeeds for zip tasks with some fixed parameters."""
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        fixed_multiply = multiply.fix(factor=10)
+        multiplied_seq = fixed_multiply.zip(x=[1, 2, 3])
+        result = evaluate(multiplied_seq)
+        assert result == [10, 20, 30]
+
+    def test_task_zip_evaluation_with_map(self) -> None:
+        """Evaluation succeeds for zip tasks with mapping behavior."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def square(z: int) -> int:
+            return z**2
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+        squared_seq = added_seq.map(square)
+        result = evaluate(squared_seq)
+        assert result == [121, 484, 1089]  # = [11^2, 22^2, 33^2]
+
+    def test_task_zip_evaluation_with_fix_and_map(self) -> None:
+        """Evaluation succeeds for zip tasks with both fixed parameters and mapping."""
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        @task
+        def double(z: int) -> int:
+            return z * 2
+
+        fixed_multiply = multiply.fix(factor=3)
+        multiplied_seq = fixed_multiply.zip(x=[2, 4, 6])
+        doubled_seq = multiplied_seq.map(double)
+        result = evaluate(doubled_seq)
+        assert result == [12, 24, 36]  # = [(2*3)*2, (4*3)*2, (6*3)*2]
+
+    def test_task_zip_with_join(self) -> None:
+        """Evaluation succeeds for zip followed by join (fan-out then fan-in)."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def product_all(values: list[int]) -> int:
+            result = 1
+            for v in values:
+                result *= v
+            return result
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+        product = added_seq.join(product_all)
+        result = evaluate(product)
+        assert result == 7986  # 11 * 22 * 33
+
+    def test_task_zip_with_map_and_join(self) -> None:
+        """Evaluation succeeds for zip with map then join (fan-out, transform, fan-in)."""
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        @task
+        def increment(z: int) -> int:
+            return z + 1
+
+        @task
+        def min_value(values: list[int]) -> int:
+            return min(values)
+
+        multiplied_seq = multiply.zip(x=[2, 3, 4], y=[5, 6, 7])  # [10, 18, 28]
+        incremented_seq = multiplied_seq.map(increment)  # [11, 19, 29]
+        minimum = incremented_seq.join(min_value)
+        result = evaluate(minimum)
+        assert result == 11
+
+    def test_task_zip_with_future_input(self) -> None:
+        """Evaluation succeeds for zip with TaskFuture as input."""
+
+        @task
+        def generate_values() -> list[int]:
+            return [5, 10, 15]
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        values_future = generate_values.bind()
+        multiplied_seq = multiply.zip(x=values_future, y=[2, 3, 4])
+        result = evaluate(multiplied_seq)
+        assert result == [10, 30, 60]  # (5*2), (10*3), (15*4)
+
+    def test_nested_task_zip_evaluation(self) -> None:
+        """Evaluation succeeds for nested zip tasks."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(z: int, factor: int) -> int:
+            return z * factor
+
+        added_seq = add.zip(x=[1, 2], y=[10, 20])  # [11, 22]
+        multiplied_seq = multiply.zip(z=added_seq, factor=[2, 3])  # [22, 66]
+        result = evaluate(multiplied_seq)
+        assert result == [22, 66]  # (11*2), (22*3)
+
+    def test_task_zip_with_empty_sequence(self) -> None:
+        """Evaluation succeeds for zip with empty sequence."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        added_seq = add.zip(x=[], y=[])
+        result = evaluate(added_seq)
+        assert result == []
+
+    def test_mixed_extend_and_zip_with_join(self) -> None:
+        """Evaluation succeeds combining extend, zip, and join operations."""
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        # Fan-out with extend
+        multiplied_seq = multiply.extend(x=[1, 2], y=[10, 20])  # [10, 20, 20, 40]
+        # Fan-in with join
+        total = multiplied_seq.join(sum_all)
+        result = evaluate(total)
+        assert result == 90  # 10 + 20 + 20 + 40
 
