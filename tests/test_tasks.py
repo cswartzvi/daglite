@@ -18,7 +18,7 @@ class TestTaskValidDefinitions:
     """
 
     def test_task_decorator_with_defaults(self) -> None:
-        """@task decorator creates a Task subclass."""
+        """Decorating a function without parameters uses sensible defaults."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -32,7 +32,7 @@ class TestTaskValidDefinitions:
         assert add.func(1, 2) == 3
 
     def test_task_decorator_with_params(self) -> None:
-        """@task decorator with parameters creates Task subclass."""
+        """Decorator accepts custom name, description, and backend configuration."""
 
         @task(name="custom_add", description="Custom addition task", backend=ThreadBackend())
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -44,7 +44,7 @@ class TestTaskValidDefinitions:
         assert isinstance(add.backend, ThreadBackend)
 
     def test_fixed_param_task(self) -> None:
-        """FixedParamTask creates a task with fixed parameters."""
+        """Fixing parameters creates a partially bound task."""
 
         @task
         def multiply(x: int, y: int) -> int:
@@ -58,7 +58,7 @@ class TestTaskValidDefinitions:
         assert fixed_task.task.func(2, 5) == 10
 
     def test_fixed_param_task_with_params(self) -> None:
-        """FixedParamTask with parameters."""
+        """Fixing parameters preserves task metadata."""
 
         @task(name="multiply_task", description="Multiplication task")
         def multiply(x: int, y: int) -> int:
@@ -73,7 +73,7 @@ class TestTaskValidDefinitions:
         assert fixed_task.task.func(3, 10) == 30
 
     def test_task_with_options(self) -> None:
-        """Task created with options."""
+        """Task metadata can be updated after creation."""
 
         @task
         def power(base: int, exponent: int) -> int:
@@ -99,7 +99,7 @@ class TestTaskInvalidDefinitions:
     """
 
     def test_task_decorator_with_non_callable(self) -> None:
-        """@task decorator raises TypeError for non-callable."""
+        """Decorator rejects non-callable objects."""
 
         with pytest.raises(TypeError, match="can only be applied to callable functions"):
 
@@ -108,7 +108,7 @@ class TestTaskInvalidDefinitions:
                 pass
 
     def test_task_bind_with_invalid_params(self) -> None:
-        """.bind() raises ParameterError for invalid parameter types."""
+        """Binding fails when given parameters that don't exist."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
@@ -119,7 +119,7 @@ class TestTaskInvalidDefinitions:
             subtract.bind(z=10)
 
     def test_task_bind_with_missing_params(self) -> None:
-        """.bind() raises ParameterError for missing required parameters."""
+        """Binding fails when required parameters are omitted."""
 
         @task
         def power(base: int, exponent: int) -> int:  # pragma: no cover
@@ -130,7 +130,7 @@ class TestTaskInvalidDefinitions:
             power.bind(base=2)
 
     def test_task_bind_with_overlapping_params(self) -> None:
-        """.bind() raises ParameterError for overlapping parameters."""
+        """Binding fails when attempting to rebind already-fixed parameters."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
@@ -143,7 +143,7 @@ class TestTaskInvalidDefinitions:
             fixed.bind(x=5, y=10)
 
     def test_task_fix_with_invalid_params(self) -> None:
-        """.fix() raises TypeError for invalid parameter types."""
+        """Fixing fails when given parameters that don't exist."""
 
         @task
         def divide(x: int, y: int) -> float:  # pragma: no cover
@@ -154,7 +154,7 @@ class TestTaskInvalidDefinitions:
             divide.fix(z=5)
 
     def test_task_extend_with_non_iterable_params(self) -> None:
-        """.extend() raises ParameterError for overlapping parameters."""
+        """Cartesian product operations require iterable parameters."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -165,7 +165,7 @@ class TestTaskInvalidDefinitions:
             add.extend(y=20, z=5)
 
     def test_task_extend_with_overlapping_params(self) -> None:
-        """.extend() raises ParameterError for overlapping parameters."""
+        """Cartesian product fails when attempting to rebind fixed parameters."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
@@ -178,7 +178,7 @@ class TestTaskInvalidDefinitions:
             fixed.extend(y=[1, 2, 3], x=[4, 5, 6])
 
     def test_task_extend_invalid_params(self) -> None:
-        """FixedParamTask raises ParameterError for invalid fixed parameters."""
+        """Cartesian product fails when given parameters that don't exist."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
@@ -189,7 +189,7 @@ class TestTaskInvalidDefinitions:
             subtract.extend(z=[10, 2, 3])
 
     def test_task_extend_missing_params(self) -> None:
-        """FixedParamTask raises ParameterError for missing fixed parameters."""
+        """Cartesian product fails when required parameters are omitted."""
 
         @task
         def power(base: int, exponent: int) -> int:  # pragma: no cover
@@ -202,7 +202,7 @@ class TestTaskInvalidDefinitions:
             fixed.extend()
 
     def test_task_zip_with_non_iterable_params(self) -> None:
-        """.zip() raises ParameterError for non-iterable parameters."""
+        """Pairwise operations require iterable parameters."""
 
         @task
         def divide(x: int, y: int) -> float:  # pragma: no cover
@@ -213,7 +213,7 @@ class TestTaskInvalidDefinitions:
             divide.zip(x=10, y=5)
 
     def test_task_zip_with_overlapping_params(self) -> None:
-        """.zip() raises ParameterError for overlapping parameters."""
+        """Pairwise operations fail when attempting to rebind fixed parameters."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -226,7 +226,7 @@ class TestTaskInvalidDefinitions:
             fixed.zip(y=[3, 4, 5], x=[1, 2, 3])
 
     def test_task_zip_invalid_params(self) -> None:
-        """FixedParamTask raises ParameterError for invalid fixed parameters."""
+        """Pairwise operations fail when given parameters that don't exist."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
@@ -237,7 +237,7 @@ class TestTaskInvalidDefinitions:
             multiply.zip(z=[10, 2, 3])
 
     def test_task_zip_missing_params(self) -> None:
-        """FixedParamTask raises ParameterError for missing fixed parameters."""
+        """Pairwise operations fail when required parameters are omitted."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
@@ -250,7 +250,7 @@ class TestTaskInvalidDefinitions:
             fixed.zip()
 
     def test_task_map_wiht_invalid_signature(self) -> None:
-        """.map() raises ParameterError for invalid parameter types."""
+        """Mapping over results requires a single-parameter function."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
@@ -266,7 +266,7 @@ class TestTaskInvalidDefinitions:
             prepared.map(mapping)
 
     def test_fixed_task_map_with_invalid_signature(self) -> None:
-        """.map() on FixedParamTask raises ParameterError for invalid parameter types."""
+        """Mapping with partially bound tasks requires exactly one unbound parameter."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
@@ -283,7 +283,7 @@ class TestTaskInvalidDefinitions:
             prepared.map(fixed_mapping)
 
     def test_task_join_with_invalid_signature(self) -> None:
-        """.join() raises ParameterError for invalid parameter types."""
+        """Reducing results requires a single-parameter function."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
@@ -304,7 +304,7 @@ class TestTaskInvalidDefinitions:
             mapped.join(joining)
 
     def test_fixed_task_join_with_invalid_signature(self) -> None:
-        """.join() on FixedParamTask raises ParameterError for invalid parameter types."""
+        """Reducing with partially bound tasks requires exactly one unbound parameter."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
@@ -330,7 +330,7 @@ class TestBaseTaskFuture:
     """Test core BaseTaskFuture behavior."""
 
     def test_futures_have_unique_ids(self) -> None:
-        """BaseTaskFuture instances have unique IDs."""
+        """Each future receives a unique identifier."""
 
         def add(x: int, y: int) -> int:
             return x + y
@@ -341,7 +341,7 @@ class TestBaseTaskFuture:
         assert future1.id != future2.id
 
     def test_future_len_raises_type_error(self) -> None:
-        """BaseTaskFuture.__len__() raises TypeError."""
+        """Unevaluated futures prevent accidental length operations."""
 
         def multiply(x: int, y: int) -> int:
             return x * y
@@ -352,7 +352,7 @@ class TestBaseTaskFuture:
             len(future)
 
     def test_future_bool_raises_type_error(self) -> None:
-        """BaseTaskFuture.__bool__() raises TypeError."""
+        """Unevaluated futures prevent accidental boolean operations."""
 
         def divide(x: int, y: int) -> float:
             return x / y
