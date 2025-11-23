@@ -4,6 +4,7 @@ import abc
 import inspect
 from collections.abc import Callable
 from collections.abc import Iterable
+from collections.abc import KeysView
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import fields
@@ -100,7 +101,7 @@ def task(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
             description=description if description is not None else getattr(fn, "__doc__", ""),
-            backend=backend if isinstance(backend, Backend) else find_backend(backend),
+            backend=find_backend(backend),
         )
 
     if func is not None:
@@ -241,6 +242,12 @@ class Task(BaseTask[P, R]):
         >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
         >>> branch2 = base.extend(x=[1, 2, 3, 4])  # MapTaskFuture[int]
         """
+        signature = inspect.signature(self.func)
+        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Invalid parameters for task '{self.name}' in `.fix()`: {invalid_params}"
+            )
+
         return FixedParamTask(
             name=self.name,
             description=self.description,
@@ -251,24 +258,17 @@ class Task(BaseTask[P, R]):
 
     @override
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
-        return TaskFuture(task=self, kwargs=dict(kwargs), backend=self.backend)
+        # NOTE: All validation is done in FixedParamTask.bind()
+        return self.fix().bind(**kwargs)
 
     @override
     def extend(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
-            raise ParameterError(
-                "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
-                "Use .bind() for scalar parameters."
-            )
+        # NOTE: All validation is done in FixedParamTask.extend()
         return self.fix().extend(**kwargs)
 
     @override
     def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
-            raise ParameterError(
-                "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
-                "Use .bind() for scalar parameters."
-            )
+        # NOTE: All validation is done in FixedParamTask.zip()
         return self.fix().zip(**kwargs)
 
 
@@ -288,30 +288,52 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
-        merged: dict[str, Any] = dict(self.fixed_kwargs)
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
+            raise ParameterError(
+                f"Overlapping parameters for '{self.name}' in `.bind()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
+            )
 
-        for name, val in kwargs.items():
-            if name in merged:
-                raise ParameterError(
-                    f"Parameter '{name}' is already bound in this FixedParamTask. "
-                    f"Previously bound parameters: {list(self.fixed_kwargs.keys())}"
-                )
-            merged[name] = val
+        merged = {**self.fixed_kwargs, **kwargs}
+        signature = inspect.signature(self.task.func)
+
+        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
+            raise ParameterError(
+                f"Invalid parameters for task '{self.name}' in `.bind()`: {invalid_params}"
+            )
+
+        if missing_params := _find_missing_parameters(signature.parameters, merged):
+            raise ParameterError(
+                f"Missing parameters for task '{self.name}' in `.bind()`: {missing_params}"
+            )
+
         return TaskFuture(task=self.task, kwargs=merged, backend=self.backend)
 
     @override
     def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
             raise ParameterError(
-                "All parameters to .extend() must be of type Iterable or TaskFuture[Iterable]. "
-                "Use .bind() for scalar parameters."
+                f"Overlapping parameters for '{self.name}' in `.extend()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
             )
 
-        invalid_params = self.fixed_kwargs.keys() & kwargs.keys()
-        if invalid_params:
+        signature = inspect.signature(self.task.func)
+
+        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
             raise ParameterError(
-                f"Cannot use .extend() with already-bound parameters: {sorted(invalid_params)}. "
-                f"These parameters were bound in .fix(): {list(self.fixed_kwargs.keys())}"
+                f"Non-iterable parameters for task '{self.name}' in `.extend()`, "
+                f"all parameters must be Iterable or TaskFuture[Iterable] "
+                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
+            )
+
+        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Invalid parameters for task '{self.name}' in `.extend()`: {invalid_params}"
+            )
+
+        if missing_params := _find_missing_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Missing parameters for task '{self.name}' in `.extend()`: {missing_params}"
             )
 
         return MapTaskFuture(
@@ -324,17 +346,29 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if not all(isinstance(v, (Iterable, BaseTaskFuture)) for v in kwargs.values()):
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
             raise ParameterError(
-                "All parameters to .zip() must be of type Iterable or TaskFuture[Iterable]. "
-                "Use .bind() for scalar parameters."
+                f"Overlapping parameters for '{self.name}' in `.zip()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
             )
 
-        invalid_params = self.fixed_kwargs.keys() & kwargs.keys()
-        if invalid_params:
+        signature = inspect.signature(self.task.func)
+
+        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
             raise ParameterError(
-                f"Cannot use .zip() with already-bound parameters: {sorted(invalid_params)}. "
-                f"These parameters were bound in .fix(): {list(self.fixed_kwargs.keys())}"
+                f"Non-iterable parameters for task '{self.name}' in `.zip()`, "
+                f"all parameters must be Iterable or TaskFuture[Iterable] "
+                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
+            )
+
+        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Invalid parameters for task '{self.name}' in `.zip()`: {invalid_params}"
+            )
+
+        if missing_params := _find_missing_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Missing parameters for task '{self.name}' in `.zip()`: {missing_params}"
             )
 
         return MapTaskFuture(
@@ -467,17 +501,15 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         >>>     return x * factor
         >>> results = numbers.map(scale.fix(factor=10))
         """
-
         if isinstance(mapped_task, FixedParamTask):
             sig = inspect.signature(mapped_task.task.func)
             bound_params = set(mapped_task.fixed_kwargs.keys())
             unbound_params = [p for p in sig.parameters if p not in bound_params]
-
             if len(unbound_params) != 1:
                 raise ParameterError(
-                    f"FixedParamTask must have exactly ONE unbound parameter for .map(), "
-                    f"but '{mapped_task.name}' has {len(unbound_params)}: {unbound_params}. "
-                    f"Bound parameters: {list(bound_params)}"
+                    f"Task '{mapped_task.name}' in `.map()` must have exactly one "
+                    f"unbound parameter, found {len(unbound_params)} "
+                    f"(use `.fix()` to set scalar parameters): {unbound_params}"
                 )
             param_name = unbound_params[0]
             actual_task = mapped_task.task
@@ -486,13 +518,10 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         else:
             sig = inspect.signature(mapped_task.func)
             params = list(sig.parameters.keys())
-
             if len(params) != 1:
                 raise ParameterError(
-                    f"Task '{mapped_task.name}' must have exactly ONE parameter for .map(), "
-                    f"but has {len(params)}: {params}. "
-                    f"Use .fix() to fix some parameters first:\n"
-                    f"  results.map({mapped_task.name}.fix(param2=value, ...))"
+                    f"Task '{mapped_task.name}' in `.map()` must have exactly one parameter, "
+                    f"found {len(params)} (use `.fix()` to set scalar parameters): {params}"
                 )
             param_name = params[0]
             actual_task = mapped_task
@@ -536,12 +565,11 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
             sig = inspect.signature(reducer_task.task.func)
             bound_params = set(reducer_task.fixed_kwargs.keys())
             unbound_params = [p for p in sig.parameters if p not in bound_params]
-
             if len(unbound_params) != 1:
                 raise ParameterError(
-                    f"FixedParamTask must have exactly ONE unbound parameter for .join(), "
-                    f"but has '{reducer_task.name}' {len(unbound_params)}: {unbound_params}. "
-                    f"Bound parameters: {list(bound_params)}"
+                    f"Task '{reducer_task.name}' in `.join()` must have exactly one "
+                    f"unbound parameter, found {len(unbound_params)} "
+                    f"(use `.fix()` to set scalar parameters): {unbound_params}"
                 )
             param_name = unbound_params[0]
             actual_task = reducer_task.task
@@ -553,10 +581,8 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
 
             if len(params) != 1:
                 raise ParameterError(
-                    f"Task '{reducer_task.name}' must have exactly ONE parameter for .join(), "
-                    f"but has {len(params)}: {params}. "
-                    f"Use .fix() to fix some parameters first:\n"
-                    f"  total = numbers.join({reducer_task.name}.fix(param2=value, ...))"
+                    f"Task '{reducer_task.name}' in `.join()` must have exactly one parameter, "
+                    f"found {len(params)} (use `.fix()` to set scalar parameters): {params}"
                 )
             param_name = params[0]
             actual_task = reducer_task
@@ -605,3 +631,23 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
             mapped_kwargs=mapped_kwargs,
             backend=self.backend,
         )
+
+
+def _find_invalid_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
+    return sorted(args.keys() - params.keys())
+
+
+def _find_missing_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
+    return sorted(params.keys() - args.keys())
+
+
+def _find_missing_map_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
+    non_sequences = []
+    for key, value in args.items():
+        if key in params and not isinstance(value, (Iterable, BaseTaskFuture)):
+            non_sequences.append(key)
+    return sorted(non_sequences)
+
+
+def _find_overlapping_parameters(fixed: KeysView[str], new: dict[str, Any]) -> list[str]:
+    return sorted(fixed & new.keys())
