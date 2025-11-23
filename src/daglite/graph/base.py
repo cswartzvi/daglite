@@ -96,13 +96,22 @@ class GraphBuilder(Protocol):
         """Unique identifier for the graph node produced by this builder."""
 
     @abc.abstractmethod
-    def to_graph(self, ctx: GraphBuildContext, visit: GraphBuildVisiter) -> GraphNode:
+    def get_dependencies(self) -> list[GraphBuilder]:
         """
-        Convert this builder into a GraphNode, using the given context and visit function.
+        Return the direct dependencies of this builder.
 
-        Args:
-            ctx (GraphBuildContext): Context for building the graph.
-            visit (GraphBuildVisiter): Function to visit child builders.
+        Returns:
+            list[GraphBuilder]: List of builders this node depends on.
+        """
+        ...
+
+    @abc.abstractmethod
+    def to_graph(self) -> GraphNode:
+        """
+        Convert this builder into a GraphNode.
+
+        All dependencies will have their IDs assigned before this is called,
+        so implementations can safely access dependency.id.
 
         Returns:
             GraphNode: The constructed graph node.
@@ -115,9 +124,6 @@ class GraphBuildContext:
     """Context for building graph IR components."""
 
     nodes: dict[UUID, GraphNode]
-
-
-GraphBuildVisiter = Callable[[GraphBuilder], UUID]
 """Function that visits a GraphBuilder and returns its node ID."""
 
 

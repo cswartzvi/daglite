@@ -15,9 +15,7 @@ from uuid import uuid4
 
 from daglite.exceptions import GraphConstructionError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import GraphBuildContext
 from daglite.graph.base import GraphBuilder
-from daglite.graph.base import GraphBuildVisiter
 from daglite.graph.base import ParamInput
 
 if TYPE_CHECKING:
@@ -426,14 +424,21 @@ class TaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     @override
-    def to_graph(self, ctx: GraphBuildContext, visit: GraphBuildVisiter) -> TaskNode:
+    def get_dependencies(self) -> list[GraphBuilder]:
+        deps: list[GraphBuilder] = []
+        for value in self.kwargs.values():
+            if isinstance(value, BaseTaskFuture):
+                deps.append(value)  # type: ignore[arg-type]
+        return deps
+
+    @override
+    def to_graph(self) -> TaskNode:
         from daglite.graph.nodes import TaskNode
 
         kwargs: dict[str, ParamInput] = {}
         for name, value in self.kwargs.items():
             if isinstance(value, BaseTaskFuture):
-                ref_id = visit(value)  # type: ignore[arg-type]
-                kwargs[name] = ParamInput.from_ref(ref_id)
+                kwargs[name] = ParamInput.from_ref(value.id)
             else:
                 kwargs[name] = ParamInput.from_value(value)
         return TaskNode(
@@ -601,7 +606,18 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         )
 
     @override
-    def to_graph(self, ctx: GraphBuildContext, visit: GraphBuildVisiter) -> MapTaskNode:
+    def get_dependencies(self) -> list[GraphBuilder]:
+        deps: list[GraphBuilder] = []
+        for value in self.fixed_kwargs.values():
+            if isinstance(value, BaseTaskFuture):
+                deps.append(value)  # type: ignore[arg-type]
+        for seq in self.mapped_kwargs.values():
+            if isinstance(seq, BaseTaskFuture):
+                deps.append(seq)  # type: ignore[arg-type]
+        return deps
+
+    @override
+    def to_graph(self) -> MapTaskNode:
         from daglite.graph.nodes import MapTaskNode
 
         if self.mode not in {"extend", "zip"}:
@@ -612,15 +628,13 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
 
         for name, value in self.fixed_kwargs.items():
             if isinstance(value, BaseTaskFuture):
-                ref_id = visit(value)  # type: ignore[arg-type]
-                fixed_kwargs[name] = ParamInput.from_ref(ref_id)
+                fixed_kwargs[name] = ParamInput.from_ref(value.id)
             else:
                 fixed_kwargs[name] = ParamInput.from_value(value)
 
         for name, seq in self.mapped_kwargs.items():
             if isinstance(seq, BaseTaskFuture):
-                ref_id = visit(seq)  # type: ignore[arg-type]
-                mapped_kwargs[name] = ParamInput.from_sequence_ref(ref_id)
+                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
             else:
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
