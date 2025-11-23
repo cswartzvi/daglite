@@ -83,6 +83,11 @@ test-cov = "pytest --cov=daglite --cov-report=term-missing"
 addopts = "-ra --strict-markers --strict-config --import-mode importlib"
 testpaths = ["tests"]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+filterwarnings = [
+    # Suppress fork() deprecation from multiprocessing when using pytest-cov
+    # pytest-cov creates background threads which trigger this warning
+    "ignore:.*multi-threaded.*fork.*:DeprecationWarning:multiprocessing.popen_fork",
+]
 
 # --- tool.ruff ---
 

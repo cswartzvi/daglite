@@ -8,7 +8,7 @@ import pytest
 from daglite.backends.local import ProcessBackend
 from daglite.backends.local import SequentialBackend
 from daglite.backends.local import ThreadBackend
-
+from daglite.backends.local import _reset_global_pools
 
 # -- Test functions (no task decorator) --
 
@@ -37,6 +37,15 @@ def maybe_fail(x: int) -> int:
 
 
 # -- Test fixtures --
+
+
+@pytest.fixture(autouse=True)
+def reset_pools():
+    """Reset global pools before each test for isolation."""
+    _reset_global_pools()
+    yield
+    _reset_global_pools()
+
 
 LOCAL_BACKENDS = [
     SequentialBackend(),

@@ -1,5 +1,5 @@
 import os
-import threading
+import sys
 from concurrent.futures import Executor
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
@@ -16,28 +16,32 @@ T = TypeVar("T")
 
 _GLOBAL_THREAD_POOL: ThreadPoolExecutor | None = None
 _GLOBAL_PROCESS_POOL: ProcessPoolExecutor | None = None
-_POOL_LOCK = threading.RLock()
-
 
 def _get_global_thread_pool() -> ThreadPoolExecutor:
     global _GLOBAL_THREAD_POOL
     if _GLOBAL_THREAD_POOL is None:
-        with _POOL_LOCK:
-            if _GLOBAL_THREAD_POOL is None:  # Double-check pattern
-                settings = get_global_settings()
-                max_workers = settings.max_backend_threads
-                _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
+        settings = get_global_settings()
+        max_workers = settings.max_backend_threads
+        _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
     return _GLOBAL_THREAD_POOL
 
 
 def _get_global_process_pool() -> ProcessPoolExecutor:
     global _GLOBAL_PROCESS_POOL
     if _GLOBAL_PROCESS_POOL is None:
-        with _POOL_LOCK:
-            if _GLOBAL_PROCESS_POOL is None:  # Double-check pattern
-                settings = get_global_settings()
-                max_workers = settings.max_parallel_processes
-                _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers)
+        settings = get_global_settings()
+        max_workers = settings.max_parallel_processes
+        # Use 'spawn' on Windows (required) and macOS (fork deprecated)
+        # Use fork on Linux (default, avoids import issues with pytest)
+        if os.name == "nt" or sys.platform == "darwin":
+            import multiprocessing as mp
+
+            ctx = mp.get_context("spawn")
+            _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(
+                max_workers=max_workers, mp_context=ctx
+            )
+        else:
+            _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers)
     return _GLOBAL_PROCESS_POOL
 
 
@@ -56,6 +60,18 @@ def _get_global_process_pool_size() -> int:
     if settings.max_parallel_processes is not None:
         return settings.max_parallel_processes
     return os.cpu_count() or 1
+
+
+def _reset_global_pools() -> None:
+    """
+    Reset global executor pools.
+
+    Useful for testing or after forking processes where the pools may be in
+    an inconsistent state.
+    """
+    global _GLOBAL_THREAD_POOL, _GLOBAL_PROCESS_POOL
+    _GLOBAL_THREAD_POOL = None
+    _GLOBAL_PROCESS_POOL = None
 
 
 class SequentialBackend(Backend):
