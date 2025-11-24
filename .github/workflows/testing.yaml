@@ -1,0 +1,51 @@
+name: Run Tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * *'  # Run daily at 6 AM UTC
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    paths:
+      - src/**
+      - tests/**
+      - .github/**
+      - pyproject.toml
+
+jobs:
+  test:
+    env:
+      TARGET_PYTHON: "3.13"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.13t", "3.14", "3.14t"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Run tests
+        run: uv run pytest --cov=daglite --cov-branch --cov-report=xml --cov-report=term -v
+
+      # Upload coverage reports to Codecov for latest Python on Ubuntu only
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == env.TARGET_PYTHON
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false  # Don't fail CI if codecov is down
+
