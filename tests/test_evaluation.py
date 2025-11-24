@@ -163,9 +163,20 @@ class TestSinglePathExecution:
 
 
 class TestMultiPathEvaluation:
-    """Tests engine evaluation of multi-path tasks."""
+    """Tests engine evaluation of mapped tasks using extend."""
 
-    def test_task_extend_evaluation_single_parameter(self) -> None:
+    def test_extend_with_empty_sequence(self) -> None:
+        """Evaluation succeeds for extend with empty sequence."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2  # pragma: no cover
+
+        doubled_seq = double.extend(x=[])
+        result = evaluate(doubled_seq)
+        assert result == []
+
+    def test_extend_single_parameter(self) -> None:
         """Evaluation succeeds for single parameter task with extend (fan-out) behavior."""
 
         @task
@@ -176,7 +187,34 @@ class TestMultiPathEvaluation:
         result = evaluate(multiplied_seq)
         assert result == [2, 4, 6]
 
-    def test_task_extend_evaluation_multiple_parameters(self) -> None:
+    def test_extend_with_single_element(self) -> None:
+        """Evaluation succeeds for extend with single element sequence."""
+
+        @task
+        def triple(x: int) -> int:
+            return x * 3
+
+        tripled_seq = triple.extend(x=[5])
+        result = evaluate(tripled_seq)
+        assert result == [15]
+
+    def test_extend_with_future_input(self) -> None:
+        """Evaluation succeeds for extend with TaskFuture as input."""
+
+        @task
+        def generate_range() -> list[int]:
+            return [1, 2, 3]
+
+        @task
+        def square(x: int) -> int:
+            return x**2
+
+        range_future = generate_range.bind()
+        squared_seq = square.extend(x=range_future)
+        result = evaluate(squared_seq)
+        assert result == [1, 4, 9]
+
+    def test_extend_multiple_parameters(self) -> None:
         """Evaluation succeeds for multiple parameter task with extend (fan-out) behavior."""
 
         @task
@@ -187,7 +225,7 @@ class TestMultiPathEvaluation:
         result = evaluate(added_seq)
         assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]  # Cartesian product
 
-    def test_mixed_extend_with_fixed_parameters(self) -> None:
+    def test_extend_with_fixed_parameters(self) -> None:
         """Evaluation succeeds for extend tasks with some fixed parameters."""
 
         @task
@@ -199,7 +237,7 @@ class TestMultiPathEvaluation:
         result = evaluate(powered_seq)
         assert result == [1, 4, 9, 16]  # Squares of 1, 2, 3, 4
 
-    def test_task_extend_evaluation_with_map(self) -> None:
+    def test_extend_with_map(self) -> None:
         """Evaluation succeeds for extend tasks with mapping behavior."""
 
         @task
@@ -215,7 +253,23 @@ class TestMultiPathEvaluation:
         result = evaluate(tripled)
         assert result == [6, 12, 18]  # = [2*3, 4*3, 6*3]
 
-    def test_task_extend_evaluation_with_fix_and_map(self) -> None:
+    def test_extend_with_join(self) -> None:
+        """Evaluation succeeds for extend followed by join (fan-out then fan-in)."""
+
+        @task
+        def square(x: int) -> int:
+            return x**2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        squared_seq = square.extend(x=[1, 2, 3, 4])
+        total = squared_seq.join(sum_all)
+        result = evaluate(total)
+        assert result == 30  # 1 + 4 + 9 + 16
+
+    def test_extend_with_fixed_map(self) -> None:
         """Evaluation succeeds for extend tasks with both fixed parameters and mapping."""
 
         @task
@@ -232,23 +286,24 @@ class TestMultiPathEvaluation:
         result = evaluate(squared_seq)
         assert result == [36, 49, 64]  # = [(1+5)^2, (2+5)^2, (3+5)^2]
 
-    def test_task_extend_with_join(self) -> None:
-        """Evaluation succeeds for extend followed by join (fan-out then fan-in)."""
+    def test_extend_with_fixed_join(self) -> None:
+        """Evaluation succeeds for extend followed by join with fixed parameters."""
 
         @task
-        def square(x: int) -> int:
-            return x**2
+        def multiply(x: int, y: int) -> int:
+            return x * y
 
         @task
-        def sum_all(values: list[int]) -> int:
-            return sum(values)
+        def multiply_total(values: list[int], factor: int) -> int:
+            return sum(values) * factor
 
-        squared_seq = square.extend(x=[1, 2, 3, 4])
-        total = squared_seq.join(sum_all)
+        fixed_multiply_total = multiply_total.fix(factor=3)
+        multiplied_seq = multiply.extend(x=[1, 2, 3], y=[10, 20, 30])
+        total = multiplied_seq.join(fixed_multiply_total)
         result = evaluate(total)
-        assert result == 30  # 1 + 4 + 9 + 16
+        assert result == 1080  # (10 + 20 + 30 + 20 + 40 + 60 + 30 + 60 + 90) * 3
 
-    def test_task_extend_with_map_and_join(self) -> None:
+    def test_extend_with_fixed_map_and_join(self) -> None:
         """Evaluation succeeds for extend with map then join (fan-out, transform, fan-in)."""
 
         @task
@@ -269,7 +324,7 @@ class TestMultiPathEvaluation:
         result = evaluate(maximum)
         assert result == 66
 
-    def test_nested_task_extend_evaluation(self) -> None:
+    def test_extend_with_nested_tasks(self) -> None:
         """Evaluation succeeds for nested extend tasks."""
 
         @task
@@ -285,45 +340,22 @@ class TestMultiPathEvaluation:
         result = evaluate(multiplied_seq)
         assert result == [22, 33, 42, 63, 24, 36, 44, 66]
 
-    def test_task_extend_with_empty_sequence(self) -> None:
-        """Evaluation succeeds for extend with empty sequence."""
+
+class TestZipEvaluation:
+    """Tests engine evaluation of mapped tasks using zip."""
+
+    def test_zip_with_empty_sequence(self) -> None:
+        """Evaluation succeeds for zip with empty sequence."""
 
         @task
-        def double(x: int) -> int:
-            return x * 2
+        def add(x: int, y: int) -> int:
+            return x + y  # pragma: no cover
 
-        doubled_seq = double.extend(x=[])
-        result = evaluate(doubled_seq)
+        added_seq = add.zip(x=[], y=[])
+        result = evaluate(added_seq)
         assert result == []
 
-    def test_task_extend_with_single_element(self) -> None:
-        """Evaluation succeeds for extend with single element sequence."""
-
-        @task
-        def triple(x: int) -> int:
-            return x * 3
-
-        tripled_seq = triple.extend(x=[5])
-        result = evaluate(tripled_seq)
-        assert result == [15]
-
-    def test_task_extend_with_future_input(self) -> None:
-        """Evaluation succeeds for extend with TaskFuture as input."""
-
-        @task
-        def generate_range() -> list[int]:
-            return [1, 2, 3]
-
-        @task
-        def square(x: int) -> int:
-            return x**2
-
-        range_future = generate_range.bind()
-        squared_seq = square.extend(x=range_future)
-        result = evaluate(squared_seq)
-        assert result == [1, 4, 9]
-
-    def test_task_zip_evaluation_single_parameter(self) -> None:
+    def test_zip_with_single_parameter(self) -> None:
         """Evaluation succeeds for single parameter task with zip (aligned sequences)."""
 
         @task
@@ -334,18 +366,34 @@ class TestMultiPathEvaluation:
         result = evaluate(doubled_seq)
         assert result == [2, 4, 6]
 
-    def test_task_zip_evaluation_multiple_parameters(self) -> None:
-        """Evaluation succeeds for multiple parameter task with zip (aligned sequences)."""
+    def test_zip_with_single_element(self) -> None:
+        """Evaluation succeeds for zip with single element sequences."""
 
         @task
-        def add(x: int, y: int) -> int:
-            return x + y
+        def triple(x: int) -> int:
+            return x * 3
 
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        result = evaluate(added_seq)
-        assert result == [11, 22, 33]  # Aligned: (1,10), (2,20), (3,30)
+        tripled_seq = triple.zip(x=[5])
+        result = evaluate(tripled_seq)
+        assert result == [15]
 
-    def test_task_zip_with_three_parameters(self) -> None:
+    def test_zip_with_future_input(self) -> None:
+        """Evaluation succeeds for zip with TaskFuture as input."""
+
+        @task
+        def generate_values() -> list[int]:
+            return [5, 10, 15]
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        values_future = generate_values.bind()
+        multiplied_seq = multiply.zip(x=values_future, y=[2, 3, 4])
+        result = evaluate(multiplied_seq)
+        assert result == [10, 30, 60]  # (5*2), (10*3), (15*4)
+
+    def test_task_zip_with_multiple_parameters(self) -> None:
         """Evaluation succeeds for zip with three aligned sequences."""
 
         @task
@@ -356,7 +404,7 @@ class TestMultiPathEvaluation:
         result = evaluate(summed_seq)
         assert result == [111, 222]  # (1+10+100), (2+20+200)
 
-    def test_task_zip_with_fixed_parameters(self) -> None:
+    def test_zip_with_fixed_parameters(self) -> None:
         """Evaluation succeeds for zip tasks with some fixed parameters."""
 
         @task
@@ -368,7 +416,7 @@ class TestMultiPathEvaluation:
         result = evaluate(multiplied_seq)
         assert result == [10, 20, 30]
 
-    def test_task_zip_evaluation_with_map(self) -> None:
+    def test_zip_with_map(self) -> None:
         """Evaluation succeeds for zip tasks with mapping behavior."""
 
         @task
@@ -384,7 +432,23 @@ class TestMultiPathEvaluation:
         result = evaluate(squared_seq)
         assert result == [121, 484, 1089]  # = [11^2, 22^2, 33^2]
 
-    def test_task_zip_evaluation_with_fix_and_map(self) -> None:
+    def test_zip_with_join(self) -> None:
+        """Evaluation succeeds for zip followed by join (fan-out then fan-in)."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+        total = added_seq.join(sum_all)
+        result = evaluate(total)
+        assert result == 66  # 11 + 22 + 33
+
+    def test_zip_with_fixed_map(self) -> None:
         """Evaluation succeeds for zip tasks with both fixed parameters and mapping."""
 
         @task
@@ -401,63 +465,46 @@ class TestMultiPathEvaluation:
         result = evaluate(doubled_seq)
         assert result == [12, 24, 36]  # = [(2*3)*2, (4*3)*2, (6*3)*2]
 
-    def test_task_zip_with_join(self) -> None:
-        """Evaluation succeeds for zip followed by join (fan-out then fan-in)."""
+    def test_zip_with_fixed_join(self) -> None:
+        """Evaluation succeeds for zip followed by join with fixed parameters."""
 
         @task
         def add(x: int, y: int) -> int:
             return x + y
 
         @task
-        def product_all(values: list[int]) -> int:
-            result = 1
-            for v in values:
-                result *= v
-            return result
+        def multiply_total(values: list[int], factor: int) -> int:
+            return sum(values) * factor
 
+        fixed_multiply_total = multiply_total.fix(factor=2)
         added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        product = added_seq.join(product_all)
-        result = evaluate(product)
-        assert result == 7986  # 11 * 22 * 33
+        total = added_seq.join(fixed_multiply_total)
+        result = evaluate(total)
+        assert result == 132  # (11 + 22 + 33) * 2
 
-    def test_task_zip_with_map_and_join(self) -> None:
-        """Evaluation succeeds for zip with map then join (fan-out, transform, fan-in)."""
-
-        @task
-        def multiply(x: int, y: int) -> int:
-            return x * y
+    def test_zip_with_fix_map_and_join(self) -> None:
+        """Evaluation succeeds for zip with fixed map then join (fan-out, transform, fan-in)."""
 
         @task
-        def increment(z: int) -> int:
-            return z + 1
+        def add(x: int, y: int) -> int:
+            return x + y
 
         @task
-        def min_value(values: list[int]) -> int:
-            return min(values)
-
-        multiplied_seq = multiply.zip(x=[2, 3, 4], y=[5, 6, 7])  # [10, 18, 28]
-        incremented_seq = multiplied_seq.map(increment)  # [11, 19, 29]
-        minimum = incremented_seq.join(min_value)
-        result = evaluate(minimum)
-        assert result == 11
-
-    def test_task_zip_with_future_input(self) -> None:
-        """Evaluation succeeds for zip with TaskFuture as input."""
+        def increment(z: int, increment_by: int) -> int:
+            return z + increment_by
 
         @task
-        def generate_values() -> list[int]:
-            return [5, 10, 15]
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
 
-        @task
-        def multiply(x: int, y: int) -> int:
-            return x * y
+        fixed_increment = increment.fix(increment_by=5)
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
+        incremented_seq = added_seq.map(fixed_increment)  # [16, 27, 38]
+        total = incremented_seq.join(sum_all)
+        result = evaluate(total)
+        assert result == 81  # 16 + 27 + 38
 
-        values_future = generate_values.bind()
-        multiplied_seq = multiply.zip(x=values_future, y=[2, 3, 4])
-        result = evaluate(multiplied_seq)
-        assert result == [10, 30, 60]  # (5*2), (10*3), (15*4)
-
-    def test_nested_task_zip_evaluation(self) -> None:
+    def test_zip_with_nested_tasks(self) -> None:
         """Evaluation succeeds for nested zip tasks."""
 
         @task
@@ -473,18 +520,11 @@ class TestMultiPathEvaluation:
         result = evaluate(multiplied_seq)
         assert result == [22, 66]  # (11*2), (22*3)
 
-    def test_task_zip_with_empty_sequence(self) -> None:
-        """Evaluation succeeds for zip with empty sequence."""
 
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
+class TestComplexPathEvaluation:
+    """Tests engine evaluation of complex task graphs."""
 
-        added_seq = add.zip(x=[], y=[])
-        result = evaluate(added_seq)
-        assert result == []
-
-    def test_mixed_extend_and_zip_with_join(self) -> None:
+    def test_extend_and_zip_with_join(self) -> None:
         """Evaluation succeeds combining extend, zip, and join operations."""
 
         @task
@@ -501,4 +541,3 @@ class TestMultiPathEvaluation:
         total = multiplied_seq.join(sum_all)
         result = evaluate(total)
         assert result == 90  # 10 + 20 + 20 + 40
-

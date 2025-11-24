@@ -332,7 +332,7 @@ class TestBaseTaskFuture:
     def test_futures_have_unique_ids(self) -> None:
         """Each future receives a unique identifier."""
 
-        def add(x: int, y: int) -> int:
+        def add(x: int, y: int) -> int:  # pragma: no cover
             return x + y
 
         future1 = task(add).bind(x=1, y=2)
@@ -343,7 +343,7 @@ class TestBaseTaskFuture:
     def test_future_len_raises_type_error(self) -> None:
         """Unevaluated futures prevent accidental length operations."""
 
-        def multiply(x: int, y: int) -> int:
+        def multiply(x: int, y: int) -> int:  # pragma: no cover
             return x * y
 
         future = task(multiply).bind(x=3, y=4)
@@ -354,11 +354,10 @@ class TestBaseTaskFuture:
     def test_future_bool_raises_type_error(self) -> None:
         """Unevaluated futures prevent accidental boolean operations."""
 
-        def divide(x: int, y: int) -> float:
+        def divide(x: int, y: int) -> float:  # pragma: no cover
             return x / y
 
         future = task(divide).bind(x=10, y=2)
 
         with pytest.raises(TypeError, match="cannot be used in boolean context."):
-            if future:
-                pass
+            bool(future)
