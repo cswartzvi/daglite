@@ -17,7 +17,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["mypy", "nox", "poethepoet", "pre-commit", "ruff"]
+dev = [
+    "mypy",
+    "nox",
+    "poethepoet",
+    "pre-commit",
+    "pre-commit-uv>=4.2.0",
+    "ruff",
+]
 test = [
     "pytest",
     "pytest-cov",

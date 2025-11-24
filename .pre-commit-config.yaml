@@ -1,6 +1,6 @@
 repos:
-  - repo: http://raspberrypi:3000/cswartz/custom-precommit-hooks.git
-    rev: v0.2
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
     hooks:
       - id: check-ast
         exclude: templates/.*
@@ -12,7 +12,23 @@ repos:
       - id: check-merge-conflict
       - id: mixed-line-ending
       - id: trailing-whitespace
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.12.1
+    hooks:
       - id: ruff-check
         args: [--fix]
       - id: ruff-format
-      - id: mypy
+  - repo: local
+    hooks:
+      - id: mypy (via uv)
+        name: mypy (via uv)
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: true
+      - id: pyright (via uv)
+        name: pyright (via uv)
+        entry: uv run pyright
+        language: system
+        types: [python]
+        pass_filenames: true
