@@ -9,9 +9,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import fields
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Generic, ParamSpec, Self, TypeVar, overload, override
+from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
+
+from typing_extensions import Self, override
 
 from daglite.exceptions import GraphConstructionError
 from daglite.exceptions import ParameterError

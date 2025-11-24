@@ -5,7 +5,9 @@ from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import as_completed
-from typing import Any, Callable, TypeVar, override
+from typing import Any, Callable, TypeVar
+
+from typing_extensions import override
 
 from daglite.settings import get_global_settings
 

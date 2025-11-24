@@ -4,8 +4,10 @@ from collections.abc import Mapping
 from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
-from typing import Any, Callable, TypeVar, override
+from typing import Any, Callable, TypeVar
 from uuid import UUID
+
+from typing_extensions import override
 
 from daglite.engine import Backend
 from daglite.graph.base import GraphNode

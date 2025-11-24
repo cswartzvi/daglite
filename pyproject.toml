@@ -10,10 +10,10 @@ build-backend = "setuptools.build_meta"
 name = "daglite"
 description = "Lightweight Python framework for building static DAGs with explicit bindings."
 dynamic = ["version"]
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "typing-extensions>=4.15.0",
+    "typing-extensions>=4.15.0",  # For Python 3.10 compatibility
 ]
 
 [dependency-groups]
