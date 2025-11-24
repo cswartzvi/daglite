@@ -162,7 +162,7 @@ class TestSinglePathExecution:
         assert result_chain == 2 * (2**chain_depth)
 
 
-class TestMultiPathEvaluation:
+class TestExtendEvaluation:
     """Tests engine evaluation of mapped tasks using extend."""
 
     def test_extend_with_empty_sequence(self) -> None:
@@ -236,6 +236,23 @@ class TestMultiPathEvaluation:
         powered_seq = fixed_power.extend(base=[1, 2, 3, 4])
         result = evaluate(powered_seq)
         assert result == [1, 4, 9, 16]  # Squares of 1, 2, 3, 4
+
+    def test_extend_with_fixed_future_parameters(self) -> None:
+        """Evaluation succeeds for extend tasks with fixed TaskFuture parameters."""
+
+        @task
+        def get_exponent() -> int:
+            return 3
+
+        @task
+        def power(base: int, exponent: int) -> int:
+            return base**exponent
+
+        exponent_future = get_exponent.bind()
+        fixed_power = power.fix(exponent=exponent_future)
+        powered_seq = fixed_power.extend(base=[2, 3, 4])
+        result = evaluate(powered_seq)
+        assert result == [8, 27, 64]  # Cubes of 2, 3, 4
 
     def test_extend_with_map(self) -> None:
         """Evaluation succeeds for extend tasks with mapping behavior."""
@@ -415,6 +432,23 @@ class TestZipEvaluation:
         multiplied_seq = fixed_multiply.zip(x=[1, 2, 3])
         result = evaluate(multiplied_seq)
         assert result == [10, 20, 30]
+
+    def test_zip_with_fixed_future_parameters(self) -> None:
+        """Evaluation succeeds for zip tasks with fixed TaskFuture parameters."""
+
+        @task
+        def get_factor() -> int:
+            return 4
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        factor_future = get_factor.bind()
+        fixed_multiply = multiply.fix(factor=factor_future)
+        multiplied_seq = fixed_multiply.zip(x=[2, 3, 4])
+        result = evaluate(multiplied_seq)
+        assert result == [8, 12, 16]  # (2*4), (3*4), (4*4)
 
     def test_zip_with_map(self) -> None:
         """Evaluation succeeds for zip tasks with mapping behavior."""
