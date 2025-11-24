@@ -56,9 +56,7 @@ class TestFindBackend:
             ("threading", ThreadBackend),
         ],
     )
-    def test_find_backend_types(
-        self, backend_name: str, expected_type: type[Backend]
-    ) -> None:
+    def test_find_backend_types(self, backend_name: str, expected_type: type[Backend]) -> None:
         """Parameterized test for all backend types."""
         backend = find_backend(backend_name)
         assert isinstance(backend, expected_type)

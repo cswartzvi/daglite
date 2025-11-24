@@ -8,7 +8,6 @@ from typing import Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
 from daglite.backends.base import Backend
-from daglite.backends.local import ThreadBackend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph

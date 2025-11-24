@@ -17,6 +17,7 @@ T = TypeVar("T")
 _GLOBAL_THREAD_POOL: ThreadPoolExecutor | None = None
 _GLOBAL_PROCESS_POOL: ProcessPoolExecutor | None = None
 
+
 def _get_global_thread_pool() -> ThreadPoolExecutor:
     global _GLOBAL_THREAD_POOL
     if _GLOBAL_THREAD_POOL is None:

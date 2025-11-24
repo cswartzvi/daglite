@@ -218,9 +218,7 @@ class TestSubmitMany:
         def track_concurrency(task_id: int) -> int:
             with lock:
                 max_concurrent["current"] += 1
-                max_concurrent["count"] = max(
-                    max_concurrent["count"], max_concurrent["current"]
-                )
+                max_concurrent["count"] = max(max_concurrent["count"], max_concurrent["current"])
 
             time.sleep(0.1)
 

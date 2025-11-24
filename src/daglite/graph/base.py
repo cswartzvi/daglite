@@ -124,6 +124,8 @@ class GraphBuildContext:
     """Context for building graph IR components."""
 
     nodes: dict[UUID, GraphNode]
+
+
 """Function that visits a GraphBuilder and returns its node ID."""
 
 

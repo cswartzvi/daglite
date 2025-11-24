@@ -24,6 +24,7 @@ def length(info: dict) -> int:
     print("[length] computing length")
     return info["length"]
 
+
 raw = download.bind(url="https://example.com")
 info = parse.bind(raw=raw)
 length_val = length.bind(info=info)

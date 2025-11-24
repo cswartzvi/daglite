@@ -364,6 +364,13 @@ class FixedParamTask(BaseTask[P, R]):
                 f"(use `.fix()` to set scalar parameters): {missing_map_params}"
             )
 
+        # len_details = {len(v) for v in kwargs.values() if not isinstance(v, BaseTaskFuture)}
+        # if len(len_details) > 1:
+        #     raise ParameterError(
+        #         f"Mixed lengths for scalar parameters in `.zip()`, all sequences must have the "
+        #         f"same length: {kwargs}"
+        #     )
+
         merged = {**self.fixed_kwargs, **kwargs}
 
         if invalid_params := _find_invalid_parameters(signature.parameters, merged):
