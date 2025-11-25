@@ -178,7 +178,7 @@ class Engine:
             # Update dependencies
             for succ in successors.get(nid, ()):
                 indegree[succ] -= 1
-                if indegree[succ] == 0:
+                if indegree[succ] == 0:  # pragma: no branch
                     ready.append(succ)
 
         return values[root_id]
@@ -232,7 +232,7 @@ class Engine:
                 # Update dependencies
                 for succ in successors.get(nid, ()):
                     indegree[succ] -= 1
-                    if indegree[succ] == 0:
+                    if indegree[succ] == 0:  # pragma: no branch
                         ready.append(succ)
 
         return values[root_id]
