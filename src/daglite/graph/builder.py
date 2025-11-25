@@ -24,8 +24,8 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
         node_like, deps_collected = stack.pop()
         node_id = node_like.id
 
-        # Skip if already processed
-        if node_id in nodes:
+        # Skip if already processed (defensive check)
+        if node_id in nodes:  # pragma: no cover
             continue
 
         if not deps_collected:
