@@ -22,13 +22,13 @@ repos:
     hooks:
       - id: mypy (via uv)
         name: mypy (via uv)
-        entry: uv run mypy
+        entry: uv run --no-sync mypy
         language: system
         types: [python]
         pass_filenames: true
       - id: pyright (via uv)
         name: pyright (via uv)
-        entry: uv run pyright
+        entry: uv run --no-sync pyright
         language: system
         types: [python]
         pass_filenames: true
