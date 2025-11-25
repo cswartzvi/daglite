@@ -462,6 +462,51 @@ class TestBuildGraph:
         assert u2.id in graph
         assert result.id in graph
 
+    def test_build_graph_skips_already_processed_nodes(self) -> None:
+        """build_graph skips nodes already in the graph (covers early exit)."""
+
+        @task
+        def leaf1() -> int:  # pragma: no cover
+            return 1
+
+        @task
+        def leaf2() -> int:  # pragma: no cover
+            return 2
+
+        @task
+        def middle1(a: int, b: int) -> int:  # pragma: no cover
+            return a + b
+
+        @task
+        def middle2(a: int, b: int) -> int:  # pragma: no cover
+            return a * b
+
+        @task
+        def root(x: int, y: int) -> int:  # pragma: no cover
+            return x - y
+
+        # Create structure where leaf1 is shared across multiple paths:
+        #       root
+        #      /    \
+        #   middle1  middle2
+        #    /  \     /  \
+        # leaf1 leaf2 leaf1 leaf2
+        #
+        # Both middle1 and middle2 depend on leaf1 and leaf2
+        l1 = leaf1.bind()
+        l2 = leaf2.bind()
+        m1 = middle1.bind(a=l1, b=l2)
+        m2 = middle2.bind(a=l1, b=l2)
+        r = root.bind(x=m1, y=m2)
+
+        graph = build_graph(r)
+
+        # Should have 5 unique nodes (leaves should not be duplicated)
+        assert len(graph) == 5
+        # Verify each node appears exactly once
+        assert sum(1 for nid in graph if nid == l1.id) == 1
+        assert sum(1 for nid in graph if nid == l2.id) == 1
+
     def test_build_graph_detects_circular_dependency(self) -> None:
         """build_graph detects circular dependencies."""
         from uuid import UUID
