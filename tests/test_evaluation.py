@@ -1,3 +1,6 @@
+import threading
+import time
+
 from daglite import evaluate
 from daglite import task
 
@@ -575,3 +578,134 @@ class TestComplexPathEvaluation:
         total = multiplied_seq.join(sum_all)
         result = evaluate(total)
         assert result == 90  # 10 + 20 + 20 + 40
+
+
+class TestAsyncExecution:
+    """Tests engine evaluation with use_async=True."""
+
+    def test_single_task_async(self) -> None:
+        """Async evaluation succeeds for single task."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        result = evaluate(add.bind(x=10, y=20), use_async=True)
+        assert result == 30
+
+    def test_chain_async(self) -> None:
+        """Async evaluation preserves dependency order in chains."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(z: int, factor: int) -> int:
+            return z * factor
+
+        @task
+        def subtract(value: int, decrement: int) -> int:
+            return value - decrement
+
+        added = add.bind(x=3, y=7)  # 10
+        multiplied = multiply.bind(z=added, factor=4)  # 40
+        subtracted = subtract.bind(value=multiplied, decrement=15)  # 25
+        result = evaluate(subtracted, use_async=True)
+        assert result == 25
+
+    def test_sibling_tasks_async(self) -> None:
+        """Async evaluation handles multiple sibling tasks correctly."""
+
+        threads = set()
+
+        @task(backend="threading")
+        def left() -> int:
+            time.sleep(0.1)
+            threads.add(threading.get_ident())
+            return 5
+
+        @task(backend="threading")
+        def right() -> int:
+            threads.add(threading.get_ident())
+            return 10
+
+        @task
+        def combine(a: int, b: int) -> int:
+            return a + b
+
+        left_future = left.bind()
+        right_future = right.bind()
+        combined = combine.bind(a=left_future, b=right_future)
+
+        result = evaluate(combined, use_async=True)
+        assert result == 15
+        assert len(threads) == 2  # Both tasks ran in parallel threads
+
+    def test_extend_async(self) -> None:
+        """Async evaluation handles parallel extend operations."""
+
+        @task
+        def square(x: int) -> int:
+            return x**2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        squared_seq = square.extend(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
+        total = squared_seq.join(sum_all)
+        result = evaluate(total, use_async=True)
+        assert result == 30
+
+    def test_zip_async(self) -> None:
+        """Async evaluation handles zip operations."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def product(values: list[int]) -> int:
+            result = 1
+            for v in values:
+                result *= v
+            return result
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
+        prod = added_seq.join(product)
+        result = evaluate(prod, use_async=True)
+        assert result == 11 * 22 * 33
+
+    def test_error_propagation_async(self) -> None:
+        """Async evaluation propagates exceptions correctly."""
+
+        @task
+        def divide(x: int, y: int) -> float:
+            return x / y
+
+        divided = divide.bind(x=10, y=0)
+
+        try:
+            evaluate(divided, use_async=True)
+            assert False, "Should have raised ZeroDivisionError"  # pragma: no cover
+        except ZeroDivisionError:
+            pass  # Expected
+
+    def test_complex_graph_async(self) -> None:
+        """Async evaluation handles complex graphs with multiple paths."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        # Diamond pattern: two paths that merge
+        a = add.bind(x=1, y=2)  # 3
+        b = multiply.bind(x=2, y=3)  # 6
+        c = add.bind(x=a, y=b)  # 9
+        result = evaluate(c, use_async=True)
+        assert result == 9
