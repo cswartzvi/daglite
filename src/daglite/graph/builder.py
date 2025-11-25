@@ -3,7 +3,6 @@
 from uuid import UUID
 
 from daglite.exceptions import GraphConstructionError
-from daglite.graph.base import GraphBuildContext
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 
@@ -17,7 +16,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
     Raises:
         GraphConstructionError: If a circular dependency is detected.
     """
-    ctx = GraphBuildContext(nodes={})
+    nodes: dict[UUID, GraphNode] = {}
     visiting: set[UUID] = set()
     stack: list[tuple[GraphBuilder, bool]] = [(root, False)]
 
@@ -26,7 +25,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
         node_id = node_like.id
 
         # Skip if already processed
-        if node_id in ctx.nodes:
+        if node_id in nodes:
             continue
 
         if not deps_collected:
@@ -43,12 +42,12 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
 
             # Push dependencies onto stack (in reverse so they process in order)
             for dep in reversed(deps):
-                if dep.id not in ctx.nodes:
+                if dep.id not in nodes:
                     stack.append((dep, False))
         else:
             # Second visit: all dependencies processed, now build this node
             node = node_like.to_graph()
-            ctx.nodes[node_id] = node
+            nodes[node_id] = node
             visiting.discard(node_id)
 
-    return ctx.nodes
+    return nodes

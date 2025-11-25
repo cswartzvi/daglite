@@ -15,7 +15,6 @@ from uuid import uuid4
 
 from typing_extensions import Self, override
 
-from daglite.exceptions import GraphConstructionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
@@ -632,9 +631,6 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
     @override
     def to_graph(self) -> MapTaskNode:
         from daglite.graph.nodes import MapTaskNode
-
-        if self.mode not in {"extend", "zip"}:
-            raise GraphConstructionError(f"Invalid MapTaskFuture mode: '{self.mode}'")
 
         fixed_kwargs: dict[str, ParamInput] = {}
         mapped_kwargs: dict[str, ParamInput] = {}

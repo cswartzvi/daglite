@@ -28,6 +28,38 @@ ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "choose", "loop", "artifact"]
 
 
+class GraphBuilder(Protocol):
+    """Protocol for building graph Intermediate Representation (IR) components from tasks."""
+
+    @cached_property
+    @abc.abstractmethod
+    def id(self) -> UUID:
+        """Unique identifier for the graph node produced by this builder."""
+
+    @abc.abstractmethod
+    def get_dependencies(self) -> list[GraphBuilder]:
+        """
+        Return the direct dependencies of this builder.
+
+        Returns:
+            list[GraphBuilder]: List of builders this node depends on.
+        """
+        ...
+
+    @abc.abstractmethod
+    def to_graph(self) -> GraphNode:
+        """
+        Convert this builder into a GraphNode.
+
+        All dependencies will have their IDs assigned before this is called,
+        so implementations can safely access dependency.id.
+
+        Returns:
+            GraphNode: The constructed graph node.
+        """
+        ...
+
+
 @dataclass(frozen=True)
 class GraphNode(abc.ABC):
     """Represents a node in the compiled graph Intermediate Representation (IR)."""
@@ -85,48 +117,6 @@ class GraphNode(abc.ABC):
             - MapTaskNode: list[Future[T]]
         """
         ...
-
-
-class GraphBuilder(Protocol):
-    """Protocol for building graph Intermediate Representation (IR) components from tasks."""
-
-    @cached_property
-    @abc.abstractmethod
-    def id(self) -> UUID:
-        """Unique identifier for the graph node produced by this builder."""
-
-    @abc.abstractmethod
-    def get_dependencies(self) -> list[GraphBuilder]:
-        """
-        Return the direct dependencies of this builder.
-
-        Returns:
-            list[GraphBuilder]: List of builders this node depends on.
-        """
-        ...
-
-    @abc.abstractmethod
-    def to_graph(self) -> GraphNode:
-        """
-        Convert this builder into a GraphNode.
-
-        All dependencies will have their IDs assigned before this is called,
-        so implementations can safely access dependency.id.
-
-        Returns:
-            GraphNode: The constructed graph node.
-        """
-        ...
-
-
-@dataclass
-class GraphBuildContext:
-    """Context for building graph IR components."""
-
-    nodes: dict[UUID, GraphNode]
-
-
-"""Function that visits a GraphBuilder and returns its node ID."""
 
 
 @dataclass(frozen=True)
