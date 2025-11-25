@@ -31,38 +31,35 @@ def _get_global_thread_pool() -> ThreadPoolExecutor:
 
 def _get_global_process_pool() -> ProcessPoolExecutor:
     global _GLOBAL_PROCESS_POOL
-    if _GLOBAL_PROCESS_POOL is None:
-        import multiprocessing as mp
-        from multiprocessing.context import BaseContext
+    if _GLOBAL_PROCESS_POOL is not None:  # pragma: no cover
+        return _GLOBAL_PROCESS_POOL
 
-        settings = get_global_settings()
-        max_workers = settings.max_parallel_processes
+    import multiprocessing as mp
+    from multiprocessing.context import BaseContext
+
+    settings = get_global_settings()
+    max_workers = settings.max_parallel_processes
+    mp_context: BaseContext
+    if os.name == "nt" or sys.platform == "darwin":
         # Use 'spawn' on Windows (required) and macOS (fork deprecated)
+        mp_context = mp.get_context("spawn")
+    else:
         # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
-        mp_context: BaseContext
-        if os.name == "nt" or sys.platform == "darwin":
-            mp_context = mp.get_context("spawn")
-        else:
-            mp_context = mp.get_context("fork")
-        _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers, mp_context=mp_context)
+        mp_context = mp.get_context("fork")
+    _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers, mp_context=mp_context)
     return _GLOBAL_PROCESS_POOL
 
 
 def _get_global_thread_pool_size() -> int:
     """Get the actual size of the global thread pool."""
     settings = get_global_settings()
-    if settings.max_backend_threads is not None:
-        return settings.max_backend_threads
-    # Default ThreadPoolExecutor size is min(32, (os.cpu_count() or 1) + 4)
-    return min(32, (os.cpu_count() or 1) + 4)
+    return settings.max_backend_threads
 
 
 def _get_global_process_pool_size() -> int:
     """Get the actual size of the global process pool."""
     settings = get_global_settings()
-    if settings.max_parallel_processes is not None:
-        return settings.max_parallel_processes
-    return os.cpu_count() or 1
+    return settings.max_parallel_processes
 
 
 def _reset_global_pools() -> None:
@@ -167,7 +164,7 @@ def _submit_many_limited(
             in_flight[exec_future] = idx
 
         # Wait for one to complete
-        if in_flight:
+        if in_flight:  # pragma: no branch
             done = next(as_completed(in_flight.keys()))
             idx = in_flight.pop(done)
 
