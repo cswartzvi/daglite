@@ -16,6 +16,12 @@ dependencies = [
     "typing-extensions>=4.15.0",  # For Python 3.10 compatibility
 ]
 
+[project.optional-dependencies]
+cli = ["click>=8.0"]
+
+[project.scripts]
+daglite = "daglite.cli:cli"
+
 [dependency-groups]
 dev = [
     "mypy",
