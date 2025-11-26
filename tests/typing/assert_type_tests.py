@@ -11,6 +11,7 @@ from typing import Any
 
 from typing_extensions import assert_type
 
+from daglite import pipeline
 from daglite import task
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
@@ -77,19 +78,19 @@ def join_strings(xs: list[str]) -> str:
 
 
 # -- Scalar parameters --
-def test_simple_parameters() -> None:
+def test_task_simple_parameters() -> None:
     simple_score = score.bind(x=1, y=2)
     assert_type(simple_score, TaskFuture[int])
 
 
 # -- Scalar parameters with options --
-def test_parameters_with_options() -> None:
+def test_task_parameters_with_options() -> None:
     simple_score_options = score.with_options(backend="threading").bind(x=1, y=2)
     assert_type(simple_score_options, TaskFuture[int])
 
 
 # -- Reference parameters --
-def test_reference_parameters() -> None:
+def test_task_reference_parameters() -> None:
     prepared = prepare.bind(n=3)
 
     mixed_score = score.bind(x=prepared, y=2)
@@ -100,14 +101,14 @@ def test_reference_parameters() -> None:
 
 
 # -- Reference parameters with options --
-def test_reference_parameters_with_options() -> None:
+def test_task_reference_parameters_with_options() -> None:
     prepared = prepare.with_options(backend="threading").bind(n=3)
     mixed_score = score.with_options(backend="threading").bind(x=prepared, y=2)
     assert_type(mixed_score, TaskFuture[int])
 
 
 # -- Fan-out with extend map and join --
-def test_extend_map_join() -> None:
+def test_task_extend_map_join() -> None:
     prepared = prepare.extend(n=[1, 2, 3])
     assert_type(prepared, MapTaskFuture[int])
 
@@ -119,13 +120,13 @@ def test_extend_map_join() -> None:
 
 
 # -- Fan-out with extend and mixed parameters --
-def test_extend_with_fix() -> None:
+def test_task_extend_with_fix() -> None:
     extend_score = score.fix(y=10).extend(x=[1, 2, 3])
     assert_type(extend_score, MapTaskFuture[int])
 
 
 # -- Fan-out with zip, map, and join --
-def test_zip_map_join() -> None:
+def test_task_zip_map_join() -> None:
     zip_prepared = prepare.zip(n=[1, 2, 3])
     assert_type(zip_prepared, MapTaskFuture[int])
 
@@ -137,19 +138,19 @@ def test_zip_map_join() -> None:
 
 
 # -- Fan-out with zip and mixed parameters --
-def test_zip_with_fix() -> None:
+def test_task_zip_with_fix() -> None:
     zip_score = score.fix(y=20).zip(x=[1, 2, 3])
     assert_type(zip_score, MapTaskFuture[int])
 
 
 # -- Tasks with no parameters --
-def test_no_parameters() -> None:
+def test_task_no_parameters() -> None:
     constant = get_constant.bind()
     assert_type(constant, TaskFuture[str])
 
 
 # -- Different return types --
-def test_different_return_types() -> None:
+def test_task_different_return_types() -> None:
     data = fetch_data.bind()
     assert_type(data, TaskFuture[dict[str, Any]])
 
@@ -161,7 +162,7 @@ def test_different_return_types() -> None:
 
 
 # -- Optional return types --
-def test_optional_return_types() -> None:
+def test_task_optional_return_types() -> None:
     maybe = maybe_value.bind(x=5)
     assert_type(maybe, TaskFuture[int | None])
 
@@ -170,7 +171,7 @@ def test_optional_return_types() -> None:
 
 
 # -- Multiple dependencies (complex graph) --
-def test_multiple_dependencies() -> None:
+def test_task_multiple_dependencies() -> None:
     dep_a = prepare.bind(n=1)
     dep_b = prepare.bind(n=2)
     dep_c = three_args.bind(x=dep_a, y=dep_b, z=10)
@@ -180,19 +181,19 @@ def test_multiple_dependencies() -> None:
 
 
 # -- Nested map chains --
-def test_nested_map_chains() -> None:
+def test_task_nested_map_chains() -> None:
     nested_maps = prepare.extend(n=[1, 2, 3]).map(double).map(double).join(sum_list)
     assert_type(nested_maps, TaskFuture[int])
 
 
 # -- MapTaskFuture without join --
-def test_map_without_join() -> None:
+def test_task_map_without_join() -> None:
     mapped_only = prepare.extend(n=[1, 2]).map(double)
     assert_type(mapped_only, MapTaskFuture[int])
 
 
 # -- Using fix with partial application --
-def test_fix_partial_application() -> None:
+def test_task_fix_partial_application() -> None:
     fixed_once = three_args.fix(z=100)
     partially_bound = fixed_once.bind(x=1, y=10)
     assert_type(partially_bound, TaskFuture[int])
@@ -203,7 +204,7 @@ def test_fix_partial_application() -> None:
 
 
 # -- extend vs zip with multiple parameters --
-def test_extend_vs_zip_multiple_params() -> None:
+def test_task_extend_vs_zip_multiple_params() -> None:
     cartesian_scores = score.extend(x=[1, 2], y=[10, 20])
     assert_type(cartesian_scores, MapTaskFuture[int])
 
@@ -212,7 +213,7 @@ def test_extend_vs_zip_multiple_params() -> None:
 
 
 # -- Nested extend (fan-out over fan-out results) --
-def test_nested_extend() -> None:
+def test_task_nested_extend() -> None:
     level1_extend = double.extend(x=[1, 2, 3])
     assert_type(level1_extend, MapTaskFuture[int])
 
@@ -224,7 +225,7 @@ def test_nested_extend() -> None:
 
 
 # -- Nested zip (fan-out over fan-out results) --
-def test_nested_zip() -> None:
+def test_task_nested_zip() -> None:
     level1_zip = double.zip(x=[1, 2, 3])
     assert_type(level1_zip, MapTaskFuture[int])
 
@@ -236,7 +237,7 @@ def test_nested_zip() -> None:
 
 
 # -- Map chains with different return types --
-def test_map_chain_type_changes() -> None:
+def test_task_map_chain_type_changes() -> None:
     type_changing_chain = prepare.extend(n=[1, 2, 3]).map(double).map(to_string)
     assert_type(type_changing_chain, MapTaskFuture[str])
 
@@ -245,7 +246,7 @@ def test_map_chain_type_changes() -> None:
 
 
 # -- Mixing concrete values and TaskFutures in extend/zip --
-def test_mixed_concrete_and_futures() -> None:
+def test_task_mixed_concrete_and_futures() -> None:
     prep_future = prepare.bind(n=10)
     mixed_extend = score.extend(x=[1, 2], y=prep_future)
     assert_type(mixed_extend, MapTaskFuture[int])
@@ -255,16 +256,58 @@ def test_mixed_concrete_and_futures() -> None:
 
 
 # -- with_options on FixedParamTask --
-def test_with_options_on_fixed_param_task() -> None:
+def test_task_with_options_on_fixed_param_task() -> None:
     fixed_with_options = score.fix(y=10).with_options(backend="threading")
     options_result = fixed_with_options.bind(x=5)
     assert_type(options_result, TaskFuture[int])
 
 
 # -- Empty iterables in extend/zip --
-def test_empty_iterables() -> None:
+def test_task_empty_iterables() -> None:
     empty_extend = prepare.extend(n=[])
     assert_type(empty_extend, MapTaskFuture[int])
 
     empty_zip = prepare.zip(n=[])
     assert_type(empty_zip, MapTaskFuture[int])
+
+
+# -- Scalar pipeline --
+def test_pipeline_with_scalar_parameters() -> None:
+    @task
+    def add(x: int, y: int) -> int:
+        return x + y
+
+    @pipeline
+    def simple_pipeline(x: int, y: int) -> TaskFuture[int]:
+        return add.bind(x=x, y=y)
+
+    pipeline_result = simple_pipeline(5, 10)
+    assert_type(pipeline_result, TaskFuture[int])
+
+
+# -- Pipeline with extend --
+def test_pipeline_with_extend() -> None:
+    @task
+    def increment(x: int) -> int:
+        return x + 1
+
+    @pipeline
+    def extend_pipeline(values: list[int]) -> MapTaskFuture[int]:
+        return increment.extend(x=values)
+
+    pipeline_result = extend_pipeline([1, 2, 3])
+    assert_type(pipeline_result, MapTaskFuture[int])
+
+
+# -- Pipeline with zip --
+def test_pipeline_with_zip() -> None:
+    @task
+    def square(x: int) -> int:
+        return x * x
+
+    @pipeline
+    def zip_pipeline(values: list[int]) -> MapTaskFuture[int]:
+        return square.zip(x=values)
+
+    pipeline_result = zip_pipeline([1, 2, 3])
+    assert_type(pipeline_result, MapTaskFuture[int])
