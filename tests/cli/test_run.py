@@ -413,7 +413,7 @@ class TestParseParamValue:
 
         result = parse_param_value("/tmp/test", Path)
         assert isinstance(result, Path)
-        assert str(result) == "/tmp/test"
+        assert result == Path("/tmp/test")
 
     def test_parse_custom_type_fallback(self):
         """Test parsing with custom type that fails falls back to string."""
