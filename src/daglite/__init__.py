@@ -29,21 +29,17 @@ For more examples, see the repository's test files.
 __version__ = "0.0.1"
 
 from . import backends
+from . import futures
 from . import settings
 from .engine import evaluate
-from .pipelines import Pipeline
 from .pipelines import load_pipeline
 from .pipelines import pipeline
-from .tasks import MapTaskFuture
-from .tasks import TaskFuture
 from .tasks import task
 
 __all__ = [
-    "MapTaskFuture",
-    "Pipeline",
-    "TaskFuture",
     "backends",
     "evaluate",
+    "futures",
     "load_pipeline",
     "pipeline",
     "settings",
