@@ -12,6 +12,7 @@ from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph
 from daglite.settings import DagliteSettings
+from daglite.tasks import BaseTaskFuture
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -39,7 +40,7 @@ def evaluate(
 
 
 def evaluate(
-    expr: GraphBuilder,
+    expr: BaseTaskFuture[Any],
     default_backend: str | Backend = "sequential",
     use_async: bool = False,
 ) -> Any:
@@ -47,7 +48,7 @@ def evaluate(
     Evaluate a task graph.
 
     Args:
-        expr (daglite.graph.base.GraphBuilder):
+        expr (daglite.graph.base.BaseTaskFuture):
             The task graph to evaluate.
         default_backend (str | daglite.backends.Backend, optional):
             Default backend for task execution. If a node does not have a specific backend
@@ -232,7 +233,7 @@ class Engine:
                 # Update dependencies
                 for succ in successors.get(nid, ()):
                     indegree[succ] -= 1
-                    if indegree[succ] == 0:  # pragma: no branch
+                    if indegree[succ] == 0:
                         ready.append(succ)
 
         return values[root_id]

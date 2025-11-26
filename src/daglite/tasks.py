@@ -396,7 +396,7 @@ class FixedParamTask(BaseTask[P, R]):
 # region Task Futures
 
 
-class BaseTaskFuture(abc.ABC):
+class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     @cached_property
@@ -419,7 +419,7 @@ class BaseTaskFuture(abc.ABC):
 
 
 @dataclass(frozen=True)
-class TaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
+class TaskFuture(BaseTaskFuture[R]):
     """
     Represents a single task invocation that will produce a value of type R.
 
@@ -440,7 +440,7 @@ class TaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         deps: list[GraphBuilder] = []
         for value in self.kwargs.values():
             if isinstance(value, BaseTaskFuture):
-                deps.append(value)  # type: ignore[arg-type]
+                deps.append(value)
         return deps
 
     @override
@@ -464,7 +464,7 @@ class TaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
 
 
 @dataclass(frozen=True)
-class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
+class MapTaskFuture(BaseTaskFuture[R]):
     """
     Represents a fan-out task invocation producing a sequence of values of type R.
 
@@ -622,10 +622,10 @@ class MapTaskFuture(BaseTaskFuture, GraphBuilder, Generic[R]):
         deps: list[GraphBuilder] = []
         for value in self.fixed_kwargs.values():
             if isinstance(value, BaseTaskFuture):
-                deps.append(value)  # type: ignore[arg-type]
+                deps.append(value)
         for seq in self.mapped_kwargs.values():
             if isinstance(seq, BaseTaskFuture):
-                deps.append(seq)  # type: ignore[arg-type]
+                deps.append(seq)
         return deps
 
     @override
