@@ -20,10 +20,12 @@ class TestCLIBase:
 
     def test_cli_version(self):
         """Test that --version works."""
+        from daglite import __version__
+
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert "0.0.1" in result.output
+        assert __version__ in result.output
 
     def test_cli_no_command(self):
         """Test CLI with no command shows help."""
