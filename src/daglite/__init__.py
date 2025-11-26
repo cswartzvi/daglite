@@ -26,7 +26,7 @@ Basic Usage:
 For more examples, see the repository's test files.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from . import backends
 from . import futures
