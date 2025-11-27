@@ -6,10 +6,7 @@ import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
-
-if TYPE_CHECKING:
-    pass
+from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 P = ParamSpec("P")
 R = TypeVar("R")

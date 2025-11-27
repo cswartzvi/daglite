@@ -15,6 +15,8 @@ from daglite.exceptions import ParameterError
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
 
+# NOTE: Import types only for type checking to avoid circular imports, if you need
+# to use them at runtime, import them within methods.
 if TYPE_CHECKING:
     from daglite.engine import Backend
     from daglite.graph.nodes import MapTaskNode

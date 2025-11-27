@@ -17,6 +17,8 @@ from daglite.futures import BaseTaskFuture
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 
+# NOTE: Import types only for type checking to avoid circular imports, if you need
+# to use them at runtime, import them within methods.
 if TYPE_CHECKING:
     from daglite.engine import Backend
 else:
