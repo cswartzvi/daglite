@@ -21,18 +21,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.11'
+          enable-cache: true
+          python-version: "3.13"
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -e ".[docs]"
+        run: uv sync --all-extras --dev --group docs
 
       - name: Build documentation
-        run: mkdocs build --strict
+        run: uv run mkdocs build --strict
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
