@@ -10,7 +10,7 @@
 
 ## What is Daglite?
 
-Daglite is a lightweight Python framework for building **Directed Acyclic Graphs (DAGs)** with explicit data flow, full type safety, and composable operations. It provides a simple, intuitive API for defining and executing complex computational pipelines.
+Daglite is a lightweight Python framework for building **Directed Acyclic Graphs (DAGs)** with explicit data flow, complete type safety, and composable operations. It provides a simple, intuitive API for defining and executing complex computational pipelines.
 
 ### Key Principles
 
@@ -122,7 +122,7 @@ total = (
 )
 ```
 
-### Full Type Safety
+### Complete Type Safety
 
 Works seamlessly with type checkers:
 

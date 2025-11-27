@@ -16,7 +16,7 @@ A lightweight, type-safe Python framework for building and executing DAGs (Direc
 
 ## ✨ Key Features
 
-- **🎯 Explicit & Type-Safe**: Full type inference with `mypy`, `pyright`, and `pyrefly`
+- **🎯 Explicit & Type-Safe**: Complete type checking support with `mypy`, `pyright`, and `pyrefly`
 - **🔗 Fluent API**: Chain operations naturally with `.then()`, `.map()`, `.join()`
 - **📦 Zero Dependencies**: Core library has no external dependencies
 - **⚡ Async Support**: Built-in async execution with threading/multiprocessing
@@ -234,7 +234,7 @@ Building data pipelines typically involves:
 
 Daglite provides:
 - **Explicit dependencies** - Clear data flow graph visible in your code
-- **Full type inference** - Catch errors before runtime, autocomplete everywhere
+- **Complete type checking** - Catch errors before runtime, autocomplete everywhere
 - **Zero infrastructure** - Pure Python, runs anywhere Python runs
 - **Simple API** - If you know Python functions, you know Daglite
 
