@@ -5,7 +5,7 @@ import inspect
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
 
@@ -76,6 +76,14 @@ class TaskFuture(BaseTaskFuture[R]):
     backend: Backend
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
+    @overload
+    def then(self, next_task: Task[Any, S]) -> "TaskFuture[S]": ...
+
+    @overload
+    def then(
+        self, next_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "TaskFuture[S]": ...
+
     def then(
         self,
         next_task: Task[Any, S] | FixedParamTask[Any, S],
@@ -86,6 +94,48 @@ class TaskFuture(BaseTaskFuture[R]):
 
         Additional kwargs are passed to the next task. The upstream output
         is automatically bound to the single remaining unbound parameter.
+
+        Args:
+            next_task: Task or FixedParamTask to chain with this task's output.
+            **kwargs: Additional parameters to pass to the next task.
+
+        Returns:
+            A new TaskFuture representing the chained computation.
+
+        Raises:
+            ParameterError: If the next task has no unbound parameters, multiple
+                unbound parameters, or if kwargs overlap with fixed parameters.
+
+        Examples:
+            Basic chaining:
+            >>> @task
+            >>> def fetch(url: str) -> str:
+            >>>     return requests.get(url).text
+            >>>
+            >>> @task
+            >>> def parse(html: str) -> dict:
+            >>>     return parse_html(html)
+            >>>
+            >>> result = fetch.bind(url="example.com").then(parse)
+
+            With inline parameters:
+            >>> @task
+            >>> def transform(data: str, format: str) -> dict:
+            >>>     return convert(data, format)
+            >>>
+            >>> result = fetch.bind(url="example.com").then(transform, format="json")
+
+            With pre-fixed tasks:
+            >>> transform_json = transform.fix(format="json")
+            >>> result = fetch.bind(url="example.com").then(transform_json)
+
+            Chaining multiple operations:
+            >>> result = (
+            >>>     fetch.bind(url="example.com")
+            >>>     .then(parse)
+            >>>     .then(transform, format="json")
+            >>>     .then(save, path="output.json")
+            >>> )
         """
         # NOTE: Import at runtime to avoid circular import issues
         from daglite.tasks import FixedParamTask
@@ -186,6 +236,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
     backend: Backend
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
+    @overload
+    def map(self, mapped_task: Task[Any, S]) -> "MapTaskFuture[S]": ...
+
+    @overload
+    def map(
+        self, mapped_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "MapTaskFuture[S]": ...
+
     def map(
         self, mapped_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
     ) -> MapTaskFuture[S]:
@@ -193,30 +251,46 @@ class MapTaskFuture(BaseTaskFuture[R]):
         Apply a task to each element of this sequence.
 
         Args:
-            mapped_task (Task[Any, S] | FixedParamTask[Any, S]):
-                `Task` with exactly ONE parameter, or a `FixedParamTask` where one parameter
-                remains unbound.
-            **kwargs: Additional parameters to pass to the task. The sequence element will be
-                bound to the single remaining unbound parameter.
+            mapped_task: Task with exactly ONE parameter, or a FixedParamTask where
+                one parameter remains unbound.
+            **kwargs: Additional parameters to pass to the task. The sequence element
+                will be bound to the single remaining unbound parameter.
+
+        Returns:
+            A new MapTaskFuture with the mapped task applied to each element.
 
         Raises:
-            ParameterError: If the provided task does not have exactly one unbound parameter.
+            ParameterError: If the provided task does not have exactly one unbound
+                parameter, or if kwargs overlap with fixed parameters.
 
         Examples:
-        Single-parameter task
-        >>> @task
-        >>> def double(x: int) -> int:
-        >>>     return x * 2
-        >>> results = numbers.map(double)
+            Single-parameter task:
+            >>> @task
+            >>> def double(x: int) -> int:
+            >>>     return x * 2
+            >>>
+            >>> numbers = identity.extend(x=[1, 2, 3])
+            >>> doubled = numbers.map(double)
+            >>> # Result: [2, 4, 6]
 
-        Multi-parameter task with inline kwargs
-        >>> @task
-        >>> def scale(x: int, factor: int) -> int:
-        >>>     return x * factor
-        >>> results = numbers.map(scale, factor=10)
+            Multi-parameter task with inline kwargs:
+            >>> @task
+            >>> def scale(x: int, factor: int) -> int:
+            >>>     return x * factor
+            >>>
+            >>> scaled = numbers.map(scale, factor=10)
+            >>> # Result: [10, 20, 30]
 
-        Multi-parameter task with .fix() (still supported)
-        >>> results = numbers.map(scale.fix(factor=10))
+            Chaining map operations:
+            >>> result = (
+            >>>     numbers
+            >>>     .map(scale, factor=2)
+            >>>     .map(add, offset=10)
+            >>>     .map(square)
+            >>> )
+
+            With pre-fixed tasks (still supported):
+            >>> scaled = numbers.map(scale.fix(factor=10))
         """
         # NOTE: Import at runtime to avoid circular import issues
         from daglite.tasks import FixedParamTask
@@ -256,6 +330,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
             backend=self.backend,
         )
 
+    @overload
+    def join(self, reducer_task: Task[Any, S]) -> "TaskFuture[S]": ...
+
+    @overload
+    def join(
+        self, reducer_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "TaskFuture[S]": ...
+
     def join(
         self, reducer_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
     ) -> TaskFuture[S]:
@@ -263,29 +345,45 @@ class MapTaskFuture(BaseTaskFuture[R]):
         Reduce this sequence to a single value.
 
         Args:
-            reducer_task:
-                `Task` with exactly ONE parameter (the sequence), or a `FixedParamTask` with
-                one unbound parameter.
-            **kwargs: Additional parameters to pass to the reducer task. The sequence will be
-                bound to the single remaining unbound parameter.
+            reducer_task: Task with exactly ONE parameter (the sequence), or a
+                FixedParamTask with one unbound parameter.
+            **kwargs: Additional parameters to pass to the reducer task. The sequence
+                will be bound to the single remaining unbound parameter.
+
+        Returns:
+            A TaskFuture representing the reduced single value.
 
         Raises:
-            ParameterError: If the provided task does not have exactly one unbound parameter.
+            ParameterError: If the provided task does not have exactly one unbound
+                parameter, or if kwargs overlap with fixed parameters.
 
         Examples:
-            # Simple reducer
+            Simple reducer:
             >>> @task
             >>> def sum_all(xs: list[int]) -> int:
-            >>>    return sum(xs)
+            >>>     return sum(xs)
+            >>>
+            >>> numbers = square.extend(x=[1, 2, 3, 4])
             >>> total = numbers.join(sum_all)
+            >>> # Result: 30 (1 + 4 + 9 + 16)
 
-            # Reducer with inline kwargs
+            Reducer with inline kwargs:
             >>> @task
             >>> def weighted_sum(xs: list[int], weight: float) -> float:
-            >>>    return sum(xs) * weight
+            >>>     return sum(xs) * weight
+            >>>
             >>> total = numbers.join(weighted_sum, weight=0.5)
+            >>> # Result: 15.0
 
-            # Reducer with .fix() (still supported)
+            Complete map-reduce pipeline:
+            >>> result = (
+            >>>     identity.extend(x=[1, 2, 3])
+            >>>     .map(scale, factor=2)
+            >>>     .map(add, offset=10)
+            >>>     .join(sum_with_bonus, bonus=100)
+            >>> )
+
+            With pre-fixed tasks (still supported):
             >>> total = numbers.join(weighted_sum.fix(weight=0.5))
         """
         # NOTE: Import at runtime to avoid circular import issues
