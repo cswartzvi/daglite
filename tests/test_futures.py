@@ -57,6 +57,100 @@ class TestInvalidTaskFutureDefinitions:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             fixed.bind(x=5, y=10)
 
+    def test_task_then_with_invalid_params(self) -> None:
+        """Chaining fails when given parameters that don't exist."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        added = add.fix(x=5)
+
+        with pytest.raises(ParameterError, match="Invalid parameters for task"):
+            prepared.then(added, z=5)
+
+    def test_task_then_with_multiple_ubound_params(self) -> None:
+        """Chaining with partially bound tasks fails when given invalid parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y + z
+
+        prepared = prepare.bind(data=10)
+
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.then(add)
+
+    def test_fixed_task_then_with_multiple_ubound_params(self) -> None:
+        """Chaining with partially bound tasks fails when given invalid parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y + z
+
+        prepared = prepare.bind(data=10)
+        fixed_add = add.fix(z=20)
+
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.then(fixed_add)
+
+    def test_fixed_task_then_with_no_unbound_params(self) -> None:
+        """Chaining with fully bound tasks fails when there are no unbound parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        added = add.fix(x=5, y=15)
+
+        with pytest.raises(ParameterError, match="has no unbound parameters"):
+            prepared.then(added)
+
+    def test_fixe_task_then_with_overlapping_params(self) -> None:
+        """Chaining with partially bound tasks fails when given overlapping parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        fixed = add.fix(y=5)
+
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            prepared.then(fixed, y=20)
+
     def test_task_fix_with_invalid_params(self) -> None:
         """Fixing fails when given parameters that don't exist."""
 
@@ -77,7 +171,7 @@ class TestInvalidTaskFutureDefinitions:
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            add.extend(y=20, z=5)
+            add.extend(x=20, y=5)
 
     def test_task_extend_with_overlapping_params(self) -> None:
         """Cartesian product fails when attempting to rebind fixed parameters."""

@@ -76,6 +76,46 @@ class TaskFuture(BaseTaskFuture[R]):
     backend: Backend
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
+    def then(
+        self,
+        next_task: Task[Any, S] | FixedParamTask[Any, S],
+        **kwargs: Any,
+    ) -> "TaskFuture[S]":
+        """
+        Chain this task's output as input to another task.
+
+        Additional kwargs are passed to the next task. The upstream output
+        is automatically bound to the single remaining unbound parameter.
+        """
+        # NOTE: Import at runtime to avoid circular import issues
+        from daglite.tasks import FixedParamTask
+
+        if isinstance(next_task, FixedParamTask):
+            # Merge existing fixed kwargs with new ones
+            all_fixed = {**next_task.fixed_kwargs, **kwargs}
+            sig = inspect.signature(next_task.task.func)
+        else:
+            all_fixed = kwargs
+            sig = inspect.signature(next_task.func)
+
+        # Find the one unbound parameter
+        unbound = [name for name in sig.parameters if name not in all_fixed]
+
+        if len(unbound) == 0:
+            raise ParameterError(
+                f"Task '{next_task.name}' in `.then()` has no unbound parameters for "
+                f"upstream value. All parameters already provided: {list(all_fixed.keys())}"
+            )
+        if len(unbound) > 1:
+            raise ParameterError(
+                f"Task '{next_task.name}' in `.then()` must have exactly one "
+                f"unbound parameter for upstream value, found {len(unbound)}: {unbound} "
+                f"(use `.fix()` to set scalar parameters): {unbound[1:]}"
+            )
+
+        target_param = unbound[0]
+        return next_task.bind(**{target_param: self}, **all_fixed)
+
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
         deps: list[GraphBuilder] = []
