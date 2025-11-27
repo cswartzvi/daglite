@@ -91,12 +91,21 @@ class TaskFuture(BaseTaskFuture[R]):
         from daglite.tasks import FixedParamTask
 
         if isinstance(next_task, FixedParamTask):
+            # Check for overlapping parameters
+            if overlap_params := set(next_task.fixed_kwargs.keys()) & set(kwargs.keys()):
+                raise ParameterError(
+                    f"Overlapping parameters for task '{next_task.name}' in `.then()`, "
+                    f"specified parameters were previously bound in `.fix()`: "
+                    f"{sorted(overlap_params)}"
+                )
             # Merge existing fixed kwargs with new ones
             all_fixed = {**next_task.fixed_kwargs, **kwargs}
             sig = inspect.signature(next_task.task.func)
+            actual_task = next_task.task
         else:
             all_fixed = kwargs
             sig = inspect.signature(next_task.func)
+            actual_task = next_task
 
         # Find the one unbound parameter
         unbound = [name for name in sig.parameters if name not in all_fixed]
@@ -114,7 +123,7 @@ class TaskFuture(BaseTaskFuture[R]):
             )
 
         target_param = unbound[0]
-        return next_task.bind(**{target_param: self}, **all_fixed)
+        return actual_task.bind(**{target_param: self}, **all_fixed)
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
@@ -177,7 +186,9 @@ class MapTaskFuture(BaseTaskFuture[R]):
     backend: Backend
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
-    def map(self, mapped_task: Task[Any, S] | FixedParamTask[Any, S]) -> MapTaskFuture[S]:
+    def map(
+        self, mapped_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> MapTaskFuture[S]:
         """
         Apply a task to each element of this sequence.
 
@@ -185,6 +196,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
             mapped_task (Task[Any, S] | FixedParamTask[Any, S]):
                 `Task` with exactly ONE parameter, or a `FixedParamTask` where one parameter
                 remains unbound.
+            **kwargs: Additional parameters to pass to the task. The sequence element will be
+                bound to the single remaining unbound parameter.
 
         Raises:
             ParameterError: If the provided task does not have exactly one unbound parameter.
@@ -196,49 +209,56 @@ class MapTaskFuture(BaseTaskFuture[R]):
         >>>     return x * 2
         >>> results = numbers.map(double)
 
-        Multi-parameter task with scalars fixed
+        Multi-parameter task with inline kwargs
         >>> @task
         >>> def scale(x: int, factor: int) -> int:
         >>>     return x * factor
+        >>> results = numbers.map(scale, factor=10)
+
+        Multi-parameter task with .fix() (still supported)
         >>> results = numbers.map(scale.fix(factor=10))
         """
+        # NOTE: Import at runtime to avoid circular import issues
         from daglite.tasks import FixedParamTask
 
         if isinstance(mapped_task, FixedParamTask):
+            # Check for overlapping parameters
+            if overlap_params := set(mapped_task.fixed_kwargs.keys()) & set(kwargs.keys()):
+                raise ParameterError(
+                    f"Overlapping parameters for task '{mapped_task.name}' in `.map()`, "
+                    f"specified parameters were previously bound in `.fix()`: "
+                    f"{sorted(overlap_params)}"
+                )
+            # Merge existing fixed kwargs with new ones
+            all_fixed = {**mapped_task.fixed_kwargs, **kwargs}
             sig = inspect.signature(mapped_task.task.func)
-            bound_params = set(mapped_task.fixed_kwargs.keys())
-            unbound_params = [p for p in sig.parameters if p not in bound_params]
-            if len(unbound_params) != 1:
-                raise ParameterError(
-                    f"Task '{mapped_task.name}' in `.map()` must have exactly one "
-                    f"unbound parameter, found {len(unbound_params)} "
-                    f"(use `.fix()` to set scalar parameters): {unbound_params}"
-                )
-            param_name = unbound_params[0]
             actual_task = mapped_task.task
-            fixed_kwargs = mapped_task.fixed_kwargs
-
         else:
+            all_fixed = kwargs
             sig = inspect.signature(mapped_task.func)
-            params = list(sig.parameters.keys())
-            if len(params) != 1:
-                raise ParameterError(
-                    f"Task '{mapped_task.name}' in `.map()` must have exactly one parameter, "
-                    f"found {len(params)} (use `.fix()` to set scalar parameters): {params}"
-                )
-            param_name = params[0]
             actual_task = mapped_task
-            fixed_kwargs = {}
+
+        # Find the one unbound parameter
+        unbound_params = [p for p in sig.parameters if p not in all_fixed]
+        if len(unbound_params) != 1:
+            raise ParameterError(
+                f"Task '{mapped_task.name}' in `.map()` must have exactly one "
+                f"unbound parameter, found {len(unbound_params)} "
+                f"(use `.fix()` to set scalar parameters): {unbound_params}"
+            )
+        param_name = unbound_params[0]
 
         return MapTaskFuture(
             task=actual_task,
             mode="extend",
-            fixed_kwargs=fixed_kwargs,
+            fixed_kwargs=all_fixed,
             mapped_kwargs={param_name: self},
             backend=self.backend,
         )
 
-    def join(self, reducer_task: Task[Any, S] | FixedParamTask[Any, S]) -> TaskFuture[S]:
+    def join(
+        self, reducer_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> TaskFuture[S]:
         """
         Reduce this sequence to a single value.
 
@@ -246,6 +266,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
             reducer_task:
                 `Task` with exactly ONE parameter (the sequence), or a `FixedParamTask` with
                 one unbound parameter.
+            **kwargs: Additional parameters to pass to the reducer task. The sequence will be
+                bound to the single remaining unbound parameter.
 
         Raises:
             ParameterError: If the provided task does not have exactly one unbound parameter.
@@ -257,42 +279,46 @@ class MapTaskFuture(BaseTaskFuture[R]):
             >>>    return sum(xs)
             >>> total = numbers.join(sum_all)
 
-            # Reducer with additional parameters
+            # Reducer with inline kwargs
             >>> @task
             >>> def weighted_sum(xs: list[int], weight: float) -> float:
             >>>    return sum(xs) * weight
+            >>> total = numbers.join(weighted_sum, weight=0.5)
+
+            # Reducer with .fix() (still supported)
             >>> total = numbers.join(weighted_sum.fix(weight=0.5))
         """
+        # NOTE: Import at runtime to avoid circular import issues
         from daglite.tasks import FixedParamTask
 
         if isinstance(reducer_task, FixedParamTask):
+            # Check for overlapping parameters
+            if overlap_params := set(reducer_task.fixed_kwargs.keys()) & set(kwargs.keys()):
+                raise ParameterError(
+                    f"Overlapping parameters for task '{reducer_task.name}' in `.join()`, "
+                    f"specified parameters were previously bound in `.fix()`: "
+                    f"{sorted(overlap_params)}"
+                )
+            # Merge existing fixed kwargs with new ones
+            all_fixed = {**reducer_task.fixed_kwargs, **kwargs}
             sig = inspect.signature(reducer_task.task.func)
-            bound_params = set(reducer_task.fixed_kwargs.keys())
-            unbound_params = [p for p in sig.parameters if p not in bound_params]
-            if len(unbound_params) != 1:
-                raise ParameterError(
-                    f"Task '{reducer_task.name}' in `.join()` must have exactly one "
-                    f"unbound parameter, found {len(unbound_params)} "
-                    f"(use `.fix()` to set scalar parameters): {unbound_params}"
-                )
-            param_name = unbound_params[0]
             actual_task = reducer_task.task
-            fixed_kwargs = reducer_task.fixed_kwargs
-
         else:
+            all_fixed = kwargs
             sig = inspect.signature(reducer_task.func)
-            params = list(sig.parameters.keys())
-
-            if len(params) != 1:
-                raise ParameterError(
-                    f"Task '{reducer_task.name}' in `.join()` must have exactly one parameter, "
-                    f"found {len(params)} (use `.fix()` to set scalar parameters): {params}"
-                )
-            param_name = params[0]
             actual_task = reducer_task
-            fixed_kwargs = {}
 
-        merged_kwargs = dict(fixed_kwargs)
+        # Find the one unbound parameter
+        unbound_params = [p for p in sig.parameters if p not in all_fixed]
+        if len(unbound_params) != 1:
+            raise ParameterError(
+                f"Task '{reducer_task.name}' in `.join()` must have exactly one "
+                f"unbound parameter, found {len(unbound_params)} "
+                f"(use `.fix()` to set scalar parameters): {unbound_params}"
+            )
+        param_name = unbound_params[0]
+
+        merged_kwargs = dict(all_fixed)
         merged_kwargs[param_name] = self
 
         return TaskFuture(

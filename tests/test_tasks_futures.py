@@ -178,74 +178,6 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.then(add)
 
-    def test_fixed_task_then_with_multiple_ubound_params(self) -> None:
-        """Chaining with partially bound tasks fails when given invalid parameters."""
-
-        @task
-        def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
-            return data + 1
-
-        @task
-        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y + z
-
-        prepared = prepare.bind(data=10)
-        fixed_add = add.fix(z=20)
-
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.then(fixed_add)
-
-    def test_fixed_task_then_with_no_unbound_params(self) -> None:
-        """Chaining with fully bound tasks fails when there are no unbound parameters."""
-
-        @task
-        def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
-            return data + 1
-
-        @task
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y
-
-        prepared = prepare.bind(data=10)
-        added = add.fix(x=5, y=15)
-
-        with pytest.raises(ParameterError, match="has no unbound parameters"):
-            prepared.then(added)
-
-    def test_fixe_task_then_with_overlapping_params(self) -> None:
-        """Chaining with partially bound tasks fails when given overlapping parameters."""
-
-        @task
-        def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
-            return data + 1
-
-        @task
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y
-
-        prepared = prepare.bind(data=10)
-        fixed = add.fix(y=5)
-
-        with pytest.raises(ParameterError, match="Overlapping parameters"):
-            prepared.then(fixed, y=20)
-
-    def test_task_fix_with_invalid_params(self) -> None:
-        """Fixing fails when given parameters that don't exist."""
-
-        @task
-        def divide(x: int, y: int) -> float:  # pragma: no cover
-            """Simple division function."""
-            return x / y
-
-        with pytest.raises(ParameterError, match="Invalid parameters for task"):
-            divide.fix(z=5)
-
     def test_task_extend_with_non_iterable_params(self) -> None:
         """Cartesian product operations require iterable parameters."""
 
@@ -366,11 +298,11 @@ class TestInvalidTaskAndTaskFutureUsage:
             return a + b
 
         prepared = prepare.extend(data=[1, 2, 3])
-        with pytest.raises(ParameterError, match="must have exactly one parameter"):
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.map(mapping)
 
-    def test_fixed_task_map_with_invalid_signature(self) -> None:
-        """Mapping with partially bound tasks requires exactly one unbound parameter."""
+    def test_task_map_with_kwargs(self) -> None:
+        """Mapping with inline kwargs works correctly."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
@@ -378,13 +310,63 @@ class TestInvalidTaskAndTaskFutureUsage:
             return data + 1
 
         @task
-        def mapping(a: int, b: int, c: int) -> int:  # pragma: no cover
-            return a + b + c
+        def scale(x: int, factor: int) -> int:  # pragma: no cover
+            return x * factor
 
         prepared = prepare.extend(data=[1, 2, 3])
-        fixed_mapping = mapping.fix(c=20)
+        # Should work with inline kwargs
+        scaled = prepared.map(scale, factor=10)
+        assert scaled is not None
+
+    def test_task_map_with_kwargs_multiple_unbound(self) -> None:
+        """Mapping with kwargs fails when multiple parameters remain unbound."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
+            return x + y + z
+
+        prepared = prepare.extend(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.map(fixed_mapping)
+            prepared.map(add, z=5)
+
+    def test_task_map_with_overlapping_kwargs(self) -> None:
+        """Mapping with overlapping kwargs fails."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def scale(x: int, factor: int) -> int:  # pragma: no cover
+            return x * factor
+
+        prepared = prepare.extend(data=[1, 2, 3])
+        fixed_scale = scale.fix(factor=10)
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            prepared.map(fixed_scale, factor=20)
+
+    def test_task_join_with_kwargs(self) -> None:
+        """Reducing with inline kwargs works correctly."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
+            return sum(xs) * weight
+
+        prepared = prepare.extend(data=[1, 2, 3])
+        # Should work with inline kwargs
+        total = prepared.join(weighted_sum, weight=2.5)
+        assert total is not None
 
     def test_task_join_with_invalid_signature(self) -> None:
         """Reducing results requires a single-parameter function."""
@@ -404,8 +386,126 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         prepared = prepare.extend(data=[1, 2, 3])
         mapped = prepared.map(mapping)
-        with pytest.raises(ParameterError, match="must have exactly one parameter"):
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(joining)
+
+    def test_task_join_with_kwargs_multiple_unbound(self) -> None:
+        """Reducing with kwargs fails when multiple parameters remain unbound."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def reduce_three(xs: list[int], y: int, z: int) -> int:  # pragma: no cover
+            return sum(xs) + y + z
+
+        prepared = prepare.extend(data=[1, 2, 3])
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.join(reduce_three, z=5)
+
+    def test_task_join_with_overlapping_kwargs(self) -> None:
+        """Reducing with overlapping kwargs fails."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
+            return sum(xs) * weight
+
+        prepared = prepare.extend(data=[1, 2, 3])
+        fixed_sum = weighted_sum.fix(weight=1.5)
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            prepared.join(fixed_sum, weight=2.5)
+
+    def test_fixed_task_with_invalid_params(self) -> None:
+        """Fixing fails when given parameters that don't exist."""
+
+        @task
+        def divide(x: int, y: int) -> float:  # pragma: no cover
+            """Simple division function."""
+            return x / y
+
+        with pytest.raises(ParameterError, match="Invalid parameters for task"):
+            divide.fix(z=5)
+
+    def test_fixed_task_then_with_multiple_ubound_params(self) -> None:
+        """Chaining with partially bound tasks fails when given invalid parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y + z
+
+        prepared = prepare.bind(data=10)
+        fixed_add = add.fix(z=20)
+
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.then(fixed_add)
+
+    def test_fixed_task_then_with_no_unbound_params(self) -> None:
+        """Chaining with fully bound tasks fails when there are no unbound parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        added = add.fix(x=5, y=15)
+
+        with pytest.raises(ParameterError, match="has no unbound parameters"):
+            prepared.then(added)
+
+    def test_fixed_task_then_with_overlapping_params(self) -> None:
+        """Chaining with partially bound tasks fails when given overlapping parameters."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            """Simple addition function."""
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        fixed = add.fix(y=5)
+
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            prepared.then(fixed, y=20)
+
+    def test_fixed_task_map_with_invalid_signature(self) -> None:
+        """Mapping with partially bound tasks requires exactly one unbound parameter."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def mapping(a: int, b: int, c: int) -> int:  # pragma: no cover
+            return a + b + c
+
+        prepared = prepare.extend(data=[1, 2, 3])
+        fixed_mapping = mapping.fix(c=20)
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.map(fixed_mapping)
 
     def test_fixed_task_join_with_invalid_signature(self) -> None:
         """Reducing with partially bound tasks requires exactly one unbound parameter."""
