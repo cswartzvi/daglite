@@ -286,12 +286,6 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.bind()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
-
         merged = {**self.fixed_kwargs, **kwargs}
         signature = inspect.signature(self.task.func)
 
@@ -305,24 +299,17 @@ class FixedParamTask(BaseTask[P, R]):
                 f"Missing parameters for task '{self.name}' in `.bind()`: {missing_params}"
             )
 
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
+            raise ParameterError(
+                f"Overlapping parameters for '{self.name}' in `.bind()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
+            )
+
         return TaskFuture(task=self.task, kwargs=merged, backend=self.backend)
 
     @override
     def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.extend()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
-
         signature = inspect.signature(self.task.func)
-
-        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
-            raise ParameterError(
-                f"Non-iterable parameters for task '{self.name}' in `.extend()`, "
-                f"all parameters must be Iterable or TaskFuture[Iterable] "
-                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
-            )
 
         merged = {**self.fixed_kwargs, **kwargs}
 
@@ -336,6 +323,19 @@ class FixedParamTask(BaseTask[P, R]):
                 f"Missing parameters for task '{self.name}' in `.extend()`: {missing_params}"
             )
 
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
+            raise ParameterError(
+                f"Overlapping parameters for '{self.name}' in `.extend()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
+            )
+
+        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Non-iterable parameters for task '{self.name}' in `.extend()`, "
+                f"all parameters must be Iterable or TaskFuture[Iterable] "
+                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
+            )
+
         return MapTaskFuture(
             task=self.task,
             mode="extend",
@@ -346,27 +346,7 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.zip()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
-
         signature = inspect.signature(self.task.func)
-
-        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
-            raise ParameterError(
-                f"Non-iterable parameters for task '{self.name}' in `.zip()`, "
-                f"all parameters must be Iterable or TaskFuture[Iterable] "
-                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
-            )
-
-        # len_details = {len(v) for v in kwargs.values() if not isinstance(v, BaseTaskFuture)}
-        # if len(len_details) > 1:
-        #     raise ParameterError(
-        #         f"Mixed lengths for scalar parameters in `.zip()`, all sequences must have the "
-        #         f"same length: {kwargs}"
-        #     )
 
         merged = {**self.fixed_kwargs, **kwargs}
 
@@ -378,6 +358,30 @@ class FixedParamTask(BaseTask[P, R]):
         if missing_params := _find_missing_parameters(signature.parameters, merged):
             raise ParameterError(
                 f"Missing parameters for task '{self.name}' in `.zip()`: {missing_params}"
+            )
+
+        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
+            raise ParameterError(
+                f"Overlapping parameters for '{self.name}' in `.zip()`, specified parameters "
+                f"were previously bound in `.fix()`: {overlap_params}"
+            )
+
+        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
+            raise ParameterError(
+                f"Non-iterable parameters for task '{self.name}' in `.zip()`, "
+                f"all parameters must be Iterable or TaskFuture[Iterable] "
+                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
+            )
+
+        len_details = {
+            len(val)  # type: ignore
+            for val in kwargs.values()
+            if not isinstance(val, BaseTaskFuture)
+        }
+        if len(len_details) > 1:
+            raise ParameterError(
+                f"Mixed lengths for scalar parameters in `.zip()`, all sequences must have the "
+                f"same length: {kwargs}"
             )
 
         return MapTaskFuture(
