@@ -156,18 +156,7 @@ def cpu_task(data: np.ndarray) -> np.ndarray:
 
 ## Next Steps
 
-### :material-clock-fast: [Getting Started](getting-started.md)
-
-Install Daglite and learn the basics in 5 minutes
-
-### :material-book-open-variant: [User Guide](user-guide/tasks.md)
-
-In-depth guides on tasks, composition, and evaluation
-
-### :material-code-tags: [CLI & Pipelines](user-guide/pipelines.md)
-
-Command-line interface and pipeline definitions
-
-### :material-lightbulb-on: [Examples](examples.md)
-
-Real-world examples and patterns
+- **[Getting Started](getting-started.md)** - Install Daglite and learn the basics in 5 minutes
+- **[User Guide](user-guide/tasks.md)** - In-depth guides on tasks, composition, and evaluation
+- **[CLI & Pipelines](user-guide/pipelines.md)** - Command-line interface and pipeline definitions
+- **[Examples](examples.md)** - Real-world examples and patterns
