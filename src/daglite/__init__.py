@@ -3,11 +3,11 @@ Daglite: Lightweight Python framework for building static DAGs with explicit bin
 
 Daglite provides a simple, type-safe way to build and execute directed acyclic graphs (DAGs)
 of Python functions. Tasks are defined using the @task decorator, composed using fluent
-binding operations (.bind, .extend, .zip, .map, .join), and executed with the evaluate() function.
+binding operations (.bind, .product, .zip, .map, .join), and executed with the evaluate() function.
 
 Key Features:
     - Explicit parameter binding (no implicit dependencies)
-    - Fan-out/fan-in patterns with .extend() and .zip()
+    - Fan-out/fan-in patterns with .product() and .zip()
     - Type-safe task composition with generic support
     - Multiple execution backends (local, threading)
     - Async/await support for I/O-bound workloads

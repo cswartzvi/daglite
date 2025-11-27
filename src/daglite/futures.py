@@ -216,8 +216,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
     task: Task[Any, R]
     """Underlying task to be called."""
 
-    mode: str  # "extend" or "zip"
-    """Mode of operation ('extend' for Cartesian product, 'zip' for pairwise)."""
+    mode: str  # "product" or "zip"
+    """Mode of operation ('product' for Cartesian product, 'zip' for pairwise)."""
 
     fixed_kwargs: Mapping[str, Any]
     """
@@ -269,7 +269,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             >>> def double(x: int) -> int:
             >>>     return x * 2
             >>>
-            >>> numbers = identity.extend(x=[1, 2, 3])
+            >>> numbers = identity.product(x=[1, 2, 3])
             >>> doubled = numbers.map(double)
             >>> # Result: [2, 4, 6]
 
@@ -324,7 +324,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
         return MapTaskFuture(
             task=actual_task,
-            mode="extend",
+            mode="product",
             fixed_kwargs=all_fixed,
             mapped_kwargs={param_name: self},
             backend=self.backend,
@@ -363,7 +363,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             >>> def sum_all(xs: list[int]) -> int:
             >>>     return sum(xs)
             >>>
-            >>> numbers = square.extend(x=[1, 2, 3, 4])
+            >>> numbers = square.product(x=[1, 2, 3, 4])
             >>> total = numbers.join(sum_all)
             >>> # Result: 30 (1 + 4 + 9 + 16)
 
@@ -377,7 +377,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
             Complete map-reduce pipeline:
             >>> result = (
-            >>>     identity.extend(x=[1, 2, 3])
+            >>>     identity.product(x=[1, 2, 3])
             >>>     .map(scale, factor=2)
             >>>     .map(add, offset=10)
             >>>     .join(sum_with_bonus, bonus=100)

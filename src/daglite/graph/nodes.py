@@ -95,7 +95,7 @@ class MapTaskNode(GraphNode):
 
         calls: list[dict[str, Any]] = []
 
-        if self.mode == "extend":
+        if self.mode == "product":
             items = list(mapped.items())
             names, lists = zip(*items) if items else ([], [])
             for combo in product(*lists):

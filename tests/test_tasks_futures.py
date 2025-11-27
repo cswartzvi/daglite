@@ -178,7 +178,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.then(add)
 
-    def test_task_extend_with_non_iterable_params(self) -> None:
+    def test_task_product_with_non_iterable_params(self) -> None:
         """Cartesian product operations require iterable parameters."""
 
         @task
@@ -187,9 +187,9 @@ class TestInvalidTaskAndTaskFutureUsage:
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            add.extend(x=20, y=5)
+            add.product(x=20, y=5)
 
-    def test_task_extend_with_overlapping_params(self) -> None:
+    def test_task_product_with_overlapping_params(self) -> None:
         """Cartesian product fails when attempting to rebind fixed parameters."""
 
         @task
@@ -200,9 +200,9 @@ class TestInvalidTaskAndTaskFutureUsage:
         fixed = multiply.fix(x=3)
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            fixed.extend(y=[1, 2, 3], x=[4, 5, 6])
+            fixed.product(y=[1, 2, 3], x=[4, 5, 6])
 
-    def test_task_extend_invalid_params(self) -> None:
+    def test_task_product_invalid_params(self) -> None:
         """Cartesian product fails when given parameters that don't exist."""
 
         @task
@@ -211,9 +211,9 @@ class TestInvalidTaskAndTaskFutureUsage:
             return x - y
 
         with pytest.raises(ParameterError, match="Invalid parameters"):
-            subtract.extend(z=[10, 2, 3])
+            subtract.product(z=[10, 2, 3])
 
-    def test_task_extend_missing_params(self) -> None:
+    def test_task_product_missing_params(self) -> None:
         """Cartesian product fails when required parameters are omitted."""
 
         @task
@@ -224,7 +224,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         fixed = power.fix(base=2)
 
         with pytest.raises(ParameterError, match="Missing parameters"):
-            fixed.extend()
+            fixed.product()
 
     def test_task_zip_with_non_iterable_params(self) -> None:
         """Pairwise operations require iterable parameters."""
@@ -297,7 +297,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def mapping(a: int, b: int) -> int:  # pragma: no cover
             return a + b
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.map(mapping)
 
@@ -313,7 +313,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def scale(x: int, factor: int) -> int:  # pragma: no cover
             return x * factor
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         # Should work with inline kwargs
         scaled = prepared.map(scale, factor=10)
         assert scaled is not None
@@ -330,7 +330,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def add(x: int, y: int, z: int) -> int:  # pragma: no cover
             return x + y + z
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.map(add, z=5)
 
@@ -346,7 +346,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def scale(x: int, factor: int) -> int:  # pragma: no cover
             return x * factor
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         fixed_scale = scale.fix(factor=10)
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             prepared.map(fixed_scale, factor=20)
@@ -363,7 +363,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
             return sum(xs) * weight
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         # Should work with inline kwargs
         total = prepared.join(weighted_sum, weight=2.5)
         assert total is not None
@@ -384,7 +384,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def joining(a: int, b: int) -> int:  # pragma: no cover
             return a * 2
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         mapped = prepared.map(mapping)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(joining)
@@ -401,7 +401,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def reduce_three(xs: list[int], y: int, z: int) -> int:  # pragma: no cover
             return sum(xs) + y + z
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.join(reduce_three, z=5)
 
@@ -417,7 +417,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
             return sum(xs) * weight
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         fixed_sum = weighted_sum.fix(weight=1.5)
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             prepared.join(fixed_sum, weight=2.5)
@@ -502,7 +502,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def mapping(a: int, b: int, c: int) -> int:  # pragma: no cover
             return a + b + c
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         fixed_mapping = mapping.fix(c=20)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.map(fixed_mapping)
@@ -523,7 +523,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         def joining(a: int, b: int, c: int) -> int:  # pragma: no cover
             return a + b + c
 
-        prepared = prepare.extend(data=[1, 2, 3])
+        prepared = prepare.product(data=[1, 2, 3])
         mapped = prepared.map(mapping)
         fixed_joining = joining.fix(c=10)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):

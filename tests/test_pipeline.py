@@ -194,7 +194,7 @@ class TestPipelineReturnsMapTaskFuture:
 
         @pipeline
         def extend_pipeline(values: list[int]):
-            return add.extend(x=values, y=[1, 2, 3])
+            return add.product(x=values, y=[1, 2, 3])
 
         result = extend_pipeline([10, 20])
         assert isinstance(result, MapTaskFuture)
@@ -208,7 +208,7 @@ class TestPipelineReturnsMapTaskFuture:
 
         @pipeline
         def map_reduce_pipeline(values: list[int]):
-            doubled = multiply.extend(x=values, factor=[2])
+            doubled = multiply.product(x=values, factor=[2])
             return doubled.join(sum_all)
 
         result = map_reduce_pipeline([1, 2, 3, 4])

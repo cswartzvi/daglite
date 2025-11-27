@@ -165,44 +165,44 @@ class TestSinglePathExecution:
         assert result_chain == 2 * (2**chain_depth)
 
 
-class TestExtendEvaluation:
+class TestProductEvaluation:
     """Tests engine evaluation of mapped tasks using extend."""
 
-    def test_extend_with_empty_sequence(self) -> None:
-        """Evaluation succeeds for extend with empty sequence."""
+    def test_product_with_empty_sequence(self) -> None:
+        """Evaluation succeeds for product with empty sequence."""
 
         @task
         def double(x: int) -> int:
             return x * 2  # pragma: no cover
 
-        doubled_seq = double.extend(x=[])
+        doubled_seq = double.product(x=[])
         result = evaluate(doubled_seq)
         assert result == []
 
-    def test_extend_single_parameter(self) -> None:
+    def test_product_single_parameter(self) -> None:
         """Evaluation succeeds for single parameter task with extend (fan-out) behavior."""
 
         @task
         def double(x: int) -> int:
             return x * 2
 
-        multiplied_seq = double.extend(x=[1, 2, 3])
+        multiplied_seq = double.product(x=[1, 2, 3])
         result = evaluate(multiplied_seq)
         assert result == [2, 4, 6]
 
-    def test_extend_with_single_element(self) -> None:
-        """Evaluation succeeds for extend with single element sequence."""
+    def test_product_with_single_element(self) -> None:
+        """Evaluation succeeds for product with single element sequence."""
 
         @task
         def triple(x: int) -> int:
             return x * 3
 
-        tripled_seq = triple.extend(x=[5])
+        tripled_seq = triple.product(x=[5])
         result = evaluate(tripled_seq)
         assert result == [15]
 
-    def test_extend_with_future_input(self) -> None:
-        """Evaluation succeeds for extend with TaskFuture as input."""
+    def test_product_with_future_input(self) -> None:
+        """Evaluation succeeds for product with TaskFuture as input."""
 
         @task
         def generate_range() -> list[int]:
@@ -213,35 +213,35 @@ class TestExtendEvaluation:
             return x**2
 
         range_future = generate_range.bind()
-        squared_seq = square.extend(x=range_future)
+        squared_seq = square.product(x=range_future)
         result = evaluate(squared_seq)
         assert result == [1, 4, 9]
 
-    def test_extend_multiple_parameters(self) -> None:
+    def test_product_multiple_parameters(self) -> None:
         """Evaluation succeeds for multiple parameter task with extend (fan-out) behavior."""
 
         @task
         def add(x: int, y: int) -> int:
             return x + y
 
-        added_seq = add.extend(x=[1, 2, 3], y=[10, 20, 30])
+        added_seq = add.product(x=[1, 2, 3], y=[10, 20, 30])
         result = evaluate(added_seq)
         assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]  # Cartesian product
 
-    def test_extend_with_fixed_parameters(self) -> None:
-        """Evaluation succeeds for extend tasks with some fixed parameters."""
+    def test_product_with_fixed_parameters(self) -> None:
+        """Evaluation succeeds for product tasks with some fixed parameters."""
 
         @task
         def power(base: int, exponent: int) -> int:
             return base**exponent
 
         fixed_power = power.fix(exponent=2)
-        powered_seq = fixed_power.extend(base=[1, 2, 3, 4])
+        powered_seq = fixed_power.product(base=[1, 2, 3, 4])
         result = evaluate(powered_seq)
         assert result == [1, 4, 9, 16]  # Squares of 1, 2, 3, 4
 
-    def test_extend_with_fixed_future_parameters(self) -> None:
-        """Evaluation succeeds for extend tasks with fixed TaskFuture parameters."""
+    def test_product_with_fixed_future_parameters(self) -> None:
+        """Evaluation succeeds for product tasks with fixed TaskFuture parameters."""
 
         @task
         def get_exponent() -> int:
@@ -253,12 +253,12 @@ class TestExtendEvaluation:
 
         exponent_future = get_exponent.bind()
         fixed_power = power.fix(exponent=exponent_future)
-        powered_seq = fixed_power.extend(base=[2, 3, 4])
+        powered_seq = fixed_power.product(base=[2, 3, 4])
         result = evaluate(powered_seq)
         assert result == [8, 27, 64]  # Cubes of 2, 3, 4
 
-    def test_extend_with_map(self) -> None:
-        """Evaluation succeeds for extend tasks with mapping behavior."""
+    def test_product_with_map(self) -> None:
+        """Evaluation succeeds for product tasks with mapping behavior."""
 
         @task
         def double(x: int) -> int:
@@ -268,13 +268,13 @@ class TestExtendEvaluation:
         def triple(x: int) -> int:
             return x * 3
 
-        doubled = double.extend(x=[1, 2, 3])
+        doubled = double.product(x=[1, 2, 3])
         tripled = doubled.map(triple)
         result = evaluate(tripled)
         assert result == [6, 12, 18]  # = [2*3, 4*3, 6*3]
 
-    def test_extend_with_join(self) -> None:
-        """Evaluation succeeds for extend followed by join (fan-out then fan-in)."""
+    def test_product_with_join(self) -> None:
+        """Evaluation succeeds for product followed by join (fan-out then fan-in)."""
 
         @task
         def square(x: int) -> int:
@@ -284,13 +284,13 @@ class TestExtendEvaluation:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        squared_seq = square.extend(x=[1, 2, 3, 4])
+        squared_seq = square.product(x=[1, 2, 3, 4])
         total = squared_seq.join(sum_all)
         result = evaluate(total)
         assert result == 30  # 1 + 4 + 9 + 16
 
-    def test_extend_with_fixed_map(self) -> None:
-        """Evaluation succeeds for extend tasks with both fixed parameters and mapping."""
+    def test_product_with_fixed_map(self) -> None:
+        """Evaluation succeeds for product tasks with both fixed parameters and mapping."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -301,13 +301,13 @@ class TestExtendEvaluation:
             return z**2
 
         fixed_add = add.fix(y=5)
-        added_seq = fixed_add.extend(x=[1, 2, 3])
+        added_seq = fixed_add.product(x=[1, 2, 3])
         squared_seq = added_seq.map(square)
         result = evaluate(squared_seq)
         assert result == [36, 49, 64]  # = [(1+5)^2, (2+5)^2, (3+5)^2]
 
-    def test_extend_with_fixed_join(self) -> None:
-        """Evaluation succeeds for extend followed by join with fixed parameters."""
+    def test_product_with_fixed_join(self) -> None:
+        """Evaluation succeeds for product followed by join with fixed parameters."""
 
         @task
         def multiply(x: int, y: int) -> int:
@@ -318,13 +318,13 @@ class TestExtendEvaluation:
             return sum(values) * factor
 
         fixed_multiply_total = multiply_total.fix(factor=3)
-        multiplied_seq = multiply.extend(x=[1, 2, 3], y=[10, 20, 30])
+        multiplied_seq = multiply.product(x=[1, 2, 3], y=[10, 20, 30])
         total = multiplied_seq.join(fixed_multiply_total)
         result = evaluate(total)
         assert result == 1080  # (10 + 20 + 30 + 20 + 40 + 60 + 30 + 60 + 90) * 3
 
-    def test_extend_with_fixed_map_and_join(self) -> None:
-        """Evaluation succeeds for extend with map then join (fan-out, transform, fan-in)."""
+    def test_product_with_fixed_map_and_join(self) -> None:
+        """Evaluation succeeds for product with map then join (fan-out, transform, fan-in)."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -338,13 +338,13 @@ class TestExtendEvaluation:
         def max_value(values: list[int]) -> int:
             return max(values)
 
-        added_seq = add.extend(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
         tripled_seq = added_seq.map(triple)  # [33, 63, 36, 66]
         maximum = tripled_seq.join(max_value)
         result = evaluate(maximum)
         assert result == 66
 
-    def test_extend_with_nested_tasks(self) -> None:
+    def test_product_with_nested_tasks(self) -> None:
         """Evaluation succeeds for nested extend tasks."""
 
         @task
@@ -355,13 +355,13 @@ class TestExtendEvaluation:
         def multiply(z: int, factor: int) -> int:
             return z * factor
 
-        added_seq = add.extend(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
-        multiplied_seq = multiply.extend(z=added_seq, factor=[2, 3])  # Cartesian product
+        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        multiplied_seq = multiply.product(z=added_seq, factor=[2, 3])  # Cartesian product
         result = evaluate(multiplied_seq)
         assert result == [22, 33, 42, 63, 24, 36, 44, 66]
 
-    def test_extend_with_map_kwargs(self) -> None:
-        """Evaluation succeeds for extend with .map() using kwargs."""
+    def test_product_with_map_kwargs(self) -> None:
+        """Evaluation succeeds for product with .map() using kwargs."""
 
         @task
         def double(x: int) -> int:
@@ -371,11 +371,11 @@ class TestExtendEvaluation:
         def add(x: int, offset: int) -> int:
             return x + offset
 
-        result = evaluate(double.extend(x=[1, 2, 3]).map(add, offset=10))
+        result = evaluate(double.product(x=[1, 2, 3]).map(add, offset=10))
         assert result == [12, 14, 16]  # [2, 4, 6] -> add 10 -> [12, 14, 16]
 
-    def test_extend_with_join_kwargs(self) -> None:
-        """Evaluation succeeds for extend with .join() using kwargs."""
+    def test_product_with_join_kwargs(self) -> None:
+        """Evaluation succeeds for product with .join() using kwargs."""
 
         @task
         def square(x: int) -> int:
@@ -385,7 +385,7 @@ class TestExtendEvaluation:
         def sum_with_bonus(values: list[int], bonus: int) -> int:
             return sum(values) + bonus
 
-        result = evaluate(square.extend(x=[1, 2, 3, 4]).join(sum_with_bonus, bonus=5))
+        result = evaluate(square.product(x=[1, 2, 3, 4]).join(sum_with_bonus, bonus=5))
         assert result == 35  # (1 + 4 + 9 + 16) + 5
 
 
@@ -617,8 +617,8 @@ class TestZipEvaluation:
 class TestComplexPathEvaluation:
     """Tests engine evaluation of complex task graphs."""
 
-    def test_extend_and_zip_with_join(self) -> None:
-        """Evaluation succeeds combining extend, zip, and join operations."""
+    def test_product_and_zip_with_join(self) -> None:
+        """Evaluation succeeds combining product, zip, and join operations."""
 
         @task
         def multiply(x: int, y: int) -> int:
@@ -628,8 +628,8 @@ class TestComplexPathEvaluation:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        # Fan-out with extend
-        multiplied_seq = multiply.extend(x=[1, 2], y=[10, 20])  # [10, 20, 20, 40]
+        # Fan-out with product
+        multiplied_seq = multiply.product(x=[1, 2], y=[10, 20])  # [10, 20, 20, 40]
         # Fan-in with join
         total = multiplied_seq.join(sum_all)
         result = evaluate(total)
@@ -698,8 +698,8 @@ class TestAsyncExecution:
         assert result == 15
         assert len(threads) == 2  # Both tasks ran in parallel threads
 
-    def test_extend_async(self) -> None:
-        """Async evaluation handles parallel extend operations."""
+    def test_product_async(self) -> None:
+        """Async evaluation handles parallel product operations."""
 
         @task
         def square(x: int) -> int:
@@ -709,7 +709,7 @@ class TestAsyncExecution:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        squared_seq = square.extend(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
+        squared_seq = square.product(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
         total = squared_seq.join(sum_all)
         result = evaluate(total, use_async=True)
         assert result == 30
@@ -828,7 +828,7 @@ class TestFluentAPI:
         def identity(x: int) -> int:
             return x
 
-        result = evaluate(identity.extend(x=[1, 2, 3]).map(scale, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).map(scale, factor=2))
         assert result == [2, 4, 6]  # Each element * 2
 
     def test_map_chain_with_kwargs(self) -> None:
@@ -847,7 +847,7 @@ class TestFluentAPI:
             return x * factor
 
         # [1, 2, 3] -> add(y=10) -> [11, 12, 13] -> multiply(factor=2) -> [22, 24, 26]
-        result = evaluate(identity.extend(x=[1, 2, 3]).map(add, y=10).map(multiply, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).map(add, y=10).map(multiply, factor=2))
         assert result == [22, 24, 26]
 
     def test_join_with_kwargs(self) -> None:
@@ -861,7 +861,7 @@ class TestFluentAPI:
         def weighted_sum(values: list[int], weight: float) -> float:
             return sum(values) * weight
 
-        result = evaluate(square.extend(x=[1, 2, 3, 4]).join(weighted_sum, weight=2.0))
+        result = evaluate(square.product(x=[1, 2, 3, 4]).join(weighted_sum, weight=2.0))
         assert result == 60.0  # (1 + 4 + 9 + 16) * 2.0
 
     def test_map_join_combined_with_kwargs(self) -> None:
@@ -885,7 +885,7 @@ class TestFluentAPI:
 
         # [1, 2, 3] -> add(y=5) -> [6, 7, 8] -> multiply(factor=2) -> [12, 14, 16] -> sum+10 -> 52
         result = evaluate(
-            identity.extend(x=[1, 2, 3])
+            identity.product(x=[1, 2, 3])
             .map(add, y=5)
             .map(multiply, factor=2)
             .join(reduce_with_offset, offset=10)
@@ -916,7 +916,7 @@ class TestFluentAPI:
         # add 10: [12,14,16,18,13,16,19,22]
         # sum = 130, * 2 = 260
         result = evaluate(
-            scale.extend(x=fetch_range.bind(count=4), factor=[2, 3])
+            scale.product(x=fetch_range.bind(count=4), factor=[2, 3])
             .map(add_values, offset=10)
             .join(compute_total, multiplier=2)
         )
@@ -947,7 +947,7 @@ class TestFluentAPI:
         assert result == 100  # (12 + 16 + 22) * 2
 
     def test_full_fluent_chain_with_extend(self) -> None:
-        """Complete fluent chain: bind -> then -> extend -> map -> join."""
+        """Complete fluent chain: bind -> then -> product -> map -> join."""
 
         @task
         def start(x: int) -> int:
@@ -974,11 +974,11 @@ class TestFluentAPI:
             return sum(values) + bonus
 
         # start(5) -> 10 -> increment(amount=3) -> 13 -> transform_list -> [13, 14, 15]
-        # -> extend/scale(factor=[2,3]) -> [26,28,30,39,42,45] -> add 10 -> [36,38,40,49,52,55]
+        # -> product/scale(factor=[2,3]) -> [26,28,30,39,42,45] -> add 10 -> [36,38,40,49,52,55]
         # -> sum + 100 -> 370
         list_future = start.bind(x=5).then(increment, amount=3).then(transform_list)
         result = evaluate(
-            scale.extend(x=list_future, factor=[2, 3])
+            scale.product(x=list_future, factor=[2, 3])
             .map(add_offset, offset=10)
             .join(sum_with_bonus, bonus=100)
         )
@@ -1071,7 +1071,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def map_pipeline(values: list[int]):
-            return square.extend(x=values)
+            return square.product(x=values)
 
         graph = map_pipeline([1, 2, 3, 4])
         result = evaluate(graph)
@@ -1091,7 +1091,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def map_reduce_pipeline(values: list[int]):
-            doubled = double.extend(x=values)
+            doubled = double.product(x=values)
             return doubled.join(sum_all)
 
         graph = map_reduce_pipeline([1, 2, 3, 4])

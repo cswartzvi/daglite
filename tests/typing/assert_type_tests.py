@@ -107,9 +107,9 @@ def test_task_reference_parameters_with_options() -> None:
     assert_type(mixed_score, TaskFuture[int])
 
 
-# -- Fan-out with extend map and join --
+# -- Fan-out with product map and join --
 def test_task_extend_map_join() -> None:
-    prepared = prepare.extend(n=[1, 2, 3])
+    prepared = prepare.product(n=[1, 2, 3])
     assert_type(prepared, MapTaskFuture[int])
 
     doubled = prepared.map(double)
@@ -119,9 +119,9 @@ def test_task_extend_map_join() -> None:
     assert_type(joined, TaskFuture[int])
 
 
-# -- Fan-out with extend and mixed parameters --
+# -- Fan-out with product and mixed parameters --
 def test_task_extend_with_fix() -> None:
-    extend_score = score.fix(y=10).extend(x=[1, 2, 3])
+    extend_score = score.fix(y=10).product(x=[1, 2, 3])
     assert_type(extend_score, MapTaskFuture[int])
 
 
@@ -182,13 +182,13 @@ def test_task_multiple_dependencies() -> None:
 
 # -- Nested map chains --
 def test_task_nested_map_chains() -> None:
-    nested_maps = prepare.extend(n=[1, 2, 3]).map(double).map(double).join(sum_list)
+    nested_maps = prepare.product(n=[1, 2, 3]).map(double).map(double).join(sum_list)
     assert_type(nested_maps, TaskFuture[int])
 
 
 # -- MapTaskFuture without join --
 def test_task_map_without_join() -> None:
-    mapped_only = prepare.extend(n=[1, 2]).map(double)
+    mapped_only = prepare.product(n=[1, 2]).map(double)
     assert_type(mapped_only, MapTaskFuture[int])
 
 
@@ -203,21 +203,21 @@ def test_task_fix_partial_application() -> None:
     assert_type(final_bound, TaskFuture[int])
 
 
-# -- extend vs zip with multiple parameters --
+# -- product vs zip with multiple parameters --
 def test_task_extend_vs_zip_multiple_params() -> None:
-    cartesian_scores = score.extend(x=[1, 2], y=[10, 20])
+    cartesian_scores = score.product(x=[1, 2], y=[10, 20])
     assert_type(cartesian_scores, MapTaskFuture[int])
 
     zipped_scores = score.zip(x=[1, 2], y=[10, 20])
     assert_type(zipped_scores, MapTaskFuture[int])
 
 
-# -- Nested extend (fan-out over fan-out results) --
+# -- Nested product (fan-out over fan-out results) --
 def test_task_nested_extend() -> None:
-    level1_extend = double.extend(x=[1, 2, 3])
+    level1_extend = double.product(x=[1, 2, 3])
     assert_type(level1_extend, MapTaskFuture[int])
 
-    level2_extend = score.extend(x=level1_extend, y=[100, 200])
+    level2_extend = score.product(x=level1_extend, y=[100, 200])
     assert_type(level2_extend, MapTaskFuture[int])
 
     nested_extend_result = level2_extend.join(sum_list)
@@ -238,17 +238,17 @@ def test_task_nested_zip() -> None:
 
 # -- Map chains with different return types --
 def test_task_map_chain_type_changes() -> None:
-    type_changing_chain = prepare.extend(n=[1, 2, 3]).map(double).map(to_string)
+    type_changing_chain = prepare.product(n=[1, 2, 3]).map(double).map(to_string)
     assert_type(type_changing_chain, MapTaskFuture[str])
 
     type_change_joined = type_changing_chain.join(join_strings)
     assert_type(type_change_joined, TaskFuture[str])
 
 
-# -- Mixing concrete values and TaskFutures in extend/zip --
+# -- Mixing concrete values and TaskFutures in product/zip --
 def test_task_mixed_concrete_and_futures() -> None:
     prep_future = prepare.bind(n=10)
-    mixed_extend = score.extend(x=[1, 2], y=prep_future)
+    mixed_extend = score.product(x=[1, 2], y=prep_future)
     assert_type(mixed_extend, MapTaskFuture[int])
 
     mixed_zip = score.zip(x=[1, 2], y=prep_future)
@@ -262,9 +262,9 @@ def test_task_with_options_on_fixed_param_task() -> None:
     assert_type(options_result, TaskFuture[int])
 
 
-# -- Empty iterables in extend/zip --
+# -- Empty iterables in product/zip --
 def test_task_empty_iterables() -> None:
-    empty_extend = prepare.extend(n=[])
+    empty_extend = prepare.product(n=[])
     assert_type(empty_extend, MapTaskFuture[int])
 
     empty_zip = prepare.zip(n=[])
@@ -285,7 +285,7 @@ def test_pipeline_with_scalar_parameters() -> None:
     assert_type(pipeline_result, TaskFuture[int])
 
 
-# -- Pipeline with extend --
+# -- Pipeline with product --
 def test_pipeline_with_extend() -> None:
     @task
     def increment(x: int) -> int:
@@ -293,7 +293,7 @@ def test_pipeline_with_extend() -> None:
 
     @pipeline
     def extend_pipeline(values: list[int]) -> MapTaskFuture[int]:
-        return increment.extend(x=values)
+        return increment.product(x=values)
 
     pipeline_result = extend_pipeline([1, 2, 3])
     assert_type(pipeline_result, MapTaskFuture[int])

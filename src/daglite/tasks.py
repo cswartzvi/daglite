@@ -177,7 +177,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> "MapTaskFuture[R]":
+    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> "MapTaskFuture[R]":
         """
         Create a fan-out operation by applying this task over all combinations of sequences.
 
@@ -238,7 +238,7 @@ class Task(BaseTask[P, R]):
         >>>
         >>> base = score.fix(y=seed)
         >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
-        >>> branch2 = base.extend(x=[1, 2, 3, 4])  # MapTaskFuture[int]
+        >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
         """
         signature = inspect.signature(self.func)
         if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
@@ -260,9 +260,9 @@ class Task(BaseTask[P, R]):
         return self.fix().bind(**kwargs)
 
     @override
-    def extend(self, **kwargs: Any) -> MapTaskFuture[R]:
-        # NOTE: All validation is done in FixedParamTask.extend()
-        return self.fix().extend(**kwargs)
+    def product(self, **kwargs: Any) -> MapTaskFuture[R]:
+        # NOTE: All validation is done in FixedParamTask.product()
+        return self.fix().product(**kwargs)
 
     @override
     def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
@@ -308,37 +308,37 @@ class FixedParamTask(BaseTask[P, R]):
         return TaskFuture(task=self.task, kwargs=merged, backend=self.backend)
 
     @override
-    def extend(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
+    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
         signature = inspect.signature(self.task.func)
 
         merged = {**self.fixed_kwargs, **kwargs}
 
         if invalid_params := _find_invalid_parameters(signature.parameters, merged):
             raise ParameterError(
-                f"Invalid parameters for task '{self.name}' in `.extend()`: {invalid_params}"
+                f"Invalid parameters for task '{self.name}' in `.product()`: {invalid_params}"
             )
 
         if missing_params := _find_missing_parameters(signature.parameters, merged):
             raise ParameterError(
-                f"Missing parameters for task '{self.name}' in `.extend()`: {missing_params}"
+                f"Missing parameters for task '{self.name}' in `.product()`: {missing_params}"
             )
 
         if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
             raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.extend()`, specified parameters "
+                f"Overlapping parameters for '{self.name}' in `.product()`, specified parameters "
                 f"were previously bound in `.fix()`: {overlap_params}"
             )
 
         if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
             raise ParameterError(
-                f"Non-iterable parameters for task '{self.name}' in `.extend()`, "
+                f"Non-iterable parameters for task '{self.name}' in `.product()`, "
                 f"all parameters must be Iterable or TaskFuture[Iterable] "
                 f"(use `.fix()` to set scalar parameters): {missing_map_params}"
             )
 
         return MapTaskFuture(
             task=self.task,
-            mode="extend",
+            mode="product",
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend=self.backend,
