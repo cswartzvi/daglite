@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Generator
+from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any, ParamSpec, TypeVar, overload
@@ -115,6 +117,31 @@ async def evaluate_async(
 # region Internal
 
 
+def _materialize_generators(result: Any) -> Any:
+    """
+    Materialize generators and iterators to lists.
+
+    When a task returns a generator or iterator, we consume it into a list
+    to prevent single-use issues and enable proper caching. This ensures
+    that multiple downstream tasks can safely use the result.
+
+    Args:
+        result: The result to potentially materialize
+
+    Returns:
+        A list if result was a generator/iterator, otherwise unchanged
+
+    Note:
+        This consumes the generator immediately. For streaming support in the
+        future, we may add a task option like @task(stream=True) to opt-in to
+        streaming behavior.
+    """
+    # Check if it's a generator or iterator (but not string/bytes which are iterable)
+    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
+        return list(result)
+    return result
+
+
 @dataclass
 class Engine:
     """
@@ -191,10 +218,14 @@ class Engine:
 
         if isinstance(future_or_futures, list):
             # MapTaskNode - gather all results
-            return [f.result() for f in future_or_futures]
+            results = [f.result() for f in future_or_futures]
+            # Materialize any generators in the list
+            return [_materialize_generators(r) for r in results]
         else:
             # TaskNode - single result
-            return future_or_futures.result()
+            result = future_or_futures.result()
+            # Materialize generator if needed
+            return _materialize_generators(result)
 
     async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
         """
@@ -226,10 +257,14 @@ class Engine:
         if isinstance(future_or_futures, list):
             # MapTaskNode - wrap all futures and gather
             wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
-            return await asyncio.gather(*wrapped)
+            results = await asyncio.gather(*wrapped)
+            # Materialize any generators in the list
+            return [_materialize_generators(r) for r in results]
         else:
             # TaskNode - wrap single future
-            return await asyncio.wrap_future(future_or_futures)
+            result = await asyncio.wrap_future(future_or_futures)
+            # Materialize generator if needed
+            return _materialize_generators(result)
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
