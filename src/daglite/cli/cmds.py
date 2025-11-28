@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 import warnings
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import click
 
 from daglite import evaluate
+from daglite import evaluate_async
 from daglite.pipelines import load_pipeline
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
@@ -162,7 +164,12 @@ def run(
         click.echo(f"Settings: {settings_dict}")
 
     try:
-        result = evaluate(graph, default_backend=backend, use_async=use_async)
+        if use_async:
+            # Use async execution with sibling parallelism
+            result = asyncio.run(evaluate_async(graph, default_backend=backend))
+        else:
+            # Sync sequential execution
+            result = evaluate(graph, default_backend=backend)
         click.echo("\nPipeline completed successfully!")
         click.echo(f"Result: {result}")
     except Exception as e:

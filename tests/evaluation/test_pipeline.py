@@ -1,0 +1,130 @@
+"""Tests for pipeline evaluation with the @pipeline decorator."""
+
+import asyncio
+
+from daglite import evaluate
+from daglite import evaluate_async
+from daglite import pipeline
+from daglite import task
+
+
+class TestPipelineEvaluation:
+    """Tests for pipeline evaluation."""
+
+    def test_simple_pipeline_evaluation(self) -> None:
+        """Pipeline evaluation works with basic TaskFuture."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @pipeline
+        def simple_pipeline(x: int, y: int):
+            return add.bind(x=x, y=y)
+
+        graph = simple_pipeline(5, 10)
+        result = evaluate(graph)
+        assert result == 15
+
+    def test_pipeline_with_chained_tasks(self) -> None:
+        """Pipeline evaluation works with chained tasks."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        @pipeline
+        def chained_pipeline(x: int, y: int, factor: int):
+            sum_result = add.bind(x=x, y=y)
+            return multiply.bind(x=sum_result, factor=factor)
+
+        graph = chained_pipeline(5, 10, 3)
+        result = evaluate(graph)
+        assert result == 45
+
+    def test_pipeline_with_map_task_future(self) -> None:
+        """Pipeline evaluation works with MapTaskFuture."""
+
+        @task
+        def square(x: int) -> int:
+            return x * x
+
+        @pipeline
+        def map_pipeline(values: list[int]):
+            return square.product(x=values)
+
+        graph = map_pipeline([1, 2, 3, 4])
+        result = evaluate(graph)
+        assert result == [1, 4, 9, 16]
+
+    def test_pipeline_with_map_and_reduce(self) -> None:
+        """Pipeline evaluation works with map and reduce pattern."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        @pipeline
+        def map_reduce_pipeline(values: list[int]):
+            doubled = double.product(x=values)
+            return doubled.join(sum_all)
+
+        graph = map_reduce_pipeline([1, 2, 3, 4])
+        result = evaluate(graph)
+        assert result == 20
+
+    def test_pipeline_with_default_parameters(self) -> None:
+        """Pipeline evaluation works with default parameters."""
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        @pipeline
+        def pipeline_with_defaults(x: int, factor: int = 2):
+            return multiply.bind(x=x, factor=factor)
+
+        # Use default
+        graph1 = pipeline_with_defaults(10)
+        result1 = evaluate(graph1)
+        assert result1 == 20
+
+        # Override default
+        graph2 = pipeline_with_defaults(10, factor=3)
+        result2 = evaluate(graph2)
+        assert result2 == 30
+
+    def test_pipeline_async_evaluation(self) -> None:
+        """Pipeline evaluation works with async execution."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        @pipeline
+        def async_pipeline(a: int, b: int, c: int):
+            # Create parallel branches
+            sum_result = add.bind(x=a, y=b)
+            prod_result = multiply.bind(x=b, y=c)
+            # Merge
+            return add.bind(x=sum_result, y=prod_result)
+
+        graph = async_pipeline(1, 2, 3)
+
+        async def run():
+            return await evaluate_async(graph)
+
+        result = asyncio.run(run())
+        assert result == 9  # (1+2) + (2*3) = 3 + 6 = 9

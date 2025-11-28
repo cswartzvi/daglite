@@ -25,64 +25,94 @@ T = TypeVar("T")
 
 
 @overload
-def evaluate(
-    expr: TaskFuture[T], *, default_backend: str | Backend = "sequential", use_async: bool = False
-) -> T: ...
+def evaluate(expr: TaskFuture[T], *, default_backend: str | Backend = "sequential") -> T: ...
 
 
 @overload
 def evaluate(
-    expr: MapTaskFuture[T],
-    *,
-    default_backend: str | Backend = "sequential",
-    use_async: bool = False,
+    expr: MapTaskFuture[T], *, default_backend: str | Backend = "sequential"
 ) -> list[T]: ...
 
 
 def evaluate(
     expr: BaseTaskFuture[Any],
     default_backend: str | Backend = "sequential",
-    use_async: bool = False,
 ) -> Any:
     """
-    Evaluate a task graph.
+    Evaluate a task graph synchronously.
+
+    For concurrent execution of independent tasks (sibling parallelism), use
+    evaluate_async() instead.
 
     Args:
-        expr (daglite.graph.base.BaseTaskFuture):
-            The task graph to evaluate.
-        default_backend (str | daglite.backends.Backend, optional):
-            Default backend for task execution. If a node does not have a specific backend
-            assigned, this backend will be used. Defaults to "sequential".
-        use_async (bool, optional):
-            If True, use async execution for sibling parallelism. This enables concurrent execution
-            of independent nodes using asyncio. Best for I/O-bound workloads (network, disk
-            operations).
-
-    Note:
-        Global settings (thread pool size, etc.) are configured via set_global_settings().
-        These must be set before the first task execution.
+        expr: The task graph to evaluate.
+        default_backend: Default backend for task execution. If a node does not have
+            a specific backend assigned, this backend will be used. Defaults to "sequential".
 
     Returns:
         The result of evaluating the root task
 
     Examples:
-        >>> # Sequential execution (default)
+        >>> # Sequential execution
         >>> result = evaluate(my_task)
 
-        >>> # Async execution with sibling parallelism
-        >>> result = evaluate(my_task, use_async=True)
-
         >>> # With custom backend
-        >>> result = evaluate(my_task, default_backend_name="threading", use_async=True)
+        >>> result = evaluate(my_task, default_backend="threading")
+
+        >>> # For async execution with sibling parallelism
+        >>> import asyncio
+        >>> result = asyncio.run(evaluate_async(my_task))
     """
-    engine = Engine(default_backend=default_backend, use_async=use_async)
+    engine = Engine(default_backend=default_backend)
     return engine.evaluate(expr)
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[T], *, default_backend: str | Backend = "sequential"
+) -> T: ...
+
+
+@overload
+async def evaluate_async(
+    expr: MapTaskFuture[T], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+async def evaluate_async(
+    expr: BaseTaskFuture[Any],
+    default_backend: str | Backend = "sequential",
+) -> Any:
+    """
+    Evaluate a task graph asynchronously.
+
+    This function is for use within async contexts. It always uses async execution
+    with sibling parallelism. For sync code, wrap this in asyncio.run().
+
+    Args:
+        expr: The task graph to evaluate.
+        default_backend: Default backend for task execution. Defaults to "sequential".
+
+    Returns:
+        The result of evaluating the root task
+
+    Examples:
+        >>> async def workflow():
+        ...     result = await evaluate_async(my_task)
+        ...     return result
+
+        >>> # Use with custom backend
+        >>> async def workflow():
+        ...     result = await evaluate_async(my_task, default_backend="threading")
+    """
+    engine = Engine(default_backend=default_backend)
+    return await engine.evaluate_async(expr)
 
 
 # endregion
 
 
-# region Engine
+# region Internal
 
 
 @dataclass
@@ -94,29 +124,26 @@ class Engine:
     it in topological order.
 
     Execution Modes:
-        - use_async=False: Sequential execution (single-threaded)
-        - use_async=True: Async execution with sibling parallelism
+        - evaluate(): Sequential execution (single-threaded)
+        - evaluate_async(): Async execution with sibling parallelism
 
     Sibling Parallelism:
-        When use_async=True, independent nodes at the same level of the DAG
+        When using evaluate_async(), independent nodes at the same level of the DAG
         execute concurrently using asyncio. This is particularly beneficial for
         I/O-bound tasks (network requests, file operations).
 
-        Sync task functions are automatically wrapped with asyncio.to_thread()
-        to avoid blocking the event loop. ThreadBackend tasks run directly
-        since they manage their own parallelism.
+        Tasks using SequentialBackend are automatically wrapped with asyncio.to_thread()
+        to avoid blocking the event loop. ThreadBackend and ProcessBackend tasks manage
+        their own parallelism.
 
     Backend Resolution Priority:
-        1. Node-specific backend from task/task-future operations (bind, extend, ...)
+        1. Node-specific backend from task/task-future operations (bind, product, ...)
         2. Default task backend from `@task` decorator
-        3. Engine's default_backend_name
+        3. Engine's default_backend
     """
 
     default_backend: str | Backend
     """Default backend name or instance for nodes without a specific backend."""
-
-    use_async: bool = False
-    """If True, use async/await for sibling parallelism."""
 
     settings: DagliteSettings = field(default_factory=DagliteSettings)
     """Daglite configuration settings."""
@@ -127,13 +154,14 @@ class Engine:
     _backend_cache: dict[str | Backend, Backend] = field(default_factory=dict, init=False)
 
     def evaluate(self, root: GraphBuilder) -> Any:
-        """Compiles the lazy expression into a graph and execute it."""
+        """Evaluate the graph using sequential execution."""
         nodes = build_graph(root)
+        return self._run_sequential(nodes, root.id)
 
-        if self.use_async:
-            return asyncio.run(self._run_async(nodes, root.id))
-        else:
-            return self._run_sequential(nodes, root.id)
+    async def evaluate_async(self, root: GraphBuilder) -> Any:
+        """Evaluate the graph using async execution with sibling parallelism."""
+        nodes = build_graph(root)
+        return await self._run_async(nodes, root.id)
 
     def _resolve_node_backend(self, node: GraphNode) -> Backend:
         """Decide which Backend instance to use for this node's *internal* work."""
@@ -145,47 +173,128 @@ class Engine:
             self._backend_cache[backend_key] = backend
         return self._backend_cache[backend_key]
 
+    def _execute_node_sync(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
+        """
+        Execute a node synchronously and return its result.
+
+        Handles both single tasks and map tasks, blocking until completion.
+
+        Args:
+            node: The graph node to execute
+            values: Completed results from dependencies
+
+        Returns:
+            The node's execution result (single value or list)
+        """
+        backend = self._resolve_node_backend(node)
+        future_or_futures = node.submit(backend, values)
+
+        if isinstance(future_or_futures, list):
+            # MapTaskNode - gather all results
+            return [f.result() for f in future_or_futures]
+        else:
+            # TaskNode - single result
+            return future_or_futures.result()
+
+    async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
+        """
+        Execute a node asynchronously and return its result.
+
+        Wraps backend futures as asyncio-compatible futures to enable concurrent
+        execution of independent nodes. SequentialBackend tasks are wrapped in
+        asyncio.to_thread() to prevent blocking the event loop.
+
+        Args:
+            node: The graph node to execute
+            values: Completed results from dependencies
+
+        Returns:
+            The node's execution result (single value or list)
+        """
+        from daglite.backends.local import SequentialBackend
+
+        backend = self._resolve_node_backend(node)
+
+        # Special case: Sequential backend executes synchronously and would block
+        # the event loop, so wrap in thread
+        if isinstance(backend, SequentialBackend):
+            return await asyncio.to_thread(self._execute_node_sync, node, values)
+
+        # All other backends: wrap their futures
+        future_or_futures = node.submit(backend, values)
+
+        if isinstance(future_or_futures, list):
+            # MapTaskNode - wrap all futures and gather
+            wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
+            return await asyncio.gather(*wrapped)
+        else:
+            # TaskNode - wrap single future
+            return await asyncio.wrap_future(future_or_futures)
+
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
-        indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
-        successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
-
-        for nid, node in nodes.items():
-            for dep in node.dependencies():
-                indegree[nid] += 1
-                successors.setdefault(dep, set()).add(nid)
-
-        values: dict[UUID, Any] = {}
-        ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
+        state = ExecutionState.from_nodes(nodes)
+        ready = state.get_ready()
 
         while ready:
             nid = ready.pop()
-            node = nodes[nid]
-            backend = self._resolve_node_backend(node)
+            node = state.nodes[nid]
+            result = self._execute_node_sync(node, state.values)
+            ready.extend(state.mark_complete(nid, result))
 
-            # Submit work - returns Future or list[Future]
-            future_or_futures = node.submit(backend, values)
-
-            # Wait for completion
-            if isinstance(future_or_futures, list):
-                # MapTaskNode - gather all results
-                result = [f.result() for f in future_or_futures]
-            else:
-                # TaskNode - single result
-                result = future_or_futures.result()
-
-            values[nid] = result
-
-            # Update dependencies
-            for succ in successors.get(nid, ()):
-                indegree[succ] -= 1
-                if indegree[succ] == 0:  # pragma: no branch
-                    ready.append(succ)
-
-        return values[root_id]
+        return state.values[root_id]
 
     async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """Async execution - await futures."""
+        """Async execution with sibling parallelism."""
+        state = ExecutionState.from_nodes(nodes)
+        ready = state.get_ready()
+
+        while ready:
+            tasks: dict[asyncio.Task[Any], UUID] = {
+                asyncio.create_task(self._execute_node_async(state.nodes[nid], state.values)): nid
+                for nid in ready
+            }
+
+            done, _ = await asyncio.wait(tasks.keys())
+
+            ready = []
+            for task in done:
+                nid = tasks[task]
+                result = task.result()
+                ready.extend(state.mark_complete(nid, result))
+
+        return state.values[root_id]
+
+
+@dataclass
+class ExecutionState:
+    """
+    Tracks graph topology and execution progress.
+
+    Combines immutable graph structure (nodes, successors) with mutable execution
+    state (indegree, values) to manage topological execution of a DAG.
+    """
+
+    nodes: dict[UUID, GraphNode]
+    """All nodes in the graph."""
+
+    indegree: dict[UUID, int]
+    """Current number of unresolved dependencies for each node."""
+
+    successors: dict[UUID, set[UUID]]
+    """Mapping from node ID to its dependent nodes."""
+
+    values: dict[UUID, Any]
+    """Results of completed node executions."""
+
+    @classmethod
+    def from_nodes(cls, nodes: dict[UUID, GraphNode]) -> ExecutionState:
+        """
+        Build execution state from a graph node dictionary.
+
+        Computes the dependency graph (indegree and successors) needed for
+        topological execution.
+        """
         indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
         successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
 
@@ -194,46 +303,35 @@ class Engine:
                 indegree[nid] += 1
                 successors.setdefault(dep, set()).add(nid)
 
-        values: dict[UUID, Any] = {}
-        ready: list[UUID] = [nid for nid, d in indegree.items() if d == 0]
+        return cls(
+            nodes=nodes,
+            indegree=indegree,
+            successors=successors,
+            values={},
+        )
 
-        while ready:
-            # Submit all ready siblings and wrap their futures
-            pending: dict[asyncio.Future, UUID] = {}
-            loop = asyncio.get_event_loop()
+    def get_ready(self) -> list[UUID]:
+        """Get all nodes with no remaining dependencies."""
+        return [nid for nid, deg in self.indegree.items() if deg == 0]
 
-            for nid in ready:
-                node = nodes[nid]
-                backend = self._resolve_node_backend(node)
+    def mark_complete(self, nid: UUID, result: Any) -> list[UUID]:
+        """
+        Mark a node complete and return newly-ready successors.
 
-                # Submit work - returns Future or list[Future]
-                future_or_futures = node.submit(backend, values)
+        Args:
+            nid: ID of the completed node
+            result: Execution result to store
 
-                # Convert to asyncio-compatible future
-                if isinstance(future_or_futures, list):
-                    # MapTaskNode - wrap all futures and gather
-                    wrapped = [asyncio.wrap_future(f, loop=loop) for f in future_or_futures]
-                    combined = asyncio.gather(*wrapped)
-                else:
-                    # TaskNode - wrap single future
-                    combined = asyncio.wrap_future(future_or_futures, loop=loop)
+        Returns:
+            List of node IDs that are now ready to execute
+        """
+        self.values[nid] = result
+        del self.indegree[nid]  # Remove from tracking
+        newly_ready = []
 
-                pending[combined] = nid
+        for succ in self.successors.get(nid, ()):
+            self.indegree[succ] -= 1
+            if self.indegree[succ] == 0:
+                newly_ready.append(succ)
 
-            ready = []
-
-            # Wait for all siblings to complete
-            done, _ = await asyncio.wait(pending.keys())
-
-            for future in done:
-                nid = pending[future]
-                result = future.result()
-                values[nid] = result
-
-                # Update dependencies
-                for succ in successors.get(nid, ()):
-                    indegree[succ] -= 1
-                    if indegree[succ] == 0:
-                        ready.append(succ)
-
-        return values[root_id]
+        return newly_ready
