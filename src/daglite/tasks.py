@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 import inspect
 from collections.abc import Callable
+from collections.abc import Coroutine
 from collections.abc import Iterable
 from collections.abc import KeysView
 from collections.abc import Mapping
@@ -32,7 +33,7 @@ S = TypeVar("S")
 
 
 @overload
-def task(func: Callable[P, R]) -> Task[P, R]: ...
+def task(func: Callable[P, R], /) -> Task[P, R]: ...
 
 
 @overload
@@ -45,23 +46,25 @@ def task(
 
 
 def task(
-    func: Callable[P, R] | None = None,
+    func: Any = None,
     *,
     name: str | None = None,
     description: str | None = None,
     backend: str | Backend | None = None,
-) -> Task[P, R] | Callable[[Callable[P, R]], Task[P, R]]:
+) -> Any:
     """
-    Decorator to convert a Python function into a daglite `Task`.
+    Decorator to convert a synchronous Python function into a daglite `Task`.
 
     Tasks are the building blocks of daglite DAGs. They wrap plain Python functions and provide
     methods for composition and execution. This is the recommended way to create tasks. Direct
     instantiation of the `Task` class is discouraged.
 
+    For async functions, use `@async_task` instead.
+
     Args:
         func (Callable[P, R], optional):
-            The function to wrap. When used without parentheses (`@task`), this is automatically
-            passed. When used with parentheses (`@task()`), this is None.
+            The synchronous function to wrap. When used without parentheses (`@task`), this is
+            automatically passed. When used with parentheses (`@task()`), this is None.
         name (str, optional):
             Custom name for the task. Defaults to the function's `__name__`. For lambda functions,
             defaults to "unnamed_task".
@@ -89,21 +92,114 @@ def task(
         >>> double = task(lambda x: x * 2, name="double")
     """
 
-    def decorator(fn: Callable[P, R]) -> Task[P, R]:
+    def decorator(fn: Any) -> Any:
         from daglite.backends import find_backend
 
         if inspect.isclass(fn) or not callable(fn):
             raise TypeError("`@task` can only be applied to callable functions.")
+
+        if inspect.iscoroutinefunction(fn):
+            raise TypeError(
+                "`@task` cannot be applied to async functions. Use `@async_task` instead."
+            )
 
         return Task(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
             description=description if description is not None else getattr(fn, "__doc__", ""),
             backend=find_backend(backend),
+            is_async=False,
         )
 
     if func is not None:
         # Used as @task (without parentheses)
+        return decorator(func)
+
+    return decorator
+
+
+@overload
+def async_task(func: Callable[P, Coroutine[Any, Any, R]], /) -> Task[P, R]: ...
+
+
+@overload
+def async_task(
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    backend: str | Backend | None = None,
+) -> Callable[[Callable[P, Coroutine[Any, Any, R]]], Task[P, R]]: ...
+
+
+def async_task(
+    func: Any = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    backend: str | Backend | None = None,
+) -> Any:
+    """
+    Decorator to convert an async Python function into a daglite `Task`.
+
+    Tasks are the building blocks of daglite DAGs. They wrap async Python functions and provide
+    methods for composition and execution. This is the recommended way to create async tasks.
+    Direct instantiation of the `Task` class is discouraged.
+
+    For synchronous functions, use `@task` instead.
+
+    Args:
+        func (Callable[P, Coroutine[Any, Any, R]], optional):
+            The async function to wrap. When used without parentheses (`@async_task`), this is
+            automatically passed. When used with parentheses (`@async_task()`), this is None.
+        name (str, optional):
+            Custom name for the task. Defaults to the function's `__name__`.
+        description (str, optional):
+            Task description. Defaults to the function's docstring.
+        backend (str | Backend | None):
+            Backend for executing this task. Can be a backend name ("sequential", "threading") or a
+            Backend instance. If None, uses the engine's default backend.
+
+    Returns:
+        Either a `Task` (when used as `@async_task`) or a decorator function (when used as
+        `@async_task()`).
+
+    Examples:
+        Basic usage
+        >>> @async_task
+        >>> async def fetch_data(url: str) -> dict:
+        >>>     async with httpx.AsyncClient() as client:
+        >>>         response = await client.get(url)
+        >>>         return response.json()
+
+        With parameters
+        >>> @async_task(name="custom_fetch", backend="threading")
+        >>> async def fetch_data(url: str) -> dict:
+        >>>     async with httpx.AsyncClient() as client:
+        >>>         response = await client.get(url)
+        >>>         return response.json()
+    """
+
+    def decorator(fn: Any) -> Any:
+        from daglite.backends import find_backend
+
+        if inspect.isclass(fn) or not callable(fn):
+            raise TypeError("`@async_task` can only be applied to callable functions.")
+
+        if not inspect.iscoroutinefunction(fn):
+            raise TypeError(
+                "`@async_task` can only be applied to async functions. Use `@task` instead."
+            )
+
+        return Task(
+            func=fn,
+            name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
+            description=description if description is not None else getattr(fn, "__doc__", ""),
+            backend=find_backend(backend),
+            is_async=True,
+        )
+
+    if func is not None:
+        # Used as @async_task (without parentheses)
         return decorator(func)
 
     return decorator
@@ -219,6 +315,14 @@ class Task(BaseTask[P, R]):
 
     func: Callable[P, R]
     """Task function to be wrapped into a Task."""
+
+    is_async: bool = False
+    """Whether this task's function is an async coroutine function."""
+
+    def __post_init__(self) -> None:
+        # Detect if function is async and update is_async field
+        if inspect.iscoroutinefunction(self.func):
+            object.__setattr__(self, "is_async", True)
 
     # NOTE: We should not define `__call__` in order to avoid confusing type checkers. We want
     # them to view this object as a `Task[P, R]` and not as a `Callable[P, R]` (which some type

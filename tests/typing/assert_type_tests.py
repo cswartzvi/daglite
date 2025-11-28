@@ -11,6 +11,7 @@ from typing import Any
 
 from typing_extensions import assert_type
 
+from daglite import async_task
 from daglite import pipeline
 from daglite import task
 from daglite.futures import MapTaskFuture
@@ -75,6 +76,24 @@ def to_string(x: int) -> str:
 @task
 def join_strings(xs: list[str]) -> str:
     return ",".join(xs)
+
+
+@async_task
+async def async_fetch_data(url: str) -> dict[str, str]:
+    """Async task that returns a dict."""
+    return {"url": url, "data": "example"}
+
+
+@async_task
+async def async_double(x: int) -> int:
+    """Async task that doubles a value."""
+    return x * 2
+
+
+@async_task
+async def async_process_list(xs: list[int]) -> int:
+    """Async task that processes a list."""
+    return sum(xs)
 
 
 # -- Scalar parameters --
@@ -311,3 +330,35 @@ def test_pipeline_with_zip() -> None:
 
     pipeline_result = zip_pipeline([1, 2, 3])
     assert_type(pipeline_result, MapTaskFuture[int])
+
+
+# -- Async tasks return unwrapped types --
+def test_async_task_simple() -> None:
+    result = async_fetch_data.bind(url="example.com")
+    assert_type(result, TaskFuture[dict[str, str]])
+
+
+def test_async_task_with_dependencies() -> None:
+    prep = prepare.bind(n=5)
+    doubled = async_double.bind(x=prep)
+    assert_type(doubled, TaskFuture[int])
+
+
+def test_async_task_with_map() -> None:
+    values = async_double.product(x=[1, 2, 3])
+    assert_type(values, MapTaskFuture[int])
+
+    result = values.join(async_process_list)
+    assert_type(result, TaskFuture[int])
+
+
+def test_async_task_mixed_with_sync() -> None:
+    # Async task feeding into sync task
+    async_result = async_double.bind(x=10)
+    sync_result = double.bind(x=async_result)
+    assert_type(sync_result, TaskFuture[int])
+
+    # Sync task feeding into async task
+    sync_first = prepare.bind(n=5)
+    async_after = async_double.bind(x=sync_first)
+    assert_type(async_after, TaskFuture[int])

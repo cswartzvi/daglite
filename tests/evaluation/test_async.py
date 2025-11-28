@@ -4,6 +4,7 @@ import asyncio
 import threading
 import time
 
+from daglite import async_task
 from daglite import evaluate_async
 from daglite import task
 
@@ -70,8 +71,10 @@ class TestAsyncExecution:
         def combine(a: int, b: int) -> int:
             return a + b
 
-        left_future = left.bind()
-        right_future = right.bind()
+        from daglite.futures import TaskFuture
+
+        left_future: TaskFuture[int] = left.bind()
+        right_future: TaskFuture[int] = right.bind()
         combined = combine.bind(a=left_future, b=right_future)
 
         async def run():
@@ -215,11 +218,186 @@ class TestAsyncExecution:
         def square(z: int) -> int:
             return z**2
 
-        doubled = double.product(x=[1, 2, 3])
-        squared = doubled.map(square)
+        from daglite.futures import MapTaskFuture
+
+        doubled: MapTaskFuture[int] = double.product(x=[1, 2, 3])
+        squared: MapTaskFuture[int] = doubled.map(square)
 
         async def run():
             return await evaluate_async(squared)
 
         result = asyncio.run(run())
         assert result == [4, 16, 36]  # [2, 4, 6] squared
+
+
+class TestAsyncTasksWithEvaluateAsync:
+    """Tests for async tasks evaluated with evaluate_async()."""
+
+    def test_async_task_async_evaluation(self) -> None:
+        """Async tasks can be evaluated asynchronously."""
+
+        @async_task
+        async def async_multiply(x: int, factor: int) -> int:
+            await asyncio.sleep(0.001)
+            return x * factor
+
+        async def run():
+            return await evaluate_async(async_multiply.bind(x=7, factor=3))
+
+        result = asyncio.run(run())
+        assert result == 21
+
+    def test_async_task_parallel_execution(self) -> None:
+        """Multiple async tasks execute in parallel."""
+
+        import time
+
+        execution_times: list[float] = []
+
+        @async_task
+        async def slow_task(duration: float) -> float:
+            start = time.time()
+            await asyncio.sleep(duration)
+            execution_times.append(time.time() - start)
+            return duration
+
+        # Create three tasks that should run in parallel
+        t1 = slow_task.bind(duration=0.1)
+        t2 = slow_task.bind(duration=0.1)
+        t3 = slow_task.bind(duration=0.1)
+
+        @task
+        def combine(a: float, b: float, c: float) -> float:
+            return a + b + c
+
+        combined = combine.bind(a=t1, b=t2, c=t3)
+
+        async def run():
+            start = time.time()
+            result = await evaluate_async(combined)
+            total_time = time.time() - start
+            return result, total_time
+
+        result, total_time = asyncio.run(run())
+
+        assert abs(result - 0.3) < 0.001  # Floating point tolerance
+        # If they ran in parallel, total time should be ~0.1s not ~0.3s
+        assert total_time < 0.2  # Allow some overhead
+
+    def test_async_task_error_propagation(self) -> None:
+        """Errors in async tasks are properly propagated."""
+
+        @async_task
+        async def failing_task(x: int) -> int:
+            await asyncio.sleep(0.001)
+            raise ValueError("Async task failed!")
+
+        future = failing_task.bind(x=10)
+
+        async def run():
+            return await evaluate_async(future)
+
+        try:
+            asyncio.run(run())
+            assert False, "Should have raised ValueError"  # pragma: no cover
+        except ValueError as e:
+            assert str(e) == "Async task failed!"
+
+    def test_async_with_thread_backend_coroutine_result(self) -> None:
+        """Async evaluation with ThreadBackend awaits coroutine results."""
+
+        @async_task(backend="threading")
+        async def async_compute(x: int) -> int:
+            await asyncio.sleep(0.001)
+            return x * 2
+
+        async def run():
+            result_future = async_compute.bind(x=21)
+            return await evaluate_async(result_future)
+
+        result = asyncio.run(run())
+        assert result == 42
+
+
+class TestGeneratorMaterializationAsync:
+    """Tests for generator materialization with evaluate_async()."""
+
+    def test_generator_is_materialized_async(self) -> None:
+        """Generators are materialized in async execution."""
+        from typing import Iterator
+
+        @task
+        def generate_numbers(n: int) -> Iterator[int]:
+            for i in range(n):
+                yield i * 3
+
+        async def run():
+            return await evaluate_async(generate_numbers.bind(n=4))
+
+        result = asyncio.run(run())
+        assert result == [0, 3, 6, 9]
+        assert isinstance(result, list)
+
+    def test_async_task_with_generator_result(self) -> None:
+        """Async tasks that return generators are materialized in async evaluation."""
+        from typing import Iterator
+
+        @async_task
+        async def async_generate_numbers(n: int) -> Iterator[int]:
+            await asyncio.sleep(0.001)
+            return (i for i in range(n))
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        async def run():
+            nums = async_generate_numbers.bind(n=5)
+            total = sum_values.bind(values=nums)
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+        assert result == 10  # 0 + 1 + 2 + 3 + 4
+
+    def test_async_map_with_generator_results(self) -> None:
+        """Async map tasks that return generators are materialized properly."""
+        from typing import Iterator
+
+        @async_task
+        async def async_get_range(n: int) -> Iterator[int]:
+            await asyncio.sleep(0.001)
+            return (i for i in range(n))
+
+        @task
+        def sum_all_ranges(ranges: list[list[int]]) -> int:
+            return sum(sum(r) for r in ranges)
+
+        async def run():
+            # Create a map task where each result is a generator
+            ranges = async_get_range.product(n=[3, 4, 5])
+            total = sum_all_ranges.bind(ranges=ranges)
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+        assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
+
+    def test_async_with_thread_backend_generator_result(self) -> None:
+        """Async evaluation with ThreadBackend materializes generator results."""
+        from typing import Iterator
+
+        @async_task(backend="threading")
+        async def async_generate(n: int) -> Iterator[int]:
+            await asyncio.sleep(0.001)
+            return (i * 2 for i in range(n))
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        async def run():
+            nums = async_generate.bind(n=5)
+            total = sum_values.bind(values=nums)
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+        assert result == 20  # 0+2+4+6+8

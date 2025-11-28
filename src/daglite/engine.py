@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+from collections.abc import Coroutine
 from collections.abc import Generator
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -26,7 +28,13 @@ T = TypeVar("T")
 # region API
 
 
-# Generator/Iterator overloads must come first (most specific)
+# Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload
+def evaluate(
+    expr: TaskFuture[Coroutine[Any, Any, T]], *, default_backend: str | Backend = "sequential"
+) -> T: ...
+
+
 @overload
 def evaluate(
     expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
@@ -83,7 +91,13 @@ def evaluate(
     return engine.evaluate(expr)
 
 
-# Generator/Iterator overloads must come first (most specific)
+# Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload
+async def evaluate_async(
+    expr: TaskFuture[Coroutine[Any, Any, T]], *, default_backend: str | Backend = "sequential"
+) -> T: ...
+
+
 @overload
 async def evaluate_async(
     expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
@@ -222,13 +236,11 @@ class Engine:
         if isinstance(future_or_futures, list):
             # MapTaskNode - gather all results
             results = [f.result() for f in future_or_futures]
-            # Materialize any generators in the list
-            return [_materialize_generators(r) for r in results]
+            return [_materialize_sync(r) for r in results]
         else:
             # TaskNode - single result
             result = future_or_futures.result()
-            # Materialize generator if needed
-            return _materialize_generators(result)
+            return _materialize_sync(result)
 
     async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
         """
@@ -261,13 +273,11 @@ class Engine:
             # MapTaskNode - wrap all futures and gather
             wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
             results = await asyncio.gather(*wrapped)
-            # Materialize any generators in the list
-            return [_materialize_generators(r) for r in results]
+            return [await _materialize_async(r) for r in results]
         else:
             # TaskNode - wrap single future
             result = await asyncio.wrap_future(future_or_futures)
-            # Materialize generator if needed
-            return _materialize_generators(result)
+            return await _materialize_async(result)
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
@@ -375,26 +385,51 @@ class ExecutionState:
         return newly_ready
 
 
-def _materialize_generators(result: Any) -> Any:
+def _materialize_sync(result: Any) -> Any:
     """
-    Materialize generators and iterators to lists.
+    Handle coroutines and generators in synchronous execution context.
 
-    When a task returns a generator or iterator, we consume it into a list
-    to prevent single-use issues and enable proper caching. This ensures
-    that multiple downstream tasks can safely use the result.
+    When a task returns a coroutine in sync execution, we run it with asyncio.run().
+    When it returns a generator/iterator, we materialize it to a list.
+
+    Note: asyncio.run() creates a new event loop. This will fail if called from
+    within an async context (nested event loop). Users should use evaluate_async()
+    in async contexts.
 
     Args:
         result: The result to potentially materialize
 
     Returns:
-        A list if result was a generator/iterator, otherwise unchanged
-
-    Note:
-        This consumes the generator immediately. For streaming support in the
-        future, we may add a task option like @task(stream=True) to opt-in to
-        streaming behavior.
+        Awaited result if coroutine, list if generator/iterator, otherwise unchanged
     """
-    # Check if it's a generator or iterator (but not string/bytes which are iterable)
+    # Run coroutines in sync context (creates new event loop)
+    if inspect.iscoroutine(result):
+        result = asyncio.run(result)
+    # Then check for generators/iterators (not async generators - those need await)
+    # TODO: Add support for AsyncGenerator/AsyncIterator when async generator tasks are added
+    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
+        return list(result)
+    return result
+
+
+async def _materialize_async(result: Any) -> Any:
+    """
+    Materialize async results (coroutines) and generators.
+
+    When a task returns a coroutine, we await it to get the actual result.
+    When it returns a generator/iterator, we materialize it to a list.
+
+    Args:
+        result: The result to potentially materialize
+
+    Returns:
+        Awaited result if coroutine, list if generator/iterator, otherwise unchanged
+    """
+    # Await coroutines
+    if inspect.iscoroutine(result):
+        result = await result
+    # Then check for generators/iterators (not async generators - those need async iteration)
+    # TODO: Add support for AsyncGenerator/AsyncIterator when async generator tasks are added
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
     return result
