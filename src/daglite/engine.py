@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
 from collections.abc import Coroutine
 from collections.abc import Generator
 from collections.abc import Iterator
@@ -405,8 +407,17 @@ def _materialize_sync(result: Any) -> Any:
     # Run coroutines in sync context (creates new event loop)
     if inspect.iscoroutine(result):
         result = asyncio.run(result)
-    # Then check for generators/iterators (not async generators - those need await)
-    # TODO: Add support for AsyncGenerator/AsyncIterator when async generator tasks are added
+    # Handle async generators/iterators by materializing them with asyncio.run
+    if isinstance(result, (AsyncGenerator, AsyncIterator)):
+
+        async def _collect():
+            items = []
+            async for item in result:
+                items.append(item)
+            return items
+
+        return asyncio.run(_collect())
+    # Then check for sync generators/iterators
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
     return result
@@ -428,8 +439,13 @@ async def _materialize_async(result: Any) -> Any:
     # Await coroutines
     if inspect.iscoroutine(result):
         result = await result
-    # Then check for generators/iterators (not async generators - those need async iteration)
-    # TODO: Add support for AsyncGenerator/AsyncIterator when async generator tasks are added
+    # Handle async generators/iterators by materializing them with async for
+    if isinstance(result, (AsyncGenerator, AsyncIterator)):
+        items = []
+        async for item in result:
+            items.append(item)
+        return items
+    # Then check for sync generators/iterators
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
     return result

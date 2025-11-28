@@ -362,3 +362,184 @@ def test_async_task_mixed_with_sync() -> None:
     sync_first = prepare.bind(n=5)
     async_after = async_double.bind(x=sync_first)
     assert_type(async_after, TaskFuture[int])
+
+
+# -- Generator materialization tests --
+def test_sync_generator_static_type() -> None:
+    """Sync generators preserve static type until evaluation."""
+    from collections.abc import Generator
+
+    @task
+    def generate_numbers(n: int) -> Generator[int, None, None]:
+        for i in range(n):
+            yield i
+
+    # Static type is TaskFuture[Generator[int, None, None]]
+    result = generate_numbers.bind(n=5)
+    assert_type(result, TaskFuture[Generator[int, None, None]])
+
+
+def test_sync_iterator_static_type() -> None:
+    """Sync iterators preserve static type until evaluation."""
+    from collections.abc import Iterator
+
+    @task
+    def generate_range(n: int) -> Iterator[int]:
+        return (i * 2 for i in range(n))
+
+    # Static type is TaskFuture[Iterator[int]]
+    result = generate_range.bind(n=5)
+    assert_type(result, TaskFuture[Iterator[int]])
+
+
+def test_sync_generator_evaluate_returns_list() -> None:
+    """evaluate() returns list[T] for Generator[T, None, None]."""
+    from collections.abc import Generator
+
+    from daglite import evaluate
+
+    @task
+    def generate_numbers(n: int) -> Generator[int, None, None]:
+        for i in range(n):
+            yield i
+
+    result_future = generate_numbers.bind(n=5)
+    # After evaluation, the overload returns list[int]
+    evaluated = evaluate(result_future)
+    assert_type(evaluated, list[int])
+
+
+def test_sync_iterator_evaluate_returns_list() -> None:
+    """evaluate() returns list[T] for Iterator[T]."""
+    from collections.abc import Iterator
+
+    from daglite import evaluate
+
+    @task
+    def generate_range(n: int) -> Iterator[int]:
+        return (i * 2 for i in range(n))
+
+    result_future = generate_range.bind(n=5)
+    # After evaluation, the overload returns list[int]
+    evaluated = evaluate(result_future)
+    assert_type(evaluated, list[int])
+
+
+def test_sync_generator_in_map_operation() -> None:
+    """Generators work in map operations."""
+    from collections.abc import Iterator
+
+    from daglite import evaluate
+
+    @task
+    def generate_range(n: int) -> Iterator[int]:
+        return (i for i in range(n))
+
+    @task
+    def sum_values(values: list[int]) -> int:
+        return sum(values)
+
+    # product creates MapTaskFuture[Iterator[int]]
+    ranges = generate_range.product(n=[3, 4, 5])
+    assert_type(ranges, MapTaskFuture[Iterator[int]])
+
+    # evaluate() returns list[Iterator[int]], but at runtime these are materialized
+    evaluated_ranges = evaluate(ranges)
+    assert_type(evaluated_ranges, list[Iterator[int]])
+
+
+def test_async_generator_static_type() -> None:
+    """Async generators preserve static type until evaluation."""
+    from collections.abc import AsyncGenerator
+
+    @async_task
+    async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
+        async def _gen():
+            for i in range(n):
+                yield i
+
+        return _gen()
+
+    # Static type is TaskFuture[AsyncGenerator[int, None]]
+    result = async_generate_numbers.bind(n=5)
+    assert_type(result, TaskFuture[AsyncGenerator[int, None]])
+
+
+def test_async_iterator_static_type() -> None:
+    """Async iterators preserve static type until evaluation."""
+    from collections.abc import AsyncIterator
+
+    @async_task
+    async def async_generate_range(n: int) -> AsyncIterator[str]:
+        async def _gen():
+            for i in range(n):
+                yield str(i)
+
+        return _gen()
+
+    # Static type is TaskFuture[AsyncIterator[str]]
+    result = async_generate_range.bind(n=5)
+    assert_type(result, TaskFuture[AsyncIterator[str]])
+
+
+def test_async_generator_in_map_operation() -> None:
+    """Async generators work in map operations."""
+    from collections.abc import AsyncGenerator
+
+    @async_task
+    async def async_generate_range(n: int) -> AsyncGenerator[int, None]:
+        async def _gen():
+            for i in range(n):
+                yield i
+
+        return _gen()
+
+    # product creates MapTaskFuture[AsyncGenerator[int, None]]
+    ranges = async_generate_range.product(n=[3, 4, 5])
+    assert_type(ranges, MapTaskFuture[AsyncGenerator[int, None]])
+
+
+def test_mixed_sync_async_generators() -> None:
+    """Mix of sync and async generators in same graph."""
+    from collections.abc import AsyncGenerator
+    from collections.abc import Generator
+
+    @task
+    def sync_generate(n: int) -> Generator[int, None, None]:
+        for i in range(n):
+            yield i
+
+    @async_task
+    async def async_generate(n: int) -> AsyncGenerator[int, None]:
+        async def _gen():
+            for i in range(n):
+                yield i * 10
+
+        return _gen()
+
+    # Static types are preserved
+    sync_gen = sync_generate.bind(n=3)
+    assert_type(sync_gen, TaskFuture[Generator[int, None, None]])
+
+    async_gen = async_generate.bind(n=3)
+    assert_type(async_gen, TaskFuture[AsyncGenerator[int, None]])
+
+
+def test_coroutine_static_type() -> None:
+    """Coroutines preserve static type until evaluation."""
+
+    # The async_double task returns a coroutine
+    result = async_double.bind(x=5)
+    # At static type level, it's TaskFuture[int] because the task signature is async def -> int
+    # The coroutine wrapping is handled internally
+    assert_type(result, TaskFuture[int])
+
+
+def test_coroutine_evaluate_returns_unwrapped() -> None:
+    """evaluate() unwraps coroutines and returns the inner type."""
+    from daglite import evaluate
+
+    result_future = async_double.bind(x=5)
+    # evaluate() should return int (unwrapped from coroutine)
+    evaluated = evaluate(result_future)
+    assert_type(evaluated, int)

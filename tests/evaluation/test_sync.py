@@ -903,3 +903,70 @@ class TestGeneratorMaterialization:
         gen_result.append("99")
         assert len(iter_result) == 4
         assert len(gen_result) == 4
+
+    def test_async_generator_materialization_sync_evaluation(self) -> None:
+        """Async generators returned from async tasks are materialized in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @async_task
+        async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i
+
+            return _gen()
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        nums = async_generate_numbers.bind(n=5)
+        total = sum_values.bind(values=nums)
+        result = evaluate(total)
+        assert result == 10  # 0 + 1 + 2 + 3 + 4
+
+    def test_async_generator_map_materialization_sync_evaluation(self) -> None:
+        """Map tasks that return async generators are materialized properly in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @async_task
+        async def async_get_range(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i
+
+            return _gen()
+
+        @task
+        def sum_all_ranges(ranges: list[list[int]]) -> int:
+            return sum(sum(r) for r in ranges)
+
+        # Create a map task where each result is an async generator
+        ranges = async_get_range.product(n=[3, 4, 5])
+        total = sum_all_ranges.bind(ranges=ranges)
+        result = evaluate(total)
+        assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
+
+    def test_async_generator_with_thread_backend_sync_evaluation(self) -> None:
+        """Async generators work with ThreadBackend in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @async_task(backend="threading")
+        async def async_generate(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i * 2
+
+            return _gen()
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        nums = async_generate.bind(n=5)
+        total = sum_values.bind(values=nums)
+        result = evaluate(total)
+        assert result == 20  # 0+2+4+6+8
