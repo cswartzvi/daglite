@@ -26,6 +26,20 @@ T = TypeVar("T")
 # region API
 
 
+# Generator/Iterator overloads must come first (most specific)
+@overload
+def evaluate(
+    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+def evaluate(
+    expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+# General overloads
 @overload
 def evaluate(expr: TaskFuture[T], *, default_backend: str | Backend = "sequential") -> T: ...
 
@@ -69,6 +83,20 @@ def evaluate(
     return engine.evaluate(expr)
 
 
+# Generator/Iterator overloads must come first (most specific)
+@overload
+async def evaluate_async(
+    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+# General overloads
 @overload
 async def evaluate_async(
     expr: TaskFuture[T], *, default_backend: str | Backend = "sequential"
@@ -115,31 +143,6 @@ async def evaluate_async(
 
 
 # region Internal
-
-
-def _materialize_generators(result: Any) -> Any:
-    """
-    Materialize generators and iterators to lists.
-
-    When a task returns a generator or iterator, we consume it into a list
-    to prevent single-use issues and enable proper caching. This ensures
-    that multiple downstream tasks can safely use the result.
-
-    Args:
-        result: The result to potentially materialize
-
-    Returns:
-        A list if result was a generator/iterator, otherwise unchanged
-
-    Note:
-        This consumes the generator immediately. For streaming support in the
-        future, we may add a task option like @task(stream=True) to opt-in to
-        streaming behavior.
-    """
-    # Check if it's a generator or iterator (but not string/bytes which are iterable)
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-    return result
 
 
 @dataclass
@@ -370,3 +373,28 @@ class ExecutionState:
                 newly_ready.append(succ)
 
         return newly_ready
+
+
+def _materialize_generators(result: Any) -> Any:
+    """
+    Materialize generators and iterators to lists.
+
+    When a task returns a generator or iterator, we consume it into a list
+    to prevent single-use issues and enable proper caching. This ensures
+    that multiple downstream tasks can safely use the result.
+
+    Args:
+        result: The result to potentially materialize
+
+    Returns:
+        A list if result was a generator/iterator, otherwise unchanged
+
+    Note:
+        This consumes the generator immediately. For streaming support in the
+        future, we may add a task option like @task(stream=True) to opt-in to
+        streaming behavior.
+    """
+    # Check if it's a generator or iterator (but not string/bytes which are iterable)
+    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
+        return list(result)
+    return result

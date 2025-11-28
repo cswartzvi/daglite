@@ -130,3 +130,33 @@ class TestGeneratorMaterialization:
 
         result = evaluate(generate_numbers.bind(n=4).then(double_all))
         assert result == [0, 2, 4, 6]
+
+    def test_generator_type_inference(self) -> None:
+        """Type system correctly infers list[T] from Iterator[T] return."""
+        from typing import Generator
+
+        @task
+        def return_iterator(n: int) -> Iterator[int]:
+            for i in range(n):
+                yield i
+
+        @task
+        def return_generator(n: int) -> Generator[str, None, None]:
+            for i in range(n):
+                yield str(i)
+
+        # Type checker should infer list[int] and list[str]
+        iter_result = evaluate(return_iterator.bind(n=3))
+        gen_result = evaluate(return_generator.bind(n=3))
+
+        # These should work at runtime (list operations)
+        assert isinstance(iter_result, list)
+        assert isinstance(gen_result, list)
+        assert iter_result == [0, 1, 2]
+        assert gen_result == ["0", "1", "2"]
+
+        # Verify list operations work
+        iter_result.append(99)
+        gen_result.append("99")
+        assert len(iter_result) == 4
+        assert len(gen_result) == 4
