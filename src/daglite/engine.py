@@ -1,4 +1,5 @@
-# daglite/engine.py
+"""Evaluation engine for Daglite task graphs."""
+
 from __future__ import annotations
 
 import asyncio
@@ -292,7 +293,6 @@ class Engine:
         if isinstance(backend, SequentialBackend):
             return await asyncio.to_thread(self._execute_node_sync, node, values)
 
-        # All other backends: wrap their futures
         future_or_futures = node.submit(backend, values)
 
         if isinstance(future_or_futures, list):
@@ -412,26 +412,10 @@ class ExecutionState:
 
 
 def _materialize_sync(result: Any) -> Any:
-    """
-    Handle coroutines and generators in synchronous execution context.
-
-    When a task returns a coroutine in sync execution, we run it with asyncio.run().
-    When it returns a generator/iterator, we materialize it to a list.
-
-    Note: asyncio.run() creates a new event loop. This will fail if called from
-    within an async context (nested event loop). Users should use evaluate_async()
-    in async contexts.
-
-    Args:
-        result: The result to potentially materialize
-
-    Returns:
-        Awaited result if coroutine, list if generator/iterator, otherwise unchanged
-    """
-    # Run coroutines in sync context (creates new event loop)
+    """Materialize coroutines and generators in synchronous execution context."""
     if inspect.iscoroutine(result):
         result = asyncio.run(result)
-    # Handle async generators/iterators by materializing them with asyncio.run
+
     if isinstance(result, (AsyncGenerator, AsyncIterator)):
 
         async def _collect():
@@ -441,35 +425,24 @@ def _materialize_sync(result: Any) -> Any:
             return items
 
         return asyncio.run(_collect())
-    # Then check for sync generators/iterators
+
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
     return result
 
 
 async def _materialize_async(result: Any) -> Any:
-    """
-    Materialize async results (coroutines) and generators.
-
-    When a task returns a coroutine, we await it to get the actual result.
-    When it returns a generator/iterator, we materialize it to a list.
-
-    Args:
-        result: The result to potentially materialize
-
-    Returns:
-        Awaited result if coroutine, list if generator/iterator, otherwise unchanged
-    """
-    # Await coroutines
+    """Materialize coroutines and generators in asynchronous execution context."""
     if inspect.iscoroutine(result):
         result = await result
-    # Handle async generators/iterators by materializing them with async for
+
     if isinstance(result, (AsyncGenerator, AsyncIterator)):
         items = []
         async for item in result:
             items.append(item)
         return items
-    # Then check for sync generators/iterators
+
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
+
     return result
