@@ -2,7 +2,6 @@
 
 import asyncio
 
-from daglite import async_task
 from daglite import evaluate
 from daglite import task
 
@@ -644,7 +643,7 @@ class TestAsyncTasksWithEvaluate:
     def test_async_task_sync_evaluation(self) -> None:
         """Async tasks can be evaluated synchronously."""
 
-        @async_task
+        @task
         async def async_add(x: int, y: int) -> int:
             await asyncio.sleep(0.001)  # Simulate async work
             return x + y
@@ -659,7 +658,7 @@ class TestAsyncTasksWithEvaluate:
         def sync_start(n: int) -> int:
             return n * 2
 
-        @async_task
+        @task
         async def async_process(x: int) -> int:
             await asyncio.sleep(0.001)
             return x + 10
@@ -679,7 +678,7 @@ class TestAsyncTasksWithEvaluate:
     def test_async_task_product(self) -> None:
         """Async tasks work with product operations."""
 
-        @async_task
+        @task
         async def async_square(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * x
@@ -697,7 +696,7 @@ class TestAsyncTasksWithEvaluate:
     def test_async_task_zip(self) -> None:
         """Async tasks work with zip operations."""
 
-        @async_task
+        @task
         async def async_add(x: int, y: int) -> int:
             await asyncio.sleep(0.001)
             return x + y
@@ -718,7 +717,7 @@ class TestAsyncTasksWithEvaluate:
     def test_async_task_with_then_chain(self) -> None:
         """Async tasks work with .then() chains."""
 
-        @async_task
+        @task
         async def async_double(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * 2
@@ -727,7 +726,7 @@ class TestAsyncTasksWithEvaluate:
         def add_ten(x: int) -> int:
             return x + 10
 
-        @async_task
+        @task
         async def async_square(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * x
@@ -743,7 +742,7 @@ class TestAsyncTasksWithEvaluate:
         def sync_task(x: int) -> int:
             return x + 1
 
-        @async_task
+        @task
         async def async_double(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * 2
@@ -908,7 +907,7 @@ class TestGeneratorMaterialization:
         """Async generators returned from async tasks are materialized in sync evaluation."""
         from collections.abc import AsyncGenerator
 
-        @async_task
+        @task
         async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
@@ -930,7 +929,7 @@ class TestGeneratorMaterialization:
         """Map tasks that return async generators are materialized properly in sync evaluation."""
         from collections.abc import AsyncGenerator
 
-        @async_task
+        @task
         async def async_get_range(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
@@ -953,7 +952,7 @@ class TestGeneratorMaterialization:
         """Async generators work with ThreadBackend in sync evaluation."""
         from collections.abc import AsyncGenerator
 
-        @async_task(backend="threading")
+        @task(backend="threading")
         async def async_generate(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):

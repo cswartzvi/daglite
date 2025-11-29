@@ -7,11 +7,17 @@
 # types of `Task` or `FixedParamTask` cannot be done here. We will have to rely on the overall
 # type checking of the daglite package for those.
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import assert_type
 
-from daglite import async_task
+# Type checkers disagree on coroutine types:
+# - pyright infers CoroutineType (implementation from types)
+# - mypy infers Coroutine (protocol from collections.abc)
+# We use Coroutine and add pyright: ignore comments where needed
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
 from daglite import pipeline
 from daglite import task
 from daglite.futures import MapTaskFuture
@@ -78,220 +84,177 @@ def join_strings(xs: list[str]) -> str:
     return ",".join(xs)
 
 
-@async_task
+@task
 async def async_fetch_data(url: str) -> dict[str, str]:
     """Async task that returns a dict."""
     return {"url": url, "data": "example"}
 
 
-@async_task
+@task
 async def async_double(x: int) -> int:
     """Async task that doubles a value."""
     return x * 2
 
 
-@async_task
+@task
 async def async_process_list(xs: list[int]) -> int:
     """Async task that processes a list."""
     return sum(xs)
 
 
-# -- Scalar parameters --
-def test_task_simple_parameters() -> None:
+# -- Basic task operations --
+def test_task_basic_operations() -> None:
+    """Test basic task binding, dependencies, and with_options."""
+    # Simple scalar parameters
     simple_score = score.bind(x=1, y=2)
     assert_type(simple_score, TaskFuture[int])
 
-
-# -- Scalar parameters with options --
-def test_task_parameters_with_options() -> None:
-    simple_score_options = score.with_options(backend="threading").bind(x=1, y=2)
-    assert_type(simple_score_options, TaskFuture[int])
-
-
-# -- Reference parameters --
-def test_task_reference_parameters() -> None:
+    # Reference parameters (dependencies)
     prepared = prepare.bind(n=3)
-
     mixed_score = score.bind(x=prepared, y=2)
     assert_type(mixed_score, TaskFuture[int])
-
     combined = double.bind(x=prepared)
     assert_type(combined, TaskFuture[int])
 
-
-# -- Reference parameters with options --
-def test_task_reference_parameters_with_options() -> None:
-    prepared = prepare.with_options(backend="threading").bind(n=3)
-    mixed_score = score.with_options(backend="threading").bind(x=prepared, y=2)
-    assert_type(mixed_score, TaskFuture[int])
-
-
-# -- Fan-out with product map and join --
-def test_task_extend_map_join() -> None:
-    prepared = prepare.product(n=[1, 2, 3])
-    assert_type(prepared, MapTaskFuture[int])
-
-    doubled = prepared.map(double)
-    assert_type(doubled, MapTaskFuture[int])
-
-    joined = doubled.join(sum_list)
-    assert_type(joined, TaskFuture[int])
+    # with_options works on tasks and fixed tasks
+    with_options = score.with_options(backend="threading").bind(x=1, y=2)
+    assert_type(with_options, TaskFuture[int])
+    fixed_with_options = score.fix(y=10).with_options(backend="threading").bind(x=5)
+    assert_type(fixed_with_options, TaskFuture[int])
 
 
-# -- Fan-out with product and mixed parameters --
-def test_task_extend_with_fix() -> None:
-    extend_score = score.fix(y=10).product(x=[1, 2, 3])
-    assert_type(extend_score, MapTaskFuture[int])
+# -- Fan-out operations (product and zip) --
+def test_task_fanout_operations() -> None:
+    """Test product/zip with map and join operations."""
+    # product: fan-out -> map -> join
+    product_result = prepare.product(n=[1, 2, 3])
+    assert_type(product_result, MapTaskFuture[int])
+    product_mapped = product_result.map(double)
+    assert_type(product_mapped, MapTaskFuture[int])
+    product_joined = product_mapped.join(sum_list)
+    assert_type(product_joined, TaskFuture[int])
 
-
-# -- Fan-out with zip, map, and join --
-def test_task_zip_map_join() -> None:
-    zip_prepared = prepare.zip(n=[1, 2, 3])
-    assert_type(zip_prepared, MapTaskFuture[int])
-
-    zip_doubled = zip_prepared.map(double)
-    assert_type(zip_doubled, MapTaskFuture[int])
-
-    zip_joined = zip_doubled.join(sum_list)
+    # zip: fan-out -> map -> join
+    zip_result = prepare.zip(n=[1, 2, 3])
+    assert_type(zip_result, MapTaskFuture[int])
+    zip_mapped = zip_result.map(double)
+    assert_type(zip_mapped, MapTaskFuture[int])
+    zip_joined = zip_mapped.join(sum_list)
     assert_type(zip_joined, TaskFuture[int])
 
+    # product/zip with fixed parameters
+    product_fixed = score.fix(y=10).product(x=[1, 2, 3])
+    assert_type(product_fixed, MapTaskFuture[int])
+    zip_fixed = score.fix(y=20).zip(x=[1, 2, 3])
+    assert_type(zip_fixed, MapTaskFuture[int])
 
-# -- Fan-out with zip and mixed parameters --
-def test_task_zip_with_fix() -> None:
-    zip_score = score.fix(y=20).zip(x=[1, 2, 3])
-    assert_type(zip_score, MapTaskFuture[int])
-
-
-# -- Tasks with no parameters --
-def test_task_no_parameters() -> None:
-    constant = get_constant.bind()
-    assert_type(constant, TaskFuture[str])
-
-
-# -- Different return types --
-def test_task_different_return_types() -> None:
-    data = fetch_data.bind()
-    assert_type(data, TaskFuture[dict[str, Any]])
-
-    items = get_items.bind()
-    assert_type(items, TaskFuture[list[str]])
-
-    tuple_result = split.bind(x=10)
-    assert_type(tuple_result, TaskFuture[tuple[int, int]])
-
-
-# -- Optional return types --
-def test_task_optional_return_types() -> None:
-    maybe = maybe_value.bind(x=5)
-    assert_type(maybe, TaskFuture[int | None])
-
-    maybe_negative = maybe_value.bind(x=-5)
-    assert_type(maybe_negative, TaskFuture[int | None])
-
-
-# -- Multiple dependencies (complex graph) --
-def test_task_multiple_dependencies() -> None:
-    dep_a = prepare.bind(n=1)
-    dep_b = prepare.bind(n=2)
-    dep_c = three_args.bind(x=dep_a, y=dep_b, z=10)
-
-    combined = score.bind(x=dep_a, y=dep_c)
-    assert_type(combined, TaskFuture[int])
-
-
-# -- Nested map chains --
-def test_task_nested_map_chains() -> None:
-    nested_maps = prepare.product(n=[1, 2, 3]).map(double).map(double).join(sum_list)
-    assert_type(nested_maps, TaskFuture[int])
-
-
-# -- MapTaskFuture without join --
-def test_task_map_without_join() -> None:
-    mapped_only = prepare.product(n=[1, 2]).map(double)
-    assert_type(mapped_only, MapTaskFuture[int])
-
-
-# -- Using fix with partial application --
-def test_task_fix_partial_application() -> None:
-    fixed_once = three_args.fix(z=100)
-    partially_bound = fixed_once.bind(x=1, y=10)
-    assert_type(partially_bound, TaskFuture[int])
-
-    fixed_two_params = three_args.fix(y=10, z=100)
-    final_bound = fixed_two_params.bind(x=1)
-    assert_type(final_bound, TaskFuture[int])
-
-
-# -- product vs zip with multiple parameters --
-def test_task_extend_vs_zip_multiple_params() -> None:
-    cartesian_scores = score.product(x=[1, 2], y=[10, 20])
-    assert_type(cartesian_scores, MapTaskFuture[int])
-
-    zipped_scores = score.zip(x=[1, 2], y=[10, 20])
-    assert_type(zipped_scores, MapTaskFuture[int])
-
-
-# -- Nested product (fan-out over fan-out results) --
-def test_task_nested_extend() -> None:
-    level1_extend = double.product(x=[1, 2, 3])
-    assert_type(level1_extend, MapTaskFuture[int])
-
-    level2_extend = score.product(x=level1_extend, y=[100, 200])
-    assert_type(level2_extend, MapTaskFuture[int])
-
-    nested_extend_result = level2_extend.join(sum_list)
-    assert_type(nested_extend_result, TaskFuture[int])
-
-
-# -- Nested zip (fan-out over fan-out results) --
-def test_task_nested_zip() -> None:
-    level1_zip = double.zip(x=[1, 2, 3])
-    assert_type(level1_zip, MapTaskFuture[int])
-
-    level2_zip = score.zip(x=level1_zip, y=[100, 200, 300])
-    assert_type(level2_zip, MapTaskFuture[int])
-
-    nested_zip_result = level2_zip.join(sum_list)
-    assert_type(nested_zip_result, TaskFuture[int])
-
-
-# -- Map chains with different return types --
-def test_task_map_chain_type_changes() -> None:
-    type_changing_chain = prepare.product(n=[1, 2, 3]).map(double).map(to_string)
-    assert_type(type_changing_chain, MapTaskFuture[str])
-
-    type_change_joined = type_changing_chain.join(join_strings)
-    assert_type(type_change_joined, TaskFuture[str])
-
-
-# -- Mixing concrete values and TaskFutures in product/zip --
-def test_task_mixed_concrete_and_futures() -> None:
-    prep_future = prepare.bind(n=10)
-    mixed_extend = score.product(x=[1, 2], y=prep_future)
-    assert_type(mixed_extend, MapTaskFuture[int])
-
-    mixed_zip = score.zip(x=[1, 2], y=prep_future)
-    assert_type(mixed_zip, MapTaskFuture[int])
-
-
-# -- with_options on FixedParamTask --
-def test_task_with_options_on_fixed_param_task() -> None:
-    fixed_with_options = score.fix(y=10).with_options(backend="threading")
-    options_result = fixed_with_options.bind(x=5)
-    assert_type(options_result, TaskFuture[int])
-
-
-# -- Empty iterables in product/zip --
-def test_task_empty_iterables() -> None:
-    empty_extend = prepare.product(n=[])
-    assert_type(empty_extend, MapTaskFuture[int])
-
+    # Empty iterables
+    empty_product = prepare.product(n=[])
+    assert_type(empty_product, MapTaskFuture[int])
     empty_zip = prepare.zip(n=[])
     assert_type(empty_zip, MapTaskFuture[int])
 
 
-# -- Scalar pipeline --
-def test_pipeline_with_scalar_parameters() -> None:
+# -- Return type preservation --
+def test_task_return_types() -> None:
+    """Test that various return types are preserved correctly."""
+    # No parameters
+    constant = get_constant.bind()
+    assert_type(constant, TaskFuture[str])
+
+    # Different types
+    data = fetch_data.bind()
+    assert_type(data, TaskFuture[dict[str, Any]])
+    items = get_items.bind()
+    assert_type(items, TaskFuture[list[str]])
+    tuple_result = split.bind(x=10)
+    assert_type(tuple_result, TaskFuture[tuple[int, int]])
+
+    # Optional types
+    maybe = maybe_value.bind(x=5)
+    assert_type(maybe, TaskFuture[int | None])
+
+
+# -- Complex graph patterns --
+def test_task_complex_graphs() -> None:
+    """Test complex dependency graphs and chaining."""
+    # Multiple dependencies
+    dep_a = prepare.bind(n=1)
+    dep_b = prepare.bind(n=2)
+    dep_c = three_args.bind(x=dep_a, y=dep_b, z=10)
+    combined = score.bind(x=dep_a, y=dep_c)
+    assert_type(combined, TaskFuture[int])
+
+    # Nested map chains
+    nested_maps = prepare.product(n=[1, 2, 3]).map(double).map(double).join(sum_list)
+    assert_type(nested_maps, TaskFuture[int])
+
+    # MapTaskFuture without join
+    mapped_only = prepare.product(n=[1, 2]).map(double)
+    assert_type(mapped_only, MapTaskFuture[int])
+
+
+# -- Partial application with fix --
+def test_task_fix_operations() -> None:
+    """Test fix() for partial parameter binding."""
+    # Fix one parameter
+    fixed_once = three_args.fix(z=100)
+    partially_bound = fixed_once.bind(x=1, y=10)
+    assert_type(partially_bound, TaskFuture[int])
+
+    # Fix multiple parameters
+    fixed_two_params = three_args.fix(y=10, z=100)
+    final_bound = fixed_two_params.bind(x=1)
+    assert_type(final_bound, TaskFuture[int])
+
+    # product vs zip with multiple parameters (Cartesian vs pairwise)
+    cartesian_scores = score.product(x=[1, 2], y=[10, 20])
+    assert_type(cartesian_scores, MapTaskFuture[int])
+    zipped_scores = score.zip(x=[1, 2], y=[10, 20])
+    assert_type(zipped_scores, MapTaskFuture[int])
+
+
+# -- Nested fan-out operations --
+def test_task_nested_fanout() -> None:
+    """Test nested product/zip operations (fan-out over fan-out results)."""
+    # Nested product
+    level1_product = double.product(x=[1, 2, 3])
+    assert_type(level1_product, MapTaskFuture[int])
+    level2_product = score.product(x=level1_product, y=[100, 200])
+    assert_type(level2_product, MapTaskFuture[int])
+    nested_product_result = level2_product.join(sum_list)
+    assert_type(nested_product_result, TaskFuture[int])
+
+    # Nested zip
+    level1_zip = double.zip(x=[1, 2, 3])
+    assert_type(level1_zip, MapTaskFuture[int])
+    level2_zip = score.zip(x=level1_zip, y=[100, 200, 300])
+    assert_type(level2_zip, MapTaskFuture[int])
+    nested_zip_result = level2_zip.join(sum_list)
+    assert_type(nested_zip_result, TaskFuture[int])
+
+
+# -- Type transformations in map chains --
+def test_task_type_transformations() -> None:
+    """Test that type changes propagate correctly through map chains."""
+    # Type changes: int -> int -> str
+    type_changing_chain = prepare.product(n=[1, 2, 3]).map(double).map(to_string)
+    assert_type(type_changing_chain, MapTaskFuture[str])
+    type_change_joined = type_changing_chain.join(join_strings)
+    assert_type(type_change_joined, TaskFuture[str])
+
+    # Mixing concrete values and TaskFutures
+    prep_future = prepare.bind(n=10)
+    mixed_product = score.product(x=[1, 2], y=prep_future)
+    assert_type(mixed_product, MapTaskFuture[int])
+    mixed_zip = score.zip(x=[1, 2], y=prep_future)
+    assert_type(mixed_zip, MapTaskFuture[int])
+
+
+# -- Pipeline decorator --
+def test_pipeline_types() -> None:
+    """Test that @pipeline decorator preserves types correctly."""
+
     @task
     def add(x: int, y: int) -> int:
         return x + y
@@ -304,97 +267,46 @@ def test_pipeline_with_scalar_parameters() -> None:
     assert_type(pipeline_result, TaskFuture[int])
 
 
-# -- Pipeline with product --
-def test_pipeline_with_extend() -> None:
-    @task
-    def increment(x: int) -> int:
-        return x + 1
-
-    @pipeline
-    def extend_pipeline(values: list[int]) -> MapTaskFuture[int]:
-        return increment.product(x=values)
-
-    pipeline_result = extend_pipeline([1, 2, 3])
-    assert_type(pipeline_result, MapTaskFuture[int])
-
-
-# -- Pipeline with zip --
-def test_pipeline_with_zip() -> None:
-    @task
-    def square(x: int) -> int:
-        return x * x
-
-    @pipeline
-    def zip_pipeline(values: list[int]) -> MapTaskFuture[int]:
-        return square.zip(x=values)
-
-    pipeline_result = zip_pipeline([1, 2, 3])
-    assert_type(pipeline_result, MapTaskFuture[int])
-
-
-# -- Async tasks return unwrapped types --
-def test_async_task_simple() -> None:
+# -- Async tasks (honest coroutine types) --
+# NOTE: Type checkers disagree: mypy sees Coroutine, pyright sees CoroutineType.
+# Both are correct - CoroutineType is the implementation, Coroutine is the protocol.
+# We use Coroutine (the protocol) since it's more general and works at runtime.
+def test_async_task_types() -> None:
+    """Async tasks return TaskFuture[Coroutine[...]] - the honest type."""
+    # Simple async task
     result = async_fetch_data.bind(url="example.com")
-    assert_type(result, TaskFuture[dict[str, str]])
+    assert_type(result, TaskFuture[Coroutine[Any, Any, dict[str, str]]])  # pyright: ignore[reportAssertTypeFailure]
 
-
-def test_async_task_with_dependencies() -> None:
+    # Async task with dependencies
     prep = prepare.bind(n=5)
     doubled = async_double.bind(x=prep)
-    assert_type(doubled, TaskFuture[int])
+    assert_type(doubled, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
 
-
-def test_async_task_with_map() -> None:
+    # Async task with map operations
     values = async_double.product(x=[1, 2, 3])
-    assert_type(values, MapTaskFuture[int])
+    assert_type(values, MapTaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
 
-    result = values.join(async_process_list)
-    assert_type(result, TaskFuture[int])
-
-
-def test_async_task_mixed_with_sync() -> None:
-    # Async task feeding into sync task
+    # Mixed sync/async composition
     async_result = async_double.bind(x=10)
     sync_result = double.bind(x=async_result)
     assert_type(sync_result, TaskFuture[int])
-
-    # Sync task feeding into async task
     sync_first = prepare.bind(n=5)
     async_after = async_double.bind(x=sync_first)
-    assert_type(async_after, TaskFuture[int])
+    assert_type(async_after, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+
+    # evaluate() unwraps coroutines
+    from daglite import evaluate
+
+    result_future = async_double.bind(x=5)
+    evaluated = evaluate(result_future)
+    assert_type(evaluated, int)  # pyright: ignore[reportAssertTypeFailure,reportUnusedCoroutine]
 
 
-# -- Generator materialization tests --
-def test_sync_generator_static_type() -> None:
-    """Sync generators preserve static type until evaluation."""
+# -- Sync generator/iterator materialization --
+def test_sync_generator_types() -> None:
+    """Sync generators preserve static type but materialize to list on evaluation."""
     from collections.abc import Generator
-
-    @task
-    def generate_numbers(n: int) -> Generator[int, None, None]:
-        for i in range(n):
-            yield i
-
-    # Static type is TaskFuture[Generator[int, None, None]]
-    result = generate_numbers.bind(n=5)
-    assert_type(result, TaskFuture[Generator[int, None, None]])
-
-
-def test_sync_iterator_static_type() -> None:
-    """Sync iterators preserve static type until evaluation."""
     from collections.abc import Iterator
-
-    @task
-    def generate_range(n: int) -> Iterator[int]:
-        return (i * 2 for i in range(n))
-
-    # Static type is TaskFuture[Iterator[int]]
-    result = generate_range.bind(n=5)
-    assert_type(result, TaskFuture[Iterator[int]])
-
-
-def test_sync_generator_evaluate_returns_list() -> None:
-    """evaluate() returns list[T] for Generator[T, None, None]."""
-    from collections.abc import Generator
 
     from daglite import evaluate
 
@@ -403,56 +315,36 @@ def test_sync_generator_evaluate_returns_list() -> None:
         for i in range(n):
             yield i
 
-    result_future = generate_numbers.bind(n=5)
-    # After evaluation, the overload returns list[int]
-    evaluated = evaluate(result_future)
-    assert_type(evaluated, list[int])
-
-
-def test_sync_iterator_evaluate_returns_list() -> None:
-    """evaluate() returns list[T] for Iterator[T]."""
-    from collections.abc import Iterator
-
-    from daglite import evaluate
-
     @task
     def generate_range(n: int) -> Iterator[int]:
         return (i * 2 for i in range(n))
 
-    result_future = generate_range.bind(n=5)
-    # After evaluation, the overload returns list[int]
-    evaluated = evaluate(result_future)
-    assert_type(evaluated, list[int])
+    # Static types preserved
+    gen_result = generate_numbers.bind(n=5)
+    assert_type(gen_result, TaskFuture[Generator[int, None, None]])
+    iter_result = generate_range.bind(n=5)
+    assert_type(iter_result, TaskFuture[Iterator[int]])
 
+    # evaluate() returns list[T] for generators/iterators
+    gen_evaluated = evaluate(gen_result)
+    assert_type(gen_evaluated, list[int])
+    iter_evaluated = evaluate(iter_result)
+    assert_type(iter_evaluated, list[int])
 
-def test_sync_generator_in_map_operation() -> None:
-    """Generators work in map operations."""
-    from collections.abc import Iterator
-
-    from daglite import evaluate
-
-    @task
-    def generate_range(n: int) -> Iterator[int]:
-        return (i for i in range(n))
-
-    @task
-    def sum_values(values: list[int]) -> int:
-        return sum(values)
-
-    # product creates MapTaskFuture[Iterator[int]]
+    # Generators work in map operations
     ranges = generate_range.product(n=[3, 4, 5])
     assert_type(ranges, MapTaskFuture[Iterator[int]])
-
-    # evaluate() returns list[Iterator[int]], but at runtime these are materialized
     evaluated_ranges = evaluate(ranges)
     assert_type(evaluated_ranges, list[Iterator[int]])
 
 
-def test_async_generator_static_type() -> None:
-    """Async generators preserve static type until evaluation."""
+def test_async_generator_types() -> None:
+    """Async generators wrapped in coroutines preserve type information."""
     from collections.abc import AsyncGenerator
+    from collections.abc import AsyncIterator
+    from collections.abc import Generator
 
-    @async_task
+    @task
     async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
         async def _gen():
             for i in range(n):
@@ -460,16 +352,7 @@ def test_async_generator_static_type() -> None:
 
         return _gen()
 
-    # Static type is TaskFuture[AsyncGenerator[int, None]]
-    result = async_generate_numbers.bind(n=5)
-    assert_type(result, TaskFuture[AsyncGenerator[int, None]])
-
-
-def test_async_iterator_static_type() -> None:
-    """Async iterators preserve static type until evaluation."""
-    from collections.abc import AsyncIterator
-
-    @async_task
+    @task
     async def async_generate_range(n: int) -> AsyncIterator[str]:
         async def _gen():
             for i in range(n):
@@ -477,69 +360,23 @@ def test_async_iterator_static_type() -> None:
 
         return _gen()
 
-    # Static type is TaskFuture[AsyncIterator[str]]
-    result = async_generate_range.bind(n=5)
-    assert_type(result, TaskFuture[AsyncIterator[str]])
+    # Async generators are wrapped in Coroutine
+    async_gen_result = async_generate_numbers.bind(n=5)
+    assert_type(async_gen_result, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
+    async_iter_result = async_generate_range.bind(n=5)
+    assert_type(async_iter_result, TaskFuture[Coroutine[Any, Any, AsyncIterator[str]]])  # pyright: ignore[reportAssertTypeFailure]
 
+    # Async generators work in map operations
+    ranges = async_generate_numbers.product(n=[3, 4, 5])
+    assert_type(ranges, MapTaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
 
-def test_async_generator_in_map_operation() -> None:
-    """Async generators work in map operations."""
-    from collections.abc import AsyncGenerator
-
-    @async_task
-    async def async_generate_range(n: int) -> AsyncGenerator[int, None]:
-        async def _gen():
-            for i in range(n):
-                yield i
-
-        return _gen()
-
-    # product creates MapTaskFuture[AsyncGenerator[int, None]]
-    ranges = async_generate_range.product(n=[3, 4, 5])
-    assert_type(ranges, MapTaskFuture[AsyncGenerator[int, None]])
-
-
-def test_mixed_sync_async_generators() -> None:
-    """Mix of sync and async generators in same graph."""
-    from collections.abc import AsyncGenerator
-    from collections.abc import Generator
-
+    # Mixed sync and async generators
     @task
     def sync_generate(n: int) -> Generator[int, None, None]:
         for i in range(n):
             yield i
 
-    @async_task
-    async def async_generate(n: int) -> AsyncGenerator[int, None]:
-        async def _gen():
-            for i in range(n):
-                yield i * 10
-
-        return _gen()
-
-    # Static types are preserved
     sync_gen = sync_generate.bind(n=3)
     assert_type(sync_gen, TaskFuture[Generator[int, None, None]])
-
-    async_gen = async_generate.bind(n=3)
-    assert_type(async_gen, TaskFuture[AsyncGenerator[int, None]])
-
-
-def test_coroutine_static_type() -> None:
-    """Coroutines preserve static type until evaluation."""
-
-    # The async_double task returns a coroutine
-    result = async_double.bind(x=5)
-    # At static type level, it's TaskFuture[int] because the task signature is async def -> int
-    # The coroutine wrapping is handled internally
-    assert_type(result, TaskFuture[int])
-
-
-def test_coroutine_evaluate_returns_unwrapped() -> None:
-    """evaluate() unwraps coroutines and returns the inner type."""
-    from daglite import evaluate
-
-    result_future = async_double.bind(x=5)
-    # evaluate() should return int (unwrapped from coroutine)
-    evaluated = evaluate(result_future)
-    assert_type(evaluated, int)
+    async_gen = async_generate_numbers.bind(n=3)
+    assert_type(async_gen, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]

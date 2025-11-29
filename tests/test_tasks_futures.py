@@ -50,14 +50,14 @@ class TestTaskValidDefinitions:
 
     def test_async_task_is_async_attribute(self) -> None:
         """Task.is_async correctly identifies async functions."""
-        from daglite import async_task
+        from daglite import task
 
         @task
-        def sync_func(x: int) -> int:
+        def sync_func(x: int) -> int:  # pragma: no cover
             return x
 
-        @async_task
-        async def async_func(x: int) -> int:
+        @task
+        async def async_func(x: int) -> int:  # pragma: no cover
             return x
 
         assert not sync_func.is_async
@@ -120,35 +120,6 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(TypeError, match="can only be applied to callable functions"):
 
             @task
-            class NotCallable:
-                pass
-
-    def test_task_decorator_with_async_function(self) -> None:
-        """@task decorator rejects async functions."""
-
-        with pytest.raises(TypeError, match="Use `@async_task` instead"):
-
-            @task
-            async def async_func(x: int) -> int:
-                return x
-
-    def test_async_task_decorator_with_sync_function(self) -> None:
-        """@async_task decorator rejects sync functions."""
-        from daglite import async_task
-
-        with pytest.raises(TypeError, match="Use `@task` instead"):
-
-            @async_task  # type: ignore[arg-type]
-            def sync_func(x: int) -> int:
-                return x
-
-    def test_async_task_decorator_with_non_callable(self) -> None:
-        """@async_task decorator rejects non-callable objects."""
-        from daglite import async_task
-
-        with pytest.raises(TypeError, match="can only be applied to callable functions"):
-
-            @async_task  # type: ignore[arg-type]
             class NotCallable:
                 pass
 

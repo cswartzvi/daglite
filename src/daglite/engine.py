@@ -39,13 +39,25 @@ def evaluate(
 
 @overload
 def evaluate(
-    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncGenerator[T, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+def evaluate(
+    expr: TaskFuture[AsyncIterator[T]], *, default_backend: str | Backend = "sequential"
 ) -> list[T]: ...
 
 
 @overload
 def evaluate(
     expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+def evaluate(
+    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
 ) -> list[T]: ...
 
 
@@ -102,13 +114,25 @@ async def evaluate_async(
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncGenerator[T, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[AsyncIterator[T]], *, default_backend: str | Backend = "sequential"
 ) -> list[T]: ...
 
 
 @overload
 async def evaluate_async(
     expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+) -> list[T]: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
 ) -> list[T]: ...
 
 

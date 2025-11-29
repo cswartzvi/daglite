@@ -51,11 +51,9 @@ from .engine import evaluate
 from .engine import evaluate_async
 from .pipelines import load_pipeline
 from .pipelines import pipeline
-from .tasks import async_task
 from .tasks import task
 
 __all__ = [
-    "async_task",
     "backends",
     "evaluate",
     "evaluate_async",

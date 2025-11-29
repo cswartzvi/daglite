@@ -4,7 +4,6 @@ import asyncio
 import threading
 import time
 
-from daglite import async_task
 from daglite import evaluate_async
 from daglite import task
 
@@ -236,7 +235,7 @@ class TestAsyncTasksWithEvaluateAsync:
     def test_async_task_async_evaluation(self) -> None:
         """Async tasks can be evaluated asynchronously."""
 
-        @async_task
+        @task
         async def async_multiply(x: int, factor: int) -> int:
             await asyncio.sleep(0.001)
             return x * factor
@@ -254,7 +253,7 @@ class TestAsyncTasksWithEvaluateAsync:
 
         execution_times: list[float] = []
 
-        @async_task
+        @task
         async def slow_task(duration: float) -> float:
             start = time.time()
             await asyncio.sleep(duration)
@@ -287,7 +286,7 @@ class TestAsyncTasksWithEvaluateAsync:
     def test_async_task_error_propagation(self) -> None:
         """Errors in async tasks are properly propagated."""
 
-        @async_task
+        @task
         async def failing_task(x: int) -> int:
             await asyncio.sleep(0.001)
             raise ValueError("Async task failed!")
@@ -298,7 +297,7 @@ class TestAsyncTasksWithEvaluateAsync:
             return await evaluate_async(future)
 
         try:
-            asyncio.run(run())
+            asyncio.run(run())  # pyright: ignore
             assert False, "Should have raised ValueError"  # pragma: no cover
         except ValueError as e:
             assert str(e) == "Async task failed!"
@@ -306,7 +305,7 @@ class TestAsyncTasksWithEvaluateAsync:
     def test_async_with_thread_backend_coroutine_result(self) -> None:
         """Async evaluation with ThreadBackend awaits coroutine results."""
 
-        @async_task(backend="threading")
+        @task(backend="threading")
         async def async_compute(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * 2
@@ -342,7 +341,7 @@ class TestGeneratorMaterializationAsync:
         """Async tasks that return generators are materialized in async evaluation."""
         from typing import Iterator
 
-        @async_task
+        @task
         async def async_generate_numbers(n: int) -> Iterator[int]:
             await asyncio.sleep(0.001)
             return (i for i in range(n))
@@ -363,7 +362,7 @@ class TestGeneratorMaterializationAsync:
         """Async map tasks that return generators are materialized properly."""
         from typing import Iterator
 
-        @async_task
+        @task
         async def async_get_range(n: int) -> Iterator[int]:
             await asyncio.sleep(0.001)
             return (i for i in range(n))
@@ -385,7 +384,7 @@ class TestGeneratorMaterializationAsync:
         """Async evaluation with ThreadBackend materializes generator results."""
         from typing import Iterator
 
-        @async_task(backend="threading")
+        @task(backend="threading")
         async def async_generate(n: int) -> Iterator[int]:
             await asyncio.sleep(0.001)
             return (i * 2 for i in range(n))
@@ -406,7 +405,7 @@ class TestGeneratorMaterializationAsync:
         """Async tasks that return async generators are materialized in async evaluation."""
         from collections.abc import AsyncGenerator
 
-        @async_task
+        @task
         async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
@@ -431,7 +430,7 @@ class TestGeneratorMaterializationAsync:
         """Async map tasks that return async generators are materialized properly."""
         from collections.abc import AsyncGenerator
 
-        @async_task
+        @task
         async def async_get_range(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
@@ -457,7 +456,7 @@ class TestGeneratorMaterializationAsync:
         """Async evaluation with ThreadBackend materializes async generator results."""
         from collections.abc import AsyncGenerator
 
-        @async_task(backend="threading")
+        @task(backend="threading")
         async def async_generate(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
