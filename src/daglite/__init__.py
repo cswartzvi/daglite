@@ -46,6 +46,7 @@ __version__ = "0.2.1"
 
 from . import backends
 from . import futures
+from . import hooks
 from . import settings
 from .engine import evaluate
 from .engine import evaluate_async
@@ -53,11 +54,15 @@ from .pipelines import load_pipeline
 from .pipelines import pipeline
 from .tasks import task
 
+# Initialize hooks system on module import
+hooks.initialize_hooks()
+
 __all__ = [
     "backends",
     "evaluate",
     "evaluate_async",
     "futures",
+    "hooks",
     "load_pipeline",
     "pipeline",
     "settings",

@@ -4,6 +4,8 @@ import asyncio
 import threading
 import time
 
+import pytest
+
 from daglite import evaluate_async
 from daglite import task
 
@@ -129,7 +131,7 @@ class TestAsyncExecution:
     def test_error_propagation_async(self) -> None:
         """Async evaluation propagates exceptions correctly."""
 
-        @task
+        @task(backend="threading")
         def divide(x: int, y: int) -> float:
             return x / y
 
@@ -138,11 +140,8 @@ class TestAsyncExecution:
         async def run():
             return await evaluate_async(divided)
 
-        try:
+        with pytest.raises(ZeroDivisionError):
             asyncio.run(run())
-            assert False, "Should have raised ZeroDivisionError"  # pragma: no cover
-        except ZeroDivisionError:
-            pass  # Expected
 
     def test_complex_graph_async(self) -> None:
         """Async evaluation handles complex graphs with multiple paths."""

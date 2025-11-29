@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import time
 from collections.abc import AsyncGenerator
 from collections.abc import AsyncIterator
 from collections.abc import Coroutine
@@ -11,8 +12,11 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
+
+if TYPE_CHECKING:
+    from pluggy import PluginManager
 
 from daglite.backends.base import Backend
 from daglite.futures import BaseTaskFuture
@@ -34,48 +38,73 @@ T = TypeVar("T")
 # Coroutine/Generator/Iterator overloads must come first (most specific)
 @overload
 def evaluate(
-    expr: TaskFuture[Coroutine[Any, Any, T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Coroutine[Any, Any, T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> T: ...
 
 
 @overload
 def evaluate(
-    expr: TaskFuture[AsyncGenerator[T, Any]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncGenerator[T, Any]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 def evaluate(
-    expr: TaskFuture[AsyncIterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncIterator[T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 def evaluate(
-    expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Generator[T, Any, Any]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 def evaluate(
-    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Iterator[T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 # General overloads
 @overload
-def evaluate(expr: TaskFuture[T], *, default_backend: str | Backend = "sequential") -> T: ...
+def evaluate(
+    expr: TaskFuture[T],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
+) -> T: ...
 
 
 @overload
 def evaluate(
-    expr: MapTaskFuture[T], *, default_backend: str | Backend = "sequential"
+    expr: MapTaskFuture[T],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 def evaluate(
     expr: BaseTaskFuture[Any],
+    *,
     default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> Any:
     """
     Evaluate a task graph synchronously.
@@ -87,6 +116,8 @@ def evaluate(
         expr: The task graph to evaluate.
         default_backend: Default backend for task execution. If a node does not have
             a specific backend assigned, this backend will be used. Defaults to "sequential".
+        hooks: Optional list of hook implementations for this execution only.
+            These are combined with any globally registered hooks.
 
     Returns:
         The result of evaluating the root task
@@ -98,61 +129,88 @@ def evaluate(
         >>> # With custom backend
         >>> result = evaluate(my_task, default_backend="threading")
 
+        >>> # With execution-specific hooks
+        >>> from daglite.hooks.examples import ProgressTracker
+        >>> result = evaluate(my_task, hooks=[ProgressTracker()])
+
         >>> # For async execution with sibling parallelism
         >>> import asyncio
         >>> result = asyncio.run(evaluate_async(my_task))
     """
-    engine = Engine(default_backend=default_backend)
+    engine = Engine(default_backend=default_backend, hooks=hooks)
     return engine.evaluate(expr)
 
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Coroutine[Any, Any, T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Coroutine[Any, Any, T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> T: ...
 
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[AsyncGenerator[T, Any]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncGenerator[T, Any]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[AsyncIterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[AsyncIterator[T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Generator[T, Any, Any]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Generator[T, Any, Any]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Iterator[T]], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[Iterator[T]],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 # General overloads
 @overload
 async def evaluate_async(
-    expr: TaskFuture[T], *, default_backend: str | Backend = "sequential"
+    expr: TaskFuture[T],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> T: ...
 
 
 @overload
 async def evaluate_async(
-    expr: MapTaskFuture[T], *, default_backend: str | Backend = "sequential"
+    expr: MapTaskFuture[T],
+    *,
+    default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 async def evaluate_async(
     expr: BaseTaskFuture[Any],
+    *,
     default_backend: str | Backend = "sequential",
+    hooks: list[Any] | None = None,
 ) -> Any:
     """
     Evaluate a task graph asynchronously.
@@ -163,6 +221,8 @@ async def evaluate_async(
     Args:
         expr: The task graph to evaluate.
         default_backend: Default backend for task execution. Defaults to "sequential".
+        hooks: Optional list of hook implementations for this execution only.
+            These are combined with any globally registered hooks.
 
     Returns:
         The result of evaluating the root task
@@ -175,8 +235,12 @@ async def evaluate_async(
         >>> # Use with custom backend
         >>> async def workflow():
         ...     result = await evaluate_async(my_task, default_backend="threading")
+
+        >>> # With execution-specific hooks
+        >>> from daglite.hooks.examples import PerformanceProfiler
+        >>> result = await evaluate_async(my_task, hooks=[PerformanceProfiler()])
     """
-    engine = Engine(default_backend=default_backend)
+    engine = Engine(default_backend=default_backend, hooks=hooks)
     return await engine.evaluate_async(expr)
 
 
@@ -219,10 +283,14 @@ class Engine:
     settings: DagliteSettings = field(default_factory=DagliteSettings)
     """Daglite configuration settings."""
 
+    hooks: list[Any] | None = None
+    """Optional list of hook implementations for this execution only."""
+
     # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
     # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
 
     _backend_cache: dict[str | Backend, Backend] = field(default_factory=dict, init=False)
+    _hook_manager: "PluginManager | None" = field(default=None, init=False, repr=False)
 
     def evaluate(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using sequential execution."""
@@ -233,6 +301,19 @@ class Engine:
         """Evaluate the graph using async execution with sibling parallelism."""
         nodes = build_graph(root)
         return await self._run_async(nodes, root.id)
+
+    def _get_hook_manager(self) -> "PluginManager":
+        """Get hook manager for this execution."""
+        if self._hook_manager is None:
+            if self.hooks:
+                from daglite.hooks.manager import create_hook_manager_with_plugins
+
+                self._hook_manager = create_hook_manager_with_plugins(self.hooks)
+            else:
+                from daglite.hooks.manager import get_hook_manager
+
+                self._hook_manager = get_hook_manager()
+        return self._hook_manager
 
     def _resolve_node_backend(self, node: GraphNode) -> Backend:
         """Decide which Backend instance to use for this node's *internal* work."""
@@ -258,16 +339,44 @@ class Engine:
             The node's execution result (single value or list)
         """
         backend = self._resolve_node_backend(node)
-        future_or_futures = node.submit(backend, values)
 
-        if isinstance(future_or_futures, list):
-            # MapTaskNode - gather all results
-            results = [f.result() for f in future_or_futures]
-            return [_materialize_sync(r) for r in results]
-        else:
-            # TaskNode - single result
-            result = future_or_futures.result()
-            return _materialize_sync(result)
+        inputs = {}
+        for name, param in node.inputs():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(values)
+            else:
+                inputs[name] = param.resolve(values)
+
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_node_execute(
+            node_id=node.id, node=node, backend=backend, inputs=inputs
+        )
+
+        start_time = time.perf_counter()
+        try:
+            future_or_futures = node.submit(backend, values)
+
+            if isinstance(future_or_futures, list):
+                # MapTaskNode - gather all results
+                results = [f.result() for f in future_or_futures]
+                result = [_materialize_sync(r) for r in results]
+            else:
+                # TaskNode - single result
+                result = future_or_futures.result()
+                result = _materialize_sync(result)
+
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.after_node_execute(
+                node_id=node.id, node=node, backend=backend, result=result, duration=duration
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_node_error(
+                node_id=node.id, node=node, backend=backend, error=e, duration=duration
+            )
+            raise
 
     async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
         """
@@ -293,51 +402,118 @@ class Engine:
         if isinstance(backend, SequentialBackend):
             return await asyncio.to_thread(self._execute_node_sync, node, values)
 
-        future_or_futures = node.submit(backend, values)
+        # Resolve inputs for hook (handle both scalar and sequence params)
+        inputs = {}
+        for name, param in node.inputs():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(values)
+            else:
+                inputs[name] = param.resolve(values)
 
-        if isinstance(future_or_futures, list):
-            # MapTaskNode - wrap all futures and gather
-            wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
-            results = await asyncio.gather(*wrapped)
-            return [await _materialize_async(r) for r in results]
-        else:
-            # TaskNode - wrap single future
-            result = await asyncio.wrap_future(future_or_futures)
-            return await _materialize_async(result)
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_node_execute(
+            node_id=node.id, node=node, backend=backend, inputs=inputs
+        )
+
+        start_time = time.perf_counter()
+        try:
+            future_or_futures = node.submit(backend, values)
+
+            if isinstance(future_or_futures, list):
+                # MapTaskNode - wrap all futures and gather
+                wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
+                results = await asyncio.gather(*wrapped)
+                result = [await _materialize_async(r) for r in results]
+            else:
+                # TaskNode - wrap single future
+                result = await asyncio.wrap_future(future_or_futures)
+                result = await _materialize_async(result)
+
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.after_node_execute(
+                node_id=node.id, node=node, backend=backend, result=result, duration=duration
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_node_error(
+                node_id=node.id, node=node, backend=backend, error=e, duration=duration
+            )
+            raise
 
     def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
-        state = ExecutionState.from_nodes(nodes)
-        ready = state.get_ready()
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_graph_execute(
+            root_id=root_id, node_count=len(nodes), mode="sequential"
+        )
 
-        while ready:
-            nid = ready.pop()
-            node = state.nodes[nid]
-            result = self._execute_node_sync(node, state.values)
-            ready.extend(state.mark_complete(nid, result))
+        start_time = time.perf_counter()
+        try:
+            state = ExecutionState.from_nodes(nodes)
+            ready = state.get_ready()
 
-        return state.values[root_id]
+            while ready:
+                nid = ready.pop()
+                node = state.nodes[nid]
+                result = self._execute_node_sync(node, state.values)
+                ready.extend(state.mark_complete(nid, result))
+
+            result = state.values[root_id]
+            duration = time.perf_counter() - start_time
+
+            hook_manager.hook.after_graph_execute(
+                root_id=root_id, result=result, duration=duration, mode="sequential"
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_graph_error(
+                root_id=root_id, error=e, duration=duration, mode="sequential"
+            )
+            raise
 
     async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Async execution with sibling parallelism."""
-        state = ExecutionState.from_nodes(nodes)
-        ready = state.get_ready()
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_graph_execute(root_id=root_id, node_count=len(nodes), mode="async")
 
-        while ready:
-            tasks: dict[asyncio.Task[Any], UUID] = {
-                asyncio.create_task(self._execute_node_async(state.nodes[nid], state.values)): nid
-                for nid in ready
-            }
+        start_time = time.perf_counter()
+        try:
+            state = ExecutionState.from_nodes(nodes)
+            ready = state.get_ready()
 
-            done, _ = await asyncio.wait(tasks.keys())
+            while ready:
+                tasks: dict[asyncio.Task[Any], UUID] = {
+                    asyncio.create_task(
+                        self._execute_node_async(state.nodes[nid], state.values)
+                    ): nid
+                    for nid in ready
+                }
 
-            ready = []
-            for task in done:
-                nid = tasks[task]
-                result = task.result()
-                ready.extend(state.mark_complete(nid, result))
+                done, _ = await asyncio.wait(tasks.keys())
 
-        return state.values[root_id]
+                ready = []
+                for task in done:
+                    nid = tasks[task]
+                    result = task.result()
+                    ready.extend(state.mark_complete(nid, result))
+
+            result = state.values[root_id]
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.after_graph_execute(
+                root_id=root_id, result=result, duration=duration, mode="async"
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_graph_error(
+                root_id=root_id, error=e, duration=duration, mode="async"
+            )
+            raise
 
 
 @dataclass
