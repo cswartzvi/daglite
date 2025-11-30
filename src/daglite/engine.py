@@ -325,6 +325,79 @@ class Engine:
             self._backend_cache[backend_key] = backend
         return self._backend_cache[backend_key]
 
+    def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
+        """Sequential blocking execution."""
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_graph_execute(
+            root_id=root_id, node_count=len(nodes), mode="sequential"
+        )
+
+        start_time = time.perf_counter()
+        try:
+            state = ExecutionState.from_nodes(nodes)
+            ready = state.get_ready()
+
+            while ready:
+                nid = ready.pop()
+                node = state.nodes[nid]
+                result = self._execute_node_sync(node, state.values)
+                ready.extend(state.mark_complete(nid, result))
+
+            result = state.values[root_id]
+            duration = time.perf_counter() - start_time
+
+            hook_manager.hook.after_graph_execute(
+                root_id=root_id, result=result, duration=duration, mode="sequential"
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_graph_error(
+                root_id=root_id, error=e, duration=duration, mode="sequential"
+            )
+            raise
+
+    async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
+        """Async execution with sibling parallelism."""
+        hook_manager = self._get_hook_manager()
+        hook_manager.hook.before_graph_execute(root_id=root_id, node_count=len(nodes), mode="async")
+
+        start_time = time.perf_counter()
+        try:
+            state = ExecutionState.from_nodes(nodes)
+            ready = state.get_ready()
+
+            while ready:
+                tasks: dict[asyncio.Task[Any], UUID] = {
+                    asyncio.create_task(
+                        self._execute_node_async(state.nodes[nid], state.values)
+                    ): nid
+                    for nid in ready
+                }
+
+                done, _ = await asyncio.wait(tasks.keys())
+
+                ready = []
+                for task in done:
+                    nid = tasks[task]
+                    result = task.result()
+                    ready.extend(state.mark_complete(nid, result))
+
+            result = state.values[root_id]
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.after_graph_execute(
+                root_id=root_id, result=result, duration=duration, mode="async"
+            )
+
+            return result
+        except Exception as e:
+            duration = time.perf_counter() - start_time
+            hook_manager.hook.on_graph_error(
+                root_id=root_id, error=e, duration=duration, mode="async"
+            )
+            raise
+
     def _execute_node_sync(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
         """
         Execute a node synchronously and return its result.
@@ -439,79 +512,6 @@ class Engine:
             duration = time.perf_counter() - start_time
             hook_manager.hook.on_node_error(
                 node_id=node.id, node=node, backend=backend, error=e, duration=duration
-            )
-            raise
-
-    def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """Sequential blocking execution."""
-        hook_manager = self._get_hook_manager()
-        hook_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), mode="sequential"
-        )
-
-        start_time = time.perf_counter()
-        try:
-            state = ExecutionState.from_nodes(nodes)
-            ready = state.get_ready()
-
-            while ready:
-                nid = ready.pop()
-                node = state.nodes[nid]
-                result = self._execute_node_sync(node, state.values)
-                ready.extend(state.mark_complete(nid, result))
-
-            result = state.values[root_id]
-            duration = time.perf_counter() - start_time
-
-            hook_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, mode="sequential"
-            )
-
-            return result
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, mode="sequential"
-            )
-            raise
-
-    async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
-        """Async execution with sibling parallelism."""
-        hook_manager = self._get_hook_manager()
-        hook_manager.hook.before_graph_execute(root_id=root_id, node_count=len(nodes), mode="async")
-
-        start_time = time.perf_counter()
-        try:
-            state = ExecutionState.from_nodes(nodes)
-            ready = state.get_ready()
-
-            while ready:
-                tasks: dict[asyncio.Task[Any], UUID] = {
-                    asyncio.create_task(
-                        self._execute_node_async(state.nodes[nid], state.values)
-                    ): nid
-                    for nid in ready
-                }
-
-                done, _ = await asyncio.wait(tasks.keys())
-
-                ready = []
-                for task in done:
-                    nid = tasks[task]
-                    result = task.result()
-                    ready.extend(state.mark_complete(nid, result))
-
-            result = state.values[root_id]
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, mode="async"
-            )
-
-            return result
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, mode="async"
             )
             raise
 
