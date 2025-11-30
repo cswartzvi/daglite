@@ -50,10 +50,6 @@
     "pytest.ini": "python-misc"
   },
   "python-envs.pythonProjects": [],
-  "python.analysis.diagnosticSeverityOverrides": {
-    "reportUnnecessaryTypeIgnoreComment": "error"
-  },
-  "python.analysis.typeCheckingMode": "standard",
   "python.testing.pytestArgs": ["tests"],
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,

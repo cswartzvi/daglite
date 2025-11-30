@@ -89,6 +89,8 @@ executionEnvironments = [  # Add new plugins here
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
 exclude = ["**/__pycache__", "**/.pytest_cache", "**/.mypy_cache", "**/.ruff_cache"]
+typeCheckingMode = "standard"
+reportUnnecessaryTypeIgnoreComments = true
 
 # --- tool.poe ---
 
