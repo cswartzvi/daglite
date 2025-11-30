@@ -14,6 +14,9 @@ A lightweight, type-safe Python framework for building and executing DAGs (Direc
 
 ---
 
+> [!WARNING]
+> This project is in early development. The API may change in future releases. Feedback and contributions are welcome!
+
 ## ✨ Key Features
 
 - **🎯 Explicit & Type-Safe**: Complete type checking support with `mypy`, `pyright`, and `pyrefly`
