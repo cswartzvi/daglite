@@ -101,6 +101,24 @@ class GraphNode(abc.ABC):
         """
         ...
 
+    def resolve_inputs(self, values: Mapping[UUID, Any]) -> dict[str, Any]:
+        """
+        Resolve all input parameters using completed node values.
+
+        Args:
+            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
+
+        Returns:
+            dict[str, Any]: Dictionary mapping parameter names to resolved values.
+        """
+        inputs = {}
+        for name, param in self.inputs():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(values)
+            else:
+                inputs[name] = param.resolve(values)
+        return inputs
+
     @abc.abstractmethod
     def submit(
         self, backend: Backend, values: Mapping[UUID, Any]
