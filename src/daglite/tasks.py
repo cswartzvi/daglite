@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import abc
 import inspect
+import sys
 from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import KeysView
@@ -104,6 +105,14 @@ def task(
             raise TypeError("`@task` can only be applied to callable functions.")
 
         is_async = inspect.iscoroutinefunction(fn)
+
+        # Store original function in module namespace for pickling (multiprocessing backend)
+        if hasattr(fn, "__module__") and hasattr(fn, "__name__"):
+            module = sys.modules.get(fn.__module__)
+            if module is not None:  # pragma: no branch
+                private_name = f"__{fn.__name__}_func__"
+                setattr(module, private_name, fn)
+                fn.__qualname__ = private_name
 
         return Task(
             func=fn,

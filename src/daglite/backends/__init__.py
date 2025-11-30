@@ -1,3 +1,4 @@
+from daglite.backends.local import ProcessBackend
 from daglite.backends.local import SequentialBackend
 from daglite.backends.local import ThreadBackend
 from daglite.exceptions import BackendError
@@ -27,6 +28,9 @@ def find_backend(backend: str | Backend | None = None) -> Backend:
         "sequential": SequentialBackend,
         "synchronous": SequentialBackend,
         "threading": ThreadBackend,
+        "threads": ThreadBackend,
+        "multiprocessing": ProcessBackend,
+        "processes": ProcessBackend,
     }
 
     # TODO : dynamic discovery of backends from entry points
