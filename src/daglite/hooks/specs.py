@@ -14,7 +14,12 @@ class NodeSpec:
 
     @hook_spec
     def before_node_execute(
-        self, node_id: UUID, node: GraphNode, backend: Backend, inputs: dict[str, Any]
+        self,
+        node_id: UUID,
+        node: GraphNode,
+        backend: Backend,
+        inputs: dict[str, Any],
+        iteration_count: int | None = None,
     ) -> None:
         """
         Called before a node begins execution.
@@ -24,6 +29,7 @@ class NodeSpec:
             node: The GraphNode being executed
             backend: Backend instance that will execute the node
             inputs: Resolved input values for the node
+            iteration_count: Number of iterations for batch nodes, None for regular tasks
         """
 
     @hook_spec
@@ -34,6 +40,7 @@ class NodeSpec:
         backend: Backend,
         result: Any,
         duration: float,
+        iteration_count: int | None = None,
     ) -> None:
         """
         Called after a node completes execution successfully.
@@ -44,6 +51,7 @@ class NodeSpec:
             backend: Backend instance that executed the node
             result: The execution result
             duration: Time taken to execute in seconds
+            iteration_count: Number of iterations for batch nodes, None for regular tasks
         """
 
     @hook_spec
@@ -54,6 +62,7 @@ class NodeSpec:
         backend: Backend,
         error: Exception,
         duration: float,
+        iteration_count: int | None = None,
     ) -> None:
         """
         Called when a node execution fails.
@@ -62,6 +71,77 @@ class NodeSpec:
             node_id: Unique identifier for the node
             node: The GraphNode that failed
             backend: Backend instance that was executing the node
+            error: The exception that was raised
+            duration: Time taken before failure in seconds
+            iteration_count: Number of iterations for batch nodes, None for regular tasks
+        """
+
+    @hook_spec
+    def before_iteration_execute(
+        self,
+        node_id: UUID,
+        node: GraphNode,
+        backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+        inputs: dict[str, Any],
+    ) -> None:
+        """
+        Called before each iteration in a batch node (e.g., map).
+
+        Args:
+            node_id: Unique identifier for the node
+            node: The GraphNode being executed
+            backend: Backend instance executing the iteration
+            iteration_index: Zero-based index of this iteration
+            iteration_total: Total number of iterations
+            inputs: Resolved input values for this specific iteration
+        """
+
+    @hook_spec
+    def after_iteration_execute(
+        self,
+        node_id: UUID,
+        node: GraphNode,
+        backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+        result: Any,
+        duration: float,
+    ) -> None:
+        """
+        Called after each iteration completes successfully.
+
+        Args:
+            node_id: Unique identifier for the node
+            node: The GraphNode being executed
+            backend: Backend instance that executed the iteration
+            iteration_index: Zero-based index of this iteration
+            iteration_total: Total number of iterations
+            result: The execution result for this iteration
+            duration: Time taken to execute this iteration in seconds
+        """
+
+    @hook_spec
+    def on_iteration_error(
+        self,
+        node_id: UUID,
+        node: GraphNode,
+        backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+        error: Exception,
+        duration: float,
+    ) -> None:
+        """
+        Called when an iteration execution fails.
+
+        Args:
+            node_id: Unique identifier for the node
+            node: The GraphNode being executed
+            backend: Backend instance that was executing the iteration
+            iteration_index: Zero-based index of this iteration
+            iteration_total: Total number of iterations
             error: The exception that was raised
             duration: Time taken before failure in seconds
         """
