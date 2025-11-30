@@ -85,6 +85,21 @@ class MapTaskNode(GraphNode):
         return out
 
     @override
+    def get_iteration_count(self, values: Mapping[UUID, Any]) -> int:
+        """Return the number of iterations this map will execute."""
+        mapped = {k: p.resolve_sequence(values) for k, p in self.mapped_kwargs.items()}
+
+        if self.mode == "product":
+            from math import prod
+
+            return prod(len(v) for v in mapped.values()) if mapped else 0
+        elif self.mode == "zip":
+            lengths = {len(v) for v in mapped.values()}
+            return lengths.pop() if lengths else 0
+        else:
+            return 0
+
+    @override
     def submit(self, backend: Backend, values: Mapping[UUID, Any]) -> list[Future[Any]]:
         """Submit multiple task executions."""
         fixed = {k: p.resolve(values) for k, p in self.fixed_kwargs.items()}

@@ -119,6 +119,21 @@ class GraphNode(abc.ABC):
                 inputs[name] = param.resolve(values)
         return inputs
 
+    def get_iteration_count(self, values: Mapping[UUID, Any]) -> int | None:
+        """
+        Return the number of iterations for batch nodes, None for regular tasks.
+
+        This is used by hooks to track progress through map operations and other
+        batch nodes that execute multiple sub-tasks.
+
+        Args:
+            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
+
+        Returns:
+            int | None: Number of iterations if this is a batch node, None otherwise.
+        """
+        return None
+
     @abc.abstractmethod
     def submit(
         self, backend: Backend, values: Mapping[UUID, Any]

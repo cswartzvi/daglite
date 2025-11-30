@@ -412,32 +412,65 @@ class Engine:
             The node's execution result (single value or list)
         """
         backend = self._resolve_node_backend(node)
-
         hook_manager = self._get_hook_manager()
         inputs = node.resolve_inputs(values)
+        iteration_count = node.get_iteration_count(values)
         hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
-        hook_manager.hook.before_node_execute(**hook_kwargs, inputs=inputs)
+
+        hook_manager.hook.before_node_execute(
+            **hook_kwargs, inputs=inputs, iteration_count=iteration_count
+        )
 
         start_time = time.perf_counter()
         try:
             future_or_futures = node.submit(backend, values)
 
             if isinstance(future_or_futures, list):
-                # MapTaskNode - gather all results
-                results = [f.result() for f in future_or_futures]
-                result = [_materialize_sync(r) for r in results]
+                # MapTaskNode - gather all results with iteration hooks
+                iteration_total = len(future_or_futures)
+                results = []
+                for idx, future in enumerate(future_or_futures):
+                    iter_start = time.perf_counter()
+                    try:
+                        iter_result = future.result()
+                        iter_result = _materialize_sync(iter_result)
+                        iter_duration = time.perf_counter() - iter_start
+
+                        hook_manager.hook.after_iteration_execute(
+                            **hook_kwargs,
+                            iteration_index=idx,
+                            iteration_total=iteration_total,
+                            result=iter_result,
+                            duration=iter_duration,
+                        )
+                        results.append(iter_result)
+                    except Exception as iter_error:
+                        iter_duration = time.perf_counter() - iter_start
+                        hook_manager.hook.on_iteration_error(
+                            **hook_kwargs,
+                            iteration_index=idx,
+                            iteration_total=iteration_total,
+                            error=iter_error,
+                            duration=iter_duration,
+                        )
+                        raise
+                result = results
             else:
                 # TaskNode - single result
                 result = future_or_futures.result()
                 result = _materialize_sync(result)
 
             duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(**hook_kwargs, result=result, duration=duration)
+            hook_manager.hook.after_node_execute(
+                **hook_kwargs, result=result, duration=duration, iteration_count=iteration_count
+            )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(**hook_kwargs, error=e, duration=duration)
+            hook_manager.hook.on_node_error(
+                **hook_kwargs, error=e, duration=duration, iteration_count=iteration_count
+            )
             raise
 
     async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
@@ -466,30 +499,64 @@ class Engine:
 
         hook_manager = self._get_hook_manager()
         inputs = node.resolve_inputs(values)
+        iteration_count = node.get_iteration_count(values)
         hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
-        hook_manager.hook.before_node_execute(**hook_kwargs, inputs=inputs)
+
+        hook_manager.hook.before_node_execute(
+            **hook_kwargs, inputs=inputs, iteration_count=iteration_count
+        )
 
         start_time = time.perf_counter()
         try:
             future_or_futures = node.submit(backend, values)
 
             if isinstance(future_or_futures, list):
-                # MapTaskNode - wrap all futures and gather
-                wrapped = [asyncio.wrap_future(f) for f in future_or_futures]
-                results = await asyncio.gather(*wrapped)
-                result = [await _materialize_async(r) for r in results]
+                # MapTaskNode - wrap all futures and gather with iteration hooks
+                iteration_total = len(future_or_futures)
+                results = []
+                for idx, future in enumerate(future_or_futures):
+                    iter_start = time.perf_counter()
+                    try:
+                        wrapped = asyncio.wrap_future(future)
+                        iter_result = await wrapped
+                        iter_result = await _materialize_async(iter_result)
+                        iter_duration = time.perf_counter() - iter_start
+
+                        hook_manager.hook.after_iteration_execute(
+                            **hook_kwargs,
+                            iteration_index=idx,
+                            iteration_total=iteration_total,
+                            result=iter_result,
+                            duration=iter_duration,
+                        )
+                        results.append(iter_result)
+                    except Exception as iter_error:
+                        iter_duration = time.perf_counter() - iter_start
+                        hook_manager.hook.on_iteration_error(
+                            **hook_kwargs,
+                            iteration_index=idx,
+                            iteration_total=iteration_total,
+                            error=iter_error,
+                            duration=iter_duration,
+                        )
+                        raise
+                result = results
             else:
                 # TaskNode - wrap single future
                 result = await asyncio.wrap_future(future_or_futures)
                 result = await _materialize_async(result)
 
             duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(**hook_kwargs, result=result, duration=duration)
+            hook_manager.hook.after_node_execute(
+                **hook_kwargs, result=result, duration=duration, iteration_count=iteration_count
+            )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(**hook_kwargs, error=e, duration=duration)
+            hook_manager.hook.on_node_error(
+                **hook_kwargs, error=e, duration=duration, iteration_count=iteration_count
+            )
             raise
 
 
