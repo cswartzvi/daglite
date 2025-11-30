@@ -1,14 +1,9 @@
-"""Daglite CLI - Command-line interface for daglite."""
-
 from __future__ import annotations
 
 import click
 
-from daglite import __version__
-from daglite.cli.cmds import parse_param_value
-from daglite.cli.cmds import run
-
-__all__ = ["cli", "run", "parse_param_value"]
+from daglite_cli import __version__
+from daglite_cli.cmd_run import run
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"], "max_content_width": 120})
@@ -19,7 +14,3 @@ def cli(ctx: click.Context) -> None:
 
 
 cli.add_command(run)
-
-
-if __name__ == "__main__":
-    cli()

@@ -1,0 +1,52 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*.*.*" # daglite releases: v0.2.1
+            - "cli-v*.*.*" # daglite-cli releases: cli-v0.1.0
+
+jobs:
+    release-daglite:
+        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'cli')
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write  # For trusted publishing
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v6
+
+            - name: Build package
+              run: uv build
+
+            - name: Publish to PyPI
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  packages-dir: dist/
+                  # For first release or if trusted publishing isn't configured:
+                  # password: ${{ secrets.PYPI_API_TOKEN }}
+
+    release-cli:
+        if: startsWith(github.ref, 'refs/tags/cli-v')
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            id-token: write  # For trusted publishing
+        steps:
+            - uses: actions/checkout@v4
+
+            - name: Install uv
+              uses: astral-sh/setup-uv@v6
+
+            - name: Build package
+              run: uv build --package daglite-cli
+
+            - name: Publish to PyPI
+              uses: pypa/gh-action-pypi-publish@release/v1
+              with:
+                  packages-dir: dist/
+                  # For first release or if trusted publishing isn't configured:
+                  # password: ${{ secrets.PYPI_API_TOKEN_DUMMY }}

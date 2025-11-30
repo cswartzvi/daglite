@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from click.testing import CliRunner
-
-from daglite.cli import cli
+from daglite_cli.base import cli
 
 
 class TestCLIBase:
@@ -20,7 +19,7 @@ class TestCLIBase:
 
     def test_cli_version(self):
         """Test that --version works."""
-        from daglite import __version__
+        from daglite_cli import __version__
 
         runner = CliRunner()
         result = runner.invoke(cli, ["--version"])

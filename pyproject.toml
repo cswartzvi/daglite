@@ -13,14 +13,12 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "typing-extensions>=4.15.0",  # For Python 3.10 compatibility
+    "pluggy>=1.6.0",
+    "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
 [project.optional-dependencies]
-cli = ["click>=8.0"]
-
-[project.scripts]
-daglite = "daglite.cli:cli"
+cli = ["daglite-cli"]
 
 [dependency-groups]
 dev = [
@@ -31,13 +29,7 @@ dev = [
     "pre-commit-uv>=4.2.0",
     "ruff",
 ]
-test = [
-    "pytest",
-    "pytest-cov",
-    "pytest-mock",
-    "pyrefly",
-    "pyright>=1.1.407",
-]
+test = ["pytest", "pytest-cov", "pytest-mock", "pyrefly", "pyright>=1.1.407"]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
@@ -50,7 +42,7 @@ notebook = ["ipykernel"]
 # --- tool.coverage ---
 
 [tool.coverage.paths]
-source = ["./src", "*/site-packages"]
+source = ["./src", "extras/*/src", "*/site-packages"]
 
 [tool.coverage.report]
 exclude_also = [
@@ -68,7 +60,7 @@ exclude_also = [
 fail_under = 0
 
 [tool.coverage.run]
-source = ["daglite", "tests"]
+source_pkgs = ["daglite", "daglite_cli"]  # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
@@ -86,7 +78,17 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "src"
+mypy_path = "src:extras/cli/src"  # Add new plugins here
+
+# --- tool.pyright ---
+
+[tool.pyright]
+executionEnvironments = [  # Add new plugins here
+    { root = "src" },
+    { root = "extras/cli/src" },
+]
+include = ["src", "extras/*/src", "tests", "extras/*/tests"]
+exclude = ["**/__pycache__", "**/.pytest_cache", "**/.mypy_cache", "**/.ruff_cache"]
 
 # --- tool.poe ---
 
@@ -94,18 +96,17 @@ mypy_path = "src"
 format = "ruff format src tests"
 lint = "pre-commit run --all-files"
 test = "pytest"
-test-cov = "pytest --cov=daglite --cov-report=term-missing"
+test-cov = "pytest --cov --cov-branch --cov-report=term-missing --cov-report=html"
 
 # --- tool.pytest ---
 
 [tool.pytest.ini_options]
 addopts = "-ra --strict-markers --strict-config --import-mode importlib"
 pythonpath = ["."]
-testpaths = ["tests"]
+testpaths = ["tests", "extras/*/tests"]
 markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
 filterwarnings = [
     # Suppress fork() deprecation from multiprocessing when using pytest-cov
-    # pytest-cov creates background threads which trigger this warning
     "ignore:.*multi-threaded.*fork.*:DeprecationWarning:multiprocessing.popen_fork",
 ]
 
@@ -171,3 +172,10 @@ where = ["src"]
 
 [tool.uv]
 default-groups = ["dev", "test"]
+
+[tool.uv.sources]  # Add new plugins here
+daglite = { workspace = true }
+daglite-cli = { workspace = true }
+
+[tool.uv.workspace]
+members = ["extras/*"]

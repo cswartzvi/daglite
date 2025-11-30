@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from click.testing import CliRunner
+from pathlib import Path
 
-from daglite.cli import cli
+import pytest
+from click.testing import CliRunner
+from daglite_cli.base import cli
+from daglite_cli.utils import parse_param_value
 
 
 class TestRunCommand:
@@ -341,46 +344,30 @@ class TestParseParamValue:
 
     def test_parse_none_type(self):
         """Test parsing with None type returns string."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("test", None) == "test"
 
     def test_parse_int(self):
         """Test parsing integer values."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("42", int) == 42
         assert parse_param_value("-10", int) == -10
 
     def test_parse_int_invalid(self):
         """Test parsing invalid integer raises ValueError."""
-        import pytest
-
-        from daglite.cli.cmds import parse_param_value
-
         with pytest.raises(ValueError, match="Cannot convert"):
             parse_param_value("not_a_number", int)
 
     def test_parse_float(self):
         """Test parsing float values."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("3.14", float) == 3.14
         assert parse_param_value("-2.5", float) == -2.5
 
     def test_parse_float_invalid(self):
         """Test parsing invalid float raises ValueError."""
-        import pytest
-
-        from daglite.cli.cmds import parse_param_value
-
         with pytest.raises(ValueError, match="Cannot convert"):
             parse_param_value("not_a_float", float)
 
     def test_parse_bool_true(self):
         """Test parsing boolean true values."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("true", bool) is True
         assert parse_param_value("True", bool) is True
         assert parse_param_value("1", bool) is True
@@ -389,8 +376,6 @@ class TestParseParamValue:
 
     def test_parse_bool_false(self):
         """Test parsing boolean false values."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("false", bool) is False
         assert parse_param_value("False", bool) is False
         assert parse_param_value("0", bool) is False
@@ -400,24 +385,17 @@ class TestParseParamValue:
 
     def test_parse_str(self):
         """Test parsing string values."""
-        from daglite.cli.cmds import parse_param_value
-
         assert parse_param_value("hello", str) == "hello"
         assert parse_param_value("123", str) == "123"
 
     def test_parse_custom_type_success(self):
         """Test parsing with custom type that has constructor."""
-        from pathlib import Path
-
-        from daglite.cli.cmds import parse_param_value
-
         result = parse_param_value("/tmp/test", Path)
         assert isinstance(result, Path)
         assert result == Path("/tmp/test")
 
     def test_parse_custom_type_fallback(self):
         """Test parsing with custom type that fails falls back to string."""
-        from daglite.cli.cmds import parse_param_value
 
         # Create a type that will fail conversion
         class UnconvertibleType:
