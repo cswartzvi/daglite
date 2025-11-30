@@ -413,17 +413,10 @@ class Engine:
         """
         backend = self._resolve_node_backend(node)
 
-        inputs = {}
-        for name, param in node.inputs():
-            if param.kind in ("sequence", "sequence_ref"):
-                inputs[name] = param.resolve_sequence(values)
-            else:
-                inputs[name] = param.resolve(values)
-
         hook_manager = self._get_hook_manager()
-        hook_manager.hook.before_node_execute(
-            node_id=node.id, node=node, backend=backend, inputs=inputs
-        )
+        inputs = node.resolve_inputs(values)
+        hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
+        hook_manager.hook.before_node_execute(**hook_kwargs, inputs=inputs)
 
         start_time = time.perf_counter()
         try:
@@ -439,16 +432,12 @@ class Engine:
                 result = _materialize_sync(result)
 
             duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(
-                node_id=node.id, node=node, backend=backend, result=result, duration=duration
-            )
+            hook_manager.hook.after_node_execute(**hook_kwargs, result=result, duration=duration)
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(
-                node_id=node.id, node=node, backend=backend, error=e, duration=duration
-            )
+            hook_manager.hook.on_node_error(**hook_kwargs, error=e, duration=duration)
             raise
 
     async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
@@ -475,18 +464,10 @@ class Engine:
         if isinstance(backend, SequentialBackend):
             return await asyncio.to_thread(self._execute_node_sync, node, values)
 
-        # Resolve inputs for hook (handle both scalar and sequence params)
-        inputs = {}
-        for name, param in node.inputs():
-            if param.kind in ("sequence", "sequence_ref"):
-                inputs[name] = param.resolve_sequence(values)
-            else:
-                inputs[name] = param.resolve(values)
-
         hook_manager = self._get_hook_manager()
-        hook_manager.hook.before_node_execute(
-            node_id=node.id, node=node, backend=backend, inputs=inputs
-        )
+        inputs = node.resolve_inputs(values)
+        hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
+        hook_manager.hook.before_node_execute(**hook_kwargs, inputs=inputs)
 
         start_time = time.perf_counter()
         try:
@@ -503,16 +484,12 @@ class Engine:
                 result = await _materialize_async(result)
 
             duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(
-                node_id=node.id, node=node, backend=backend, result=result, duration=duration
-            )
+            hook_manager.hook.after_node_execute(**hook_kwargs, result=result, duration=duration)
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(
-                node_id=node.id, node=node, backend=backend, error=e, duration=duration
-            )
+            hook_manager.hook.on_node_error(**hook_kwargs, error=e, duration=duration)
             raise
 
 
