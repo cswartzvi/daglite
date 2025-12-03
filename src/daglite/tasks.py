@@ -5,25 +5,31 @@ import inspect
 import sys
 from collections.abc import Callable
 from collections.abc import Iterable
-from collections.abc import KeysView
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import fields
+from functools import cached_property
+from inspect import Signature
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
+from uuid import UUID
+from uuid import uuid4
 
 from typing_extensions import Self, override
 
 from daglite.exceptions import ParameterError
-from daglite.futures import BaseTaskFuture
-from daglite.futures import MapTaskFuture
-from daglite.futures import TaskFuture
+from daglite.graph.base import GraphBuilder
+from daglite.graph.base import ParamInput
 
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
 if TYPE_CHECKING:
     from daglite.engine import Backend
+    from daglite.graph.nodes import MapTaskNode
+    from daglite.graph.nodes import TaskNode
 else:
     Backend = object
+    MapTaskNode = object
+    TaskNode = object
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -145,6 +151,12 @@ class BaseTask(abc.ABC, Generic[P, R]):
     backend: Backend
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
+    @cached_property
+    @abc.abstractmethod
+    def signature(self) -> Signature:
+        """Get the signature of the underlying task function."""
+        raise NotImplementedError()
+
     def with_options(
         self,
         *,
@@ -252,6 +264,11 @@ class Task(BaseTask[P, R]):
     # them to view this object as a `Task[P, R]` and not as a `Callable[P, R]` (which some type
     # checkers would do if we defined `__call__`).
 
+    @cached_property
+    @override
+    def signature(self) -> Signature:
+        return inspect.signature(self.func)
+
     def fix(self, **kwargs: Any) -> "FixedParamTask[P, R]":
         """
         Fix some parameters of this task, returning a `FixedParamTask`.
@@ -268,12 +285,7 @@ class Task(BaseTask[P, R]):
         >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
         >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
         """
-        signature = inspect.signature(self.func)
-        if invalid_params := _find_invalid_parameters(signature.parameters, kwargs):
-            raise ParameterError(
-                f"Invalid parameters for task '{self.name}' in `.fix()`: {invalid_params}"
-            )
-
+        _check_invalid_params(self, kwargs, method="fix")
         return FixedParamTask(
             name=self.name,
             description=self.description,
@@ -312,57 +324,30 @@ class FixedParamTask(BaseTask[P, R]):
     fixed_kwargs: Mapping[str, Any]
     """The parameters already bound in this FixedParamTask; can contain other TaskFutures."""
 
+    @cached_property
+    @override
+    def signature(self) -> Signature:
+        return self.task.signature
+
     @override
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
         merged = {**self.fixed_kwargs, **kwargs}
-        signature = inspect.signature(self.task.func)
 
-        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Invalid parameters for task '{self.name}' in `.bind()`: {invalid_params}"
-            )
-
-        if missing_params := _find_missing_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Missing parameters for task '{self.name}' in `.bind()`: {missing_params}"
-            )
-
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.bind()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
+        _check_invalid_params(self, merged, method="bind")
+        _check_missing_params(self, merged, method="bind")
+        _check_overlap_params(self, kwargs, method="bind")
 
         return TaskFuture(task=self.task, kwargs=merged, backend=self.backend)
 
     @override
     def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        signature = inspect.signature(self.task.func)
-
         merged = {**self.fixed_kwargs, **kwargs}
 
-        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Invalid parameters for task '{self.name}' in `.product()`: {invalid_params}"
-            )
+        _check_invalid_params(self, merged, method="product")
+        _check_missing_params(self, merged, method="product")
 
-        if missing_params := _find_missing_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Missing parameters for task '{self.name}' in `.product()`: {missing_params}"
-            )
-
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.product()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
-
-        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
-            raise ParameterError(
-                f"Non-iterable parameters for task '{self.name}' in `.product()`, "
-                f"all parameters must be Iterable or TaskFuture[Iterable] "
-                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
-            )
+        _check_overlap_params(self, kwargs, method="product")
+        _check_invalid_map_params(self, kwargs, method="product")
 
         return MapTaskFuture(
             task=self.task,
@@ -374,32 +359,13 @@ class FixedParamTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        signature = inspect.signature(self.task.func)
-
         merged = {**self.fixed_kwargs, **kwargs}
 
-        if invalid_params := _find_invalid_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Invalid parameters for task '{self.name}' in `.zip()`: {invalid_params}"
-            )
+        _check_invalid_params(self, merged, method="zip")
+        _check_missing_params(self, merged, method="zip")
 
-        if missing_params := _find_missing_parameters(signature.parameters, merged):
-            raise ParameterError(
-                f"Missing parameters for task '{self.name}' in `.zip()`: {missing_params}"
-            )
-
-        if overlap_params := _find_overlapping_parameters(self.fixed_kwargs.keys(), kwargs):
-            raise ParameterError(
-                f"Overlapping parameters for '{self.name}' in `.zip()`, specified parameters "
-                f"were previously bound in `.fix()`: {overlap_params}"
-            )
-
-        if missing_map_params := _find_missing_map_parameters(signature.parameters, kwargs):
-            raise ParameterError(
-                f"Non-iterable parameters for task '{self.name}' in `.zip()`, "
-                f"all parameters must be Iterable or TaskFuture[Iterable] "
-                f"(use `.fix()` to set scalar parameters): {missing_map_params}"
-            )
+        _check_overlap_params(self, kwargs, method="zip")
+        _check_invalid_map_params(self, kwargs, method="zip")
 
         len_details = {
             len(val)  # type: ignore
@@ -408,8 +374,8 @@ class FixedParamTask(BaseTask[P, R]):
         }
         if len(len_details) > 1:
             raise ParameterError(
-                f"Mixed lengths for scalar parameters in `.zip()`, all sequences must have the "
-                f"same length: {kwargs}"
+                f"Mixed lengths for task '{self.name}' in `.zip()`, all sequences must have the "
+                f"same length. Found lengths: {sorted(len_details)}"
             )
 
         return MapTaskFuture(
@@ -421,21 +387,434 @@ class FixedParamTask(BaseTask[P, R]):
         )
 
 
-def _find_invalid_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
-    return sorted(args.keys() - params.keys())
+# region Futures
 
 
-def _find_missing_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
-    return sorted(params.keys() - args.keys())
+class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
+    """Base class for all task futures, representing unevaluated task invocations."""
+
+    @cached_property
+    def id(self) -> UUID:
+        """Unique identifier for this lazy value instance."""
+        return uuid4()
+
+    # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "TaskFutures cannot be used in boolean context. Did you mean to call evaluate() first?"
+        )
+
+    def __len__(self) -> int:
+        raise TypeError("TaskFutures do not support len(). Did you mean to call evaluate() first?")
+
+    def __repr__(self) -> str:  # pragma : no cover
+        return f"<Lazy {id(self):#x}>"
 
 
-def _find_missing_map_parameters(params: Mapping[str, Any], args: dict[str, Any]) -> list[str]:
+@dataclass(frozen=True)
+class TaskFuture(BaseTaskFuture[R]):
+    """
+    Represents a single task invocation that will produce a value of type R.
+
+    All parameters to the task can be either concrete values or other TaskFutures.
+    """
+
+    task: Task[Any, R]
+    """Underlying task to be called."""
+
+    kwargs: Mapping[str, Any]
+    """Parameters to be passed to the task during execution, can contain other task futures."""
+
+    backend: Backend
+    """Engine backend override for this task, if `None`, uses the default engine backend."""
+
+    @overload
+    def then(self, next_task: Task[Any, S]) -> "TaskFuture[S]": ...
+
+    @overload
+    def then(
+        self, next_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "TaskFuture[S]": ...
+
+    def then(
+        self,
+        next_task: Task[Any, S] | FixedParamTask[Any, S],
+        **kwargs: Any,
+    ) -> "TaskFuture[S]":
+        """
+        Chain this task's output as input to another task.
+
+        Additional kwargs are passed to the next task. The upstream output is automatically bound
+        to the single remaining unbound parameter.
+
+        Args:
+            next_task (Task[Any, S] | FixedParamTask[Any, S]):
+                Task or FixedParamTask to chain with this task's output. Must have exactly one
+                unbound parameter.
+            **kwargs (Any):
+                Additional parameters to pass to the next task.
+
+        Returns:
+            A new TaskFuture representing the chained computation.
+
+        Raises:
+            ParameterError: If the next task has no unbound parameters, multiple unbound
+            parameters, or if kwargs overlap with fixed parameters.
+
+        Examples:
+            Basic chaining:
+            >>> @task
+            >>> def fetch(url: str) -> str:
+            >>>     return requests.get(url).text
+            >>>
+            >>> @task
+            >>> def parse(html: str) -> dict:
+            >>>     return parse_html(html)
+            >>>
+            >>> result = fetch.bind(url="example.com").then(parse)
+
+            With inline parameters:
+            >>> @task
+            >>> def transform(data: str, format: str) -> dict:
+            >>>     return convert(data, format)
+            >>>
+            >>> result = fetch.bind(url="example.com").then(transform, format="json")
+
+            With pre-fixed tasks:
+            >>> transform_json = transform.fix(format="json")
+            >>> result = fetch.bind(url="example.com").then(transform_json)
+
+            Chaining multiple operations:
+            >>> result = (
+            >>>     fetch.bind(url="example.com")
+            >>>     .then(parse)
+            >>>     .then(transform, format="json")
+            >>>     .then(save, path="output.json")
+            >>> )
+        """
+        # NOTE: Import at runtime to avoid circular import issues
+        from daglite.tasks import FixedParamTask
+
+        if isinstance(next_task, FixedParamTask):
+            _check_overlap_params(next_task, kwargs, method="then")
+            all_fixed = {**next_task.fixed_kwargs, **kwargs}
+            actual_task = next_task.task
+        else:
+            all_fixed = kwargs
+            actual_task = next_task
+
+        ubound_param = _get_unbound_param(actual_task, all_fixed, method="then")
+        return actual_task.bind(**{ubound_param: self}, **all_fixed)
+
+    @override
+    def get_dependencies(self) -> list[GraphBuilder]:
+        deps: list[GraphBuilder] = []
+        for value in self.kwargs.values():
+            if isinstance(value, BaseTaskFuture):
+                deps.append(value)
+        return deps
+
+    @override
+    def to_graph(self) -> TaskNode:
+        from daglite.graph.nodes import TaskNode
+
+        kwargs: dict[str, ParamInput] = {}
+        for name, value in self.kwargs.items():
+            if isinstance(value, BaseTaskFuture):
+                kwargs[name] = ParamInput.from_ref(value.id)
+            else:
+                kwargs[name] = ParamInput.from_value(value)
+        return TaskNode(
+            id=self.id,
+            name=self.task.name,
+            description=self.task.description,
+            func=self.task.func,
+            kwargs=kwargs,
+            backend=self.backend,
+        )
+
+
+@dataclass(frozen=True)
+class MapTaskFuture(BaseTaskFuture[R]):
+    """
+    Represents a fan-out task invocation producing a sequence of values of type R.
+
+    Fan-out can be done in either 'extend' (Cartesian product) or 'zip' (pairwise) mode. In both
+    modes, some parameters are fixed across all calls, while others are parameters will be iterated
+    over. All iterable parameters must be of type `Iterable[Any]` or `TaskFuture[Iterable[Any]]`.
+    """
+
+    task: Task[Any, R]
+    """Underlying task to be called."""
+
+    mode: str  # "product" or "zip"
+    """Mode of operation ('product' for Cartesian product, 'zip' for pairwise)."""
+
+    fixed_kwargs: Mapping[str, Any]
+    """
+    Mapping of parameter names to fixed values applied to every call.
+
+    Note that fixed parameters can be a combination of concrete values and TaskFutures.
+    """
+
+    mapped_kwargs: Mapping[str, Any]
+    """
+    Mapping of parameter names to sequences to be iterated over during calls.
+
+    Note that sequence parameters can be a combination of concrete values and TaskFutures.
+    """
+
+    backend: Backend
+    """Engine backend override for this task, if `None`, uses the default engine backend."""
+
+    @overload
+    def map(self, mapped_task: Task[Any, S]) -> "MapTaskFuture[S]": ...
+
+    @overload
+    def map(
+        self, mapped_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "MapTaskFuture[S]": ...
+
+    def map(
+        self, mapped_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> MapTaskFuture[S]:
+        """
+        Apply a task to each element of this sequence.
+
+        Args:
+            mapped_task: Task with exactly ONE parameter, or a FixedParamTask where
+                one parameter remains unbound.
+            **kwargs: Additional parameters to pass to the task. The sequence element
+                will be bound to the single remaining unbound parameter.
+
+        Returns:
+            A new MapTaskFuture with the mapped task applied to each element.
+
+        Raises:
+            ParameterError: If the provided task does not have exactly one unbound
+                parameter, or if kwargs overlap with fixed parameters.
+
+        Examples:
+            Single-parameter task:
+            >>> @task
+            >>> def double(x: int) -> int:
+            >>>     return x * 2
+            >>>
+            >>> numbers = identity.product(x=[1, 2, 3])
+            >>> doubled = numbers.map(double)
+            >>> # Result: [2, 4, 6]
+
+            Multi-parameter task with inline kwargs:
+            >>> @task
+            >>> def scale(x: int, factor: int) -> int:
+            >>>     return x * factor
+            >>>
+            >>> scaled = numbers.map(scale, factor=10)
+            >>> # Result: [10, 20, 30]
+
+            Chaining map operations:
+            >>> result = (
+            >>>     numbers
+            >>>     .map(scale, factor=2)
+            >>>     .map(add, offset=10)
+            >>>     .map(square)
+            >>> )
+
+            With pre-fixed tasks (still supported):
+            >>> scaled = numbers.map(scale.fix(factor=10))
+        """
+        # NOTE: Import at runtime to avoid circular import issues
+        from daglite.tasks import FixedParamTask
+
+        if isinstance(mapped_task, FixedParamTask):
+            _check_overlap_params(mapped_task, kwargs, method="map")
+            all_fixed = {**mapped_task.fixed_kwargs, **kwargs}
+            actual_task = mapped_task.task
+        else:
+            all_fixed = kwargs
+            actual_task = mapped_task
+
+        unbound_param = _get_unbound_param(actual_task, all_fixed, method="map")
+        return MapTaskFuture(
+            task=actual_task,
+            mode="product",
+            fixed_kwargs=all_fixed,
+            mapped_kwargs={unbound_param: self},
+            backend=self.backend,
+        )
+
+    @overload
+    def join(self, reducer_task: Task[Any, S]) -> "TaskFuture[S]": ...
+
+    @overload
+    def join(
+        self, reducer_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> "TaskFuture[S]": ...
+
+    def join(
+        self, reducer_task: Task[Any, S] | FixedParamTask[Any, S], **kwargs: Any
+    ) -> TaskFuture[S]:
+        """
+        Reduce this sequence to a single value.
+
+        Args:
+            reducer_task: Task with exactly ONE parameter (the sequence), or a
+                FixedParamTask with one unbound parameter.
+            **kwargs: Additional parameters to pass to the reducer task. The sequence
+                will be bound to the single remaining unbound parameter.
+
+        Returns:
+            A TaskFuture representing the reduced single value.
+
+        Raises:
+            ParameterError: If the provided task does not have exactly one unbound
+                parameter, or if kwargs overlap with fixed parameters.
+
+        Examples:
+            Simple reducer:
+            >>> @task
+            >>> def sum_all(xs: list[int]) -> int:
+            >>>     return sum(xs)
+            >>>
+            >>> numbers = square.product(x=[1, 2, 3, 4])
+            >>> total = numbers.join(sum_all)
+            >>> # Result: 30 (1 + 4 + 9 + 16)
+
+            Reducer with inline kwargs:
+            >>> @task
+            >>> def weighted_sum(xs: list[int], weight: float) -> float:
+            >>>     return sum(xs) * weight
+            >>>
+            >>> total = numbers.join(weighted_sum, weight=0.5)
+            >>> # Result: 15.0
+
+            Complete map-reduce pipeline:
+            >>> result = (
+            >>>     identity.product(x=[1, 2, 3])
+            >>>     .map(scale, factor=2)
+            >>>     .map(add, offset=10)
+            >>>     .join(sum_with_bonus, bonus=100)
+            >>> )
+
+            With pre-fixed tasks (still supported):
+            >>> total = numbers.join(weighted_sum.fix(weight=0.5))
+        """
+        # NOTE: Import at runtime to avoid circular import issues
+        from daglite.tasks import FixedParamTask
+
+        if isinstance(reducer_task, FixedParamTask):
+            _check_overlap_params(reducer_task, kwargs, method="join")
+            all_fixed = {**reducer_task.fixed_kwargs, **kwargs}
+            actual_task = reducer_task.task
+        else:
+            all_fixed = kwargs
+            actual_task = reducer_task
+
+        # Add ubound param to merged kwargs
+        unbound_param = _get_unbound_param(actual_task, all_fixed, method="join")
+        merged_kwargs = dict(all_fixed)
+        merged_kwargs[unbound_param] = self
+
+        return TaskFuture(
+            task=actual_task,
+            kwargs=merged_kwargs,
+            backend=self.backend,
+        )
+
+    @override
+    def get_dependencies(self) -> list[GraphBuilder]:
+        deps: list[GraphBuilder] = []
+        for value in self.fixed_kwargs.values():
+            if isinstance(value, BaseTaskFuture):
+                deps.append(value)
+        for seq in self.mapped_kwargs.values():
+            if isinstance(seq, BaseTaskFuture):
+                deps.append(seq)
+        return deps
+
+    @override
+    def to_graph(self) -> MapTaskNode:
+        from daglite.graph.nodes import MapTaskNode
+
+        fixed_kwargs: dict[str, ParamInput] = {}
+        mapped_kwargs: dict[str, ParamInput] = {}
+
+        for name, value in self.fixed_kwargs.items():
+            if isinstance(value, BaseTaskFuture):
+                fixed_kwargs[name] = ParamInput.from_ref(value.id)
+            else:
+                fixed_kwargs[name] = ParamInput.from_value(value)
+
+        for name, seq in self.mapped_kwargs.items():
+            if isinstance(seq, BaseTaskFuture):
+                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
+            else:
+                mapped_kwargs[name] = ParamInput.from_sequence(seq)
+
+        return MapTaskNode(
+            id=self.id,
+            name=self.task.name,
+            description=self.task.description,
+            func=self.task.func,
+            mode=self.mode,
+            fixed_kwargs=fixed_kwargs,
+            mapped_kwargs=mapped_kwargs,
+            backend=self.backend,
+        )
+
+
+# region Helpers
+
+
+def _check_invalid_params(task: BaseTask, args: dict, method: str) -> None:
+    if invalid_params := sorted(args.keys() - task.signature.parameters.keys()):
+        raise ParameterError(
+            f"Invalid parameters for task '{task.name}' in `{method}()`: {invalid_params}"
+        )
+
+
+def _check_missing_params(task: BaseTask, args: dict, method: str) -> None:
+    if missing_params := sorted(task.signature.parameters.keys() - args.keys()):
+        raise ParameterError(
+            f"Missing parameters for task '{task.name}' in `{method}()`: {missing_params}"
+        )
+
+
+def _check_overlap_params(task: FixedParamTask, new: dict, method: str) -> None:
+    fixed = task.fixed_kwargs.keys()
+    if overlap_params := sorted(fixed & new.keys()):
+        raise ParameterError(
+            f"Overlapping parameters for task '{task.name}' in `{method}()`, specified parameters "
+            f"were previously bound in `.fix()`: {overlap_params}"
+        )
+
+
+def _check_invalid_map_params(task: BaseTask, args: dict, method: str) -> None:
     non_sequences = []
+    parameters = task.signature.parameters.keys()
     for key, value in args.items():
-        if key in params and not isinstance(value, (Iterable, BaseTaskFuture)):
+        if key in parameters and not isinstance(value, (Iterable, BaseTaskFuture)):
             non_sequences.append(key)
-    return sorted(non_sequences)
+    if non_sequences:
+        raise ParameterError(
+            f"Non-iterable parameters for task '{task.name}' in `{method}()`, "
+            f"all parameters must be Iterable or TaskFuture[Iterable] "
+            f"(use `.fix()` to set scalar parameters): {non_sequences}"
+        )
 
 
-def _find_overlapping_parameters(fixed: KeysView[str], new: dict[str, Any]) -> list[str]:
-    return sorted(fixed & new.keys())
+def _get_unbound_param(task: BaseTask, args: dict, method: str) -> str:
+    unbound = [p for p in task.signature.parameters if p not in args]
+    if len(unbound) == 0:
+        raise ParameterError(
+            f"Task '{task.name}' in `{method}()` has no unbound parameters for "
+            f"upstream value. All parameters already provided: {list(args.keys())}"
+        )
+    if len(unbound) > 1:
+        raise ParameterError(
+            f"Task '{task.name}' in `{method}()` must have exactly one "
+            f"unbound parameter for upstream value, found {len(unbound)}: {unbound} "
+            f"(use `.fix()` to set scalar parameters): {unbound[1:]}"
+        )
+    return unbound[0]

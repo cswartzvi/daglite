@@ -19,13 +19,13 @@ if TYPE_CHECKING:
     from pluggy import PluginManager
 
 from daglite.backends.base import Backend
-from daglite.futures import BaseTaskFuture
-from daglite.futures import MapTaskFuture
-from daglite.futures import TaskFuture
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph
 from daglite.settings import DagliteSettings
+from daglite.tasks import BaseTaskFuture
+from daglite.tasks import MapTaskFuture
+from daglite.tasks import TaskFuture
 
 P = ParamSpec("P")
 R = TypeVar("R")
