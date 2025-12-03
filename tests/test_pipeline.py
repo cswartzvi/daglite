@@ -6,10 +6,10 @@ import pytest
 
 from daglite import pipeline
 from daglite import task
-from daglite.futures import MapTaskFuture
-from daglite.futures import TaskFuture
 from daglite.pipelines import Pipeline
 from daglite.pipelines import load_pipeline
+from daglite.tasks import MapTaskFuture
+from daglite.tasks import TaskFuture
 
 
 # Test fixtures

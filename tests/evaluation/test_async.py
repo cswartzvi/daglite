@@ -8,6 +8,8 @@ import pytest
 
 from daglite import evaluate_async
 from daglite import task
+from daglite.tasks import MapTaskFuture
+from daglite.tasks import TaskFuture
 
 
 class TestAsyncExecution:
@@ -71,8 +73,6 @@ class TestAsyncExecution:
         @task
         def combine(a: int, b: int) -> int:
             return a + b
-
-        from daglite.futures import TaskFuture
 
         left_future: TaskFuture[int] = left.bind()
         right_future: TaskFuture[int] = right.bind()
@@ -215,8 +215,6 @@ class TestAsyncExecution:
         @task(backend="threading")
         def square(z: int) -> int:
             return z**2
-
-        from daglite.futures import MapTaskFuture
 
         doubled: MapTaskFuture[int] = double.product(x=[1, 2, 3])
         squared: MapTaskFuture[int] = doubled.map(square)
