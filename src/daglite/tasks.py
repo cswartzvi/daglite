@@ -787,7 +787,7 @@ def _check_invalid_map_params(task: BaseTask, args: dict, method: str) -> None:
     for key, value in args.items():
         if key in parameters and not isinstance(value, (Iterable, BaseTaskFuture)):
             non_sequences.append(key)
-    if non_sequences:
+    if non_sequences := sorted(non_sequences):
         raise ParameterError(
             f"Non-iterable parameters for task '{task.name}' in `{method}()`, "
             f"all parameters must be Iterable or TaskFuture[Iterable] "
