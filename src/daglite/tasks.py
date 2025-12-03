@@ -501,8 +501,8 @@ class TaskFuture(BaseTaskFuture[R]):
             all_fixed = kwargs
             actual_task = next_task
 
-        ubound_param = _get_unbound_param(actual_task, all_fixed, method="then")
-        return actual_task.bind(**{ubound_param: self}, **all_fixed)
+        unbound_param = _get_unbound_param(actual_task, all_fixed, method="then")
+        return actual_task.bind(**{unbound_param: self}, **all_fixed)
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
@@ -702,7 +702,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             all_fixed = kwargs
             actual_task = reducer_task
 
-        # Add ubound param to merged kwargs
+        # Add unbound param to merged kwargs
         unbound_param = _get_unbound_param(actual_task, all_fixed, method="join")
         merged_kwargs = dict(all_fixed)
         merged_kwargs[unbound_param] = self
