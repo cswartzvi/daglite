@@ -493,9 +493,6 @@ class TaskFuture(BaseTaskFuture[R]):
             >>>     .then(save, path="output.json")
             >>> )
         """
-        # NOTE: Import at runtime to avoid circular import issues
-        from daglite.tasks import FixedParamTask
-
         if isinstance(next_task, FixedParamTask):
             _check_overlap_params(next_task, kwargs, method="then")
             all_fixed = {**next_task.fixed_kwargs, **kwargs}
@@ -624,9 +621,6 @@ class MapTaskFuture(BaseTaskFuture[R]):
             With pre-fixed tasks (still supported):
             >>> scaled = numbers.map(scale.fix(factor=10))
         """
-        # NOTE: Import at runtime to avoid circular import issues
-        from daglite.tasks import FixedParamTask
-
         if isinstance(mapped_task, FixedParamTask):
             _check_overlap_params(mapped_task, kwargs, method="map")
             all_fixed = {**mapped_task.fixed_kwargs, **kwargs}
@@ -700,9 +694,6 @@ class MapTaskFuture(BaseTaskFuture[R]):
             With pre-fixed tasks (still supported):
             >>> total = numbers.join(weighted_sum.fix(weight=0.5))
         """
-        # NOTE: Import at runtime to avoid circular import issues
-        from daglite.tasks import FixedParamTask
-
         if isinstance(reducer_task, FixedParamTask):
             _check_overlap_params(reducer_task, kwargs, method="join")
             all_fixed = {**reducer_task.fixed_kwargs, **kwargs}
