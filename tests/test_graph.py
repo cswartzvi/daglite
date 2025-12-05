@@ -296,10 +296,14 @@ class TestGraphNodes:
 
         # This error happens during submit, not initialization
         from daglite.backends.local import SequentialBackend
+        from daglite.engine import _resolve_inputs
 
         backend = SequentialBackend()
-        with pytest.raises(ParameterError, match="zip\\(\\) requires all sequences"):
-            node.submit(backend, {})
+        resolved_inputs = _resolve_inputs(node, {})
+        with pytest.raises(
+            ParameterError, match="Map task .* with `\\.zip\\(\\)` requires all sequences"
+        ):
+            node.submit(backend, resolved_inputs)
 
     def test_map_task_node_invalid_mode(self) -> None:
         """MapTaskNode submission fails with invalid mode."""

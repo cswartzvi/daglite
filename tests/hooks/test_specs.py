@@ -22,7 +22,7 @@ class TestHooksBasic:
                 self.called = False
 
             @hooks.hook_impl
-            def before_graph_execute(self, root_id, node_count, mode):
+            def before_graph_execute(self, root_id, node_count, is_async):
                 self.called = True
 
         custom_hook = CustomHook()
@@ -54,8 +54,12 @@ class TestHooksBasic:
                 self.graph_end = None
 
             @hooks.hook_impl
-            def before_graph_execute(self, root_id, node_count, mode):
-                self.graph_start = {"root_id": root_id, "node_count": node_count, "mode": mode}
+            def before_graph_execute(self, root_id, node_count, is_async):
+                self.graph_start = {
+                    "root_id": root_id,
+                    "node_count": node_count,
+                    "is_async": is_async,
+                }
 
             @hooks.hook_impl
             def before_node_execute(self, node_id, node, backend, inputs):
@@ -66,12 +70,12 @@ class TestHooksBasic:
                 self.node_executions.append({"node_id": node_id, "inputs": inputs})
 
             @hooks.hook_impl
-            def after_graph_execute(self, root_id, result, duration, mode):
+            def after_graph_execute(self, root_id, result, duration, is_async):
                 self.graph_end = {
                     "root_id": root_id,
                     "result": result,
                     "duration": duration,
-                    "mode": mode,
+                    "is_async": is_async,
                 }
 
         capture = ParameterCapture()
@@ -87,7 +91,7 @@ class TestHooksBasic:
         # Verify captured data
         assert capture.graph_start is not None
         assert capture.graph_start["node_count"] == 1
-        assert capture.graph_start["mode"] == "sequential"
+        assert capture.graph_start["is_async"] is False
 
         assert len(capture.node_executions) == 1
         assert capture.node_executions[0]["inputs"] == {"x": 2, "y": 3}
@@ -95,7 +99,7 @@ class TestHooksBasic:
         assert capture.graph_end is not None
         assert capture.graph_end["result"] == 5
         assert capture.graph_end["duration"] >= 0
-        assert capture.graph_end["mode"] == "sequential"
+        assert capture.graph_end["is_async"] is False
 
         # Clean up
         hook_manager = hooks.get_hook_manager()

@@ -15,6 +15,8 @@ from dataclasses import field
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
+from typing_extensions import TypeIs
+
 if TYPE_CHECKING:
     from pluggy import PluginManager
 
@@ -244,9 +246,6 @@ async def evaluate_async(
     return await engine.evaluate_async(expr)
 
 
-# endregion
-
-
 # region Internal
 
 
@@ -304,14 +303,13 @@ class Engine:
 
     def _get_hook_manager(self) -> "PluginManager":
         """Get hook manager for this execution."""
+        from daglite.hooks.manager import create_hook_manager_with_plugins
+        from daglite.hooks.manager import get_hook_manager
+
         if self._hook_manager is None:
             if self.hooks:
-                from daglite.hooks.manager import create_hook_manager_with_plugins
-
                 self._hook_manager = create_hook_manager_with_plugins(self.hooks)
             else:
-                from daglite.hooks.manager import get_hook_manager
-
                 self._hook_manager = get_hook_manager()
         return self._hook_manager
 
@@ -329,7 +327,7 @@ class Engine:
         """Sequential blocking execution."""
         hook_manager = self._get_hook_manager()
         hook_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), mode="sequential"
+            root_id=root_id, node_count=len(nodes), is_async=False
         )
 
         start_time = time.perf_counter()
@@ -340,28 +338,30 @@ class Engine:
             while ready:
                 nid = ready.pop()
                 node = state.nodes[nid]
-                result = self._execute_node_sync(node, state.values)
+                result = self._execute_node_sync(node, state.completed_nodes)
                 ready.extend(state.mark_complete(nid, result))
 
-            result = state.values[root_id]
+            result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
 
             hook_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, mode="sequential"
+                root_id=root_id, result=result, duration=duration, is_async=False
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             hook_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, mode="sequential"
+                root_id=root_id, error=e, duration=duration, is_async=False
             )
             raise
 
     async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
         """Async execution with sibling parallelism."""
         hook_manager = self._get_hook_manager()
-        hook_manager.hook.before_graph_execute(root_id=root_id, node_count=len(nodes), mode="async")
+        hook_manager.hook.before_graph_execute(
+            root_id=root_id, node_count=len(nodes), is_async=True
+        )
 
         start_time = time.perf_counter()
         try:
@@ -371,7 +371,7 @@ class Engine:
             while ready:
                 tasks: dict[asyncio.Task[Any], UUID] = {
                     asyncio.create_task(
-                        self._execute_node_async(state.nodes[nid], state.values)
+                        self._execute_node_async(state.nodes[nid], state.completed_nodes)
                     ): nid
                     for nid in ready
                 }
@@ -384,96 +384,112 @@ class Engine:
                     result = task.result()
                     ready.extend(state.mark_complete(nid, result))
 
-            result = state.values[root_id]
+            result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
             hook_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, mode="async"
+                root_id=root_id, result=result, duration=duration, is_async=True
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             hook_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, mode="async"
+                root_id=root_id, error=e, duration=duration, is_async=True
             )
             raise
 
-    def _execute_node_sync(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
+    def _execute_node_sync(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> Any:
         """
         Execute a node synchronously and return its result.
 
         Handles both single tasks and map tasks, blocking until completion.
 
         Args:
-            node: The graph node to execute
-            values: Completed results from dependencies
+            node: The graph node to execute.
+            completed_nodes: Results from all completed dependency nodes.
 
         Returns:
             The node's execution result (single value or list)
         """
-        backend = self._resolve_node_backend(node)
         hook_manager = self._get_hook_manager()
-        inputs = node.resolve_inputs(values)
-        iteration_count = node.get_iteration_count(values)
-        hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
-
-        hook_manager.hook.before_node_execute(
-            **hook_kwargs, inputs=inputs, iteration_count=iteration_count
-        )
+        backend = self._resolve_node_backend(node)
+        resolved_inputs = _resolve_inputs(node, completed_nodes)
 
         start_time = time.perf_counter()
+        iteration_total = None
         try:
-            future_or_futures = node.submit(backend, values)
+            future_or_futures = node.submit(backend, resolved_inputs)
 
-            if isinstance(future_or_futures, list):
-                # MapTaskNode - gather all results with iteration hooks
+            if _is_map_future(future_or_futures):
                 iteration_total = len(future_or_futures)
+                hook_manager.hook.before_node_execute(
+                    node_id=node.id,
+                    node=node,
+                    backend=backend,
+                    inputs=resolved_inputs,
+                    iteration_count=iteration_total,
+                )
                 results = []
-                for idx, future in enumerate(future_or_futures):
-                    iter_start = time.perf_counter()
-                    try:
-                        iter_result = future.result()
-                        iter_result = _materialize_sync(iter_result)
-                        iter_duration = time.perf_counter() - iter_start
+                for idx, future_or_futures in enumerate(future_or_futures):
+                    hook_manager.hook.before_iteration_execute(
+                        node_id=node.id,
+                        node=node,
+                        backend=backend,
+                        iteration_index=idx,
+                        iteration_total=iteration_total,
+                    )
 
-                        hook_manager.hook.after_iteration_execute(
-                            **hook_kwargs,
-                            iteration_index=idx,
-                            iteration_total=iteration_total,
-                            result=iter_result,
-                            duration=iter_duration,
-                        )
-                        results.append(iter_result)
-                    except Exception as iter_error:
-                        iter_duration = time.perf_counter() - iter_start
-                        hook_manager.hook.on_iteration_error(
-                            **hook_kwargs,
-                            iteration_index=idx,
-                            iteration_total=iteration_total,
-                            error=iter_error,
-                            duration=iter_duration,
-                        )
-                        raise
+                    iter_start = time.perf_counter()
+                    iter_result = future_or_futures.result()
+                    iter_result = _materialize_sync(iter_result)
+                    iter_duration = time.perf_counter() - iter_start
+
+                    hook_manager.hook.after_iteration_execute(
+                        node_id=node.id,
+                        node=node,
+                        backend=backend,
+                        iteration_index=idx,
+                        iteration_total=iteration_total,
+                        result=iter_result,
+                        duration=iter_duration,
+                    )
+                    results.append(iter_result)
                 result = results
             else:
-                # TaskNode - single result
+                hook_manager.hook.before_node_execute(
+                    node_id=node.id,
+                    node=node,
+                    backend=backend,
+                    inputs=resolved_inputs,
+                    iteration_count=None,
+                )
                 result = future_or_futures.result()
                 result = _materialize_sync(result)
 
             duration = time.perf_counter() - start_time
             hook_manager.hook.after_node_execute(
-                **hook_kwargs, result=result, duration=duration, iteration_count=iteration_count
+                node_id=node.id,
+                node=node,
+                backend=backend,
+                result=result,
+                duration=duration,
+                iteration_count=iteration_total,
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             hook_manager.hook.on_node_error(
-                **hook_kwargs, error=e, duration=duration, iteration_count=iteration_count
+                node_id=node.id,
+                node=node,
+                backend=backend,
+                error=e,
+                duration=duration,
+                iteration_count=iteration_total,
             )
             raise
 
-    async def _execute_node_async(self, node: GraphNode, values: dict[UUID, Any]) -> Any:
+    async def _execute_node_async(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> Any:
         """
         Execute a node asynchronously and return its result.
 
@@ -482,8 +498,8 @@ class Engine:
         asyncio.to_thread() to prevent blocking the event loop.
 
         Args:
-            node: The graph node to execute
-            values: Completed results from dependencies
+            node: The graph node to execute.
+            completed_nodes: Results from all completed dependency nodes.
 
         Returns:
             The node's execution result (single value or list)
@@ -495,67 +511,83 @@ class Engine:
         # Special case: Sequential backend executes synchronously and would block
         # the event loop, so wrap in thread
         if isinstance(backend, SequentialBackend):
-            return await asyncio.to_thread(self._execute_node_sync, node, values)
+            return await asyncio.to_thread(self._execute_node_sync, node, completed_nodes)
 
         hook_manager = self._get_hook_manager()
-        inputs = node.resolve_inputs(values)
-        iteration_count = node.get_iteration_count(values)
-        hook_kwargs = dict(node_id=node.id, node=node, backend=backend)
-
-        hook_manager.hook.before_node_execute(
-            **hook_kwargs, inputs=inputs, iteration_count=iteration_count
-        )
+        resolved_inputs = _resolve_inputs(node, completed_nodes)
 
         start_time = time.perf_counter()
+        iteration_total = None
         try:
-            future_or_futures = node.submit(backend, values)
+            future_or_futures = node.submit(backend, resolved_inputs)
 
-            if isinstance(future_or_futures, list):
-                # MapTaskNode - wrap all futures and gather with iteration hooks
+            if _is_map_future(future_or_futures):
                 iteration_total = len(future_or_futures)
+                hook_manager.hook.before_node_execute(
+                    node_id=node.id,
+                    node=node,
+                    backend=backend,
+                    inputs=resolved_inputs,
+                    iteration_count=iteration_total,
+                )
                 results = []
                 for idx, future in enumerate(future_or_futures):
-                    iter_start = time.perf_counter()
-                    try:
-                        wrapped = asyncio.wrap_future(future)
-                        iter_result = await wrapped
-                        iter_result = await _materialize_async(iter_result)
-                        iter_duration = time.perf_counter() - iter_start
+                    hook_manager.hook.before_iteration_execute(
+                        node_id=node.id,
+                        node=node,
+                        backend=backend,
+                        iteration_index=idx,
+                        iteration_total=iteration_total,
+                    )
 
-                        hook_manager.hook.after_iteration_execute(
-                            **hook_kwargs,
-                            iteration_index=idx,
-                            iteration_total=iteration_total,
-                            result=iter_result,
-                            duration=iter_duration,
-                        )
-                        results.append(iter_result)
-                    except Exception as iter_error:
-                        iter_duration = time.perf_counter() - iter_start
-                        hook_manager.hook.on_iteration_error(
-                            **hook_kwargs,
-                            iteration_index=idx,
-                            iteration_total=iteration_total,
-                            error=iter_error,
-                            duration=iter_duration,
-                        )
-                        raise
+                    iter_start = time.perf_counter()
+                    wrapped = asyncio.wrap_future(future)
+                    iter_result = await wrapped
+                    iter_result = await _materialize_async(iter_result)
+                    iter_duration = time.perf_counter() - iter_start
+
+                    hook_manager.hook.after_iteration_execute(
+                        node_id=node.id,
+                        node=node,
+                        backend=backend,
+                        iteration_index=idx,
+                        iteration_total=iteration_total,
+                        result=iter_result,
+                        duration=iter_duration,
+                    )
+                    results.append(iter_result)
                 result = results
             else:
-                # TaskNode - wrap single future
+                hook_manager.hook.before_node_execute(
+                    node_id=node.id,
+                    node=node,
+                    backend=backend,
+                    inputs=resolved_inputs,
+                    iteration_count=None,
+                )
                 result = await asyncio.wrap_future(future_or_futures)
                 result = await _materialize_async(result)
 
             duration = time.perf_counter() - start_time
             hook_manager.hook.after_node_execute(
-                **hook_kwargs, result=result, duration=duration, iteration_count=iteration_count
+                node_id=node.id,
+                node=node,
+                backend=backend,
+                result=result,
+                duration=duration,
+                iteration_count=iteration_total,
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             hook_manager.hook.on_node_error(
-                **hook_kwargs, error=e, duration=duration, iteration_count=iteration_count
+                node_id=node.id,
+                node=node,
+                backend=backend,
+                error=e,
+                duration=duration,
+                iteration_count=iteration_total,
             )
             raise
 
@@ -566,7 +598,7 @@ class ExecutionState:
     Tracks graph topology and execution progress.
 
     Combines immutable graph structure (nodes, successors) with mutable execution
-    state (indegree, values) to manage topological execution of a DAG.
+    state (indegree, completed_nodes) to manage topological execution of a DAG.
     """
 
     nodes: dict[UUID, GraphNode]
@@ -578,7 +610,7 @@ class ExecutionState:
     successors: dict[UUID, set[UUID]]
     """Mapping from node ID to its dependent nodes."""
 
-    values: dict[UUID, Any]
+    completed_nodes: dict[UUID, Any]
     """Results of completed node executions."""
 
     @classmethod
@@ -588,21 +620,24 @@ class ExecutionState:
 
         Computes the dependency graph (indegree and successors) needed for
         topological execution.
+
+        Args:
+            nodes: Mapping from node IDs to GraphNode instances.
+
+        Returns:
+            Initialized ExecutionState instance.
         """
+        from collections import defaultdict
+
         indegree: dict[UUID, int] = {nid: 0 for nid in nodes}
-        successors: dict[UUID, set[UUID]] = {nid: set() for nid in nodes}
+        successors: dict[UUID, set[UUID]] = defaultdict(set)
 
         for nid, node in nodes.items():
             for dep in node.dependencies():
                 indegree[nid] += 1
-                successors.setdefault(dep, set()).add(nid)
+                successors[dep].add(nid)
 
-        return cls(
-            nodes=nodes,
-            indegree=indegree,
-            successors=successors,
-            values={},
-        )
+        return cls(nodes=nodes, indegree=indegree, successors=dict(successors), completed_nodes={})
 
     def get_ready(self) -> list[UUID]:
         """Get all nodes with no remaining dependencies."""
@@ -610,7 +645,7 @@ class ExecutionState:
 
     def mark_complete(self, nid: UUID, result: Any) -> list[UUID]:
         """
-        Mark a node complete and return newly-ready successors.
+        Mark a node complete and return newly ready successors.
 
         Args:
             nid: ID of the completed node
@@ -619,7 +654,7 @@ class ExecutionState:
         Returns:
             List of node IDs that are now ready to execute
         """
-        self.values[nid] = result
+        self.completed_nodes[nid] = result
         del self.indegree[nid]  # Remove from tracking
         newly_ready = []
 
@@ -629,6 +664,22 @@ class ExecutionState:
                 newly_ready.append(succ)
 
         return newly_ready
+
+
+def _is_map_future(future: Any) -> TypeIs[list[Any]]:
+    """Check if the future is a list of futures (MapTaskFuture)."""
+    return isinstance(future, list)
+
+
+def _resolve_inputs(node: GraphNode, completed_nodes: dict[UUID, Any]) -> dict[str, Any]:
+    """Resolve all input parameters for a node using completed node results."""
+    inputs = {}
+    for name, param in node.inputs():
+        if param.kind in ("sequence", "sequence_ref"):
+            inputs[name] = param.resolve_sequence(completed_nodes)
+        else:
+            inputs[name] = param.resolve(completed_nodes)
+    return inputs
 
 
 def _materialize_sync(result: Any) -> Any:
