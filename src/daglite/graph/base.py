@@ -17,6 +17,8 @@ from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
 
+from typing_extensions import final
+
 from daglite.exceptions import ExecutionError
 
 if TYPE_CHECKING:
@@ -74,7 +76,7 @@ class GraphNode(abc.ABC):
     """Optional human-readable description for this node."""
 
     backend: str | Backend | None
-    """Optional backend name or instance for this node."""
+    """Optional backend specified by the user for this node."""
 
     @cached_property
     @abc.abstractmethod
@@ -91,7 +93,7 @@ class GraphNode(abc.ABC):
         """
         ...
 
-    @abc.abstractmethod
+    @final
     def dependencies(self) -> set[UUID]:
         """
         IDs of nodes that the current node depends on (its direct predecessors).
@@ -99,55 +101,23 @@ class GraphNode(abc.ABC):
         Note that dependencies are derived from reference inputs only - value inputs are **not**
         considered dependencies.
         """
-        ...
-
-    def resolve_inputs(self, values: Mapping[UUID, Any]) -> dict[str, Any]:
-        """
-        Resolve all input parameters using completed node values.
-
-        Args:
-            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
-
-        Returns:
-            dict[str, Any]: Dictionary mapping parameter names to resolved values.
-        """
-        inputs = {}
-        for name, param in self.inputs():
-            if param.kind in ("sequence", "sequence_ref"):
-                inputs[name] = param.resolve_sequence(values)
-            else:
-                inputs[name] = param.resolve(values)
-        return inputs
-
-    def get_iteration_count(self, values: Mapping[UUID, Any]) -> int | None:
-        """
-        Return the number of iterations for batch nodes, None for regular tasks.
-
-        This is used by hooks to track progress through map operations and other
-        batch nodes that execute multiple sub-tasks.
-
-        Args:
-            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
-
-        Returns:
-            int | None: Number of iterations if this is a batch node, None otherwise.
-        """
-        return None
+        return {p.ref for _, p in self.inputs() if p.is_ref and p.ref is not None}
 
     @abc.abstractmethod
     def submit(
-        self, backend: Backend, values: Mapping[UUID, Any]
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
     ) -> Future[Any] | list[Future[Any]]:
         """
         Submit this node's work to the backend.
 
         Args:
-            backend (Backend): Backend instance to use for execution.
-            values (Mapping[UUID, Any]): Mapping from node IDs to their computed values.
+            resolved_backend: Backend instance resolved by the engine.
+            resolved_inputs: Pre-resolved parameter inputs for this node.
 
         Returns:
-            - TaskNode: Single Future[T]
-            - MapTaskNode: list[Future[T]]
+            Single Future for TaskNode, list of Futures for MapTaskNode.
         """
         ...
 
@@ -173,21 +143,21 @@ class ParamInput:
         """Returns `True` if this input is a reference to another node's output."""
         return self.kind in ("ref", "sequence_ref")
 
-    def resolve(self, values: Mapping[UUID, Any]) -> Any:
+    def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
         Resolves this input to a scalar value.
 
         Args:
-            values (Mapping[str, Any]): Mapping from node IDs to their computed values.
+            completed_nodes: Mapping from node IDs to their computed values.
 
         Returns:
-            Any: Resolved scalar value.
+           Resolved scalar value.
         """
         if self.kind == "value":
             return self.value
         if self.kind == "ref":
             assert self.ref is not None
-            return values[self.ref]
+            return completed_nodes[self.ref]
 
         raise ExecutionError(
             f"Cannot resolve parameter of kind '{self.kind}' as a scalar value. "
@@ -195,21 +165,21 @@ class ParamInput:
             f"This may indicate an internal error in graph construction."
         )
 
-    def resolve_sequence(self, values: Mapping[UUID, Any]) -> Sequence[Any]:
+    def resolve_sequence(self, completed_nodes: Mapping[UUID, Any]) -> Sequence[Any]:
         """
         Resolves this input to a sequence value.
 
         Args:
-            values (Mapping[str, Any]): Mapping from node IDs to their computed values.
+            completed_nodes: Mapping from node IDs to their computed values.
 
         Returns:
-            Sequence[Any]: Resolved sequence value.
+            Resolved sequence value.
         """
         if self.kind == "sequence":
             return list(self.value)  # type: ignore
         if self.kind == "sequence_ref":
             assert self.ref is not None
-            return list(values[self.ref])
+            return list(completed_nodes[self.ref])
         from daglite.exceptions import ExecutionError
 
         raise ExecutionError(

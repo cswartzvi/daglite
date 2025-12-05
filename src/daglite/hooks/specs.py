@@ -84,7 +84,6 @@ class NodeSpec:
         backend: Backend,
         iteration_index: int,
         iteration_total: int,
-        inputs: dict[str, Any],
     ) -> None:
         """
         Called before each iteration in a batch node (e.g., map).
@@ -95,7 +94,6 @@ class NodeSpec:
             backend: Backend instance executing the iteration
             iteration_index: Zero-based index of this iteration
             iteration_total: Total number of iterations
-            inputs: Resolved input values for this specific iteration
         """
 
     @hook_spec
@@ -122,47 +120,25 @@ class NodeSpec:
             duration: Time taken to execute this iteration in seconds
         """
 
-    @hook_spec
-    def on_iteration_error(
-        self,
-        node_id: UUID,
-        node: GraphNode,
-        backend: Backend,
-        iteration_index: int,
-        iteration_total: int,
-        error: Exception,
-        duration: float,
-    ) -> None:
-        """
-        Called when an iteration execution fails.
-
-        Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode being executed
-            backend: Backend instance that was executing the iteration
-            iteration_index: Zero-based index of this iteration
-            iteration_total: Total number of iterations
-            error: The exception that was raised
-            duration: Time taken before failure in seconds
-        """
-
 
 class GraphSpec:
     """Hook specifications for graph-level execution events."""
 
     @hook_spec
-    def before_graph_execute(self, root_id: UUID, node_count: int, mode: str) -> None:
+    def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
         """
         Called before graph execution begins.
 
         Args:
             root_id: UUID of the root node
             node_count: Total number of nodes in the graph
-            mode: Execution mode ("sequential" or "async")
+            is_async: True for async execution, False for sequential
         """
 
     @hook_spec
-    def after_graph_execute(self, root_id: UUID, result: Any, duration: float, mode: str) -> None:
+    def after_graph_execute(
+        self, root_id: UUID, result: Any, duration: float, is_async: bool
+    ) -> None:
         """
         Called after graph execution completes successfully.
 
@@ -170,11 +146,13 @@ class GraphSpec:
             root_id: UUID of the root node
             result: Final result of the graph execution
             duration: Total time taken to execute in seconds
-            mode: Execution mode ("sequential" or "async")
+            is_async: True for async execution, False for sequential
         """
 
     @hook_spec
-    def on_graph_error(self, root_id: UUID, error: Exception, duration: float, mode: str) -> None:
+    def on_graph_error(
+        self, root_id: UUID, error: Exception, duration: float, is_async: bool
+    ) -> None:
         """
         Called when graph execution fails.
 
@@ -182,5 +160,5 @@ class GraphSpec:
             root_id: UUID of the root node
             error: The exception that was raised
             duration: Time taken before failure in seconds
-            mode: Execution mode ("sequential" or "async")
+            is_async: True for async execution, False for sequential
         """
