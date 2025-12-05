@@ -598,7 +598,7 @@ class ExecutionState:
     Tracks graph topology and execution progress.
 
     Combines immutable graph structure (nodes, successors) with mutable execution
-    state (indegree, completed_results) to manage topological execution of a DAG.
+    state (indegree, completed_nodes) to manage topological execution of a DAG.
     """
 
     nodes: dict[UUID, GraphNode]
