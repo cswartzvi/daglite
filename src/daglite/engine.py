@@ -12,8 +12,10 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeIs, TypeVar, overload
+from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
+
+from typing_extensions import TypeIs
 
 if TYPE_CHECKING:
     from pluggy import PluginManager
