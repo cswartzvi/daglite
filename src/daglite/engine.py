@@ -416,7 +416,6 @@ class Engine:
         resolved_inputs = _resolve_inputs(node, completed_nodes)
 
         start_time = time.perf_counter()
-        future_or_futures = None
         iteration_total = None
         try:
             future_or_futures = node.submit(backend, resolved_inputs)
@@ -518,13 +517,11 @@ class Engine:
         resolved_inputs = _resolve_inputs(node, completed_nodes)
 
         start_time = time.perf_counter()
-        future_or_futures = None
         iteration_total = None
         try:
             future_or_futures = node.submit(backend, resolved_inputs)
 
             if _is_map_future(future_or_futures):
-                # MapTaskNode - wrap all futures and gather with iteration hooks
                 iteration_total = len(future_or_futures)
                 hook_manager.hook.before_node_execute(
                     node_id=node.id,
@@ -561,7 +558,6 @@ class Engine:
                     results.append(iter_result)
                 result = results
             else:
-                # TaskNode - wrap single future
                 hook_manager.hook.before_node_execute(
                     node_id=node.id,
                     node=node,
