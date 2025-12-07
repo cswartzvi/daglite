@@ -299,7 +299,7 @@ class TestInvalidTaskAndTaskFutureUsage:
             """Simple addition function."""
             return x + y
 
-        with pytest.raises(ParameterError, match="Mixed lengths for task 'add' in `.zip\\(\\)`"):
+        with pytest.raises(ParameterError, match="Mixed lengths for task 'add'"):
             add.zip(x=[1, 2, 3], y=[4, 5])
 
     def test_task_map_with_invalid_signature(self) -> None:

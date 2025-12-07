@@ -47,7 +47,6 @@ __version__ = "0.3.0"
 from . import backends
 from . import hooks
 from . import settings
-from . import tasks
 from .engine import evaluate
 from .engine import evaluate_async
 from .pipelines import load_pipeline
@@ -66,5 +65,4 @@ __all__ = [
     "pipeline",
     "settings",
     "task",
-    "tasks",
 ]
