@@ -12,7 +12,7 @@ import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
 from concurrent.futures import Future
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import UUID
@@ -28,6 +28,48 @@ else:
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "choose", "loop", "conditional", "artifact"]
+
+
+class _SkippedSentinel:
+    """Sentinel value for nodes skipped due to execution guards."""
+
+    _instance: _SkippedSentinel | None = None
+
+    def __new__(cls) -> _SkippedSentinel:
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "SKIPPED"
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "SKIPPED sentinel cannot be used in boolean context. "
+            "Use 'is SKIPPED' or 'is not SKIPPED' for comparisons."
+        )
+
+
+SKIPPED = _SkippedSentinel()
+"""Sentinel value returned when a node is skipped due to an execution guard."""
+
+
+@dataclass(frozen=True)
+class ExecutionGuard:
+    """
+    Runtime condition that must be satisfied for node execution.
+
+    Enables lazy evaluation in control flow composers (when, loop, switch, etc.)
+    by marking nodes that should only execute when specific runtime conditions are met.
+    The node will only execute if the condition_ref resolves to expected_value.
+    Otherwise, the node is skipped and produces a SKIPPED sentinel.
+    """
+
+    condition_ref: UUID
+    """Reference to the condition node whose result determines execution."""
+
+    expected_value: Any
+    """Value that condition must equal for this node to execute."""
 
 
 class GraphBuilder(Protocol):
@@ -79,6 +121,9 @@ class GraphNode(abc.ABC):
     backend: str | Backend | None
     """Optional backend specified by the user for this node."""
 
+    execution_guard: ExecutionGuard | None = field(default=None, kw_only=True)
+    """Optional guard that controls whether this node executes at runtime."""
+
     @cached_property
     @abc.abstractmethod
     def kind(self) -> NodeKind:
@@ -100,9 +145,16 @@ class GraphNode(abc.ABC):
         IDs of nodes that the current node depends on (its direct predecessors).
 
         Note that dependencies are derived from reference inputs only - value inputs are **not**
-        considered dependencies.
+        considered dependencies. Execution guards also create dependencies: if a node has an
+        execution guard, it depends on the condition referenced by the guard.
         """
-        return {p.ref for _, p in self.inputs() if p.is_ref and p.ref is not None}
+        deps = {p.ref for _, p in self.inputs() if p.is_ref and p.ref is not None}
+
+        # Add guard condition as a dependency
+        if self.execution_guard is not None:
+            deps.add(self.execution_guard.condition_ref)
+
+        return deps
 
     @abc.abstractmethod
     def submit(

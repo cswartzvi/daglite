@@ -14,6 +14,7 @@ from daglite.exceptions import ParameterError
 from daglite.graph.base import GraphNode
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
+from daglite.graph.base import SKIPPED
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -119,16 +120,23 @@ class MapTaskNode(GraphNode):
 
 @dataclass(frozen=True)
 class ConditionalNode(GraphNode):
-    """Conditional execution node: execute one of two branches based on a condition."""
+    """
+    Conditional execution node: lazily execute one of two branches based on a condition.
+
+    Uses execution guards to ensure only the selected branch executes. The branch nodes
+    should have ExecutionGuards attached during graph building that reference this node's
+    condition. This node receives both branch results (one real, one SKIPPED) and returns
+    the non-skipped value.
+    """
 
     condition_ref: ParamInput
     """Reference to the condition TaskFuture (must resolve to bool)."""
 
     then_ref: ParamInput
-    """Reference to the then branch TaskFuture."""
+    """Reference to the then branch TaskFuture (guarded by condition == True)."""
 
     else_ref: ParamInput
-    """Reference to the else branch TaskFuture."""
+    """Reference to the else branch TaskFuture (guarded by condition == False)."""
 
     @cached_property
     @override
@@ -145,17 +153,25 @@ class ConditionalNode(GraphNode):
 
     @override
     def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
-        """Execute the selected branch based on condition."""
-        condition = resolved_inputs["condition"]
+        """Return the non-skipped branch result."""
         then_value = resolved_inputs["then_value"]
         else_value = resolved_inputs["else_value"]
 
-        # Select the appropriate value based on condition
-        selected_value = then_value if condition else else_value
+        # Exactly one branch should be real, the other SKIPPED
+        if then_value is not SKIPPED:
+            result = then_value
+        elif else_value is not SKIPPED:
+            result = else_value
+        else:
+            # This shouldn't happen if guards are set up correctly
+            raise ExecutionError(
+                "Both branches were skipped in conditional - invalid guard configuration. "
+                f"then_value={then_value}, else_value={else_value}"
+            )
 
         # Return a completed future with the selected value
         future: Future[Any] = Future()
-        future.set_result(selected_value)
+        future.set_result(result)
         return future
 
 

@@ -21,8 +21,10 @@ if TYPE_CHECKING:
     from pluggy import PluginManager
 
 from daglite.backends.base import Backend
+from daglite.exceptions import ExecutionError
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
+from daglite.graph.base import SKIPPED
 from daglite.graph.builder import build_graph
 from daglite.settings import DagliteSettings
 from daglite.tasks import BaseTaskFuture
@@ -440,6 +442,38 @@ class Engine:
             )
             raise
 
+    def _should_skip_node(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> bool:
+        """
+        Check if node should be skipped due to execution guard.
+
+        Args:
+            node: The graph node to check.
+            completed_nodes: Results from all completed dependency nodes.
+
+        Returns:
+            True if node should be skipped, False if it should execute.
+
+        Raises:
+            ExecutionError: If guard references a condition that hasn't been evaluated.
+        """
+        if node.execution_guard is None:
+            return False
+
+        guard = node.execution_guard
+
+        # Check if condition has been evaluated
+        if guard.condition_ref not in completed_nodes:
+            raise ExecutionError(
+                f"Node {node.id} ({node.name}) has execution guard referencing "
+                f"condition {guard.condition_ref}, but condition not yet evaluated. "
+                f"This indicates an incorrect dependency ordering in the graph."
+            )
+
+        condition_value = completed_nodes[guard.condition_ref]
+
+        # Skip if condition doesn't match expected value
+        return condition_value != guard.expected_value
+
     def _execute_node_sync(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> Any:
         """
         Execute a node synchronously and return its result.
@@ -451,8 +485,12 @@ class Engine:
             completed_nodes: Results from all completed dependency nodes.
 
         Returns:
-            The node's execution result (single value or list)
+            The node's execution result (single value or list), or SKIPPED sentinel.
         """
+        # Check execution guard first
+        if self._should_skip_node(node, completed_nodes):
+            return SKIPPED
+
         hook_manager = self._get_hook_manager()
         backend = self._resolve_node_backend(node)
         resolved_inputs = _resolve_inputs(node, completed_nodes)
@@ -544,8 +582,12 @@ class Engine:
             completed_nodes: Results from all completed dependency nodes.
 
         Returns:
-            The node's execution result (single value or list)
+            The node's execution result (single value or list), or SKIPPED sentinel.
         """
+        # Check execution guard first
+        if self._should_skip_node(node, completed_nodes):
+            return SKIPPED
+
         from daglite.backends.local import SequentialBackend
 
         backend = self._resolve_node_backend(node)

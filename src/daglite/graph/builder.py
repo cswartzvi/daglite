@@ -1,10 +1,18 @@
 """Graph building utilities for daglite Intermediate Representation (IR)."""
 
+from __future__ import annotations
+
+import dataclasses
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from daglite.exceptions import GraphConstructionError
+from daglite.graph.base import ExecutionGuard
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
+
+if TYPE_CHECKING:
+    from daglite.futures import ConditionalFuture
 
 
 def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
@@ -50,4 +58,52 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
             nodes[node_id] = node
             visiting.discard(node_id)
 
+            # Special handling for ConditionalFuture: attach guards to branch nodes
+            _attach_conditional_guards(node_like, nodes)
+
     return nodes
+
+
+def _attach_conditional_guards(node_like: GraphBuilder, nodes: dict[UUID, GraphNode]) -> None:
+    """
+    Attach execution guards to conditional branch nodes.
+
+    When we encounter a ConditionalFuture, we need to:
+    1. Get the then_branch and else_branch node IDs
+    2. Clone those nodes with ExecutionGuards attached
+    3. Replace them in the nodes dict
+
+    This ensures lazy evaluation: only the selected branch executes at runtime.
+    """
+    from daglite.futures import ConditionalFuture
+
+    if not isinstance(node_like, ConditionalFuture):
+        return
+
+    condition_id = node_like.condition.id
+    then_id = node_like.then_branch.id
+    else_id = node_like.else_branch.id
+
+    # Attach guard to then branch (execute if condition is True)
+    if then_id in nodes:
+        then_node = nodes[then_id]
+        if then_node.execution_guard is None:  # Don't override existing guards
+            nodes[then_id] = dataclasses.replace(
+                then_node,
+                execution_guard=ExecutionGuard(
+                    condition_ref=condition_id,
+                    expected_value=True,
+                ),
+            )
+
+    # Attach guard to else branch (execute if condition is False)
+    if else_id in nodes:
+        else_node = nodes[else_id]
+        if else_node.execution_guard is None:  # Don't override existing guards
+            nodes[else_id] = dataclasses.replace(
+                else_node,
+                execution_guard=ExecutionGuard(
+                    condition_ref=condition_id,
+                    expected_value=False,
+                ),
+            )
