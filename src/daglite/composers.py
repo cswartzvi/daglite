@@ -159,13 +159,17 @@ def when(
     else_branch: BaseTaskFuture[R],
 ) -> ConditionalFuture[R]:
     """
-    Conditional execution: execute one of two branches based on a boolean condition.
+    Conditional execution: select one of two branches based on a boolean condition.
 
     The condition TaskFuture is evaluated first. Based on its result:
-    - If True: execute and return the `then_branch`
-    - If False: execute and return the `else_branch`
+    - If True: return the result of `then_branch`
+    - If False: return the result of `else_branch`
 
-    Only the selected branch is executed, making this efficient for expensive operations.
+    **Current Limitation**: Both branches are currently evaluated eagerly before the
+    condition is checked. Only the selected branch's result is returned, but both
+    branches execute. This means expensive operations or side effects in both branches
+    will occur regardless of the condition. See GitHub issue for planned lazy evaluation
+    support.
 
     Args:
         condition: A `TaskFuture` that produces a boolean value.
