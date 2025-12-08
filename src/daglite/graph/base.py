@@ -33,8 +33,11 @@ NodeKind = Literal["task", "map", "choose", "loop", "conditional", "artifact"]
 class GraphBuilder(Protocol):
     """Protocol for building graph Intermediate Representation (IR) components from tasks."""
 
-    id: UUID
-    """Unique identifier for the graph node produced by this builder."""
+    @cached_property
+    @abc.abstractmethod
+    def id(self) -> UUID:
+        """Returns the unique identifier for this builder's graph node."""
+        ...
 
     @abc.abstractmethod
     def get_dependencies(self) -> list[GraphBuilder]:

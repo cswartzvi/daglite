@@ -3,7 +3,7 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping
 from dataclasses import dataclass
-from dataclasses import field
+from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
@@ -43,7 +43,10 @@ S6 = TypeVar("S6")
 class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
-    id: UUID = field(init=False, default_factory=uuid4)
+    @cached_property
+    @override
+    def id(self) -> UUID:
+        return uuid4()
 
     @abc.abstractmethod
     def then(
