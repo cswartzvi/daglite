@@ -95,7 +95,7 @@ def split(
         A tuple of TaskFutures, one for each element of the input tuple.
 
     Raises:
-        ValueError: If size cannot be inferred from type hints and size parameter is not provided.
+        DagliteError: If size cannot be inferred from type hints and size parameter is not provided.
 
     Examples:
         >>> # With type annotations (size inferred)

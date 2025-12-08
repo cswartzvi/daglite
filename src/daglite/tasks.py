@@ -351,7 +351,7 @@ class FixedParamTask(BaseTask[P, R]):
         if len(len_details) > 1:
             raise ParameterError(
                 f"Mixed lengths for task '{self.name}', pairwise fan-out with `.zip()` requires "
-                f"all sequences must have the same length. Found lengths: {sorted(len_details)}"
+                f"all sequences to have the same length. Found lengths: {sorted(len_details)}"
             )
 
         return MapTaskFuture(
