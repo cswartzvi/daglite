@@ -364,6 +364,35 @@ class TestGraphNodes:
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
             node.submit(backend, {})
 
+    def test_loop_node_invalid_body_params(self) -> None:
+        """LoopNode submission fails when body function has wrong number of unbound parameters."""
+        from daglite.graph.nodes import LoopNode
+
+        # Body function with no parameters (after binding kwargs) - invalid
+        def body_no_params(x: int, y: int) -> tuple[int, bool]:  # pragma: no cover
+            return (x + y, False)
+
+        node = LoopNode(
+            id=uuid4(),
+            name="loop",
+            description="Test loop",
+            backend=None,
+            initial_state=ParamInput.from_value(0),
+            body_func=body_no_params,
+            body_kwargs={"x": ParamInput.from_value(1), "y": ParamInput.from_value(2)},
+            max_iterations=100,
+        )
+
+        from daglite.backends.local import SequentialBackend
+        from daglite.engine import _resolve_inputs
+
+        backend = SequentialBackend()
+        resolved_inputs = _resolve_inputs(node, {})
+        with pytest.raises(
+            ParameterError, match="Loop body function must have exactly one unbound parameter"
+        ):
+            node.submit(backend, resolved_inputs)
+
 
 class TestBuildGraph:
     """
@@ -584,7 +613,7 @@ class TestBuildGraph:
         builder_b._other = builder_a  # Create the cycle
 
         with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
-            build_graph(builder_a)  # type: ignore
+            build_graph(builder_a)  # pyright: ignore
 
     def test_build_graph_detects_self_reference(self) -> None:
         """build_graph detects nodes that reference themselves."""
@@ -616,4 +645,4 @@ class TestBuildGraph:
         builder = SelfRefBuilder()
 
         with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
-            build_graph(builder)  # type: ignore
+            build_graph(builder)  # pyright: ignore
