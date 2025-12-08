@@ -170,6 +170,42 @@ class TestGraphNodes:
         deps = node.dependencies()
         assert len(deps) == 0
 
+    def test_conditional_node_kind(self) -> None:
+        """ConditionalNode has correct kind property."""
+        from daglite.graph.nodes import ConditionalNode
+
+        node = ConditionalNode(
+            id=uuid4(),
+            name="conditional",
+            description="Test conditional",
+            backend=None,
+            condition_ref=ParamInput.from_ref(uuid4()),
+            then_ref=ParamInput.from_ref(uuid4()),
+            else_ref=ParamInput.from_ref(uuid4()),
+        )
+
+        assert node.kind == "conditional"
+
+    def test_loop_node_kind(self) -> None:
+        """LoopNode has correct kind property."""
+        from daglite.graph.nodes import LoopNode
+
+        def body(state: int) -> tuple[int, bool]:  # pragma: no cover
+            return (state + 1, state < 10)
+
+        node = LoopNode(
+            id=uuid4(),
+            name="loop",
+            description="Test loop",
+            backend=None,
+            initial_state=ParamInput.from_value(0),
+            body_func=body,
+            body_kwargs={},
+            max_iterations=100,
+        )
+
+        assert node.kind == "loop"
+
     def test_map_task_node_extend_mode(self) -> None:
         """MapTaskNode initializes with extend mode."""
 
@@ -548,7 +584,7 @@ class TestBuildGraph:
         builder_b._other = builder_a  # Create the cycle
 
         with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
-            build_graph(builder_a)
+            build_graph(builder_a)  # type: ignore
 
     def test_build_graph_detects_self_reference(self) -> None:
         """build_graph detects nodes that reference themselves."""
@@ -580,4 +616,4 @@ class TestBuildGraph:
         builder = SelfRefBuilder()
 
         with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
-            build_graph(builder)
+            build_graph(builder)  # type: ignore
