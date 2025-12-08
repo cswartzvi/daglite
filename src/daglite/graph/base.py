@@ -27,7 +27,7 @@ else:
     Backend = object
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
-NodeKind = Literal["task", "map", "choose", "loop", "artifact"]
+NodeKind = Literal["task", "map", "choose", "loop", "conditional", "artifact"]
 
 
 class GraphBuilder(Protocol):
@@ -36,7 +36,8 @@ class GraphBuilder(Protocol):
     @cached_property
     @abc.abstractmethod
     def id(self) -> UUID:
-        """Unique identifier for the graph node produced by this builder."""
+        """Returns the unique identifier for this builder's graph node."""
+        ...
 
     @abc.abstractmethod
     def get_dependencies(self) -> list[GraphBuilder]:

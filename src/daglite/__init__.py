@@ -45,9 +45,9 @@ For more examples, see the repository's test files.
 __version__ = "0.3.0"
 
 from . import backends
+from . import composers
 from . import hooks
 from . import settings
-from . import tasks
 from .engine import evaluate
 from .engine import evaluate_async
 from .pipelines import load_pipeline
@@ -59,6 +59,7 @@ hooks.initialize_hooks()
 
 __all__ = [
     "backends",
+    "composers",
     "evaluate",
     "evaluate_async",
     "hooks",
@@ -66,5 +67,4 @@ __all__ = [
     "pipeline",
     "settings",
     "task",
-    "tasks",
 ]

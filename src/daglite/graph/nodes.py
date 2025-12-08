@@ -8,7 +8,7 @@ from typing import Any, Callable, TypeVar
 
 from typing_extensions import override
 
-from daglite.engine import Backend
+from daglite.backends import Backend
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import GraphNode
@@ -115,3 +115,108 @@ class MapTaskNode(GraphNode):
         mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
         calls = self._build_map_calls(fixed, mapped)
         return resolved_backend.submit_many(self.func, calls)
+
+
+@dataclass(frozen=True)
+class ConditionalNode(GraphNode):
+    """Conditional execution node: execute one of two branches based on a condition."""
+
+    condition_ref: ParamInput
+    """Reference to the condition TaskFuture (must resolve to bool)."""
+
+    then_ref: ParamInput
+    """Reference to the then branch TaskFuture."""
+
+    else_ref: ParamInput
+    """Reference to the else branch TaskFuture."""
+
+    @cached_property
+    @override
+    def kind(self) -> NodeKind:
+        return "conditional"
+
+    @override
+    def inputs(self) -> list[tuple[str, ParamInput]]:
+        return [
+            ("condition", self.condition_ref),
+            ("then_value", self.then_ref),
+            ("else_value", self.else_ref),
+        ]
+
+    @override
+    def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
+        """Execute the selected branch based on condition."""
+        condition = resolved_inputs["condition"]
+        then_value = resolved_inputs["then_value"]
+        else_value = resolved_inputs["else_value"]
+
+        # Select the appropriate value based on condition
+        selected_value = then_value if condition else else_value
+
+        # Return a completed future with the selected value
+        future: Future[Any] = Future()
+        future.set_result(selected_value)
+        return future
+
+
+@dataclass(frozen=True)
+class LoopNode(GraphNode):
+    """Loop execution node: repeatedly execute body until condition is met."""
+
+    initial_state: ParamInput
+    """Initial state value or reference."""
+
+    body_func: Callable
+    """Function to execute in loop body. Takes state and returns (new_state, should_continue)."""
+
+    body_kwargs: Mapping[str, ParamInput]
+    """Additional keyword arguments for body function."""
+
+    max_iterations: int
+    """Maximum number of iterations to prevent infinite loops."""
+
+    @cached_property
+    @override
+    def kind(self) -> NodeKind:
+        return "loop"
+
+    @override
+    def inputs(self) -> list[tuple[str, ParamInput]]:
+        return [("initial_state", self.initial_state), *self.body_kwargs.items()]
+
+    @override
+    def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
+        """Execute the loop."""
+        import inspect
+
+        state = resolved_inputs["initial_state"]
+        body_kwargs = {k: v for k, v in resolved_inputs.items() if k != "initial_state"}
+
+        # Determine the state parameter name
+        signature = inspect.signature(self.body_func)
+        unbound_params = [name for name in signature.parameters if name not in self.body_kwargs]
+        if len(unbound_params) != 1:
+            raise ParameterError(
+                f"Loop body function must have exactly one unbound parameter (the state), "
+                f"but found: {unbound_params}"
+            )
+        state_param = unbound_params[0]
+
+        # Execute loop iterations
+        iteration = 0
+        while iteration < self.max_iterations:
+            # Execute body with current state
+            call_kwargs = {state_param: state, **body_kwargs}
+            result_future = resolved_backend.submit(self.body_func, **call_kwargs)
+            new_state, should_continue = result_future.result()
+
+            state = new_state
+            iteration += 1
+
+            if not should_continue:
+                break
+
+        # Return a completed future with the final state
+        future: Future[Any] = Future()
+        future.set_result(state)
+        return future
