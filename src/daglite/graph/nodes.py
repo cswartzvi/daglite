@@ -193,8 +193,14 @@ class LoopNode(GraphNode):
         body_kwargs = {k: v for k, v in resolved_inputs.items() if k != "initial_state"}
 
         # Determine the state parameter name
-        sig = inspect.signature(self.body_func)
-        state_param = next(iter(sig.parameters.keys()))
+        signature = inspect.signature(self.body_func)
+        unbound_params = [name for name in signature.parameters if name not in self.body_kwargs]
+        if len(unbound_params) != 1:
+            raise ParameterError(
+                f"Loop body function must have exactly one unbound parameter (the state), "
+                f"but found: {unbound_params}"
+            )
+        state_param = unbound_params[0]
 
         # Execute loop iterations
         iteration = 0
