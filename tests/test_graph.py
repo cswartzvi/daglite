@@ -170,42 +170,6 @@ class TestGraphNodes:
         deps = node.dependencies()
         assert len(deps) == 0
 
-    def test_conditional_node_kind(self) -> None:
-        """ConditionalNode has correct kind property."""
-        from daglite.graph.nodes import ConditionalNode
-
-        node = ConditionalNode(
-            id=uuid4(),
-            name="conditional",
-            description="Test conditional",
-            backend=None,
-            condition_ref=ParamInput.from_ref(uuid4()),
-            then_ref=ParamInput.from_ref(uuid4()),
-            else_ref=ParamInput.from_ref(uuid4()),
-        )
-
-        assert node.kind == "conditional"
-
-    def test_loop_node_kind(self) -> None:
-        """LoopNode has correct kind property."""
-        from daglite.graph.nodes import LoopNode
-
-        def body(state: int) -> tuple[int, bool]:  # pragma: no cover
-            return (state + 1, state < 10)
-
-        node = LoopNode(
-            id=uuid4(),
-            name="loop",
-            description="Test loop",
-            backend=None,
-            initial_state=ParamInput.from_value(0),
-            body_func=body,
-            body_kwargs={},
-            max_iterations=100,
-        )
-
-        assert node.kind == "loop"
-
     def test_map_task_node_extend_mode(self) -> None:
         """MapTaskNode initializes with extend mode."""
 
@@ -363,35 +327,6 @@ class TestGraphNodes:
         backend = SequentialBackend()
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
             node.submit(backend, {})
-
-    def test_loop_node_invalid_body_params(self) -> None:
-        """LoopNode submission fails when body function has wrong number of unbound parameters."""
-        from daglite.graph.nodes import LoopNode
-
-        # Body function with no parameters (after binding kwargs) - invalid
-        def body_no_params(x: int, y: int) -> tuple[int, bool]:  # pragma: no cover
-            return (x + y, False)
-
-        node = LoopNode(
-            id=uuid4(),
-            name="loop",
-            description="Test loop",
-            backend=None,
-            initial_state=ParamInput.from_value(0),
-            body_func=body_no_params,
-            body_kwargs={"x": ParamInput.from_value(1), "y": ParamInput.from_value(2)},
-            max_iterations=100,
-        )
-
-        from daglite.backends.local import SequentialBackend
-        from daglite.engine import _resolve_inputs
-
-        backend = SequentialBackend()
-        resolved_inputs = _resolve_inputs(node, {})
-        with pytest.raises(
-            ParameterError, match="Loop body function must have exactly one unbound parameter"
-        ):
-            node.submit(backend, resolved_inputs)
 
 
 class TestBuildGraph:

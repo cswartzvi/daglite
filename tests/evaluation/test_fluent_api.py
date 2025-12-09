@@ -4,9 +4,7 @@ import pytest
 
 from daglite import evaluate
 from daglite import task
-from daglite.composers import loop
-from daglite.composers import split
-from daglite.composers import when
+from daglite.exceptions import DagliteError
 
 
 class TestTaskFutureThen:
@@ -162,129 +160,6 @@ class TestMapTaskFutureThen:
 
         assert isinstance(total, TaskFuture)
         assert isinstance(evaluate(total), int)
-
-
-class TestConditionalFutureThen:
-    """Tests for ConditionalFuture.then() chaining."""
-
-    def test_conditional_future_then_true_branch(self) -> None:
-        """ConditionalFuture.then() chains from true branch."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def add_ten(x: int) -> int:
-            return x + 10
-
-        @task
-        def is_positive(x: int) -> bool:
-            return x > 0
-
-        @task
-        def to_string(x: int) -> str:
-            return f"Result: {x}"
-
-        value = double.bind(x=10)  # 20
-        check = is_positive.bind(x=value)
-        conditional = when(
-            check,
-            then_branch=add_ten.bind(x=value),  # 30
-            else_branch=double.bind(x=value),  # 40
-        )
-        result = conditional.then(to_string)
-        assert evaluate(result) == "Result: 30"
-
-    def test_conditional_future_then_false_branch(self) -> None:
-        """ConditionalFuture.then() chains from false branch."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def is_positive(x: int) -> bool:
-            return x > 0
-
-        @task
-        def to_string(x: int) -> str:
-            return f"Result: {x}"
-
-        value = double.bind(x=-5)  # -10
-        check = is_positive.bind(x=value)
-        conditional = when(
-            check,
-            then_branch=double.bind(x=value),  # -20 (not taken)
-            else_branch=double.bind(x=value),  # -20
-        )
-        result = conditional.then(to_string)
-        assert evaluate(result) == "Result: -20"
-
-    def test_conditional_future_then_with_kwargs(self) -> None:
-        """ConditionalFuture.then() with additional kwargs."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def add_ten(x: int) -> int:
-            return x + 10
-
-        @task
-        def is_positive(x: int) -> bool:
-            return x > 0
-
-        @task
-        def format_with_prefix(x: int, prefix: str) -> str:
-            return f"{prefix}{x}"
-
-        value = double.bind(x=5)
-        check = is_positive.bind(x=value)
-        conditional = when(
-            check,
-            then_branch=add_ten.bind(x=value),
-            else_branch=double.bind(x=value),
-        )
-        result = conditional.then(format_with_prefix, prefix="Value: ")
-        assert evaluate(result) == "Value: 20"
-
-
-class TestLoopFutureThen:
-    """Tests for LoopFuture.then() chaining."""
-
-    def test_loop_future_then(self) -> None:
-        """LoopFuture.then() chains from final loop state."""
-
-        @task
-        def accumulate(state: int) -> tuple[int, bool]:
-            new_state = state + 1
-            should_continue = new_state < 5
-            return (new_state, should_continue)
-
-        @task
-        def to_string(x: int) -> str:
-            return f"Result: {x}"
-
-        result = loop(initial=0, body=accumulate, max_iterations=10).then(to_string)
-        assert evaluate(result) == "Result: 5"
-
-    def test_loop_future_then_with_kwargs(self) -> None:
-        """LoopFuture.then() with additional kwargs."""
-
-        @task
-        def accumulate(state: int) -> tuple[int, bool]:
-            new_state = state * 2
-            should_continue = new_state < 100
-            return (new_state, should_continue)
-
-        @task
-        def scale(x: int, factor: int) -> int:
-            return x * factor
-
-        result = loop(initial=1, body=accumulate, max_iterations=10).then(scale, factor=2)
-        assert evaluate(result) == 256  # Final state 128 * 2
 
 
 class TestMapOperations:
@@ -501,45 +376,6 @@ class TestComplexPipelines:
         )
         assert result == 13125  # 15 * 25 * 35
 
-    def test_mixed_chaining(self) -> None:
-        """Test chaining across different future types."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        @task
-        def add_ten(x: int) -> int:
-            return x + 10
-
-        @task
-        def is_positive(x: int) -> bool:
-            return x > 0
-
-        @task
-        def to_string(x: int) -> str:
-            return f"Result: {x}"
-
-        # Start with product -> map -> then (reduces to single value)
-        numbers = double.product(x=[1, 2, 3])
-        total = numbers.then(sum_list)  # 12
-
-        # Use that in a conditional
-        check = is_positive.bind(x=total)
-        conditional = when(
-            check,
-            then_branch=add_ten.bind(x=total),  # 22
-            else_branch=double.bind(x=total),  # 24
-        )
-
-        # Chain from conditional
-        result = conditional.then(to_string)
-        assert evaluate(result) == "Result: 22"
-
     def test_split_then_chain(self) -> None:
         """Test chaining after split."""
 
@@ -560,7 +396,7 @@ class TestComplexPipelines:
             return f"Result: {x}"
 
         pair = make_pair.bind(x=10)
-        first, second = split(pair)
+        first, second = pair.split()
 
         # Chain from each split element
         result1 = first.then(double).then(to_string)
@@ -621,3 +457,286 @@ class TestErrorCases:
         result = value.then(fixed_scale)
 
         assert evaluate(result) == 30
+
+
+class TestSplitOperations:
+    """Tests for TaskFuture.split() method with evaluation."""
+
+    def test_split_pair_with_annotations(self) -> None:
+        """split() should work with two-element tuple."""
+
+        @task
+        def make_pair() -> tuple[int, str]:
+            return (42, "hello")
+
+        result = make_pair.bind()
+        first, second = result.split()
+
+        assert evaluate(first) == 42
+        assert evaluate(second) == "hello"
+
+    def test_split_triple_with_annotations(self) -> None:
+        """split() should work with three-element tuple."""
+
+        @task
+        def make_triple() -> tuple[int, str, float]:
+            return (1, "a", 2.5)
+
+        result = make_triple.bind()
+        a, b, c = result.split()
+
+        assert evaluate(a) == 1
+        assert evaluate(b) == "a"
+        assert evaluate(c) == 2.5
+
+    def test_split_single_element(self) -> None:
+        """split() should work with single-element tuple."""
+
+        @task
+        def make_single() -> tuple[str]:
+            return ("only",)
+
+        result = make_single.bind()
+        (only,) = result.split()
+
+        assert evaluate(only) == "only"
+
+    def test_split_five_elements(self) -> None:
+        """split() should work with five-element tuple."""
+
+        @task
+        def make_five() -> tuple[int, int, int, int, int]:
+            return (1, 2, 3, 4, 5)
+
+        result = make_five.bind()
+        a, b, c, d, e = result.split()
+
+        assert evaluate(a) == 1
+        assert evaluate(b) == 2
+        assert evaluate(c) == 3
+        assert evaluate(d) == 4
+        assert evaluate(e) == 5
+
+    def test_split_mixed_types(self) -> None:
+        """split() should preserve element types."""
+
+        @task
+        def make_mixed() -> tuple[int, str, bool, list[int]]:
+            return (42, "test", True, [1, 2, 3])
+
+        result = make_mixed.bind()
+        num, text, flag, items = result.split()
+
+        assert evaluate(num) == 42
+        assert evaluate(text) == "test"
+        assert evaluate(flag) is True
+        assert evaluate(items) == [1, 2, 3]
+
+    def test_split_with_explicit_size(self) -> None:
+        """split() should work with explicit size for untyped tuple."""
+
+        @task
+        def make_pair():
+            return (1, 2)
+
+        result = make_pair.bind()
+        first, second = result.split(size=2)
+
+        assert evaluate(first) == 1
+        assert evaluate(second) == 2
+
+    def test_split_with_explicit_size_triple(self) -> None:
+        """split() should work with explicit size=3."""
+
+        @task
+        def make_triple():
+            return (10, 20, 30)
+
+        result = make_triple.bind()
+        a, b, c = result.split(size=3)
+
+        assert evaluate(a) == 10
+        assert evaluate(b) == 20
+        assert evaluate(c) == 30
+
+    def test_split_size_overrides_annotation(self) -> None:
+        """Explicit size should override type annotation."""
+
+        @task
+        def make_pair() -> tuple[int, int]:
+            return (1, 2)
+
+        result = make_pair.bind()
+        # Use size=2 explicitly even though annotation says 2
+        first, second = result.split(size=2)
+
+        assert evaluate(first) == 1
+        assert evaluate(second) == 2
+
+    def test_split_then_process_independently(self) -> None:
+        """Split elements should be processable independently."""
+
+        @task
+        def make_pair() -> tuple[int, int]:
+            return (3, 5)
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        @task
+        def triple(x: int) -> int:
+            return x * 3
+
+        result = make_pair.bind()
+        first, second = result.split()
+
+        doubled = double.bind(x=first)
+        tripled = triple.bind(x=second)
+
+        assert evaluate(doubled) == 6
+        assert evaluate(tripled) == 15
+
+    def test_split_then_recombine(self) -> None:
+        """Split elements can be recombined."""
+
+        @task
+        def make_pair() -> tuple[int, int]:
+            return (10, 20)
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        result = make_pair.bind()
+        first, second = result.split()
+        combined = add.bind(x=first, y=second)
+
+        assert evaluate(combined) == 30
+
+    def test_split_with_map_reduce(self) -> None:
+        """Split elements can be used in map/reduce patterns."""
+
+        @task
+        def make_triple() -> tuple[int, int, int]:
+            return (1, 2, 3)
+
+        @task
+        def sum_three(a: int, b: int, c: int) -> int:
+            return a + b + c
+
+        result = make_triple.bind()
+        a, b, c = result.split()
+        total = sum_three.bind(a=a, b=b, c=c)
+
+        assert evaluate(total) == 6
+
+    def test_split_nested_dependency(self) -> None:
+        """Split should work with nested task dependencies."""
+
+        @task
+        def compute(x: int) -> int:
+            return x * 2
+
+        @task
+        def make_pair(n: int) -> tuple[int, int]:
+            return (n, n + 1)
+
+        computed = compute.bind(x=5)
+        pair = make_pair.bind(n=computed)
+        first, second = pair.split()
+
+        assert evaluate(first) == 10
+        assert evaluate(second) == 11
+
+    def test_split_without_annotation_or_size_raises_error(self) -> None:
+        """split() should raise ValueError without type hints or size."""
+
+        @task
+        def make_untyped():
+            return (1, 2)
+
+        result = make_untyped.bind()
+
+        with pytest.raises(DagliteError, match="Cannot infer tuple size"):
+            result.split()
+
+    def test_split_with_variadic_tuple_needs_size(self) -> None:
+        """split() should require size for variadic tuples."""
+
+        @task
+        def make_variadic() -> tuple[int, ...]:
+            return (1, 2, 3)
+
+        result = make_variadic.bind()
+
+        with pytest.raises(DagliteError, match="Cannot infer tuple size"):
+            result.split()
+
+    def test_split_shares_upstream_execution(self) -> None:
+        """Multiple split elements should share upstream computation."""
+        execution_count = {"count": 0}
+
+        @task
+        def make_pair_with_side_effect() -> tuple[int, int]:
+            execution_count["count"] += 1
+            return (1, 2)
+
+        result = make_pair_with_side_effect.bind()
+        first, second = result.split()
+
+        # Evaluate both - upstream should only execute once
+        evaluate(first)
+        evaluate(second)
+
+        # This would be 1 if they share, 2 if independent
+        # (Currently they don't share in separate evaluate calls)
+        assert execution_count["count"] == 2  # Expected current behavior
+
+    def test_split_preserves_element_types(self) -> None:
+        """Split should maintain type information for type checkers."""
+
+        @task
+        def make_mixed() -> tuple[int, str, bool]:
+            return (42, "hello", True)
+
+        result = make_mixed.bind()
+        num, text, flag = result.split()
+
+        # These should pass type checking
+        assert isinstance(evaluate(num), int)
+        assert isinstance(evaluate(text), str)
+        assert isinstance(evaluate(flag), bool)
+
+    def test_split_method_chaining(self) -> None:
+        """TaskFuture.split() should support fluent chaining."""
+
+        @task
+        def compute() -> tuple[int, int]:
+            return (10, 20)
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        # Fluent chaining: bind -> split -> bind
+        x, y = compute.bind().split()
+        result = double.bind(x=x)
+
+        assert evaluate(result) == 20
+
+    def test_split_method_multiple_calls(self) -> None:
+        """Multiple calls to .split() should produce independent futures."""
+
+        @task
+        def make_data() -> tuple[int, str, bool]:
+            return (42, "test", True)
+
+        # Create two independent split operations
+        f1, f2, f3 = make_data.bind().split()
+        m1, m2, m3 = make_data.bind().split()
+
+        # Both should produce same results
+        assert evaluate(f1) == evaluate(m1) == 42
+        assert evaluate(f2) == evaluate(m2) == "test"
+        assert evaluate(f3) is True and evaluate(m3) is True

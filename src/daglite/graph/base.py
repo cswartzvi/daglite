@@ -27,7 +27,7 @@ else:
     Backend = object
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
-NodeKind = Literal["task", "map", "choose", "loop", "conditional", "artifact"]
+NodeKind = Literal["task", "map", "artifact"]
 
 
 class GraphBuilder(Protocol):
