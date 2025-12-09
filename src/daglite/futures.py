@@ -13,8 +13,6 @@ from typing_extensions import override
 from daglite.backends import Backend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
-from daglite.graph.nodes import ConditionalNode
-from daglite.graph.nodes import LoopNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 
@@ -180,7 +178,9 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Split this tuple-producing TaskFuture into individual TaskFutures for each element.
 
-        This is a convenience method that delegates to the `split()` composer function.
+        Creates independent accessor tasks for each tuple element, enabling parallel
+        processing of tuple components. Type information is preserved when the tuple
+        has explicit type annotations.
 
         Args:
             size: Optional explicit size. Required if type annotations don't specify tuple size.
@@ -215,9 +215,40 @@ class TaskFuture(BaseTaskFuture[R]):
             >>> x, y = get_coords.bind().split()
             >>> result = process.bind(x=x, y=y)
         """
-        from daglite.composers import split as split_function
+        from typing import get_args, get_type_hints
 
-        return split_function(self, size=size)  # type: ignore[arg-type]
+        from daglite.exceptions import DagliteError
+        from daglite.tasks import task
+
+        def _infer_size() -> int | None:
+            """Try to infer tuple size from type annotations."""
+            try:
+                hints = get_type_hints(self.task.func)
+            except Exception:  # pragma: no cover
+                return None
+
+            return_type = hints.get("return")
+            if return_type is None:
+                return None
+            args = get_args(return_type)
+            if args and (len(args) < 2 or args[-1] is not Ellipsis):  # Skip tuple[int, ...]
+                return len(args)
+            return None
+
+        final_size = _infer_size() if size is None else size
+        if final_size is None:
+            raise DagliteError(
+                f"Cannot infer tuple size from type annotations for future {self.task.name}. "
+                f"Please provide an explicit size parameter to split()."
+            )
+
+        # Create index accessor tasks for each position
+        @task
+        def _get_index(tup: tuple[Any, ...], index: int) -> Any:
+            return tup[index]
+
+        # Bind the accessor task for each index
+        return tuple(_get_index.bind(tup=self, index=i) for i in range(final_size))
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
@@ -440,157 +471,4 @@ class MapTaskFuture(BaseTaskFuture[R]):
             fixed_kwargs=fixed_kwargs,
             mapped_kwargs=mapped_kwargs,
             backend=self.backend,
-        )
-
-
-@dataclass(frozen=True)
-class ConditionalFuture(BaseTaskFuture[R]):
-    """
-    Represents conditional execution: evaluate one of two branches based on a condition.
-
-    The condition is evaluated first, then only the selected branch is executed.
-    Both branches must return the same type R.
-    """
-
-    condition: TaskFuture[bool]
-    """TaskFuture that produces the boolean condition."""
-
-    then_branch: BaseTaskFuture[R]
-    """TaskFuture to execute if condition is True."""
-
-    else_branch: BaseTaskFuture[R]
-    """TaskFuture to execute if condition is False."""
-
-    @override
-    def then(
-        self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
-        **kwargs: Any,
-    ) -> TaskFuture[T]:
-        from daglite.tasks import FixedParamTask
-        from daglite.tasks import check_overlap_params
-        from daglite.tasks import get_unbound_param
-
-        if isinstance(next_task, FixedParamTask):
-            check_overlap_params(next_task, kwargs)
-            all_fixed = {**next_task.fixed_kwargs, **kwargs}
-            actual_task = next_task.task
-        else:
-            all_fixed = kwargs
-            actual_task = next_task
-
-        unbound_param = get_unbound_param(actual_task, all_fixed)
-        return TaskFuture(
-            task=actual_task,
-            kwargs={**all_fixed, unbound_param: self},
-            backend=actual_task.backend,
-        )
-
-    @override
-    def get_dependencies(self) -> list[GraphBuilder]:
-        # NOTE: All three futures are dependencies (condition determines which branch executes)
-        return [self.condition, self.then_branch, self.else_branch]
-
-    @override
-    def to_graph(self) -> ConditionalNode:
-        return ConditionalNode(
-            id=self.id,
-            name="conditional",
-            description="Conditional branch execution",
-            condition_ref=ParamInput.from_ref(self.condition.id),
-            then_ref=ParamInput.from_ref(self.then_branch.id),
-            else_ref=ParamInput.from_ref(self.else_branch.id),
-            backend=None,
-        )
-
-
-@dataclass(frozen=True)
-class LoopFuture(BaseTaskFuture[R]):
-    """
-    Represents iterative execution: repeatedly execute a body task until a condition is met.
-
-    The loop executes with state accumulation:
-    1. Start with initial_state
-    2. Execute body task with current state
-    3. Body returns (new_state, should_continue)
-    4. If should_continue is True, repeat from step 2
-    5. If should_continue is False, return final state
-    """
-
-    initial_state: TaskFuture[R] | Any
-    """Initial state value or TaskFuture producing the initial state."""
-
-    body: Task[Any, tuple[R, bool]]
-    """
-    Task that takes current state and returns (new_state, should_continue).
-    Must have exactly one parameter for the state.
-    """
-
-    body_kwargs: Mapping[str, Any]
-    """Additional fixed parameters to pass to the body task."""
-
-    max_iterations: int
-    """Maximum number of iterations to prevent infinite loops."""
-
-    @override
-    def then(
-        self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
-        **kwargs: Any,
-    ) -> TaskFuture[T]:
-        from daglite.tasks import FixedParamTask
-        from daglite.tasks import check_overlap_params
-        from daglite.tasks import get_unbound_param
-
-        if isinstance(next_task, FixedParamTask):
-            check_overlap_params(next_task, kwargs)
-            all_fixed = {**next_task.fixed_kwargs, **kwargs}
-            actual_task = next_task.task
-        else:
-            all_fixed = kwargs
-            actual_task = next_task
-
-        unbound_param = get_unbound_param(actual_task, all_fixed)
-        return TaskFuture(
-            task=actual_task,
-            kwargs={**all_fixed, unbound_param: self},
-            backend=actual_task.backend,
-        )
-
-    @override
-    def get_dependencies(self) -> list[GraphBuilder]:
-        deps: list[GraphBuilder] = []
-        if isinstance(self.initial_state, BaseTaskFuture):
-            deps.append(self.initial_state)
-        # Check kwargs for any futures
-        for value in self.body_kwargs.values():
-            if isinstance(value, BaseTaskFuture):
-                deps.append(value)
-        return deps
-
-    @override
-    def to_graph(self) -> LoopNode:
-        # Prepare initial state input
-        if isinstance(self.initial_state, BaseTaskFuture):
-            initial_input = ParamInput.from_ref(self.initial_state.id)
-        else:
-            initial_input = ParamInput.from_value(self.initial_state)
-
-        # Prepare body kwargs
-        body_kwargs: dict[str, ParamInput] = {}
-        for name, value in self.body_kwargs.items():
-            if isinstance(value, BaseTaskFuture):
-                body_kwargs[name] = ParamInput.from_ref(value.id)
-            else:
-                body_kwargs[name] = ParamInput.from_value(value)
-
-        return LoopNode(
-            id=self.id,
-            name=f"loop_{self.body.name}",
-            description=f"Loop with body: {self.body.description}",
-            initial_state=initial_input,
-            body_func=self.body.func,
-            body_kwargs=body_kwargs,
-            max_iterations=self.max_iterations,
-            backend=None,
         )

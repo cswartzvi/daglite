@@ -29,10 +29,6 @@ from daglite.tasks import BaseTaskFuture
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
-if TYPE_CHECKING:
-    from daglite.composers import ConditionalFuture
-    from daglite.composers import LoopFuture
-
 P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
@@ -85,25 +81,6 @@ def evaluate(
     default_backend: str | Backend = "sequential",
     hooks: list[Any] | None = None,
 ) -> list[T]: ...
-
-
-# Composer-specific overloads
-@overload
-def evaluate(
-    expr: ConditionalFuture[T],
-    *,
-    default_backend: str | Backend = "sequential",
-    hooks: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    expr: LoopFuture[T],
-    *,
-    default_backend: str | Backend = "sequential",
-    hooks: list[Any] | None = None,
-) -> T: ...
 
 
 # General overloads
@@ -210,25 +187,6 @@ async def evaluate_async(
     default_backend: str | Backend = "sequential",
     hooks: list[Any] | None = None,
 ) -> list[T]: ...
-
-
-# Composer-specific overloads
-@overload
-async def evaluate_async(
-    expr: ConditionalFuture[T],
-    *,
-    default_backend: str | Backend = "sequential",
-    hooks: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    expr: LoopFuture[T],
-    *,
-    default_backend: str | Backend = "sequential",
-    hooks: list[Any] | None = None,
-) -> T: ...
 
 
 # General overloads
