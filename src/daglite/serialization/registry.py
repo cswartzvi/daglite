@@ -1,0 +1,459 @@
+"""Central registry for type-based serialization and hashing.
+
+The SerializationRegistry provides:
+- Type registration with custom serializers/deserializers
+- Multiple format support per type (e.g., CSV, Parquet, Pickle for DataFrames)
+- Smart hash strategies for efficient cache key generation
+- Format preferences and automatic type inference
+"""
+
+import pickle
+from dataclasses import dataclass, field
+from typing import Any, Callable, Optional, Type, TypeVar
+
+from . import hash_strategies
+
+T = TypeVar('T')
+
+
+@dataclass
+class SerializationHandler:
+    """Handler for serializing/deserializing a specific type in a specific format.
+
+    Attributes:
+        type_: The Python type this handler applies to
+        format: Format identifier (e.g., 'pickle', 'csv', 'parquet')
+        file_extension: File extension for this format (e.g., 'pkl', 'csv')
+        serializer: Function to convert object to bytes
+        deserializer: Function to convert bytes back to object
+        is_default: Whether this is the default format for the type
+    """
+
+    type_: Type
+    format: str
+    file_extension: str
+    serializer: Callable[[Any], bytes]
+    deserializer: Callable[[bytes], Any]
+    is_default: bool = False
+
+
+@dataclass
+class HashStrategy:
+    """Strategy for hashing a specific type.
+
+    Attributes:
+        type_: The Python type this strategy applies to
+        hasher: Function to compute hash string from object
+        description: Human-readable description of the strategy
+    """
+
+    type_: Type
+    hasher: Callable[[Any], str]
+    description: str = ""
+
+
+class SerializationRegistry:
+    """Central registry for type-based serialization and hashing.
+
+    This registry maps Python types to:
+    1. Serialization handlers (one or more per type)
+    2. Hash strategies (one per type)
+
+    Example:
+        >>> registry = SerializationRegistry()
+        >>>
+        >>> # Register a custom type
+        >>> registry.register(
+        ...     MyModel,
+        ...     lambda m: m.to_bytes(),
+        ...     lambda b: MyModel.from_bytes(b),
+        ...     format='default',
+        ...     file_extension='model'
+        ... )
+        >>>
+        >>> # Register hash strategy
+        >>> registry.register_hash_strategy(
+        ...     MyModel,
+        ...     lambda m: m.get_version_hash(),
+        ...     "Hash model version and config"
+        ... )
+        >>>
+        >>> # Use it
+        >>> data, ext = registry.serialize(my_model)
+        >>> hash_key = registry.hash_value(my_model)
+    """
+
+    def __init__(self):
+        """Initialize registry with built-in types."""
+        # Map: (type, format) -> SerializationHandler
+        self._handlers: dict[tuple[Type, str], SerializationHandler] = {}
+
+        # Map: type -> default_format
+        self._default_formats: dict[Type, str] = {}
+
+        # Map: type -> HashStrategy
+        self._hash_strategies: dict[Type, HashStrategy] = {}
+
+        # Register built-in types
+        self._register_builtin_types()
+
+    def register(
+        self,
+        type_: Type[T],
+        serializer: Callable[[T], bytes],
+        deserializer: Callable[[bytes], T],
+        format: str = 'default',
+        file_extension: str = 'bin',
+        make_default: bool = False,
+    ) -> None:
+        """Register a serialization handler for a type.
+
+        Args:
+            type_: The Python type to register
+            serializer: Function to convert object to bytes
+            deserializer: Function to convert bytes back to object
+            format: Format identifier (default: 'default')
+            file_extension: File extension for this format (default: 'bin')
+            make_default: Whether to make this the default format for the type
+
+        Example:
+            >>> registry.register(
+            ...     pd.DataFrame,
+            ...     lambda df: df.to_parquet(),
+            ...     lambda b: pd.read_parquet(BytesIO(b)),
+            ...     format='parquet',
+            ...     file_extension='parquet',
+            ...     make_default=True
+            ... )
+        """
+        handler = SerializationHandler(
+            type_=type_,
+            format=format,
+            file_extension=file_extension,
+            serializer=serializer,
+            deserializer=deserializer,
+            is_default=make_default,
+        )
+
+        key = (type_, format)
+        self._handlers[key] = handler
+
+        # Set as default if requested or if it's the first format for this type
+        if make_default or type_ not in self._default_formats:
+            self._default_formats[type_] = format
+
+    def register_hash_strategy(
+        self,
+        type_: Type,
+        hasher: Callable[[Any], str],
+        description: str = "",
+    ) -> None:
+        """Register a hash strategy for a type.
+
+        Args:
+            type_: The Python type to register
+            hasher: Function to compute hash string from object
+            description: Human-readable description of the strategy
+
+        Example:
+            >>> registry.register_hash_strategy(
+            ...     np.ndarray,
+            ...     hash_numpy_array,
+            ...     "Sample-based hash for numpy arrays"
+            ... )
+        """
+        strategy = HashStrategy(
+            type_=type_,
+            hasher=hasher,
+            description=description,
+        )
+        self._hash_strategies[type_] = strategy
+
+    def serialize(
+        self,
+        obj: Any,
+        format: Optional[str] = None,
+    ) -> tuple[bytes, str]:
+        """Serialize an object using registered handler.
+
+        Args:
+            obj: The object to serialize
+            format: Optional format specifier (uses default if None)
+
+        Returns:
+            Tuple of (serialized_bytes, file_extension)
+
+        Raises:
+            ValueError: If no handler is registered for the type/format
+        """
+        obj_type = type(obj)
+
+        # Determine format
+        if format is None:
+            format = self._default_formats.get(obj_type, 'pickle')
+
+        # Find handler (exact match or check subclasses)
+        handler = self._find_handler(obj_type, format)
+        if handler is None:
+            raise ValueError(
+                f"No serialization handler registered for type {obj_type.__name__} "
+                f"with format '{format}'. Register using registry.register()."
+            )
+
+        # Serialize
+        data = handler.serializer(obj)
+        return data, handler.file_extension
+
+    def deserialize(
+        self,
+        data: bytes,
+        type_: Type[T],
+        format: Optional[str] = None,
+    ) -> T:
+        """Deserialize bytes back to an object.
+
+        Args:
+            data: The serialized bytes
+            type_: The expected Python type
+            format: Optional format specifier (uses default if None)
+
+        Returns:
+            The deserialized object
+
+        Raises:
+            ValueError: If no handler is registered for the type/format
+        """
+        # Determine format
+        if format is None:
+            format = self._default_formats.get(type_, 'pickle')
+
+        # Find handler
+        handler = self._find_handler(type_, format)
+        if handler is None:
+            raise ValueError(
+                f"No deserialization handler registered for type {type_.__name__} "
+                f"with format '{format}'. Register using registry.register()."
+            )
+
+        # Deserialize
+        return handler.deserializer(data)
+
+    def hash_value(self, obj: Any) -> str:
+        """Hash an object using registered strategy.
+
+        Args:
+            obj: The object to hash
+
+        Returns:
+            SHA256 hex digest string
+
+        Example:
+            >>> registry.hash_value(np.random.rand(10000, 10000))
+            'a1b2c3d4...'  # Fast! (uses sample-based strategy)
+        """
+        obj_type = type(obj)
+
+        # Find strategy (exact match or check subclasses)
+        strategy = self._find_hash_strategy(obj_type)
+        if strategy is None:
+            # Fallback: use generic hash
+            return hash_strategies.hash_generic(obj)
+
+        return strategy.hasher(obj)
+
+    def set_default_format(self, type_: Type, format: str) -> None:
+        """Set the default format for a type.
+
+        Args:
+            type_: The Python type
+            format: The format identifier
+
+        Raises:
+            ValueError: If the format is not registered for the type
+        """
+        if (type_, format) not in self._handlers:
+            raise ValueError(
+                f"Format '{format}' is not registered for type {type_.__name__}. "
+                f"Register it first using registry.register()."
+            )
+        self._default_formats[type_] = format
+
+    def get_extension(
+        self,
+        type_: Type,
+        format: Optional[str] = None,
+    ) -> str:
+        """Get the file extension for a type/format combination.
+
+        Args:
+            type_: The Python type
+            format: Optional format specifier (uses default if None)
+
+        Returns:
+            The file extension (without leading dot)
+
+        Raises:
+            ValueError: If no handler is registered for the type/format
+        """
+        if format is None:
+            format = self._default_formats.get(type_, 'pickle')
+
+        handler = self._find_handler(type_, format)
+        if handler is None:
+            raise ValueError(
+                f"No handler registered for type {type_.__name__} "
+                f"with format '{format}'."
+            )
+
+        return handler.file_extension
+
+    def _find_handler(
+        self,
+        type_: Type,
+        format: str,
+    ) -> Optional[SerializationHandler]:
+        """Find handler for type/format, checking subclasses if needed."""
+        # Try exact match first
+        key = (type_, format)
+        if key in self._handlers:
+            return self._handlers[key]
+
+        # Check if any registered type is a parent class
+        for (registered_type, registered_format), handler in self._handlers.items():
+            if registered_format == format and isinstance(type_(), registered_type):
+                return handler
+
+        return None
+
+    def _find_hash_strategy(self, type_: Type) -> Optional[HashStrategy]:
+        """Find hash strategy for type, checking subclasses if needed."""
+        # Try exact match first
+        if type_ in self._hash_strategies:
+            return self._hash_strategies[type_]
+
+        # Check if any registered type is a parent class
+        for registered_type, strategy in self._hash_strategies.items():
+            try:
+                if issubclass(type_, registered_type):
+                    return strategy
+            except TypeError:
+                # issubclass raises TypeError for non-class types
+                continue
+
+        return None
+
+    def _register_builtin_types(self) -> None:
+        """Register serialization and hash strategies for built-in Python types."""
+        # bytes
+        self.register(
+            bytes,
+            lambda b: b,
+            lambda b: b,
+            format='raw',
+            file_extension='bin',
+        )
+        self.register_hash_strategy(bytes, hash_strategies.hash_bytes)
+
+        # str
+        self.register(
+            str,
+            lambda s: s.encode('utf-8'),
+            lambda b: b.decode('utf-8'),
+            format='utf8',
+            file_extension='txt',
+        )
+        self.register_hash_strategy(str, hash_strategies.hash_string)
+
+        # int
+        self.register(
+            int,
+            lambda n: str(n).encode(),
+            lambda b: int(b.decode()),
+            format='text',
+            file_extension='txt',
+        )
+        self.register_hash_strategy(int, hash_strategies.hash_int)
+
+        # float
+        self.register(
+            float,
+            lambda f: str(f).encode(),
+            lambda b: float(b.decode()),
+            format='text',
+            file_extension='txt',
+        )
+        self.register_hash_strategy(float, hash_strategies.hash_float)
+
+        # bool
+        self.register(
+            bool,
+            lambda b: str(b).encode(),
+            lambda b: b.decode() == 'True',
+            format='text',
+            file_extension='txt',
+        )
+        self.register_hash_strategy(bool, hash_strategies.hash_bool)
+
+        # NoneType
+        self.register(
+            type(None),
+            lambda _: b'None',
+            lambda _: None,
+            format='text',
+            file_extension='txt',
+        )
+        self.register_hash_strategy(type(None), hash_strategies.hash_none)
+
+        # dict (using pickle)
+        self.register(
+            dict,
+            pickle.dumps,
+            pickle.loads,
+            format='pickle',
+            file_extension='pkl',
+        )
+        self.register_hash_strategy(dict, hash_strategies.hash_dict)
+
+        # list (using pickle)
+        self.register(
+            list,
+            pickle.dumps,
+            pickle.loads,
+            format='pickle',
+            file_extension='pkl',
+        )
+        self.register_hash_strategy(list, hash_strategies.hash_list)
+
+        # tuple (using pickle)
+        self.register(
+            tuple,
+            pickle.dumps,
+            pickle.loads,
+            format='pickle',
+            file_extension='pkl',
+        )
+        self.register_hash_strategy(tuple, hash_strategies.hash_tuple)
+
+        # set (using pickle)
+        self.register(
+            set,
+            pickle.dumps,
+            pickle.loads,
+            format='pickle',
+            file_extension='pkl',
+        )
+        self.register_hash_strategy(set, hash_strategies.hash_set)
+
+        # frozenset (using pickle)
+        self.register(
+            frozenset,
+            pickle.dumps,
+            pickle.loads,
+            format='pickle',
+            file_extension='pkl',
+        )
+        self.register_hash_strategy(frozenset, hash_strategies.hash_frozenset)
+
+
+# Global default registry instance
+default_registry = SerializationRegistry()
