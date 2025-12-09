@@ -92,70 +92,58 @@ daglite/
 │   ├── serialization/
 │   │   ├── __init__.py
 │   │   ├── registry.py          # SerializationRegistry
-│   │   └── hash_strategies.py   # Smart hashers
+│   │   └── hash_strategies.py   # Built-in types only
 │   ├── caching/
 │   │   ├── __init__.py
 │   │   ├── store.py             # CacheStore Protocol
 │   │   ├── hash.py              # default_cache_hash()
 │   │   └── eviction.py          # Eviction policies
 │   ├── tasks.py                 # @task decorator updates
-│   └── ... other files ... 
+│   └── ... other files ...
 │
 ├── extras/
+│   ├── serialization/
+│   │   └── daglite-serialization/    # Single package, multiple extras
+│   │       ├── src/daglite_serialization/
+│   │       │   ├── __init__.py       # register_all()
+│   │       │   ├── numpy.py          # NumPy handlers
+│   │       │   ├── pandas.py         # Pandas handlers
+│   │       │   └── pillow.py         # Pillow handlers
+│   │       └── pyproject.toml        # [numpy], [pandas], [pillow], [all]
+│   │
 │   ├── cache/
-│   │   ├── daglite-cache-file/
-│   │   │   ├── src/daglite/plugins/cache/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── file.py          # FileCacheStore
-│   │   │   │   └── layout.py        # GitStyleCacheLayout
-│   │   │   └── pyproject.toml
-│   │   └── daglite-cache-redis/     # Future
+│   │   └── daglite-cache-file/       # Future
 │   │
-│   ├── checkpoint/
-│   │   ├── daglite-checkpoint-file/
-│   │   │   ├── src/daglite/plugins/checkpoint/
-│   │   │   │   ├── __init__.py
-│   │   │   │   └── file.py          # FileCheckpointStore
-│   │   │   └── pyproject.toml
-│   │   └── daglite-checkpoint-s3/
-│   │       ├── src/daglite/plugins/checkpoint/
-│   │       │   ├── __init__.py
-│   │       │   └── s3.py            # S3CheckpointStore
-│   │       └── pyproject.toml
-│   │
-│   └── serialization/
-│       ├── daglite-serialization-pandas/
-│       │   ├── src/daglite/plugins/serialization/
-│       │   │   ├── __init__.py
-│       │   │   └── pandas.py        # register_pandas()
-│       │   └── pyproject.toml
-│       └── daglite-serialization-numpy/
-│           └── ...
+│   └── checkpoint/
+│       ├── daglite-checkpoint-file/  # Future
+│       └── daglite-checkpoint-s3/    # Future
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: Serialization Registry (PRIORITY)
+### Phase 1: Serialization Registry ✅ COMPLETE
 
 **Goal**: Core infrastructure that everything builds on
 
-**Files to create**:
-- `src/daglite/serialization/registry.py`
-- `src/daglite/serialization/hash_strategies.py`
-- `tests/test_serialization.py`
+**Files created**:
+- `src/daglite/serialization/registry.py` - Core registry (strict errors)
+- `src/daglite/serialization/hash_strategies.py` - Built-in types only
+- `extras/serialization/daglite-serialization/` - Plugin package
+- `tests/test_serialization.py` - 29 tests passing
 
 **Key classes**:
-- `SerializationRegistry`: Main registry
+- `SerializationRegistry`: Main registry with module-based error messages
 - `SerializationHandler`: Per-format handler
 - `HashStrategy`: Per-type hash function
 
-**Success criteria**:
-- Register custom types
-- Multiple formats per type (CSV, Parquet, Pickle)
-- Smart hash strategies (sample-based for large objects)
-- 100% test coverage
+**Completed**:
+- ✅ Register custom types with multiple formats
+- ✅ Strict TypeError for unregistered types (no repr() fallback)
+- ✅ Plugin package (`daglite_serialization`) with numpy/pandas/pillow
+- ✅ Smart hash strategies with middle sampling (<100ms for 800MB arrays)
+- ✅ 100% test coverage (29 core + 12 plugin tests)
 
 ### Phase 2: Caching Infrastructure
 
@@ -202,13 +190,15 @@ daglite/
 - Doesn't affect data flow
 - Used internally by `.checkpoint()`
 
-### Phase 5: Plugin Registration
+### Phase 5: Plugin Registration ✅ COMPLETE (done with Phase 1)
 
 **Goal**: Auto-register pandas, numpy serializers
 
-**Files to create**:
-- `extras/serialization/daglite-serialization-pandas/...`
-- `extras/serialization/daglite-serialization-numpy/...`
+**Implemented**:
+- Single package: `extras/serialization/daglite-serialization/`
+- Package name: `daglite_serialization` (flat namespace)
+- Optional dependencies: `[numpy]`, `[pandas]`, `[pillow]`, `[all]`
+- API: `register_all()` convenience function
 
 ---
 
