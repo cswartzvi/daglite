@@ -38,11 +38,11 @@ register_all()
 Register only specific plugins:
 
 ```python
-from daglite_serialization.numpy import register_numpy_handlers
-from daglite_serialization.pandas import register_pandas_handlers
+from daglite_serialization.numpy import register_handlers as register_numpy
+from daglite_serialization.pandas import register_handlers as register_pandas
 
-register_numpy_handlers()
-register_pandas_handlers()
+register_numpy()
+register_pandas()
 ```
 
 ### With Caching

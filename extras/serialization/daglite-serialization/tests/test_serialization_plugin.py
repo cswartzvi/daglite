@@ -72,7 +72,7 @@ class TestNumpyPlugin:
         pytest.importorskip("numpy")
         import numpy as np
 
-        from daglite_serialization.numpy import register_numpy_handlers
+        from daglite_serialization.numpy import register_handlers
 
         # Create fresh registry
         registry = SerializationRegistry()
@@ -83,7 +83,7 @@ class TestNumpyPlugin:
             registry.hash_value(arr)
 
         # Register handlers
-        register_numpy_handlers()
+        register_handlers()
 
         # Should work now with default registry
         from daglite.serialization import default_registry
@@ -164,10 +164,10 @@ class TestPandasPlugin:
         pytest.importorskip("pandas")
         import pandas as pd
 
-        from daglite_serialization.pandas import register_pandas_handlers
+        from daglite_serialization.pandas import register_handlers
 
         # Register handlers
-        register_pandas_handlers()
+        register_handlers()
 
         # Should work with default registry
         from daglite.serialization import default_registry
@@ -214,10 +214,10 @@ class TestPillowPlugin:
         import numpy as np
         from PIL import Image
 
-        from daglite_serialization.pillow import register_pillow_handlers
+        from daglite_serialization.pillow import register_handlers
 
         # Register handlers
-        register_pillow_handlers()
+        register_handlers()
 
         # Should work with default registry
         from daglite.serialization import default_registry

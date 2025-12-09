@@ -67,15 +67,15 @@ def hash_numpy_array(arr: np.ndarray) -> str:
     return h.hexdigest()
 
 
-def register_numpy_handlers():
+def register_handlers():
     """Register numpy array handlers with the default registry.
 
     This registers:
     - Hash strategy for np.ndarray (sample-based for performance)
 
     Example:
-        >>> from daglite_serialization.numpy import register_numpy_handlers
-        >>> register_numpy_handlers()
+        >>> from daglite_serialization.numpy import register_handlers
+        >>> register_handlers()
     """
     # Register hash strategy
     default_registry.register_hash_strategy(

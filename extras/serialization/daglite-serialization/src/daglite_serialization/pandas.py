@@ -73,7 +73,7 @@ def hash_pandas_series(series: pd.Series) -> str:
     return h.hexdigest()
 
 
-def register_pandas_handlers():
+def register_handlers():
     """Register pandas handlers with the default registry.
 
     This registers:
@@ -81,8 +81,8 @@ def register_pandas_handlers():
     - Hash strategy for pd.Series (dtype + sample-based)
 
     Example:
-        >>> from daglite_serialization.pandas import register_pandas_handlers
-        >>> register_pandas_handlers()
+        >>> from daglite_serialization.pandas import register_handlers
+        >>> register_handlers()
     """
     # Register hash strategies
     default_registry.register_hash_strategy(

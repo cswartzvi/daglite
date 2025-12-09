@@ -36,15 +36,15 @@ def hash_pil_image(img: Image.Image) -> str:
     return h.hexdigest()
 
 
-def register_pillow_handlers():
+def register_handlers():
     """Register PIL/Pillow image handlers with the default registry.
 
     This registers:
     - Hash strategy for PIL.Image.Image (thumbnail-based)
 
     Example:
-        >>> from daglite_serialization.pillow import register_pillow_handlers
-        >>> register_pillow_handlers()
+        >>> from daglite_serialization.pillow import register_handlers
+        >>> register_handlers()
     """
     # Register hash strategy
     default_registry.register_hash_strategy(

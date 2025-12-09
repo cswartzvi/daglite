@@ -1,45 +1,40 @@
 """Serialization plugin for daglite with support for numpy, pandas, and PIL."""
 
+import importlib
+import pkgutil
+
 __version__ = "0.1.0"
 
 
 def register_all():
     """Register all available serialization handlers.
 
-    This function attempts to register handlers for:
-    - NumPy arrays (if numpy is installed)
-    - Pandas DataFrames and Series (if pandas is installed)
-    - PIL Images (if pillow is installed)
+    This function auto-discovers and registers handlers for all available
+    serialization modules in this package. Each module should provide a
+    `register_handlers()` function.
 
-    Handlers that can't be imported are silently skipped.
+    Modules that can't be imported (missing dependencies) are silently skipped.
 
     Example:
         >>> from daglite_serialization import register_all
-        >>> register_all()  # Register all available handlers
+        >>> register_all()  # Auto-discover and register all available handlers
     """
-    # Try to register numpy handlers
-    try:
-        from . import numpy
+    # Auto-discover all modules in this package
+    for finder, module_name, ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
+        # Skip __init__ and private modules
+        if module_name.endswith("__init__") or module_name.split(".")[-1].startswith("_"):
+            continue
 
-        numpy.register_numpy_handlers()
-    except ImportError:
-        pass
+        try:
+            # Import the module
+            module = importlib.import_module(module_name)
 
-    # Try to register pandas handlers
-    try:
-        from . import pandas
-
-        pandas.register_pandas_handlers()
-    except ImportError:
-        pass
-
-    # Try to register pillow handlers
-    try:
-        from . import pillow
-
-        pillow.register_pillow_handlers()
-    except ImportError:
-        pass
+            # If it has register_handlers(), call it
+            if hasattr(module, "register_handlers"):
+                module.register_handlers()
+        except ImportError:
+            # Module dependencies not installed - skip silently
+            pass
 
 
 __all__ = ["register_all", "__version__"]
