@@ -247,17 +247,59 @@ class SerializationRegistry:
         Returns:
             SHA256 hex digest string
 
+        Raises:
+            TypeError: If no hash strategy is registered for this type.
+
         Example:
-            >>> registry.hash_value(np.random.rand(10000, 10000))
-            'a1b2c3d4...'  # Fast! (uses sample-based strategy)
+            >>> registry.hash_value([1, 2, 3])
+            'a1b2c3d4...'  # Uses built-in list hasher
         """
         obj_type = type(obj)
 
         # Find strategy (exact match or check subclasses)
         strategy = self._find_hash_strategy(obj_type)
         if strategy is None:
-            # Fallback: use generic hash
-            return hash_strategies.hash_generic(obj)
+            # No strategy found - raise helpful error
+            module = obj_type.__module__
+            type_name = obj_type.__name__
+
+            # Infer plugin from module name
+            plugin_suggestion = None
+            if module.startswith('numpy'):
+                plugin_suggestion = 'daglite_serialization[numpy]'
+            elif module.startswith('pandas'):
+                plugin_suggestion = 'daglite_serialization[pandas]'
+            elif module.startswith('PIL') or module.startswith('pillow'):
+                plugin_suggestion = 'daglite_serialization[pillow]'
+            elif module.startswith('torch'):
+                plugin_suggestion = 'daglite_serialization[torch]'
+
+            if plugin_suggestion:
+                raise TypeError(
+                    f"No hash strategy registered for {type_name} from {module}.\n"
+                    f"\n"
+                    f"To fix:\n"
+                    f"  1. Install: pip install {plugin_suggestion}\n"
+                    f"  2. Register: from daglite_serialization import register_all; register_all()\n"
+                    f"\n"
+                    f"Or register a custom hash strategy:\n"
+                    f"  from daglite.serialization import default_registry\n"
+                    f"  default_registry.register_hash_strategy({type_name}, my_hasher)\n"
+                )
+            else:
+                # Generic error for unknown types
+                raise TypeError(
+                    f"No hash strategy registered for {type_name}.\n"
+                    f"\n"
+                    f"To use this type with caching, register a hash strategy:\n"
+                    f"  from daglite.serialization import default_registry\n"
+                    f"  import hashlib\n"
+                    f"  import pickle\n"
+                    f"  default_registry.register_hash_strategy(\n"
+                    f"      {type_name},\n"
+                    f"      lambda obj: hashlib.sha256(pickle.dumps(obj)).hexdigest()\n"
+                    f"  )\n"
+                )
 
         return strategy.hasher(obj)
 
@@ -320,8 +362,13 @@ class SerializationRegistry:
 
         # Check if any registered type is a parent class
         for (registered_type, registered_format), handler in self._handlers.items():
-            if registered_format == format and isinstance(type_(), registered_type):
-                return handler
+            if registered_format == format:
+                try:
+                    if issubclass(type_, registered_type):
+                        return handler
+                except TypeError:
+                    # issubclass raises TypeError for non-class types
+                    continue
 
         return None
 

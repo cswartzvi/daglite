@@ -222,8 +222,8 @@ class TestSerializationRegistry:
         with pytest.raises(ValueError, match="No serialization handler registered"):
             registry.serialize("hello", format="invalid_format")
 
-    def test_hash_fallback_to_generic(self):
-        """Test that unregistered types fall back to generic hash."""
+    def test_hash_raises_for_unregistered_type(self):
+        """Test that unregistered types raise TypeError."""
         registry = SerializationRegistry()
 
         class CustomType:
@@ -234,14 +234,10 @@ class TestSerializationRegistry:
                 return f"CustomType({self.value})"
 
         obj = CustomType(42)
-        hash_value = registry.hash_value(obj)
 
-        # Should use generic hash (based on repr)
-        assert isinstance(hash_value, str)
-        assert len(hash_value) == 64  # SHA256 hex digest
-
-        # Should be deterministic
-        assert registry.hash_value(obj) == hash_value
+        # Should raise TypeError with helpful message
+        with pytest.raises(TypeError, match="No hash strategy registered"):
+            registry.hash_value(obj)
 
 
 class TestHashStrategies:
@@ -317,133 +313,6 @@ class TestHashStrategies:
         # Different content should have different hash
         assert hash_strategies.hash_set(set1) != hash_strategies.hash_set(set3)
 
-    def test_hash_generic(self):
-        """Test generic hash fallback."""
-
-        class CustomType:
-            def __init__(self, value):
-                self.value = value
-
-            def __repr__(self):
-                return f"CustomType({self.value})"
-
-        obj1 = CustomType(42)
-        obj2 = CustomType(42)
-
-        # Should be deterministic based on repr
-        assert hash_strategies.hash_generic(obj1) == hash_strategies.hash_generic(obj2)
-
-
-class TestHashPerformance:
-    """Performance tests for hash strategies."""
-
-    def test_numpy_array_hash_performance(self):
-        """Test that numpy array hashing is fast for large arrays."""
-        pytest.importorskip("numpy")
-        import numpy as np
-
-        # Create a large array (800MB)
-        large_array = np.random.rand(10000, 10000)
-
-        # Time the hash
-        start = time.time()
-        hash_value = hash_strategies.hash_numpy_array(large_array)
-        elapsed = time.time() - start
-
-        # Should be very fast (<100ms as per requirements)
-        assert elapsed < 0.1, f"Hash took {elapsed:.3f}s, should be < 0.1s"
-
-        # Should be deterministic
-        hash_value2 = hash_strategies.hash_numpy_array(large_array)
-        assert hash_value == hash_value2
-
-    def test_numpy_small_array_hash(self):
-        """Test that small numpy arrays are fully hashed."""
-        pytest.importorskip("numpy")
-        import numpy as np
-
-        arr1 = np.array([1, 2, 3, 4, 5])
-        arr2 = np.array([1, 2, 3, 4, 5])
-        arr3 = np.array([1, 2, 3, 4, 6])
-
-        # Same arrays should have same hash
-        assert hash_strategies.hash_numpy_array(arr1) == hash_strategies.hash_numpy_array(arr2)
-
-        # Different arrays should have different hash
-        assert hash_strategies.hash_numpy_array(arr1) != hash_strategies.hash_numpy_array(arr3)
-
-    def test_dataframe_hash_performance(self):
-        """Test that DataFrame hashing is fast for large DataFrames."""
-        pytest.importorskip("pandas")
-        import pandas as pd
-        import numpy as np
-
-        # Create a large DataFrame (1M rows)
-        df = pd.DataFrame({
-            'a': np.random.rand(1_000_000),
-            'b': np.random.rand(1_000_000),
-            'c': np.random.randint(0, 100, 1_000_000),
-        })
-
-        # Time the hash
-        start = time.time()
-        hash_value = hash_strategies.hash_pandas_dataframe(df)
-        elapsed = time.time() - start
-
-        # Should be reasonably fast (<1s)
-        assert elapsed < 1.0, f"Hash took {elapsed:.3f}s, should be < 1.0s"
-
-        # Should be deterministic
-        hash_value2 = hash_strategies.hash_pandas_dataframe(df)
-        assert hash_value == hash_value2
-
-    def test_dataframe_small_hash(self):
-        """Test that small DataFrames are fully hashed."""
-        pytest.importorskip("pandas")
-        import pandas as pd
-
-        df1 = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
-        df2 = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 6]})
-        df3 = pd.DataFrame({'a': [1, 2, 3], 'b': [4, 5, 7]})
-
-        # Same DataFrames should have same hash
-        assert hash_strategies.hash_pandas_dataframe(df1) == hash_strategies.hash_pandas_dataframe(df2)
-
-        # Different DataFrames should have different hash
-        assert hash_strategies.hash_pandas_dataframe(df1) != hash_strategies.hash_pandas_dataframe(df3)
-
-    def test_series_hash(self):
-        """Test pandas Series hashing."""
-        pytest.importorskip("pandas")
-        import pandas as pd
-
-        series1 = pd.Series([1, 2, 3, 4, 5], name='data')
-        series2 = pd.Series([1, 2, 3, 4, 5], name='data')
-        series3 = pd.Series([1, 2, 3, 4, 6], name='data')
-
-        # Same series should have same hash
-        assert hash_strategies.hash_pandas_series(series1) == hash_strategies.hash_pandas_series(series2)
-
-        # Different series should have different hash
-        assert hash_strategies.hash_pandas_series(series1) != hash_strategies.hash_pandas_series(series3)
-
-    def test_image_hash(self):
-        """Test PIL Image hashing."""
-        pytest.importorskip("PIL")
-        from PIL import Image
-        import numpy as np
-
-        # Create test images
-        img1 = Image.fromarray(np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8))
-        img2 = img1.copy()
-        img3 = Image.fromarray(np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8))
-
-        # Same image should have same hash
-        assert hash_strategies.hash_pil_image(img1) == hash_strategies.hash_pil_image(img2)
-
-        # Different images should (likely) have different hashes
-        # Note: There's a tiny chance of collision with downsampling
-        assert hash_strategies.hash_pil_image(img1) != hash_strategies.hash_pil_image(img3)
 
 
 class TestDefaultRegistry:

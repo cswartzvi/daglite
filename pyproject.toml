@@ -180,4 +180,4 @@ daglite = { workspace = true }
 daglite-cli = { workspace = true }
 
 [tool.uv.workspace]
-members = ["extras/*"]
+members = ["extras/cli", "extras/serialization/daglite-serialization"]
