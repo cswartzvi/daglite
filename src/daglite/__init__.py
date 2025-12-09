@@ -45,7 +45,6 @@ For more examples, see the repository's test files.
 __version__ = "0.3.0"
 
 from . import backends
-from . import composers
 from . import hooks
 from . import settings
 from .engine import evaluate
@@ -59,7 +58,6 @@ hooks.initialize_hooks()
 
 __all__ = [
     "backends",
-    "composers",
     "evaluate",
     "evaluate_async",
     "hooks",
