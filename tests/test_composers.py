@@ -1,4 +1,6 @@
-"""Unit tests for TaskFuture.split() method (construction and validation)."""
+"""Unit tests for TaskFuture.split() method construction and validation only.
+Evaluation tests for split() are located in tests/evaluation/test_fluent_api.py.
+"""
 
 import pytest
 
