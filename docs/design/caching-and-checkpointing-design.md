@@ -88,18 +88,18 @@ Add production-ready caching and checkpointing to daglite with:
 
 ```
 daglite/
-├── daglite-core/
-│   ├── src/daglite/
-│   │   ├── serialization/
-│   │   │   ├── __init__.py
-│   │   │   ├── registry.py          # SerializationRegistry
-│   │   │   └── hash_strategies.py   # Smart hashers
-│   │   ├── caching/
-│   │   │   ├── __init__.py
-│   │   │   ├── store.py             # CacheStore Protocol
-│   │   │   ├── hash.py              # default_cache_hash()
-│   │   │   └── eviction.py          # Eviction policies
-│   │   └── task.py                  # @task decorator updates
+├── src/daglite/
+│   ├── serialization/
+│   │   ├── __init__.py
+│   │   ├── registry.py          # SerializationRegistry
+│   │   └── hash_strategies.py   # Smart hashers
+│   ├── caching/
+│   │   ├── __init__.py
+│   │   ├── store.py             # CacheStore Protocol
+│   │   ├── hash.py              # default_cache_hash()
+│   │   └── eviction.py          # Eviction policies
+│   ├── tasks.py                 # @task decorator updates
+│   └── ... other files ... 
 │
 ├── extras/
 │   ├── cache/
@@ -142,9 +142,9 @@ daglite/
 **Goal**: Core infrastructure that everything builds on
 
 **Files to create**:
-- `daglite-core/src/daglite/serialization/registry.py`
-- `daglite-core/src/daglite/serialization/hash_strategies.py`
-- `daglite-core/tests/test_serialization.py`
+- `src/daglite/serialization/registry.py`
+- `src/daglite/serialization/hash_strategies.py`
+- `tests/test_serialization.py`
 
 **Key classes**:
 - `SerializationRegistry`: Main registry
@@ -162,9 +162,9 @@ daglite/
 **Goal**: Content-addressable caching with @task integration
 
 **Files to create**:
-- `daglite-core/src/daglite/caching/store.py` (Protocol)
-- `daglite-core/src/daglite/caching/hash.py`
-- `daglite-core/src/daglite/caching/eviction.py`
+- `src/daglite/caching/store.py` (Protocol)
+- `src/daglite/caching/hash.py`
+- `src/daglite/caching/eviction.py`
 - `extras/cache/daglite-cache-file/src/daglite/plugins/cache/file.py`
 - `extras/cache/daglite-cache-file/src/daglite/plugins/cache/layout.py`
 
@@ -180,7 +180,7 @@ daglite/
 **Goal**: Named, versioned artifacts for debugging/audit
 
 **Files to create**:
-- `daglite-core/src/daglite/checkpointing/store.py` (Protocol)
+- `src/daglite/checkpointing/store.py` (Protocol)
 - `extras/checkpoint/daglite-checkpoint-file/...`
 - `extras/checkpoint/daglite-checkpoint-s3/...`
 
@@ -195,7 +195,7 @@ daglite/
 **Goal**: `.also()` for non-branching operations
 
 **Files to modify**:
-- `daglite-core/src/daglite/task.py` (add `.also()` to TaskFuture)
+- `src/daglite/task.py` (add `.also()` to TaskFuture)
 
 **Success criteria**:
 - `.also(callback)` runs side effects
@@ -229,19 +229,8 @@ daglite/
     cache_hash: Callable[[Callable, dict], str] | None = None,
     # Custom hash function: (function, bound_args) → hash_string
     # None = use default (source + params)
-    
-    cache_exclude: list[str] | None = None,
-    # Parameter names to exclude from hash
-    # Use for large objects that don't affect output
-    
-    cache_hash_params: dict[str, Callable[[Any], str]] | None = None,
-    # Custom hash function per parameter
-    # e.g., {'image': lambda img: hash_downsampled(img)}
-    
-    # === EXISTING ===
-    retries: int = 0,
-    retry_delay: float = 1.0,
-    timeout: int | None = None,
+
+    ....  # existing parameters
 )
 def my_task(...) -> ...:
     ...
@@ -260,26 +249,6 @@ def compute(x: int, y: int) -> pd.DataFrame:
 @task(cache=True, cache_ttl=3600)  # 1 hour
 def fetch_stock_price(ticker: str) -> float:
     return api.get_latest_price(ticker)
-
-# Exclude large parameters
-@task(cache=True, cache_exclude=['large_array'])
-def process_image(
-    image: np.ndarray,
-    threshold: float,
-    large_array: np.ndarray  # Not hashed
-) -> np.ndarray:
-    ...
-
-# Custom per-parameter hashing
-@task(
-    cache=True,
-    cache_hash_params={
-        'image': lambda img: hash_image_sample(img),
-        'data': lambda df: hash_dataframe_schema(df)
-    }
-)
-def analyze(image: np.ndarray, data: pd.DataFrame, threshold: float):
-    ...
 
 # Completely custom hash
 def my_hash(func, bound_args):
@@ -1110,5 +1079,6 @@ versioning = true
 
 - Prefect caching: https://docs.prefect.io/concepts/tasks/#caching
 - Dagster assets: https://docs.dagster.io/concepts/assets/software-defined-assets
-- Hamilton checkpointing: (internal feature, not public docs)
+- Hamilton IO: https://hamilton.apache.org/reference/io/
+- Hamilton caching: https://hamilton.apache.org/reference/caching/
 - Git object storage: https://git-scm.com/book/en/v2/Git-Internals-Git-Objects
