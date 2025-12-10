@@ -1,7 +1,7 @@
 # Caching and Checkpointing Design
 
-**Status**: Design Complete, Ready for Implementation  
-**Created**: 2024-12-09  
+**Status**: Design Complete, Ready for Implementation
+**Created**: 2024-12-09
 **Target**: daglite v0.5.0
 
 ---
@@ -34,7 +34,7 @@ Add production-ready caching and checkpointing to daglite with:
 **Caching** (Performance):
 - Content-addressable (hash-based) storage
 - Transparent and automatic
-- Hash = f(function_source, parameters)
+- Hash = f(function_source, parameters)5/
 - Ephemeral (safe to clear)
 - Purpose: Skip expensive recomputation
 
@@ -66,13 +66,13 @@ Add production-ready caching and checkpointing to daglite with:
 ```
 ┌─────────────────────────────────────────────────────┐
 │         Serialization Registry (Core)               │
-│  • Type → Serializer/Deserializer                  │
-│  • Type → Hash Strategy                            │
-│  • Format preferences (CSV vs Parquet)             │
+│  • Type → Serializer/Deserializer                   │
+│  • Type → Hash Strategy                             │
+│  • Format preferences (CSV vs Parquet)              │
 └─────────────────────────────────────────────────────┘
                     ↑            ↑
           ┌─────────┴────────┐   └────────────┐
-          │                  │                 │
+          │                  │                │
 ┌─────────────────┐  ┌───────────────────┐  ┌──────────────┐
 │  Cache Store    │  │ Checkpoint Store  │  │ .also()      │
 │  (extras/)      │  │  (extras/)        │  │  (core)      │
@@ -103,13 +103,12 @@ daglite/
 │
 ├── extras/
 │   ├── serialization/
-│   │   └── daglite-serialization/    # Single package, multiple extras
-│   │       ├── src/daglite_serialization/
-│   │       │   ├── __init__.py       # register_all()
-│   │       │   ├── numpy.py          # NumPy handlers
-│   │       │   ├── pandas.py         # Pandas handlers
-│   │       │   └── pillow.py         # Pillow handlers
-│   │       └── pyproject.toml        # [numpy], [pandas], [pillow], [all]
+│   │   ├── src/daglite_serialization/  # Single package, multiple extras
+│   │   │   ├── __init__.py       # register_all()
+│   │   │   ├── numpy.py          # NumPy handlers
+│   │   │   ├── pandas.py         # Pandas handlers
+│   │   │   └── pillow.py         # Pillow handlers
+│   │   └── pyproject.toml        # [numpy], [pandas], [pillow], [all]
 │   │
 │   ├── cache/
 │   │   └── daglite-cache-file/       # Future
@@ -127,29 +126,33 @@ daglite/
 
 **Goal**: Core infrastructure that everything builds on
 
-**Files created**:
+**File to create**:
+
 - `src/daglite/serialization/registry.py` - Core registry (strict errors)
 - `src/daglite/serialization/hash_strategies.py` - Built-in types only
 - `extras/serialization/daglite-serialization/` - Plugin package
 - `tests/test_serialization.py` - 29 tests passing
 
 **Key classes**:
+
 - `SerializationRegistry`: Main registry with module-based error messages
 - `SerializationHandler`: Per-format handler
 - `HashStrategy`: Per-type hash function
 
-**Completed**:
-- ✅ Register custom types with multiple formats
-- ✅ Strict TypeError for unregistered types (no repr() fallback)
-- ✅ Plugin package (`daglite_serialization`) with numpy/pandas/pillow
-- ✅ Smart hash strategies with middle sampling (<100ms for 800MB arrays)
-- ✅ 100% test coverage (29 core + 12 plugin tests)
+**Success criteria**:
+
+- [x] ]Register custom types with multiple formats
+- [x] Strict TypeError for unregistered types (no repr() fallback)
+- [x] Plugin package (`daglite_serialization`) with numpy/pandas/pillow
+- [x] Smart hash strategies with middle sampling (<100ms for 800MB arrays)
+- [ ] 100% test coverage (29 core + 12 plugin tests)
 
 ### Phase 2: Caching Infrastructure
 
 **Goal**: Content-addressable caching with @task integration
 
 **Files to create**:
+
 - `src/daglite/caching/store.py` (Protocol)
 - `src/daglite/caching/hash.py`
 - `src/daglite/caching/eviction.py`
@@ -157,11 +160,12 @@ daglite/
 - `extras/cache/daglite-cache-file/src/daglite/plugins/cache/layout.py`
 
 **Success criteria**:
-- `@task(cache=True)` works
-- Hash-based cache keys (no explicit cache_key)
-- Git-style file layout (Windows-safe)
-- LRU eviction with configurable size limits
-- TTL support
+
+- [ ] `@task(cache=True)` works
+- [ ] Hash-based cache keys (no explicit cache_key)
+- [ ] Git-style file layout (Windows-safe)
+- [ ] LRU eviction with configurable size limits
+- [ ] TTL support
 
 ### Phase 3: Checkpointing
 
@@ -173,10 +177,11 @@ daglite/
 - `extras/checkpoint/daglite-checkpoint-s3/...`
 
 **Success criteria**:
-- `.checkpoint(name)` method on TaskFuture
-- Versioned storage
-- Rich metadata (timestamp, git hash, params)
-- S3 backend support
+
+- [ ] `.checkpoint(name)` method on TaskFuture
+- [ ] Versioned storage
+- [ ] Rich metadata (timestamp, git hash, params)
+- [ ] S3 backend support
 
 ### Phase 4: Side Effects
 
@@ -186,15 +191,17 @@ daglite/
 - `src/daglite/task.py` (add `.also()` to TaskFuture)
 
 **Success criteria**:
-- `.also(callback)` runs side effects
-- Doesn't affect data flow
-- Used internally by `.checkpoint()`
+
+- [ ] `.also(callback)` runs side effects
+- [ ] Doesn't affect data flow
+- [ ] Used internally by `.checkpoint()`
 
 ### Phase 5: Plugin Registration ✅ COMPLETE (done with Phase 1)
 
 **Goal**: Auto-register pandas, numpy serializers
 
 **Implemented**:
+
 - Single package: `extras/serialization/daglite-serialization/`
 - Package name: `daglite_serialization` (flat namespace)
 - Optional dependencies: `[numpy]`, `[pandas]`, `[pillow]`, `[all]`
@@ -211,11 +218,11 @@ daglite/
     # === CACHING ===
     cache: bool = False,
     # Enable content-addressable caching
-    
+
     cache_ttl: int | timedelta | None = None,
     # Time-to-live for cache entries
     # None = never expire, int = seconds, timedelta = duration
-    
+
     cache_hash: Callable[[Callable, dict], str] | None = None,
     # Custom hash function: (function, bound_args) → hash_string
     # None = use default (source + params)
@@ -243,7 +250,7 @@ def fetch_stock_price(ticker: str) -> float:
 # Completely custom hash
 def my_hash(func, bound_args):
     return hashlib.sha256(
-        func.__name__.encode() + 
+        func.__name__.encode() +
         str(bound_args['version']).encode()
     ).hexdigest()
 
@@ -260,14 +267,14 @@ def train_model(data: pd.DataFrame, version: str) -> Model:
 def also(self, callback: Callable[[T], None]) -> TaskFuture[T]:
     """
     Execute a side effect without affecting data flow.
-    
+
     The callback receives the task result but its return value
     is ignored. Exceptions in callbacks are logged but don't
     stop the pipeline.
-    
+
     Args:
         callback: Function that takes result, returns None
-        
+
     Returns:
         Same TaskFuture (for chaining)
     """
@@ -304,13 +311,13 @@ def checkpoint(
 ) -> TaskFuture[T]:
     """
     Save task result as a named, versioned artifact.
-    
+
     Args:
         name: Human-readable checkpoint name
         store: Optional custom checkpoint store
         versioning: If True, keep multiple versions
         metadata: Additional metadata to store
-        
+
     Returns:
         Same TaskFuture (for chaining)
     """
@@ -349,7 +356,7 @@ features = checkpoint_store.load("normalized_features", version="latest")
 ```python
 class SerializationRegistry:
     """Central registry for type-based serialization"""
-    
+
     def register(
         self,
         type_: Type[T],
@@ -360,7 +367,7 @@ class SerializationRegistry:
         make_default: bool = False,
     ) -> None:
         """Register a serialization handler"""
-    
+
     def register_hash_strategy(
         self,
         type_: Type,
@@ -368,14 +375,14 @@ class SerializationRegistry:
         description: str = "",
     ) -> None:
         """Register how to hash a type for cache keys"""
-    
+
     def serialize(
         self,
         obj: Any,
         format: str | None = None,
     ) -> tuple[bytes, str]:
         """Serialize object → (bytes, file_extension)"""
-    
+
     def deserialize(
         self,
         data: bytes,
@@ -383,13 +390,13 @@ class SerializationRegistry:
         format: str | None = None,
     ) -> T:
         """Deserialize bytes → object"""
-    
+
     def hash_value(self, obj: Any) -> str:
         """Hash a value using registered strategy"""
-    
+
     def set_default_format(self, type_: Type, format: str) -> None:
         """Set default format for a type"""
-    
+
     def get_extension(self, type_: Type, format: str | None = None) -> str:
         """Get file extension for type/format"""
 
@@ -432,10 +439,10 @@ default_registry.set_default_format(pd.DataFrame, 'parquet')
 ```python
 class CacheStore(Protocol):
     """Protocol for cache storage backends"""
-    
+
     def get(self, hash_key: str, return_type: Type[T]) -> Optional[T]:
         """Retrieve cached value by hash"""
-    
+
     def put(
         self,
         hash_key: str,
@@ -444,13 +451,13 @@ class CacheStore(Protocol):
         ttl: int | None = None,
     ) -> None:
         """Store value with hash key"""
-    
+
     def invalidate(self, hash_key: str) -> None:
         """Remove cached entry"""
-    
+
     def clear(self) -> None:
         """Clear entire cache"""
-    
+
     def get_stats(self) -> CacheStats:
         """Get cache statistics"""
 ```
@@ -460,7 +467,7 @@ class CacheStore(Protocol):
 ```python
 class CheckpointStore(Protocol):
     """Protocol for checkpoint storage backends"""
-    
+
     def save(
         self,
         name: str,
@@ -469,7 +476,7 @@ class CheckpointStore(Protocol):
         format: str | None = None,
     ) -> str:
         """Save checkpoint, returns version identifier"""
-    
+
     def load(
         self,
         name: str,
@@ -477,10 +484,10 @@ class CheckpointStore(Protocol):
         return_type: Type[T] | None = None,
     ) -> T:
         """Load checkpoint (latest or specific version)"""
-    
+
     def list_versions(self, name: str) -> list[CheckpointVersion]:
         """List all versions of a checkpoint"""
-    
+
     def delete(self, name: str, version: str | None = None) -> None:
         """Delete checkpoint"""
 
@@ -514,15 +521,15 @@ hash = hashlib.sha256(pickle.dumps(large_array)).hexdigest()
 def hash_numpy_array(arr: np.ndarray) -> str:
     """
     Fast hash: metadata + sample of data
-    
+
     Time: ~1ms for 800MB array (vs ~2000ms for full hash)
     """
     h = hashlib.sha256()
-    
+
     # Metadata (always fast)
     h.update(str(arr.shape).encode())
     h.update(str(arr.dtype).encode())
-    
+
     # Sample data
     if arr.size > 1000:
         flat = arr.flatten()
@@ -530,7 +537,7 @@ def hash_numpy_array(arr: np.ndarray) -> str:
         h.update(sample.tobytes())
     else:
         h.update(arr.tobytes())
-    
+
     return h.hexdigest()
 ```
 
@@ -540,23 +547,23 @@ def hash_numpy_array(arr: np.ndarray) -> str:
 def hash_dataframe(df: pd.DataFrame) -> str:
     """
     Fast hash: schema + sample rows
-    
+
     Time: ~10ms for 1M rows (vs ~5000ms for full hash)
     """
     h = hashlib.sha256()
-    
+
     # Schema
     h.update(str(df.shape).encode())
     h.update(str(df.dtypes.to_dict()).encode())
     h.update(str(df.columns.tolist()).encode())
-    
+
     # Sample rows
     if len(df) > 1000:
         sample = pd.concat([df.head(500), df.tail(500)])
         h.update(pd.util.hash_pandas_object(sample).values.tobytes())
     else:
         h.update(pd.util.hash_pandas_object(df).values.tobytes())
-    
+
     return h.hexdigest()
 ```
 
@@ -566,16 +573,16 @@ def hash_dataframe(df: pd.DataFrame) -> str:
 def hash_image(img: Image.Image) -> str:
     """
     Fast hash: downsample to 32x32
-    
+
     Much faster than full resolution, catches all visible changes
     """
     h = hashlib.sha256()
     h.update(str(img.size).encode())
     h.update(str(img.mode).encode())
-    
+
     thumb = img.resize((32, 32), Image.Resampling.LANCZOS)
     h.update(thumb.tobytes())
-    
+
     return h.hexdigest()
 ```
 
@@ -589,17 +596,17 @@ def hash_image(img: Image.Image) -> str:
 class GitStyleCacheLayout:
     """
     Git-style hash storage.
-    
+
     Hash: "abcdef1234567890..."
     Path: base/ab/cd/ef1234567890...
-    
+
     Benefits:
     - Windows-safe (stays under 260 chars)
     - Balanced tree (256 buckets per level)
     - Fast lookups
     - Familiar pattern
     """
-    
+
     def __init__(self, base_path: Path, split_pattern: tuple[int, ...] = (2, 2)):
         """
         Args:
@@ -607,20 +614,20 @@ class GitStyleCacheLayout:
         """
         self.base_path = base_path
         self.split_pattern = split_pattern
-    
+
     def get_path(self, hash_key: str, extension: str) -> Path:
         """
         Convert hash to path.
-        
+
         Example: "abcdef123..." → base/ab/cd/ef123....ext
         """
         parts = []
         offset = 0
-        
+
         for length in self.split_pattern:
             parts.append(hash_key[offset:offset + length])
             offset += length
-        
+
         filename = hash_key[offset:]
         return self.base_path.joinpath(*parts, f"{filename}.{extension}")
 ```
@@ -670,7 +677,7 @@ Use SQLite for lightweight metadata tracking:
 class CacheMetadataStore:
     """
     Track cache metadata in SQLite.
-    
+
     Schema:
     CREATE TABLE cache_entries (
         hash_key TEXT PRIMARY KEY,
@@ -682,17 +689,17 @@ class CacheMetadataStore:
         ttl_expires TEXT
     )
     """
-    
+
     def __init__(self, db_path: Path):
         self.db_path = db_path
         self._init_db()
-    
+
     def record_access(self, hash_key: str) -> None:
         """Update last_accessed and increment access_count"""
-    
+
     def record_put(self, hash_key: str, file_path: Path, size: int, ttl: int | None):
         """Record new cache entry"""
-    
+
     def get_eviction_candidates(
         self,
         policy: EvictionPolicy,
@@ -716,24 +723,24 @@ class FileCacheStore:
         self.metadata = CacheMetadataStore(base_path / ".metadata" / "cache.db")
         self.evictor = CacheEvictor(self.metadata, eviction_policy)
         # ...
-    
+
     def put(self, hash_key: str, value: Any, format: str | None, ttl: int | None):
         """Store with eviction check"""
         # Serialize
         data, ext = self.registry.serialize(value, format)
-        
+
         # Check if eviction needed
         if self.max_size:
             current = self._get_total_size()
             if current + len(data) > (self.max_size * self.high_water):
                 target = int(self.max_size * self.low_water)
                 self.evictor.evict_to_size(target)
-        
+
         # Write file
         cache_file = self.layout.get_path(hash_key, ext)
         cache_file.parent.mkdir(parents=True, exist_ok=True)
         cache_file.write_bytes(data)
-        
+
         # Record metadata
         ttl_expires = datetime.now() + timedelta(seconds=ttl) if ttl else None
         self.metadata.record_put(hash_key, cache_file, len(data), ttl_expires)
@@ -751,12 +758,12 @@ def default_cache_hash(
 ) -> str:
     """
     Default cache hash: function source + parameter values.
-    
+
     Uses smart hashing strategies from registry to avoid
     performance issues with large objects.
     """
     h = hashlib.sha256()
-    
+
     # Hash function source
     try:
         source = inspect.getsource(func)
@@ -764,22 +771,22 @@ def default_cache_hash(
     except (OSError, TypeError):
         # Can't get source - use name
         h.update(func.__name__.encode())
-    
+
     # Hash each parameter
     exclude = exclude or []
     param_hashers = param_hashers or {}
-    
+
     for name, value in sorted(bound_args.items()):
         if name in exclude:
             continue
-        
+
         if name in param_hashers:
             param_hash = param_hashers[name](value)
         else:
             param_hash = registry.hash_value(value)  # Smart!
-        
+
         h.update(f"{name}={param_hash}".encode())
-    
+
     return h.hexdigest()
 ```
 
@@ -858,11 +865,11 @@ step1_data = store.load("step1", version="latest")
 ```python
 def test_large_array_hash_performance():
     large_array = np.random.rand(10000, 10000)  # 800MB
-    
+
     start = time.time()
     hash_value = default_registry.hash_value(large_array)
     elapsed = time.time() - start
-    
+
     assert elapsed < 0.1  # Should be < 100ms
 ```
 
