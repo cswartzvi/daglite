@@ -195,9 +195,14 @@ class TestSerializationRegistry:
         """Test getting file extension for type/format."""
         registry = SerializationRegistry()
 
+        # Test with default format (None)
         assert registry.get_extension(str) == "txt"
         assert registry.get_extension(int) == "txt"
         assert registry.get_extension(dict) == "pkl"
+
+        # Test with explicit format
+        assert registry.get_extension(str, format="text") == "txt"
+        assert registry.get_extension(dict, format="pickle") == "pkl"
 
     def test_unregistered_type_raises(self):
         """Test that unregistered types raise ValueError."""
@@ -328,8 +333,127 @@ class TestDefaultRegistry:
         assert len(hash_value) == 64  # SHA256 hex digest
 
 
+class TestErrorHandling:
+    """Tests for error handling and edge cases."""
+
+    def test_deserialize_unregistered_format(self):
+        """Test that deserialize raises ValueError for unregistered format."""
+        registry = SerializationRegistry()
+
+        with pytest.raises(ValueError, match="No deserialization handler registered"):
+            registry.deserialize(b"test", str, format="invalid_format")
+
+    def test_set_default_format_unregistered(self):
+        """Test that set_default_format raises ValueError for unregistered format."""
+        registry = SerializationRegistry()
+
+        with pytest.raises(ValueError, match="Format 'invalid' is not registered"):
+            registry.set_default_format(str, "invalid")
+
+    def test_hash_numpy_type_suggests_plugin(self):
+        """Test that numpy types suggest the numpy plugin."""
+        registry = SerializationRegistry()
+
+        # Create a mock numpy-like type
+        class FakeNumpyArray:
+            __module__ = "numpy"
+
+        with pytest.raises(TypeError, match="daglite_serialization\\[numpy\\]"):
+            registry.hash_value(FakeNumpyArray())
+
+    def test_hash_pandas_type_suggests_plugin(self):
+        """Test that pandas types suggest the pandas plugin."""
+        registry = SerializationRegistry()
+
+        # Create a mock pandas-like type
+        class FakePandasDataFrame:
+            __module__ = "pandas"
+
+        with pytest.raises(TypeError, match="daglite_serialization\\[pandas\\]"):
+            registry.hash_value(FakePandasDataFrame())
+
+    def test_hash_pillow_type_suggests_plugin(self):
+        """Test that PIL types suggest the pillow plugin."""
+        registry = SerializationRegistry()
+
+        # Create a mock PIL-like type
+        class FakePILImage:
+            __module__ = "PIL.Image"
+
+        with pytest.raises(TypeError, match="daglite_serialization\\[pillow\\]"):
+            registry.hash_value(FakePILImage())
+
+    def test_hash_torch_type_suggests_plugin(self):
+        """Test that torch types suggest the torch plugin."""
+        registry = SerializationRegistry()
+
+        # Create a mock torch-like type
+        class FakeTorchTensor:
+            __module__ = "torch"
+
+        with pytest.raises(TypeError, match="daglite_serialization\\[torch\\]"):
+            registry.hash_value(FakeTorchTensor())
+
+    def test_get_extension_unregistered_type(self):
+        """Test get_extension with unregistered type."""
+        registry = SerializationRegistry()
+
+        class CustomType:
+            pass
+
+        with pytest.raises(ValueError, match="No handler registered"):
+            registry.get_extension(CustomType)
+
+    def test_find_handler_with_subclass(self):
+        """Test that _find_handler works with subclasses."""
+        registry = SerializationRegistry()
+
+        class BaseClass:
+            pass
+
+        class DerivedClass(BaseClass):
+            pass
+
+        # Register for base class
+        registry.register(
+            BaseClass,
+            lambda obj: b"base",
+            lambda data: BaseClass(),
+            format="test",
+            file_extension="txt",
+        )
+
+        # Should work for derived class too
+        derived = DerivedClass()
+        data, ext = registry.serialize(derived, format="test")
+        assert data == b"base"
+        assert ext == "txt"
+
+    def test_find_hash_strategy_with_subclass(self):
+        """Test that _find_hash_strategy works with subclasses."""
+        registry = SerializationRegistry()
+
+        class BaseClass:
+            pass
+
+        class DerivedClass(BaseClass):
+            pass
+
+        # Register hash strategy for base class
+        registry.register_hash_strategy(
+            BaseClass,
+            lambda obj: "base_hash",
+            "Hash for base class",
+        )
+
+        # Should work for derived class too
+        derived = DerivedClass()
+        hash_value = registry.hash_value(derived)
+        assert hash_value == "base_hash"
+
+
 class TestEdgeCases:
-    """Tests for edge cases and error handling."""
+    """Tests for edge cases with built-in types."""
 
     def test_empty_dict(self):
         """Test hashing empty dictionary."""

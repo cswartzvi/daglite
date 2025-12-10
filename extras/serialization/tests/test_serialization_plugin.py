@@ -246,3 +246,88 @@ class TestRegisterAll:
 
         # Should not raise even if some dependencies are missing
         register_all()
+
+
+class TestNumpyPluginExtended:
+    """Extended tests for numpy plugin edge cases."""
+
+    def test_numpy_2d_array_sampling(self):
+        """Test 2D array sampling logic."""
+        pytest.importorskip("numpy")
+        import numpy as np
+        from daglite_serialization.numpy import hash_numpy_array
+
+        # Create large 2D array (trigger 2D sampling path)
+        arr = np.ones((5000, 5000))  # > 10000 elements, 2D shape
+
+        # Should hash successfully
+        hash1 = hash_numpy_array(arr)
+        assert isinstance(hash1, str)
+        assert len(hash1) == 64
+
+        # Modify middle rows - should detect change
+        arr[2500:2510, :] = 2.0
+        hash2 = hash_numpy_array(arr)
+        assert hash1 != hash2
+
+    def test_numpy_3d_array_sampling(self):
+        """Test multi-dimensional (3D+) array sampling logic."""
+        pytest.importorskip("numpy")
+        import numpy as np
+        from daglite_serialization.numpy import hash_numpy_array
+
+        # Create 3D array (trigger flattening path)
+        arr1 = np.ones((100, 100, 100))  # > 10000 elements, 3D shape
+        arr2 = np.ones((100, 100, 100))
+
+        # Should hash successfully
+        hash1 = hash_numpy_array(arr1)
+        assert isinstance(hash1, str)
+        assert len(hash1) == 64
+
+        # Modify beginning (which will be sampled) - should detect change
+        arr2[0:10, 0:10, 0:10] = 2.0
+        hash2 = hash_numpy_array(arr2)
+        assert hash1 != hash2
+
+    def test_numpy_1d_large_array_sampling(self):
+        """Test 1D array sampling for large arrays."""
+        pytest.importorskip("numpy")
+        import numpy as np
+        from daglite_serialization.numpy import hash_numpy_array
+
+        # Create large 1D array (trigger 1D sampling path)
+        arr = np.ones(100000)  # > 10000 elements, 1D shape
+
+        # Should hash successfully
+        hash1 = hash_numpy_array(arr)
+        assert isinstance(hash1, str)
+        assert len(hash1) == 64
+
+        # Modify middle - should detect change
+        arr[50000:51000] = 2.0
+        hash2 = hash_numpy_array(arr)
+        assert hash1 != hash2
+
+
+class TestPandasPluginExtended:
+    """Extended tests for pandas plugin edge cases."""
+
+    def test_large_series_sampling(self):
+        """Test Series sampling for large series."""
+        pytest.importorskip("pandas")
+        import pandas as pd
+        from daglite_serialization.pandas import hash_pandas_series
+
+        # Create large Series (trigger sampling path)
+        series = pd.Series(range(10000), name="large_series")
+
+        # Should hash successfully
+        hash1 = hash_pandas_series(series)
+        assert isinstance(hash1, str)
+        assert len(hash1) == 64
+
+        # Create different large series
+        series2 = pd.Series(range(1, 10001), name="large_series")
+        hash2 = hash_pandas_series(series2)
+        assert hash1 != hash2

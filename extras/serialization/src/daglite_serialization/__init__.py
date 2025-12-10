@@ -23,7 +23,10 @@ def register_all():
     # Auto-discover all modules in this package
     for finder, module_name, ispkg in pkgutil.iter_modules(__path__, __name__ + "."):
         # Skip __init__ and private modules
-        if module_name.endswith("__init__") or module_name.split(".")[-1].startswith("_"):
+        if module_name.endswith("__init__") or module_name.split(".")[-1].startswith(
+            "_"
+        ):  # pragma: no cover
+            # Defensive check - we don't create such modules in this package
             continue
 
         try:
@@ -31,10 +34,12 @@ def register_all():
             module = importlib.import_module(module_name)
 
             # If it has register_handlers(), call it
-            if hasattr(module, "register_handlers"):
+            if hasattr(module, "register_handlers"):  # pragma: no branch
+                # All our plugin modules have register_handlers()
                 module.register_handlers()
-        except ImportError:
+        except ImportError:  # pragma: no cover
             # Module dependencies not installed - skip silently
+            # (tested manually but hard to automate without uninstalling deps)
             pass
 
 
