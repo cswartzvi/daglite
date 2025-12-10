@@ -1,0 +1,35 @@
+# --- build system ---
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# --- project & dependencies ---
+
+[project]
+name = "daglite-serialization"
+description = "Serialization plugin for daglite with support for various data types."
+dynamic = ["version"]
+readme = "README.md"
+dependencies = ["daglite"]
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.20"]
+pandas = ["pandas>=1.0", "pyarrow>=10.0"]
+pillow = ["pillow>=8.0"]
+all = [
+    "daglite_serialization[numpy]",
+    "daglite_serialization[pandas]",
+    "daglite_serialization[pillow]",
+]
+
+# --- tool.setuptools ---
+
+[tool.setuptools.dynamic.version]
+attr = "daglite_serialization.__version__"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"daglite_serialization" = ["py.typed"]

@@ -17,13 +17,17 @@ dependencies = [
     "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
-[project.optional-dependencies]
+[project.optional-dependencies]  # Add new plugins here
 cli = ["daglite-cli"]
+serialization = ["daglite-serialization"]
 
 [dependency-groups]
 dev = [
+    "daglite-cli",
+    "daglite-serialization[all]",
     "mypy",
     "nox",
+    "pandas-stubs",
     "poethepoet",
     "pre-commit",
     "pre-commit-uv>=4.2.0",
@@ -60,7 +64,7 @@ exclude_also = [
 fail_under = 0
 
 [tool.coverage.run]
-source_pkgs = ["daglite", "daglite_cli"]  # Add new plugins here
+source_pkgs = ["daglite", "daglite_cli", "daglite_serialization"]     # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
@@ -78,17 +82,23 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "src:extras/cli/src"  # Add new plugins here
+mypy_path = "src:extras/cli/src:extras/serialization/src" # Add new plugins here
 
 # --- tool.pyright ---
 
 [tool.pyright]
-executionEnvironments = [  # Add new plugins here
+executionEnvironments = [ # Add new plugins here
     { root = "src" },
     { root = "extras/cli/src" },
+    { root = "extras/serialization/src" },
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
-exclude = ["**/__pycache__", "**/.pytest_cache", "**/.mypy_cache", "**/.ruff_cache"]
+exclude = [
+    "**/__pycache__",
+    "**/.pytest_cache",
+    "**/.mypy_cache",
+    "**/.ruff_cache",
+]
 typeCheckingMode = "standard"
 reportUnnecessaryTypeIgnoreComments = true
 
@@ -175,9 +185,10 @@ where = ["src"]
 [tool.uv]
 default-groups = ["dev", "test"]
 
-[tool.uv.sources]  # Add new plugins here
+[tool.uv.sources] # Add new plugins here
 daglite = { workspace = true }
 daglite-cli = { workspace = true }
+daglite-serialization = { workspace = true }
 
 [tool.uv.workspace]
 members = ["extras/*"]

@@ -1,6 +1,6 @@
 ## TL;DR
 
-We're adding production-ready caching and checkpointing to daglite with a type-safe, plugin-based architecture. 
+We're adding production-ready caching and checkpointing to daglite with a type-safe, plugin-based architecture.
 
 **Key innovations**:
 - Content-addressable caching (no explicit cache keys!)
@@ -9,84 +9,81 @@ We're adding production-ready caching and checkpointing to daglite with a type-s
 - Git-style file layout (Windows-safe)
 - Separate concerns: caching (performance) vs checkpointing (audit)
 
-## Start Here: Phase 1 - Serialization Registry
+## Phase 1: Serialization Registry ✅ COMPLETE
 
-This is the foundation everything builds on. Start with these files:
+This is the foundation everything builds on.
 
-### 1. Create `daglite-core/src/daglite/serialization/__init__.py`
+### Core Package
 
-```python
-"""Type-based serialization and hashing."""
-
-from .registry import (
-    SerializationRegistry,
-    SerializationHandler,
-    HashStrategy,
-    default_registry,
-)
-
-__all__ = [
-    'SerializationRegistry',
-    'SerializationHandler', 
-    'HashStrategy',
-    'default_registry',
-]
-```
-
-### 2. Create `daglite-core/src/daglite/serialization/registry.py`
-
-This is the main registry. Key methods:
+**`src/daglite/serialization.py`** - Single module with:
+- `SerializationRegistry` class for type-based serialization
 - `register()` - register serializer/deserializer for a type
 - `register_hash_strategy()` - register hash function for a type
 - `serialize()` / `deserialize()` - use registered handlers
-- `hash_value()` - hash using registered strategy
+- `hash_value()` - strict TypeError for unregistered types (no fallback)
+- Module-based error messages suggest correct plugin to install
+- Built-in hash strategies using closures for recursion (dict, list, set, etc.)
+- NO numpy/pandas/PIL (moved to plugin)
 
-See the design doc for full API.
-
-### 3. Create `daglite-core/src/daglite/serialization/hash_strategies.py`
-
-Smart hash functions for common types:
-- `hash_numpy_array()` - sample first/last 500 elements (~1ms for 800MB!)
-- `hash_dataframe()` - schema + sample rows (~10ms for 1M rows!)
-- `hash_image()` - downsample to 32x32
-
-These are **critical** for performance. Without them, hashing large objects kills caching.
-
-### 4. Create `daglite-core/tests/test_serialization.py`
-
-Test everything:
-- Type registration
-- Multiple formats per type
-- Hash strategies (correctness + performance!)
-- Type inheritance
+**`tests/test_serialization.py`** - 39 tests covering:
+- Type registration and multiple formats
+- Hash strategies for built-in types
+- Strict error handling
 - Edge cases
+- Recursive hashing for nested structures
+
+### Plugin Package
+
+**`extras/serialization/daglite-serialization/`** - Separate package:
+- Package name: `daglite_serialization` (flat namespace)
+- **`numpy.py`**: Sample-based hashing with start/middle/end sampling (<100ms for 800MB)
+- **`pandas.py`**: Schema + sample rows hashing (~10ms for 1M rows)
+- **`pillow.py`**: Thumbnail-based image hashing
+- **`register_all()`**: Convenience function to register all available handlers
+- 16 tests covering 1D/2D/3D arrays, DataFrames, Series, and images
+
+### Usage
+
+```python
+# Install plugin
+pip install daglite_serialization[numpy]
+
+# Register handlers
+from daglite_serialization import register_all
+register_all()
+
+# Now works with caching
+from daglite import task
+import numpy as np
+
+@task(cache=True)
+def process(arr: np.ndarray) -> np.ndarray:
+    return arr * 2
+```
 
 ## Implementation Order
 
-**Phase 1** (this is priority!):
-1. `serialization/registry.py` - Core registry class
-2. `serialization/hash_strategies.py` - Smart hashers
-3. `tests/test_serialization.py` - Comprehensive tests
+**Phase 1** ✅ COMPLETE:
+1. ✅ `serialization.py` - Single module with registry and built-in hash strategies
+2. ✅ `daglite_serialization` plugin - numpy/pandas/pillow handlers
+3. ✅ Tests - 39 core + 16 plugin tests, 100% coverage
 
-**Phase 2** (after Phase 1):
-1. `caching/store.py` - Protocol
+**Phase 2** (next - caching):
+1. `caching/store.py` - CacheStore Protocol
 2. `caching/hash.py` - default_cache_hash()
 3. `caching/eviction.py` - Eviction policies
-4. `plugins/cache/file.py` - File-based store
+4. File-based cache store implementation
 5. Update `@task` decorator with cache parameters
 
-**Phase 3** (after Phase 2):
-1. `checkpointing/store.py` - Protocol
-2. `plugins/checkpoint/file.py` - File-based store
-3. `plugins/checkpoint/s3.py` - S3 store
+**Phase 3** (checkpointing):
+1. `checkpointing/store.py` - CheckpointStore Protocol
+2. File-based checkpoint store
+3. S3 checkpoint store
 4. Add `.checkpoint()` to TaskFuture
 
-**Phase 4** (after Phase 3):
+**Phase 4** (side effects):
 1. Add `.also()` to TaskFuture
-
-**Phase 5** (polish):
-1. Pandas plugin auto-registration
-2. Numpy plugin auto-registration
+2. Use internally for `.checkpoint()`
 
 ## Key Design Decisions
 
@@ -152,19 +149,26 @@ daglite-core/src/daglite/
 - Add: `.also(callback)` method
 - Add: `.checkpoint(name)` method
 
-## Success Criteria for Phase 1
+## Phase 1 Success Criteria ✅ ALL MET
 
-✅ Can register custom types  
-✅ Can serialize/deserialize with multiple formats  
-✅ Can hash small types (exact)  
-✅ Can hash large types (sample-based, fast!)  
-✅ 100% test coverage  
-✅ Performance: hash 800MB numpy array in <100ms  
+✅ Can register custom types with multiple formats
+✅ Can serialize/deserialize built-in and custom types
+✅ Strict error handling (TypeError for unregistered types)
+✅ Module-based error messages guide users to correct plugin
+✅ Plugin package (`daglite_serialization`) with numpy/pandas/pillow
+✅ Smart hash strategies with start/middle/end sampling
+✅ 100% test coverage (39 core + 16 plugin tests)
+✅ Performance: hash 800MB numpy array in <100ms
+✅ Recursive hashing via closures for nested data structures
 
-Once Phase 1 is solid, everything else builds on top!
+Phase 1 is complete! Ready for Phase 2 (Caching Infrastructure).
 
-## Let's Go! 🚀
+## Next: Phase 2 - Caching 🚀
 
-Start with `serialization/registry.py`. The design doc has the complete API and implementation details. Focus on getting Phase 1 working perfectly before moving to Phase 2.
+Now that serialization is solid, the next step is implementing the caching infrastructure:
+1. `CacheStore` Protocol
+2. `default_cache_hash()` function
+3. File-based cache with eviction policies
+4. Integration with `@task` decorator
 
-Remember: **Hash performance is CRITICAL**. Without fast hashing, the entire caching system becomes unusable for realistic workloads.
+See the full design doc for details on Phase 2.
