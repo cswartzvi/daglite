@@ -43,24 +43,25 @@ T = TypeVar("T")
 
 @dataclass
 class SerializationHandler:
-    """
-    Handler for serializing/deserializing a specific type in a specific format.
-
-    Attributes:
-        type_: The Python type this handler applies to
-        format: Format identifier (e.g., 'pickle', 'csv', 'parquet')
-        file_extension: File extension for this format (e.g., 'pkl', 'csv')
-        serializer: Function to convert object to bytes
-        deserializer: Function to convert bytes back to object
-        is_default: Whether this is the default format for the type
-    """
+    """Handler for serializing/deserializing a specific type in a specific format."""
 
     type_: Type
+    """Python type this handler applies to"""
+
     format: str
+    """Format identifier (e.g., 'pickle', 'csv', 'parquet')"""
+
     file_extension: str
+    """File extension for this format (e.g., 'pkl', 'csv')"""
+
     serializer: Callable[[Any], bytes]
+    """Function to convert object to bytes"""
+
     deserializer: Callable[[bytes], Any]
+    """Function to convert bytes back to object"""
+
     is_default: bool = False
+    """Whether this is the default format for the type"""
 
 
 @dataclass
@@ -75,8 +76,13 @@ class HashStrategy:
     """
 
     type_: Type
+    """Python type this strategy applies to"""
+
     hasher: Callable[[Any], str]
+    """Function to compute hash string from object"""
+
     description: str = ""
+    """Human-readable description of the strategy"""
 
 
 class SerializationRegistry:
@@ -114,16 +120,9 @@ class SerializationRegistry:
 
     def __init__(self) -> None:
         """Initialize registry with built-in types."""
-        # Map: (type, format) -> SerializationHandler
         self._handlers: dict[tuple[Type, str], SerializationHandler] = {}
-
-        # Map: type -> default_format
         self._default_formats: dict[Type, str] = {}
-
-        # Map: type -> HashStrategy
         self._hash_strategies: dict[Type, HashStrategy] = {}
-
-        # Register built-in types
         self._register_builtin_types()
 
     def register(
