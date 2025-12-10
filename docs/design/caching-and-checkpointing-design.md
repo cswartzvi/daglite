@@ -89,10 +89,7 @@ Add production-ready caching and checkpointing to daglite with:
 ```
 daglite/
 ├── src/daglite/
-│   ├── serialization/
-│   │   ├── __init__.py
-│   │   ├── registry.py          # SerializationRegistry
-│   │   └── hash_strategies.py   # Built-in types only
+│   ├── serialization.py         # SerializationRegistry + built-in strategies
 │   ├── caching/
 │   │   ├── __init__.py
 │   │   ├── store.py             # CacheStore Protocol
@@ -126,12 +123,12 @@ daglite/
 
 **Goal**: Core infrastructure that everything builds on
 
-**File to create**:
+**Files created**:
 
-- `src/daglite/serialization/registry.py` - Core registry (strict errors)
-- `src/daglite/serialization/hash_strategies.py` - Built-in types only
+- `src/daglite/serialization.py` - Single module with registry and built-in strategies
 - `extras/serialization/daglite-serialization/` - Plugin package
-- `tests/test_serialization.py` - 29 tests passing
+- `tests/test_serialization.py` - 39 tests passing
+- `extras/serialization/tests/test_serialization_plugin.py` - 16 tests passing
 
 **Key classes**:
 
@@ -141,11 +138,12 @@ daglite/
 
 **Success criteria**:
 
-- [x] ]Register custom types with multiple formats
+- [x] Register custom types with multiple formats
 - [x] Strict TypeError for unregistered types (no repr() fallback)
 - [x] Plugin package (`daglite_serialization`) with numpy/pandas/pillow
-- [x] Smart hash strategies with middle sampling (<100ms for 800MB arrays)
-- [ ] 100% test coverage (29 core + 12 plugin tests)
+- [x] Smart hash strategies with start/middle/end sampling (<100ms for 800MB arrays)
+- [x] 100% test coverage (39 core + 16 plugin tests)
+- [x] Recursive hashing via closures for nested data structures
 
 ### Phase 2: Caching Infrastructure
 

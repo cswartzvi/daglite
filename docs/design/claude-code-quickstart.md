@@ -1,6 +1,6 @@
 ## TL;DR
 
-We're adding production-ready caching and checkpointing to daglite with a type-safe, plugin-based architecture. 
+We're adding production-ready caching and checkpointing to daglite with a type-safe, plugin-based architecture.
 
 **Key innovations**:
 - Content-addressable caching (no explicit cache keys!)
@@ -15,22 +15,22 @@ This is the foundation everything builds on.
 
 ### Core Package
 
-**`src/daglite/serialization/registry.py`** - Main registry with:
+**`src/daglite/serialization.py`** - Single module with:
+- `SerializationRegistry` class for type-based serialization
 - `register()` - register serializer/deserializer for a type
 - `register_hash_strategy()` - register hash function for a type
 - `serialize()` / `deserialize()` - use registered handlers
 - `hash_value()` - strict TypeError for unregistered types (no fallback)
 - Module-based error messages suggest correct plugin to install
-
-**`src/daglite/serialization/hash_strategies.py`** - Built-in types only:
-- `hash_string()`, `hash_int()`, `hash_dict()`, `hash_list()`, etc.
+- Built-in hash strategies using closures for recursion (dict, list, set, etc.)
 - NO numpy/pandas/PIL (moved to plugin)
 
-**`tests/test_serialization.py`** - 29 tests covering:
+**`tests/test_serialization.py`** - 39 tests covering:
 - Type registration and multiple formats
 - Hash strategies for built-in types
 - Strict error handling
 - Edge cases
+- Recursive hashing for nested structures
 
 ### Plugin Package
 
@@ -40,7 +40,7 @@ This is the foundation everything builds on.
 - **`pandas.py`**: Schema + sample rows hashing (~10ms for 1M rows)
 - **`pillow.py`**: Thumbnail-based image hashing
 - **`register_all()`**: Convenience function to register all available handlers
-- 12 tests (6 passing with numpy, 6 skipped for pandas/PIL)
+- 16 tests covering 1D/2D/3D arrays, DataFrames, Series, and images
 
 ### Usage
 
@@ -64,10 +64,9 @@ def process(arr: np.ndarray) -> np.ndarray:
 ## Implementation Order
 
 **Phase 1** ✅ COMPLETE:
-1. ✅ `serialization/registry.py` - Core registry with strict errors
-2. ✅ `serialization/hash_strategies.py` - Built-in types only
-3. ✅ `daglite_serialization` plugin - numpy/pandas/pillow handlers
-4. ✅ Tests - 29 core + 12 plugin tests
+1. ✅ `serialization.py` - Single module with registry and built-in hash strategies
+2. ✅ `daglite_serialization` plugin - numpy/pandas/pillow handlers
+3. ✅ Tests - 39 core + 16 plugin tests, 100% coverage
 
 **Phase 2** (next - caching):
 1. `caching/store.py` - CacheStore Protocol
@@ -158,8 +157,9 @@ daglite-core/src/daglite/
 ✅ Module-based error messages guide users to correct plugin
 ✅ Plugin package (`daglite_serialization`) with numpy/pandas/pillow
 ✅ Smart hash strategies with start/middle/end sampling
-✅ 100% test coverage (29 core + 12 plugin tests)
+✅ 100% test coverage (39 core + 16 plugin tests)
 ✅ Performance: hash 800MB numpy array in <100ms
+✅ Recursive hashing via closures for nested data structures
 
 Phase 1 is complete! Ready for Phase 2 (Caching Infrastructure).
 
