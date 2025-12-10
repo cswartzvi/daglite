@@ -14,7 +14,6 @@ class TestNumpyPlugin:
         """Test that numpy array hashing is fast for large arrays."""
         pytest.importorskip("numpy")
         import numpy as np
-
         from daglite_serialization.numpy import hash_numpy_array
 
         # Create a large array (800MB)
@@ -36,7 +35,6 @@ class TestNumpyPlugin:
         """Test that small numpy arrays are fully hashed."""
         pytest.importorskip("numpy")
         import numpy as np
-
         from daglite_serialization.numpy import hash_numpy_array
 
         arr1 = np.array([1, 2, 3, 4, 5])
@@ -53,7 +51,6 @@ class TestNumpyPlugin:
         """Test that middle sampling catches changes."""
         pytest.importorskip("numpy")
         import numpy as np
-
         from daglite_serialization.numpy import hash_numpy_array
 
         # Create large identical arrays
@@ -71,7 +68,6 @@ class TestNumpyPlugin:
         """Test registering numpy handlers."""
         pytest.importorskip("numpy")
         import numpy as np
-
         from daglite_serialization.numpy import register_handlers
 
         # Create fresh registry
@@ -101,7 +97,6 @@ class TestPandasPlugin:
         pytest.importorskip("pandas")
         import numpy as np
         import pandas as pd
-
         from daglite_serialization.pandas import hash_pandas_dataframe
 
         # Create a large DataFrame (1M rows)
@@ -129,7 +124,6 @@ class TestPandasPlugin:
         """Test that small DataFrames are fully hashed."""
         pytest.importorskip("pandas")
         import pandas as pd
-
         from daglite_serialization.pandas import hash_pandas_dataframe
 
         df1 = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
@@ -146,7 +140,6 @@ class TestPandasPlugin:
         """Test pandas Series hashing."""
         pytest.importorskip("pandas")
         import pandas as pd
-
         from daglite_serialization.pandas import hash_pandas_series
 
         series1 = pd.Series([1, 2, 3, 4, 5], name="data")
@@ -163,7 +156,6 @@ class TestPandasPlugin:
         """Test registering pandas handlers."""
         pytest.importorskip("pandas")
         import pandas as pd
-
         from daglite_serialization.pandas import register_handlers
 
         # Register handlers
@@ -191,9 +183,8 @@ class TestPillowPlugin:
         pytest.importorskip("PIL")
         pytest.importorskip("numpy")
         import numpy as np
-        from PIL import Image
-
         from daglite_serialization.pillow import hash_pil_image
+        from PIL import Image
 
         # Create test images
         img1 = Image.fromarray(np.random.randint(0, 255, (1000, 1000, 3), dtype=np.uint8))
@@ -212,9 +203,8 @@ class TestPillowPlugin:
         pytest.importorskip("PIL")
         pytest.importorskip("numpy")
         import numpy as np
-        from PIL import Image
-
         from daglite_serialization.pillow import register_handlers
+        from PIL import Image
 
         # Register handlers
         register_handlers()
@@ -241,8 +231,9 @@ class TestRegisterAll:
         register_all()
 
         # Should work with numpy at minimum
-        from daglite.serialization import default_registry
         import numpy as np
+
+        from daglite.serialization import default_registry
 
         arr = np.array([1, 2, 3])
         hash_value = default_registry.hash_value(arr)

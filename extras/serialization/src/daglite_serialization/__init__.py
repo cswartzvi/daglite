@@ -7,7 +7,8 @@ __version__ = "0.1.0"
 
 
 def register_all():
-    """Register all available serialization handlers.
+    """
+    Register all available serialization handlers.
 
     This function auto-discovers and registers handlers for all available
     serialization modules in this package. Each module should provide a

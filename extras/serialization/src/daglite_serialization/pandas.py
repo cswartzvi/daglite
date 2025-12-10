@@ -8,7 +8,8 @@ from daglite.serialization import default_registry
 
 
 def hash_pandas_dataframe(df: pd.DataFrame) -> str:
-    """Fast hash for pandas DataFrames using schema + sample rows.
+    """
+    Fast hash for pandas DataFrames using schema + sample rows.
 
     Strategy:
     - Hash shape, column names, dtypes (always fast)
@@ -39,15 +40,16 @@ def hash_pandas_dataframe(df: pd.DataFrame) -> str:
         # Sample from start, middle, and end
         mid = len(df) // 2
         sample = pd.concat([df.head(333), df.iloc[mid : mid + 334], df.tail(333)])
-        h.update(pd.util.hash_pandas_object(sample).values.tobytes())
+        h.update(pd.util.hash_pandas_object(sample).values.tobytes())  # type: ignore
     else:
-        h.update(pd.util.hash_pandas_object(df).values.tobytes())
+        h.update(pd.util.hash_pandas_object(df).values.tobytes())  # type: ignore
 
     return h.hexdigest()
 
 
 def hash_pandas_series(series: pd.Series) -> str:
-    """Fast hash for pandas Series using dtype + sample values.
+    """
+    Fast hash for pandas Series using dtype + sample values.
 
     Args:
         series: pandas Series
@@ -66,15 +68,16 @@ def hash_pandas_series(series: pd.Series) -> str:
     if len(series) > 1000:
         mid = len(series) // 2
         sample = pd.concat([series.head(333), series.iloc[mid : mid + 334], series.tail(333)])
-        h.update(pd.util.hash_pandas_object(sample).values.tobytes())
+        h.update(pd.util.hash_pandas_object(sample).values.tobytes())  # type: ignore
     else:
-        h.update(pd.util.hash_pandas_object(series).values.tobytes())
+        h.update(pd.util.hash_pandas_object(series).values.tobytes())  # type: ignore
 
     return h.hexdigest()
 
 
 def register_handlers():
-    """Register pandas handlers with the default registry.
+    """
+    Register pandas handlers with the default registry.
 
     This registers:
     - Hash strategy for pd.DataFrame (schema + sample-based)

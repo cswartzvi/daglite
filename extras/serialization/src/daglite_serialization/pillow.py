@@ -8,7 +8,8 @@ from daglite.serialization import default_registry
 
 
 def hash_pil_image(img: Image.Image) -> str:
-    """Fast hash for PIL Images using thumbnail.
+    """
+    Fast hash for PIL Images using thumbnail.
 
     Strategy:
     - Hash size and mode (metadata)
@@ -37,7 +38,8 @@ def hash_pil_image(img: Image.Image) -> str:
 
 
 def register_handlers():
-    """Register PIL/Pillow image handlers with the default registry.
+    """
+    Register PIL/Pillow image handlers with the default registry.
 
     This registers:
     - Hash strategy for PIL.Image.Image (thumbnail-based)

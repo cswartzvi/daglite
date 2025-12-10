@@ -8,7 +8,8 @@ from daglite.serialization import default_registry
 
 
 def hash_numpy_array(arr: np.ndarray) -> str:
-    """Fast hash for numpy arrays using metadata + sample.
+    """
+    Fast hash for numpy arrays using metadata + sample.
 
     Strategy:
     - Hash shape, dtype (always fast)
@@ -68,7 +69,8 @@ def hash_numpy_array(arr: np.ndarray) -> str:
 
 
 def register_handlers():
-    """Register numpy array handlers with the default registry.
+    """
+    Register numpy array handlers with the default registry.
 
     This registers:
     - Hash strategy for np.ndarray (sample-based for performance)
