@@ -1,18 +1,12 @@
 """Tests for serialization registry and hash strategies."""
 
 import pickle
-import time
 from dataclasses import dataclass
 
 import pytest
 
-from daglite.serialization import (
-    HashStrategy,
-    SerializationHandler,
-    SerializationRegistry,
-    default_registry,
-)
-from daglite.serialization import hash_strategies
+from daglite.serialization import SerializationRegistry
+from daglite.serialization import default_registry
 
 
 # Module-level test classes (needed for pickle support)
@@ -184,7 +178,7 @@ class TestSerializationRegistry:
         # Register hash strategy (only hash value, not metadata)
         registry.register_hash_strategy(
             Data,
-            lambda d: hash_strategies.hash_int(d.value),
+            lambda d: registry.hash_value(d.value),
             "Hash only the value field",
         )
 
@@ -245,31 +239,31 @@ class TestHashStrategies:
 
     def test_hash_string(self):
         """Test string hashing."""
-        hash1 = hash_strategies.hash_string("hello")
-        hash2 = hash_strategies.hash_string("hello")
-        hash3 = hash_strategies.hash_string("world")
+        hash1 = default_registry.hash_value("hello")
+        hash2 = default_registry.hash_value("hello")
+        hash3 = default_registry.hash_value("world")
 
         assert hash1 == hash2
         assert hash1 != hash3
 
     def test_hash_int(self):
         """Test integer hashing."""
-        assert hash_strategies.hash_int(42) == hash_strategies.hash_int(42)
-        assert hash_strategies.hash_int(42) != hash_strategies.hash_int(43)
+        assert default_registry.hash_value(42) == default_registry.hash_value(42)
+        assert default_registry.hash_value(42) != default_registry.hash_value(43)
 
     def test_hash_float(self):
         """Test float hashing."""
-        assert hash_strategies.hash_float(3.14) == hash_strategies.hash_float(3.14)
-        assert hash_strategies.hash_float(3.14) != hash_strategies.hash_float(3.15)
+        assert default_registry.hash_value(3.14) == default_registry.hash_value(3.14)
+        assert default_registry.hash_value(3.14) != default_registry.hash_value(3.15)
 
     def test_hash_bool(self):
         """Test boolean hashing."""
-        assert hash_strategies.hash_bool(True) == hash_strategies.hash_bool(True)
-        assert hash_strategies.hash_bool(True) != hash_strategies.hash_bool(False)
+        assert default_registry.hash_value(True) == default_registry.hash_value(True)
+        assert default_registry.hash_value(True) != default_registry.hash_value(False)
 
     def test_hash_none(self):
         """Test None hashing."""
-        assert hash_strategies.hash_none(None) == hash_strategies.hash_none(None)
+        assert default_registry.hash_value(None) == default_registry.hash_value(None)
 
     def test_hash_dict(self):
         """Test dictionary hashing."""
@@ -278,10 +272,10 @@ class TestHashStrategies:
         dict3 = {"a": 1, "b": 3}
 
         # Same content should have same hash (order-independent)
-        assert hash_strategies.hash_dict(dict1) == hash_strategies.hash_dict(dict2)
+        assert default_registry.hash_value(dict1) == default_registry.hash_value(dict2)
 
         # Different content should have different hash
-        assert hash_strategies.hash_dict(dict1) != hash_strategies.hash_dict(dict3)
+        assert default_registry.hash_value(dict1) != default_registry.hash_value(dict3)
 
     def test_hash_list(self):
         """Test list hashing."""
@@ -289,8 +283,8 @@ class TestHashStrategies:
         list2 = [1, 2, 3]
         list3 = [3, 2, 1]
 
-        assert hash_strategies.hash_list(list1) == hash_strategies.hash_list(list2)
-        assert hash_strategies.hash_list(list1) != hash_strategies.hash_list(list3)
+        assert default_registry.hash_value(list1) == default_registry.hash_value(list2)
+        assert default_registry.hash_value(list1) != default_registry.hash_value(list3)
 
     def test_hash_tuple(self):
         """Test tuple hashing."""
@@ -298,8 +292,8 @@ class TestHashStrategies:
         tuple2 = (1, 2, 3)
         tuple3 = (3, 2, 1)
 
-        assert hash_strategies.hash_tuple(tuple1) == hash_strategies.hash_tuple(tuple2)
-        assert hash_strategies.hash_tuple(tuple1) != hash_strategies.hash_tuple(tuple3)
+        assert default_registry.hash_value(tuple1) == default_registry.hash_value(tuple2)
+        assert default_registry.hash_value(tuple1) != default_registry.hash_value(tuple3)
 
     def test_hash_set(self):
         """Test set hashing."""
@@ -308,11 +302,10 @@ class TestHashStrategies:
         set3 = {1, 2, 4}
 
         # Same content should have same hash (order-independent)
-        assert hash_strategies.hash_set(set1) == hash_strategies.hash_set(set2)
+        assert default_registry.hash_value(set1) == default_registry.hash_value(set2)
 
         # Different content should have different hash
-        assert hash_strategies.hash_set(set1) != hash_strategies.hash_set(set3)
-
+        assert default_registry.hash_value(set1) != default_registry.hash_value(set3)
 
 
 class TestDefaultRegistry:
@@ -340,15 +333,15 @@ class TestEdgeCases:
 
     def test_empty_dict(self):
         """Test hashing empty dictionary."""
-        assert hash_strategies.hash_dict({}) == hash_strategies.hash_dict({})
+        assert default_registry.hash_value({}) == default_registry.hash_value({})
 
     def test_empty_list(self):
         """Test hashing empty list."""
-        assert hash_strategies.hash_list([]) == hash_strategies.hash_list([])
+        assert default_registry.hash_value([]) == default_registry.hash_value([])
 
     def test_empty_string(self):
         """Test hashing empty string."""
-        assert hash_strategies.hash_string("") == hash_strategies.hash_string("")
+        assert default_registry.hash_value("") == default_registry.hash_value("")
 
     def test_nested_dict(self):
         """Test hashing nested dictionary."""
@@ -356,8 +349,8 @@ class TestEdgeCases:
         dict2 = {"a": {"b": 1, "c": 2}, "d": 3}
         dict3 = {"a": {"b": 1, "c": 3}, "d": 3}
 
-        assert hash_strategies.hash_dict(dict1) == hash_strategies.hash_dict(dict2)
-        assert hash_strategies.hash_dict(dict1) != hash_strategies.hash_dict(dict3)
+        assert default_registry.hash_value(dict1) == default_registry.hash_value(dict2)
+        assert default_registry.hash_value(dict1) != default_registry.hash_value(dict3)
 
     def test_nested_list(self):
         """Test hashing nested list."""
@@ -365,15 +358,15 @@ class TestEdgeCases:
         list2 = [[1, 2], [3, 4]]
         list3 = [[1, 2], [3, 5]]
 
-        assert hash_strategies.hash_list(list1) == hash_strategies.hash_list(list2)
-        assert hash_strategies.hash_list(list1) != hash_strategies.hash_list(list3)
+        assert default_registry.hash_value(list1) == default_registry.hash_value(list2)
+        assert default_registry.hash_value(list1) != default_registry.hash_value(list3)
 
     def test_mixed_types_in_dict(self):
         """Test hashing dictionary with mixed value types."""
         dict1 = {"a": 1, "b": "hello", "c": [1, 2, 3]}
         dict2 = {"a": 1, "b": "hello", "c": [1, 2, 3]}
 
-        assert hash_strategies.hash_dict(dict1) == hash_strategies.hash_dict(dict2)
+        assert default_registry.hash_value(dict1) == default_registry.hash_value(dict2)
 
     def test_unicode_string(self):
         """Test hashing Unicode strings."""
@@ -381,5 +374,48 @@ class TestEdgeCases:
         str2 = "Hello 世界 🌍"
         str3 = "Hello World"
 
-        assert hash_strategies.hash_string(str1) == hash_strategies.hash_string(str2)
-        assert hash_strategies.hash_string(str1) != hash_strategies.hash_string(str3)
+        assert default_registry.hash_value(str1) == default_registry.hash_value(str2)
+        assert default_registry.hash_value(str1) != default_registry.hash_value(str3)
+
+    def test_recursive_hashing(self):
+        """Test that hashing works recursively through collections.
+
+        This is important for Phase 2 caching - we want to be able to hash
+        complex nested structures like dict[str, np.ndarray] automatically.
+        """
+
+        # Register a custom type
+        @dataclass
+        class Point:
+            x: int
+            y: int
+
+        registry = SerializationRegistry()
+        registry.register_hash_strategy(
+            Point, lambda p: registry.hash_value((p.x, p.y)), "Hash Point as tuple"
+        )
+
+        # Test nested structures
+        point1 = Point(1, 2)
+        point2 = Point(1, 2)
+        point3 = Point(3, 4)
+
+        # Direct hash
+        assert registry.hash_value(point1) == registry.hash_value(point2)
+        assert registry.hash_value(point1) != registry.hash_value(point3)
+
+        # In a list (recursive!)
+        list1 = [point1, "hello", 42]
+        list2 = [point2, "hello", 42]
+        list3 = [point3, "hello", 42]
+
+        assert registry.hash_value(list1) == registry.hash_value(list2)
+        assert registry.hash_value(list1) != registry.hash_value(list3)
+
+        # In a dict (recursive!)
+        dict1 = {"point": point1, "name": "A"}
+        dict2 = {"point": point2, "name": "A"}
+        dict3 = {"point": point3, "name": "A"}
+
+        assert registry.hash_value(dict1) == registry.hash_value(dict2)
+        assert registry.hash_value(dict1) != registry.hash_value(dict3)

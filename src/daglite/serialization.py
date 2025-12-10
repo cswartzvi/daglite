@@ -1,18 +1,42 @@
 """
-Central registry for type-based serialization and hashing.
+Type-based serialization and hashing.
 
-The SerializationRegistry provides:
-- Type registration with custom serializers/deserializers
-- Multiple format support per type (e.g., CSV, Parquet, Pickle for DataFrames)
-- Smart hash strategies for efficient cache key generation
-- Format preferences and automatic type inference
+This module provides a central registry for type-based serialization,
+deserialization, and hashing. It's designed to support efficient caching
+and checkpointing with smart hash strategies for large objects.
+
+Key components:
+- SerializationRegistry: Main registry for types
+- SerializationHandler: Per-format handler
+- HashStrategy: Per-type hash function
+- default_registry: Global registry instance
+
+Example:
+    >>> from daglite.serialization import default_registry
+    >>>
+    >>> # Register a custom type
+    >>> default_registry.register(
+    ...     MyModel,
+    ...     lambda m: m.to_bytes(),
+    ...     lambda b: MyModel.from_bytes(b),
+    ...     format="default",
+    ...     file_extension="model",
+    ... )
+    >>>
+    >>> # Register hash strategy
+    >>> default_registry.register_hash_strategy(
+    ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
+    ... )
+    >>>
+    >>> # Use it
+    >>> data, ext = default_registry.serialize(my_model)
+    >>> hash_key = default_registry.hash_value(my_model)
 """
 
+import hashlib
 import pickle
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Type, TypeVar
-
-from . import hash_strategies
+from typing import Any, Callable, Type, TypeVar
 
 T = TypeVar("T")
 
@@ -62,6 +86,9 @@ class SerializationRegistry:
     This registry maps Python types to:
     1. Serialization handlers (one or more per type)
     2. Hash strategies (one per type)
+
+    Hash strategies support recursive hashing, so collections containing
+    registered types (like dict[str, np.ndarray]) automatically work.
 
     Example:
         >>> registry = SerializationRegistry()
@@ -174,7 +201,7 @@ class SerializationRegistry:
     def serialize(
         self,
         obj: Any,
-        format: Optional[str] = None,
+        format: str | None = None,
     ) -> tuple[bytes, str]:
         """
         Serialize an object using registered handler.
@@ -211,7 +238,7 @@ class SerializationRegistry:
         self,
         data: bytes,
         type_: Type[T],
-        format: Optional[str] = None,
+        format: str | None = None,
     ) -> T:
         """
         Deserialize bytes back to an object.
@@ -246,6 +273,9 @@ class SerializationRegistry:
         """
         Hash an object using registered strategy.
 
+        Supports recursive hashing - collections containing registered types
+        will automatically use the appropriate hash strategies for nested values.
+
         Args:
             obj: The object to hash
 
@@ -258,6 +288,7 @@ class SerializationRegistry:
         Example:
             >>> registry.hash_value([1, 2, 3])
             'a1b2c3d4...'  # Uses built-in list hasher
+            >>> registry.hash_value({"data": np_array})  # Recursively hashes numpy array
         """
         obj_type = type(obj)
 
@@ -329,7 +360,7 @@ class SerializationRegistry:
     def get_extension(
         self,
         type_: Type,
-        format: Optional[str] = None,
+        format: str | None = None,
     ) -> str:
         """
         Get the file extension for a type/format combination.
@@ -359,7 +390,7 @@ class SerializationRegistry:
         self,
         type_: Type,
         format: str,
-    ) -> Optional[SerializationHandler]:
+    ) -> SerializationHandler | None:
         """Find handler for type/format, checking subclasses if needed."""
         # Try exact match first
         key = (type_, format)
@@ -378,7 +409,7 @@ class SerializationRegistry:
 
         return None
 
-    def _find_hash_strategy(self, type_: Type) -> Optional[HashStrategy]:
+    def _find_hash_strategy(self, type_: Type) -> HashStrategy | None:
         """Find hash strategy for type, checking subclasses if needed."""
         # Try exact match first
         if type_ in self._hash_strategies:
@@ -396,8 +427,19 @@ class SerializationRegistry:
         return None
 
     def _register_builtin_types(self) -> None:
-        """Register serialization and hash strategies for built-in Python types."""
-        # bytes
+        """
+        Register serialization and hash strategies for built-in Python types.
+
+        Hash strategies use closures to enable recursive hashing - collections
+        can contain any registered type and hashing will work automatically.
+        """
+
+        # Helper: hash simple immutable values via repr
+        def hash_simple(obj: Any) -> str:
+            """Hash simple values (str, int, float, bool, None) using repr."""
+            return hashlib.sha256(repr(obj).encode()).hexdigest()
+
+        # bytes - direct hash
         self.register(
             bytes,
             lambda b: b,
@@ -405,47 +447,51 @@ class SerializationRegistry:
             format="raw",
             file_extension="bin",
         )
-        self.register_hash_strategy(bytes, hash_strategies.hash_bytes)
+        self.register_hash_strategy(
+            bytes,
+            lambda data: hashlib.sha256(data).hexdigest(),
+            "Direct SHA256 hash of bytes",
+        )
 
         # str
         self.register(
             str,
             lambda s: s.encode("utf-8"),
             lambda b: b.decode("utf-8"),
-            format="utf8",
+            format="text",
             file_extension="txt",
         )
-        self.register_hash_strategy(str, hash_strategies.hash_string)
+        self.register_hash_strategy(str, hash_simple, "Hash str via repr")
 
         # int
         self.register(
             int,
-            lambda n: str(n).encode(),
+            lambda x: str(x).encode(),
             lambda b: int(b.decode()),
             format="text",
             file_extension="txt",
         )
-        self.register_hash_strategy(int, hash_strategies.hash_int)
+        self.register_hash_strategy(int, hash_simple, "Hash int via repr")
 
         # float
         self.register(
             float,
-            lambda f: str(f).encode(),
+            lambda x: str(x).encode(),
             lambda b: float(b.decode()),
             format="text",
             file_extension="txt",
         )
-        self.register_hash_strategy(float, hash_strategies.hash_float)
+        self.register_hash_strategy(float, hash_simple, "Hash float via repr")
 
         # bool
         self.register(
             bool,
-            lambda b: str(b).encode(),
+            lambda x: str(x).encode(),
             lambda b: b.decode() == "True",
             format="text",
             file_extension="txt",
         )
-        self.register_hash_strategy(bool, hash_strategies.hash_bool)
+        self.register_hash_strategy(bool, hash_simple, "Hash bool via repr")
 
         # NoneType
         self.register(
@@ -455,9 +501,18 @@ class SerializationRegistry:
             format="text",
             file_extension="txt",
         )
-        self.register_hash_strategy(type(None), hash_strategies.hash_none)
+        self.register_hash_strategy(type(None), hash_simple, "Hash NoneType via repr")
 
-        # dict (using pickle)
+        # dict - recursive hashing via closure
+        def hash_dict(d: dict) -> str:
+            """Hash dict recursively using registry for values."""
+            h = hashlib.sha256()
+            for key in sorted(d.keys()):
+                h.update(str(key).encode())
+                # Recursively hash value using registry
+                h.update(self.hash_value(d[key]).encode())
+            return h.hexdigest()
+
         self.register(
             dict,
             pickle.dumps,
@@ -465,48 +520,59 @@ class SerializationRegistry:
             format="pickle",
             file_extension="pkl",
         )
-        self.register_hash_strategy(dict, hash_strategies.hash_dict)
+        self.register_hash_strategy(dict, hash_dict, "Recursive hash of dict values")
 
-        # list (using pickle)
-        self.register(
-            list,
-            pickle.dumps,
-            pickle.loads,
-            format="pickle",
-            file_extension="pkl",
-        )
-        self.register_hash_strategy(list, hash_strategies.hash_list)
+        # list, tuple - recursive hashing via closure
+        def hash_sequence(items) -> str:
+            """Hash sequence recursively using registry for items."""
+            h = hashlib.sha256()
+            for item in items:
+                # Recursively hash item using registry
+                h.update(self.hash_value(item).encode())
+            return h.hexdigest()
 
-        # tuple (using pickle)
-        self.register(
-            tuple,
-            pickle.dumps,
-            pickle.loads,
-            format="pickle",
-            file_extension="pkl",
-        )
-        self.register_hash_strategy(tuple, hash_strategies.hash_tuple)
+        for type_ in [list, tuple]:
+            self.register(
+                type_,
+                pickle.dumps,
+                pickle.loads,
+                format="pickle",
+                file_extension="pkl",
+            )
+            self.register_hash_strategy(
+                type_, hash_sequence, f"Recursive hash of {type_.__name__} items"
+            )
 
-        # set (using pickle)
-        self.register(
-            set,
-            pickle.dumps,
-            pickle.loads,
-            format="pickle",
-            file_extension="pkl",
-        )
-        self.register_hash_strategy(set, hash_strategies.hash_set)
+        # set, frozenset - sort then recursive hash
+        def hash_unordered(items) -> str:
+            """Hash unordered collection recursively using registry for items."""
+            h = hashlib.sha256()
+            # Sort by hash to get deterministic order
+            item_hashes = sorted(self.hash_value(item) for item in items)
+            for item_hash in item_hashes:
+                h.update(item_hash.encode())
+            return h.hexdigest()
 
-        # frozenset (using pickle)
-        self.register(
-            frozenset,
-            pickle.dumps,
-            pickle.loads,
-            format="pickle",
-            file_extension="pkl",
-        )
-        self.register_hash_strategy(frozenset, hash_strategies.hash_frozenset)
+        for type_ in [set, frozenset]:
+            self.register(
+                type_,
+                pickle.dumps,
+                pickle.loads,
+                format="pickle",
+                file_extension="pkl",
+            )
+            self.register_hash_strategy(
+                type_, hash_unordered, f"Recursive hash of {type_.__name__} items"
+            )
 
 
 # Global default registry instance
 default_registry = SerializationRegistry()
+
+
+__all__ = [
+    "SerializationRegistry",
+    "SerializationHandler",
+    "HashStrategy",
+    "default_registry",
+]
