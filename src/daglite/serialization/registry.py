@@ -1,4 +1,5 @@
-"""Central registry for type-based serialization and hashing.
+"""
+Central registry for type-based serialization and hashing.
 
 The SerializationRegistry provides:
 - Type registration with custom serializers/deserializers
@@ -8,17 +9,18 @@ The SerializationRegistry provides:
 """
 
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Optional, Type, TypeVar
 
 from . import hash_strategies
 
-T = TypeVar('T')
+T = TypeVar("T")
 
 
 @dataclass
 class SerializationHandler:
-    """Handler for serializing/deserializing a specific type in a specific format.
+    """
+    Handler for serializing/deserializing a specific type in a specific format.
 
     Attributes:
         type_: The Python type this handler applies to
@@ -39,7 +41,8 @@ class SerializationHandler:
 
 @dataclass
 class HashStrategy:
-    """Strategy for hashing a specific type.
+    """
+    Strategy for hashing a specific type.
 
     Attributes:
         type_: The Python type this strategy applies to
@@ -53,7 +56,8 @@ class HashStrategy:
 
 
 class SerializationRegistry:
-    """Central registry for type-based serialization and hashing.
+    """
+    Central registry for type-based serialization and hashing.
 
     This registry maps Python types to:
     1. Serialization handlers (one or more per type)
@@ -67,15 +71,13 @@ class SerializationRegistry:
         ...     MyModel,
         ...     lambda m: m.to_bytes(),
         ...     lambda b: MyModel.from_bytes(b),
-        ...     format='default',
-        ...     file_extension='model'
+        ...     format="default",
+        ...     file_extension="model",
         ... )
         >>>
         >>> # Register hash strategy
         >>> registry.register_hash_strategy(
-        ...     MyModel,
-        ...     lambda m: m.get_version_hash(),
-        ...     "Hash model version and config"
+        ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
         ... )
         >>>
         >>> # Use it
@@ -83,7 +85,7 @@ class SerializationRegistry:
         >>> hash_key = registry.hash_value(my_model)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize registry with built-in types."""
         # Map: (type, format) -> SerializationHandler
         self._handlers: dict[tuple[Type, str], SerializationHandler] = {}
@@ -102,11 +104,12 @@ class SerializationRegistry:
         type_: Type[T],
         serializer: Callable[[T], bytes],
         deserializer: Callable[[bytes], T],
-        format: str = 'default',
-        file_extension: str = 'bin',
+        format: str = "default",
+        file_extension: str = "bin",
         make_default: bool = False,
     ) -> None:
-        """Register a serialization handler for a type.
+        """
+        Register a serialization handler for a type.
 
         Args:
             type_: The Python type to register
@@ -121,9 +124,9 @@ class SerializationRegistry:
             ...     pd.DataFrame,
             ...     lambda df: df.to_parquet(),
             ...     lambda b: pd.read_parquet(BytesIO(b)),
-            ...     format='parquet',
-            ...     file_extension='parquet',
-            ...     make_default=True
+            ...     format="parquet",
+            ...     file_extension="parquet",
+            ...     make_default=True,
             ... )
         """
         handler = SerializationHandler(
@@ -148,7 +151,8 @@ class SerializationRegistry:
         hasher: Callable[[Any], str],
         description: str = "",
     ) -> None:
-        """Register a hash strategy for a type.
+        """
+        Register a hash strategy for a type.
 
         Args:
             type_: The Python type to register
@@ -157,9 +161,7 @@ class SerializationRegistry:
 
         Example:
             >>> registry.register_hash_strategy(
-            ...     np.ndarray,
-            ...     hash_numpy_array,
-            ...     "Sample-based hash for numpy arrays"
+            ...     np.ndarray, hash_numpy_array, "Sample-based hash for numpy arrays"
             ... )
         """
         strategy = HashStrategy(
@@ -174,7 +176,8 @@ class SerializationRegistry:
         obj: Any,
         format: Optional[str] = None,
     ) -> tuple[bytes, str]:
-        """Serialize an object using registered handler.
+        """
+        Serialize an object using registered handler.
 
         Args:
             obj: The object to serialize
@@ -190,7 +193,7 @@ class SerializationRegistry:
 
         # Determine format
         if format is None:
-            format = self._default_formats.get(obj_type, 'pickle')
+            format = self._default_formats.get(obj_type, "pickle")
 
         # Find handler (exact match or check subclasses)
         handler = self._find_handler(obj_type, format)
@@ -210,7 +213,8 @@ class SerializationRegistry:
         type_: Type[T],
         format: Optional[str] = None,
     ) -> T:
-        """Deserialize bytes back to an object.
+        """
+        Deserialize bytes back to an object.
 
         Args:
             data: The serialized bytes
@@ -225,7 +229,7 @@ class SerializationRegistry:
         """
         # Determine format
         if format is None:
-            format = self._default_formats.get(type_, 'pickle')
+            format = self._default_formats.get(type_, "pickle")
 
         # Find handler
         handler = self._find_handler(type_, format)
@@ -239,7 +243,8 @@ class SerializationRegistry:
         return handler.deserializer(data)
 
     def hash_value(self, obj: Any) -> str:
-        """Hash an object using registered strategy.
+        """
+        Hash an object using registered strategy.
 
         Args:
             obj: The object to hash
@@ -265,26 +270,26 @@ class SerializationRegistry:
 
             # Infer plugin from module name
             plugin_suggestion = None
-            if module.startswith('numpy'):
-                plugin_suggestion = 'daglite_serialization[numpy]'
-            elif module.startswith('pandas'):
-                plugin_suggestion = 'daglite_serialization[pandas]'
-            elif module.startswith('PIL') or module.startswith('pillow'):
-                plugin_suggestion = 'daglite_serialization[pillow]'
-            elif module.startswith('torch'):
-                plugin_suggestion = 'daglite_serialization[torch]'
+            if module.startswith("numpy"):
+                plugin_suggestion = "daglite_serialization[numpy]"
+            elif module.startswith("pandas"):
+                plugin_suggestion = "daglite_serialization[pandas]"
+            elif module.startswith("PIL") or module.startswith("pillow"):
+                plugin_suggestion = "daglite_serialization[pillow]"
+            elif module.startswith("torch"):
+                plugin_suggestion = "daglite_serialization[torch]"
 
             if plugin_suggestion:
                 raise TypeError(
                     f"No hash strategy registered for {type_name} from {module}.\n"
                     f"\n"
                     f"To fix:\n"
-                    f"  1. Install: pip install {plugin_suggestion}\n"
-                    f"  2. Register: from daglite_serialization import register_all; register_all()\n"
-                    f"\n"
+                    f" 1. Install: pip install {plugin_suggestion}\n"
+                    f" 2. Register: from daglite_serialization import register_all; register_all()"
+                    f"\n\n"
                     f"Or register a custom hash strategy:\n"
-                    f"  from daglite.serialization import default_registry\n"
-                    f"  default_registry.register_hash_strategy({type_name}, my_hasher)\n"
+                    f" from daglite.serialization import default_registry\n"
+                    f" default_registry.register_hash_strategy({type_name}, my_hasher)\n"
                 )
             else:
                 # Generic error for unknown types
@@ -304,7 +309,8 @@ class SerializationRegistry:
         return strategy.hasher(obj)
 
     def set_default_format(self, type_: Type, format: str) -> None:
-        """Set the default format for a type.
+        """
+        Set the default format for a type.
 
         Args:
             type_: The Python type
@@ -325,7 +331,8 @@ class SerializationRegistry:
         type_: Type,
         format: Optional[str] = None,
     ) -> str:
-        """Get the file extension for a type/format combination.
+        """
+        Get the file extension for a type/format combination.
 
         Args:
             type_: The Python type
@@ -338,13 +345,12 @@ class SerializationRegistry:
             ValueError: If no handler is registered for the type/format
         """
         if format is None:
-            format = self._default_formats.get(type_, 'pickle')
+            format = self._default_formats.get(type_, "pickle")
 
         handler = self._find_handler(type_, format)
         if handler is None:
             raise ValueError(
-                f"No handler registered for type {type_.__name__} "
-                f"with format '{format}'."
+                f"No handler registered for type {type_.__name__} with format '{format}'."
             )
 
         return handler.file_extension
@@ -396,18 +402,18 @@ class SerializationRegistry:
             bytes,
             lambda b: b,
             lambda b: b,
-            format='raw',
-            file_extension='bin',
+            format="raw",
+            file_extension="bin",
         )
         self.register_hash_strategy(bytes, hash_strategies.hash_bytes)
 
         # str
         self.register(
             str,
-            lambda s: s.encode('utf-8'),
-            lambda b: b.decode('utf-8'),
-            format='utf8',
-            file_extension='txt',
+            lambda s: s.encode("utf-8"),
+            lambda b: b.decode("utf-8"),
+            format="utf8",
+            file_extension="txt",
         )
         self.register_hash_strategy(str, hash_strategies.hash_string)
 
@@ -416,8 +422,8 @@ class SerializationRegistry:
             int,
             lambda n: str(n).encode(),
             lambda b: int(b.decode()),
-            format='text',
-            file_extension='txt',
+            format="text",
+            file_extension="txt",
         )
         self.register_hash_strategy(int, hash_strategies.hash_int)
 
@@ -426,8 +432,8 @@ class SerializationRegistry:
             float,
             lambda f: str(f).encode(),
             lambda b: float(b.decode()),
-            format='text',
-            file_extension='txt',
+            format="text",
+            file_extension="txt",
         )
         self.register_hash_strategy(float, hash_strategies.hash_float)
 
@@ -435,19 +441,19 @@ class SerializationRegistry:
         self.register(
             bool,
             lambda b: str(b).encode(),
-            lambda b: b.decode() == 'True',
-            format='text',
-            file_extension='txt',
+            lambda b: b.decode() == "True",
+            format="text",
+            file_extension="txt",
         )
         self.register_hash_strategy(bool, hash_strategies.hash_bool)
 
         # NoneType
         self.register(
             type(None),
-            lambda _: b'None',
+            lambda _: b"None",
             lambda _: None,
-            format='text',
-            file_extension='txt',
+            format="text",
+            file_extension="txt",
         )
         self.register_hash_strategy(type(None), hash_strategies.hash_none)
 
@@ -456,8 +462,8 @@ class SerializationRegistry:
             dict,
             pickle.dumps,
             pickle.loads,
-            format='pickle',
-            file_extension='pkl',
+            format="pickle",
+            file_extension="pkl",
         )
         self.register_hash_strategy(dict, hash_strategies.hash_dict)
 
@@ -466,8 +472,8 @@ class SerializationRegistry:
             list,
             pickle.dumps,
             pickle.loads,
-            format='pickle',
-            file_extension='pkl',
+            format="pickle",
+            file_extension="pkl",
         )
         self.register_hash_strategy(list, hash_strategies.hash_list)
 
@@ -476,8 +482,8 @@ class SerializationRegistry:
             tuple,
             pickle.dumps,
             pickle.loads,
-            format='pickle',
-            file_extension='pkl',
+            format="pickle",
+            file_extension="pkl",
         )
         self.register_hash_strategy(tuple, hash_strategies.hash_tuple)
 
@@ -486,8 +492,8 @@ class SerializationRegistry:
             set,
             pickle.dumps,
             pickle.loads,
-            format='pickle',
-            file_extension='pkl',
+            format="pickle",
+            file_extension="pkl",
         )
         self.register_hash_strategy(set, hash_strategies.hash_set)
 
@@ -496,8 +502,8 @@ class SerializationRegistry:
             frozenset,
             pickle.dumps,
             pickle.loads,
-            format='pickle',
-            file_extension='pkl',
+            format="pickle",
+            file_extension="pkl",
         )
         self.register_hash_strategy(frozenset, hash_strategies.hash_frozenset)
 

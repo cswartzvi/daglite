@@ -1,4 +1,5 @@
-"""Hash strategies for built-in Python types.
+"""
+Hash strategies for built-in Python types.
 
 This module provides hash functions for Python's built-in types only.
 For specialized types (numpy, pandas, PIL, etc.), see the daglite_serialization plugin.
@@ -7,7 +8,6 @@ All hash functions return SHA256 hex digests for consistency.
 """
 
 import hashlib
-from typing import Any
 
 
 def hash_bytes(data: bytes) -> str:
@@ -17,7 +17,7 @@ def hash_bytes(data: bytes) -> str:
 
 def hash_string(s: str) -> str:
     """Hash string using UTF-8 encoding."""
-    return hashlib.sha256(s.encode('utf-8')).hexdigest()
+    return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
 def hash_int(n: int) -> str:
@@ -41,7 +41,8 @@ def hash_none(_: None) -> str:
 
 
 def hash_dict(d: dict) -> str:
-    """Hash dictionary by sorting keys and hashing key-value pairs.
+    """
+    Hash dictionary by sorting keys and hashing key-value pairs.
 
     Note: This uses repr() for values, so it's only suitable for dicts
     containing built-in types. For complex types, register them separately.
@@ -54,7 +55,8 @@ def hash_dict(d: dict) -> str:
 
 
 def hash_list(lst: list) -> str:
-    """Hash list by hashing each element in order.
+    """
+    Hash list by hashing each element in order.
 
     Note: This uses repr() for values, so it's only suitable for lists
     containing built-in types. For complex types, register them separately.
