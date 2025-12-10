@@ -11,7 +11,7 @@ from daglite.serialization import default_registry
 
 # Module-level test classes (needed for pickle support)
 @dataclass
-class TestData:
+class SampleData:
     """Test data class for pickle serialization tests."""
 
     value: int
@@ -97,9 +97,9 @@ class TestSerializationRegistry:
 
         # Register CSV format
         registry.register(
-            TestData,
+            SampleData,
             lambda d: str(d.value).encode(),
-            lambda b: TestData(int(b.decode())),
+            lambda b: SampleData(int(b.decode())),
             format="csv",
             file_extension="csv",
             make_default=True,
@@ -107,14 +107,14 @@ class TestSerializationRegistry:
 
         # Register pickle format
         registry.register(
-            TestData,
+            SampleData,
             pickle.dumps,
             pickle.loads,
             format="pickle",
             file_extension="pkl",
         )
 
-        data = TestData(42)
+        data = SampleData(42)
 
         # Default should be CSV
         serialized, ext = registry.serialize(data)
@@ -131,29 +131,29 @@ class TestSerializationRegistry:
 
         # Register both formats
         registry.register(
-            TestData,
+            SampleData,
             lambda d: str(d.value).encode(),
-            lambda b: TestData(int(b.decode())),
+            lambda b: SampleData(int(b.decode())),
             format="csv",
             file_extension="csv",
         )
 
         registry.register(
-            TestData,
+            SampleData,
             pickle.dumps,
             pickle.loads,
             format="pickle",
             file_extension="pkl",
         )
 
-        data = TestData(42)
+        data = SampleData(42)
 
         # Default should be CSV (first registered)
         _, ext = registry.serialize(data)
         assert ext == "csv"
 
         # Change default to pickle
-        registry.set_default_format(TestData, "pickle")
+        registry.set_default_format(SampleData, "pickle")
 
         # Now pickle should be default
         _, ext = registry.serialize(data)
