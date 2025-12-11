@@ -66,6 +66,7 @@ class CompositeTaskNode(CompositeGraphNode):
         for link in self.chain[1:]:
             for param_name, param_input in link.external_params.items():
                 # Only include refs to external nodes, not value params
+                # Note: optimizer only adds refs, never values
                 if param_input.is_ref and param_input.ref not in chain_node_ids:
                     inputs_dict[param_name] = param_input
 
@@ -232,8 +233,8 @@ class CompositeTaskNode(CompositeGraphNode):
             if param_input.is_ref:
                 # Look up external dependency
                 node_inputs[param_name] = resolved_inputs[param_name]
-            else:
-                # Use baked-in value
+            else:  # pragma: no cover
+                # Defensive: optimizer only creates chains with refs
                 node_inputs[param_name] = param_input.value
 
         return node_inputs
@@ -290,6 +291,42 @@ class CompositeMapTaskNode(CompositeGraphNode):
             inputs_dict.update(link.external_params)
 
         return list(inputs_dict.items())
+
+    def _fire_before_iteration_hook(
+        self,
+        hook_manager: Any,
+        resolved_backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+    ) -> None:
+        """Fire before_iteration_execute hook."""
+        hook_manager.hook.before_iteration_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+        )
+
+    def _fire_after_iteration_hook(
+        self,
+        hook_manager: Any,
+        resolved_backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+        result: Any,
+        duration: float,
+    ) -> None:
+        """Fire after_iteration_execute hook."""
+        hook_manager.hook.after_iteration_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            result=result,
+            duration=duration,
+        )
 
     @override
     def execute(
@@ -363,13 +400,7 @@ class CompositeMapTaskNode(CompositeGraphNode):
 
         for idx, future in enumerate(futures):
             # Fire before_iteration_execute hook
-            hook_manager.hook.before_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-            )
+            self._fire_before_iteration_hook(hook_manager, resolved_backend, idx, iteration_total)
 
             iter_start = time.perf_counter()
             iter_result = future.result()
@@ -377,14 +408,8 @@ class CompositeMapTaskNode(CompositeGraphNode):
             iter_duration = time.perf_counter() - iter_start
 
             # Fire after_iteration_execute hook
-            hook_manager.hook.after_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-                result=iter_result,
-                duration=iter_duration,
+            self._fire_after_iteration_hook(
+                hook_manager, resolved_backend, idx, iteration_total, iter_result, iter_duration
             )
 
             results.append(iter_result)
@@ -473,13 +498,7 @@ class CompositeMapTaskNode(CompositeGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            hook_manager.hook.before_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-            )
+            self._fire_before_iteration_hook(hook_manager, resolved_backend, idx, iteration_total)
 
             iter_start = time.perf_counter()
             wrapped = asyncio.wrap_future(future)
@@ -487,14 +506,8 @@ class CompositeMapTaskNode(CompositeGraphNode):
             iter_result = await materialize_async(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            hook_manager.hook.after_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-                result=iter_result,
-                duration=iter_duration,
+            self._fire_after_iteration_hook(
+                hook_manager, resolved_backend, idx, iteration_total, iter_result, iter_duration
             )
 
             results.append(iter_result)
@@ -519,8 +532,9 @@ class CompositeMapTaskNode(CompositeGraphNode):
 
         if link.flow_param:
             node_inputs[link.flow_param] = flow_value
-        else:
-            # Fallback: use first parameter
+        else:  # pragma: no cover
+            # Defensive: _build_node_inputs only called for position > 0,
+            # which always has flow_param
             sig = inspect.signature(link.node.func)
             first_param = next(iter(sig.parameters.keys()))
             node_inputs[first_param] = flow_value
@@ -528,7 +542,8 @@ class CompositeMapTaskNode(CompositeGraphNode):
         for param_name, param_input in link.external_params.items():
             if param_input.is_ref:
                 node_inputs[param_name] = resolved_inputs[param_name]
-            else:
+            else:  # pragma: no cover
+                # Defensive: optimizer only creates chains with refs
                 node_inputs[param_name] = param_input.value
 
         return node_inputs

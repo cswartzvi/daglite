@@ -170,6 +170,42 @@ class MapTaskNode(FunctionGraphNode):
 
         return calls
 
+    def _fire_before_iteration_hook(
+        self,
+        hook_manager: Any,
+        resolved_backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+    ) -> None:
+        """Fire before_iteration_execute hook."""
+        hook_manager.hook.before_iteration_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+        )
+
+    def _fire_after_iteration_hook(
+        self,
+        hook_manager: Any,
+        resolved_backend: Backend,
+        iteration_index: int,
+        iteration_total: int,
+        result: Any,
+        duration: float,
+    ) -> None:
+        """Fire after_iteration_execute hook."""
+        hook_manager.hook.after_iteration_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            iteration_index=iteration_index,
+            iteration_total=iteration_total,
+            result=result,
+            duration=duration,
+        )
+
     @override
     def execute(
         self,
@@ -195,27 +231,15 @@ class MapTaskNode(FunctionGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            hook_manager.hook.before_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-            )
+            self._fire_before_iteration_hook(hook_manager, resolved_backend, idx, iteration_total)
 
             iter_start = time.perf_counter()
             iter_result = future.result()
             iter_result = materialize_sync(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            hook_manager.hook.after_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-                result=iter_result,
-                duration=iter_duration,
+            self._fire_after_iteration_hook(
+                hook_manager, resolved_backend, idx, iteration_total, iter_result, iter_duration
             )
 
             results.append(iter_result)
@@ -258,13 +282,7 @@ class MapTaskNode(FunctionGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            hook_manager.hook.before_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-            )
+            self._fire_before_iteration_hook(hook_manager, resolved_backend, idx, iteration_total)
 
             iter_start = time.perf_counter()
             wrapped = asyncio.wrap_future(future)
@@ -272,14 +290,8 @@ class MapTaskNode(FunctionGraphNode):
             iter_result = await materialize_async(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            hook_manager.hook.after_iteration_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                iteration_index=idx,
-                iteration_total=iteration_total,
-                result=iter_result,
-                duration=iter_duration,
+            self._fire_after_iteration_hook(
+                hook_manager, resolved_backend, idx, iteration_total, iter_result, iter_duration
             )
 
             results.append(iter_result)
