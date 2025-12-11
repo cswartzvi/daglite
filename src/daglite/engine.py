@@ -293,19 +293,27 @@ class Engine:
 
     def evaluate(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using sequential execution."""
-        from daglite.graph.optimizer import optimize_graph
-
         nodes = build_graph(root)
-        nodes, id_mapping = optimize_graph(nodes, root.id)
+        id_mapping: dict[UUID, UUID] = {}
+
+        if self.settings.enable_optimization:
+            from daglite.graph.optimizer import optimize_graph
+
+            nodes, id_mapping = optimize_graph(nodes, root.id)
+
         result = self._run_sequential(nodes, root.id, id_mapping)
         return result
 
     async def evaluate_async(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using async execution with sibling parallelism."""
-        from daglite.graph.optimizer import optimize_graph
-
         nodes = build_graph(root)
-        nodes, id_mapping = optimize_graph(nodes, root.id)
+        id_mapping: dict[UUID, UUID] = {}
+
+        if self.settings.enable_optimization:
+            from daglite.graph.optimizer import optimize_graph
+
+            nodes, id_mapping = optimize_graph(nodes, root.id)
+
         result = await self._run_async(nodes, root.id, id_mapping)
         return result
 

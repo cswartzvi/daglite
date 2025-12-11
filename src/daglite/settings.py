@@ -27,6 +27,20 @@ class DagliteSettings:
     Defaults to the number of CPU cores available.
     """
 
+    enable_optimization: bool = True
+    """
+    Enable graph optimization (composite node creation for linear chains).
+
+    When enabled, the optimizer detects linear chains of nodes and groups them
+    into composite nodes for more efficient execution, reducing backend submission
+    overhead by 10-100x for long chains.
+
+    Set to False to disable optimization for debugging or to preserve original
+    graph structure for detailed hook instrumentation.
+
+    Defaults to True.
+    """
+
 
 def get_global_settings() -> DagliteSettings:
     """
