@@ -413,7 +413,7 @@ class Engine:
         """
         hook_manager = self._get_hook_manager()
         backend = self._resolve_node_backend(node)
-        resolved_inputs = _resolve_inputs(node, completed_nodes)
+        resolved_inputs = node.resolve_inputs(completed_nodes)
 
         start_time = time.perf_counter()
         iteration_total = None
@@ -514,7 +514,7 @@ class Engine:
             return await asyncio.to_thread(self._execute_node_sync, node, completed_nodes)
 
         hook_manager = self._get_hook_manager()
-        resolved_inputs = _resolve_inputs(node, completed_nodes)
+        resolved_inputs = node.resolve_inputs(completed_nodes)
 
         start_time = time.perf_counter()
         iteration_total = None
@@ -669,17 +669,6 @@ class ExecutionState:
 def _is_map_future(future: Any) -> TypeIs[list[Any]]:
     """Check if the future is a list of futures (MapTaskFuture)."""
     return isinstance(future, list)
-
-
-def _resolve_inputs(node: GraphNode, completed_nodes: dict[UUID, Any]) -> dict[str, Any]:
-    """Resolve all input parameters for a node using completed node results."""
-    inputs = {}
-    for name, param in node.inputs():
-        if param.kind in ("sequence", "sequence_ref"):
-            inputs[name] = param.resolve_sequence(completed_nodes)
-        else:
-            inputs[name] = param.resolve(completed_nodes)
-    return inputs
 
 
 def _materialize_sync(result: Any) -> Any:

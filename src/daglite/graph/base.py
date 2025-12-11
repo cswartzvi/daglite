@@ -22,12 +22,15 @@ from typing_extensions import final
 from daglite.exceptions import ExecutionError
 
 if TYPE_CHECKING:
-    from daglite.engine import Backend
+    from daglite.backends import Backend
 else:
     Backend = object
+    ParamInput = object
 
-ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
+    ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
+
 NodeKind = Literal["task", "map", "artifact"]
+ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 
 
 class GraphBuilder(Protocol):
@@ -121,6 +124,28 @@ class GraphNode(abc.ABC):
             Single Future for TaskNode, list of Futures for MapTaskNode.
         """
         ...
+
+    @final
+    def resolve_inputs(
+        self,
+        completed_nodes: dict[UUID, Any],
+    ) -> dict[str, Any]:
+        """
+        Resolve all input parameters for this node using completed node results.
+
+        Args:
+            completed_nodes: Mapping from node IDs to their computed values.
+
+        Returns:
+            Resolved input parameters as a mapping from parameter names to values.
+        """
+        inputs = {}
+        for name, param in self.inputs():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(completed_nodes)
+            else:
+                inputs[name] = param.resolve(completed_nodes)
+        return inputs
 
 
 @dataclass(frozen=True)

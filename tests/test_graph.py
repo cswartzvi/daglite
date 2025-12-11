@@ -296,10 +296,9 @@ class TestGraphNodes:
 
         # This error happens during submit, not initialization
         from daglite.backends.local import SequentialBackend
-        from daglite.engine import _resolve_inputs
 
         backend = SequentialBackend()
-        resolved_inputs = _resolve_inputs(node, {})
+        resolved_inputs = node.resolve_inputs({})
         with pytest.raises(
             ParameterError, match="Map task .* with `\\.zip\\(\\)` requires all sequences"
         ):
