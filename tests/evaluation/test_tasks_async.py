@@ -473,3 +473,53 @@ class TestGeneratorMaterializationAsync:
 
         result = asyncio.run(run())
         assert result == 20  # 0+2+4+6+8
+
+    def test_async_chain_optimization(self) -> None:
+        """Async evaluation with optimized chains (CompositeTaskNode)."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def double(z: int) -> int:
+            return z * 2
+
+        @task
+        def triple(w: int) -> int:
+            return w * 3
+
+        async def run():
+            # Create a linear chain that should be optimized
+            step1 = add.bind(x=5, y=3)  # 8
+            step2 = double.bind(z=step1)  # 16
+            step3 = triple.bind(w=step2)  # 48
+            return await evaluate_async(step3)
+
+        result = asyncio.run(run())
+        assert result == 48
+
+    def test_async_map_chain_optimization(self) -> None:
+        """Async evaluation with optimized map chains (CompositeMapTaskNode)."""
+
+        @task
+        def add_one(x: int) -> int:
+            return x + 1
+
+        @task
+        def double(y: int) -> int:
+            return y * 2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        async def run():
+            # Create a chain of map operations that should be optimized
+            step1 = add_one.product(x=[1, 2, 3])  # [2, 3, 4]
+            step2 = double.product(y=step1)  # [4, 6, 8]
+            total = sum_all.bind(values=step2)  # 18
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+        assert result == 18
