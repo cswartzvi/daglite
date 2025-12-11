@@ -15,7 +15,9 @@ from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 
 
-def optimize_graph(nodes: dict[UUID, GraphNode], root_id: UUID) -> dict[UUID, GraphNode]:
+def optimize_graph(
+    nodes: dict[UUID, GraphNode], root_id: UUID
+) -> tuple[dict[UUID, GraphNode], dict[UUID, UUID]]:
     """
     Optimize the graph by creating composite nodes for chains.
 
@@ -28,12 +30,14 @@ def optimize_graph(nodes: dict[UUID, GraphNode], root_id: UUID) -> dict[UUID, Gr
         root_id: ID of the root node
 
     Returns:
-        Optimized node dictionary with composite nodes
+        Tuple of (optimized nodes dict, mapping from original IDs to composite IDs)
     """
     successors = _build_successors(nodes)
     grouped_nodes: set[UUID] = set()
-    task_composites = _detect_task_chains(nodes, successors, grouped_nodes)
-    map_composites = _detect_map_chains(nodes, successors, grouped_nodes)
+    id_mapping: dict[UUID, UUID] = {}
+
+    task_composites = _detect_task_chains(nodes, successors, grouped_nodes, id_mapping)
+    map_composites = _detect_map_chains(nodes, successors, grouped_nodes, id_mapping)
 
     optimized: dict[UUID, GraphNode] = {}
     optimized.update(task_composites)
@@ -43,7 +47,7 @@ def optimize_graph(nodes: dict[UUID, GraphNode], root_id: UUID) -> dict[UUID, Gr
         if nid not in grouped_nodes:
             optimized[nid] = node
 
-    return optimized
+    return optimized, id_mapping
 
 
 def _build_successors(nodes: dict[UUID, GraphNode]) -> dict[UUID, set[UUID]]:
@@ -59,6 +63,7 @@ def _detect_task_chains(
     nodes: dict[UUID, GraphNode],
     successors: dict[UUID, set[UUID]],
     grouped_nodes: set[UUID],
+    id_mapping: dict[UUID, UUID],
 ) -> dict[UUID, CompositeTaskNode]:
     """Detect and create CompositeTaskNode for TaskNode chains."""
     composites: dict[UUID, CompositeTaskNode] = {}
@@ -76,6 +81,8 @@ def _detect_task_chains(
             composite = _create_composite_task_node(chain_ids, nodes)
             composites[composite.id] = composite
             grouped_nodes.update(chain_ids)
+            for chain_id in chain_ids:
+                id_mapping[chain_id] = composite.id
 
     return composites
 
@@ -99,7 +106,7 @@ def _detect_task_chain_starting_at(
         succ_ids = successors.get(current, set())
 
         if len(succ_ids) != 1:
-            break # Only one successor allowed
+            break  # Only one successor allowed
 
         next_id = next(iter(succ_ids))
 
@@ -182,6 +189,7 @@ def _detect_map_chains(
     nodes: dict[UUID, GraphNode],
     successors: dict[UUID, set[UUID]],
     grouped_nodes: set[UUID],
+    id_mapping: dict[UUID, UUID],
 ) -> dict[UUID, CompositeMapTaskNode]:
     """Detect and create CompositeMapTaskNode for MapTaskNode chains."""
     composites: dict[UUID, CompositeMapTaskNode] = {}
@@ -199,6 +207,8 @@ def _detect_map_chains(
             composite = _create_composite_map_node(chain_ids, nodes)
             composites[composite.id] = composite
             grouped_nodes.update(chain_ids)
+            for chain_id in chain_ids:
+                id_mapping[chain_id] = composite.id
 
     return composites
 

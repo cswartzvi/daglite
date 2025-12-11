@@ -293,13 +293,21 @@ class Engine:
 
     def evaluate(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using sequential execution."""
+        from daglite.graph.optimizer import optimize_graph
+
         nodes = build_graph(root)
-        return self._run_sequential(nodes, root.id)
+        nodes, id_mapping = optimize_graph(nodes, root.id)
+        result = self._run_sequential(nodes, root.id, id_mapping)
+        return result
 
     async def evaluate_async(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using async execution with sibling parallelism."""
+        from daglite.graph.optimizer import optimize_graph
+
         nodes = build_graph(root)
-        return await self._run_async(nodes, root.id)
+        nodes, id_mapping = optimize_graph(nodes, root.id)
+        result = await self._run_async(nodes, root.id, id_mapping)
+        return result
 
     def _get_hook_manager(self) -> "PluginManager":
         """Get hook manager for this execution."""
@@ -329,13 +337,14 @@ class Engine:
         """
         from daglite.backends import find_backend
         from daglite.backends.local import SequentialBackend
+        from daglite.graph.composite import CompositeMapTaskNode
         from daglite.graph.nodes import MapTaskNode
 
-        # Check for nested fan-out: MapTaskNode depending on another MapTaskNode
-        if isinstance(node, MapTaskNode):
+        # Check for nested fan-out: MapTaskNode depending on another MapTaskNode (or composite)
+        if isinstance(node, (MapTaskNode, CompositeMapTaskNode)):
             for dep_id in node.dependencies():
                 dep_node = all_nodes.get(dep_id)
-                if isinstance(dep_node, MapTaskNode):
+                if isinstance(dep_node, (MapTaskNode, CompositeMapTaskNode)):
                     # Nested fan-out detected - force sequential execution
                     if "sequential" not in self._backend_cache:
                         self._backend_cache["sequential"] = SequentialBackend()
@@ -348,7 +357,9 @@ class Engine:
             self._backend_cache[backend_key] = backend
         return self._backend_cache[backend_key]
 
-    def _run_sequential(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
+    def _run_sequential(
+        self, nodes: dict[UUID, GraphNode], root_id: UUID, id_mapping: dict[UUID, UUID]
+    ) -> Any:
         """Sequential blocking execution."""
         hook_manager = self._get_hook_manager()
         hook_manager.hook.before_graph_execute(
@@ -357,7 +368,7 @@ class Engine:
 
         start_time = time.perf_counter()
         try:
-            state = ExecutionState.from_nodes(nodes)
+            state = ExecutionState.from_nodes(nodes, id_mapping)
             ready = state.get_ready()
 
             while ready:
@@ -366,7 +377,8 @@ class Engine:
                 result = self._execute_node_sync(node, state.completed_nodes, state.nodes)
                 ready.extend(state.mark_complete(nid, result))
 
-            result = state.completed_nodes[root_id]
+            actual_root_id = id_mapping.get(root_id, root_id)
+            result = state.completed_nodes[actual_root_id]
             duration = time.perf_counter() - start_time
 
             hook_manager.hook.after_graph_execute(
@@ -381,7 +393,9 @@ class Engine:
             )
             raise
 
-    async def _run_async(self, nodes: dict[UUID, GraphNode], root_id: UUID) -> Any:
+    async def _run_async(
+        self, nodes: dict[UUID, GraphNode], root_id: UUID, id_mapping: dict[UUID, UUID]
+    ) -> Any:
         """Async execution with sibling parallelism."""
         hook_manager = self._get_hook_manager()
         hook_manager.hook.before_graph_execute(
@@ -390,7 +404,7 @@ class Engine:
 
         start_time = time.perf_counter()
         try:
-            state = ExecutionState.from_nodes(nodes)
+            state = ExecutionState.from_nodes(nodes, id_mapping)
             ready = state.get_ready()
 
             while ready:
@@ -411,7 +425,8 @@ class Engine:
                     result = task.result()
                     ready.extend(state.mark_complete(nid, result))
 
-            result = state.completed_nodes[root_id]
+            actual_root_id = id_mapping.get(root_id, root_id)
+            result = state.completed_nodes[actual_root_id]
             duration = time.perf_counter() - start_time
             hook_manager.hook.after_graph_execute(
                 root_id=root_id, result=result, duration=duration, is_async=True
@@ -648,8 +663,13 @@ class ExecutionState:
     completed_nodes: dict[UUID, Any]
     """Results of completed node executions."""
 
+    id_mapping: dict[UUID, UUID]
+    """Mapping from grouped node IDs to their composite IDs (for optimizer)."""
+
     @classmethod
-    def from_nodes(cls, nodes: dict[UUID, GraphNode]) -> ExecutionState:
+    def from_nodes(
+        cls, nodes: dict[UUID, GraphNode], id_mapping: dict[UUID, UUID] | None = None
+    ) -> ExecutionState:
         """
         Build execution state from a graph node dictionary.
 
@@ -658,6 +678,7 @@ class ExecutionState:
 
         Args:
             nodes: Mapping from node IDs to GraphNode instances.
+            id_mapping: Optional mapping from grouped node IDs to composite IDs.
 
         Returns:
             Initialized ExecutionState instance.
@@ -672,7 +693,13 @@ class ExecutionState:
                 indegree[nid] += 1
                 successors[dep].add(nid)
 
-        return cls(nodes=nodes, indegree=indegree, successors=dict(successors), completed_nodes={})
+        return cls(
+            nodes=nodes,
+            indegree=indegree,
+            successors=dict(successors),
+            completed_nodes={},
+            id_mapping=id_mapping or {},
+        )
 
     def get_ready(self) -> list[UUID]:
         """Get all nodes with no remaining dependencies."""
@@ -681,6 +708,9 @@ class ExecutionState:
     def mark_complete(self, nid: UUID, result: Any) -> list[UUID]:
         """
         Mark a node complete and return newly ready successors.
+
+        When a composite node completes, also creates aliases for all grouped nodes
+        it contains, allowing dependencies to resolve correctly.
 
         Args:
             nid: ID of the completed node
@@ -693,10 +723,21 @@ class ExecutionState:
         del self.indegree[nid]  # Remove from tracking
         newly_ready = []
 
+        # Mark successors of the completed node as ready
         for succ in self.successors.get(nid, ()):
             self.indegree[succ] -= 1
             if self.indegree[succ] == 0:
                 newly_ready.append(succ)
+
+        # Handle grouped nodes: if this is a composite, add aliases for all nodes it contains
+        for grouped_id, composite_id in self.id_mapping.items():
+            if composite_id == nid:
+                self.completed_nodes[grouped_id] = result
+                # Mark successors of the grouped node as ready
+                for succ in self.successors.get(grouped_id, ()):
+                    self.indegree[succ] -= 1
+                    if self.indegree[succ] == 0:
+                        newly_ready.append(succ)
 
         return newly_ready
 

@@ -621,7 +621,7 @@ class TestGraphOptimizer:
         )
 
         nodes: dict[UUID, GraphNode] = {node_a.id: node_a, node_b.id: node_b, node_c.id: node_c}
-        optimized = optimize_graph(nodes, node_c.id)
+        optimized, _ = optimize_graph(nodes, node_c.id)
 
         # Should have 1 composite node (A, B, C grouped)
         assert len(optimized) == 1
@@ -666,7 +666,7 @@ class TestGraphOptimizer:
         )
 
         nodes: dict[UUID, GraphNode] = {node_a.id: node_a, node_b.id: node_b, node_c.id: node_c}
-        optimized = optimize_graph(nodes, node_c.id)
+        optimized, _ = optimize_graph(nodes, node_c.id)
 
         assert len(optimized) == 1
         composite = list(optimized.values())[0]
@@ -713,7 +713,7 @@ class TestGraphOptimizer:
         )
 
         nodes: dict[UUID, GraphNode] = {node_a.id: node_a, node_b.id: node_b, node_c.id: node_c}
-        optimized = optimize_graph(nodes, node_c.id)
+        optimized, _ = optimize_graph(nodes, node_c.id)
 
         # Should have 2 nodes: A (ungrouped) and composite(B, C)
         assert len(optimized) == 2
@@ -765,7 +765,7 @@ class TestGraphOptimizer:
             node_c.id: node_c,
             node_d.id: node_d,
         }
-        optimized = optimize_graph(nodes, node_d.id)
+        optimized, _ = optimize_graph(nodes, node_d.id)
 
         # Should have 3 nodes: composite(A,B), composite(A,C), D
         # Or possibly: A, composite(B), composite(C), D depending on detection order
@@ -789,7 +789,7 @@ class TestGraphOptimizer:
         )
 
         nodes: dict[UUID, GraphNode] = {node_a.id: node_a}
-        optimized = optimize_graph(nodes, node_a.id)
+        optimized, _ = optimize_graph(nodes, node_a.id)
 
         # Should remain as single node
         assert len(optimized) == 1
@@ -825,7 +825,7 @@ class TestGraphOptimizer:
         )
 
         nodes: dict[UUID, GraphNode] = {map1.id: map1, map2.id: map2}
-        optimized = optimize_graph(nodes, map2.id)
+        optimized, _ = optimize_graph(nodes, map2.id)
 
         # Should have 1 composite map node
         assert len(optimized) == 1
@@ -1040,8 +1040,9 @@ class TestCompositeExecution:
             chain=chain,
         )
 
-        # Should return initial inputs from node_a plus external params from node_b
+        # Should return initial inputs from node_a
+        # (multiplier is a value param for node_b, baked into the node, not exposed)
         inputs = dict(composite.inputs())
         assert "x" in inputs
         assert "y" in inputs
-        assert "multiplier" in inputs
+        assert len(inputs) == 2  # Only first node's inputs

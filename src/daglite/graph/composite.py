@@ -70,18 +70,26 @@ class CompositeTaskNode(GraphNode):
         Returns inputs for the composite.
 
         Includes:
-        - Initial inputs for the first node
-        - All external parameters from any node in the chain
+        - All inputs for the first node (to start the chain)
+        - External ref parameters from later nodes (dependencies on nodes outside the chain)
+
+        Value parameters for later nodes are baked into their node definitions and
+        don't need to be passed through the composite's interface.
         """
         inputs_dict: dict[str, ParamInput] = {}
+        chain_node_ids = {link.node.id for link in self.chain}
 
-        for link in self.chain:
-            inputs_dict.update(link.external_params)
+        # Add first node's inputs
+        if self.chain:
+            for param_name, param_input in self.chain[0].node.inputs():
+                inputs_dict[param_name] = param_input
 
-            if link.position == 0:
-                for name, param in link.node.inputs():
-                    if name not in inputs_dict:
-                        inputs_dict[name] = param
+        # Add external ref params from later nodes (not values)
+        for link in self.chain[1:]:
+            for param_name, param_input in link.external_params.items():
+                # Only include refs to external nodes, not value params
+                if param_input.is_ref and param_input.ref not in chain_node_ids:
+                    inputs_dict[param_name] = param_input
 
         return list(inputs_dict.items())
 
@@ -113,8 +121,10 @@ class CompositeTaskNode(GraphNode):
 
         for param_name, param_input in link.external_params.items():
             if param_input.is_ref:
+                # Look up external dependency
                 node_inputs[param_name] = resolved_inputs[param_name]
             else:
+                # Use baked-in value
                 node_inputs[param_name] = param_input.value
 
         return node_inputs
