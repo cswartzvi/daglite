@@ -532,7 +532,7 @@ def _create_composite_map_node(
     return CompositeMapTaskNode(
         id=uuid4(),
         name=f"{first_node.name}→…→{last_node.name}",
-        description=f"Composite map chain of {len(chain_links)} iterations",
+        description=f"Composite map chain of {len(chain_links)} nodes",
         backend=first_node.backend,
         source_map=source_map,
         chain=tuple(chain_links),
