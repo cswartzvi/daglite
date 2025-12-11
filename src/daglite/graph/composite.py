@@ -65,9 +65,17 @@ class CompositeTaskNode(CompositeGraphNode):
         # Add external ref params from later nodes (not values)
         for link in self.chain[1:]:
             for param_name, param_input in link.external_params.items():
-                # Only include refs to external nodes, not value params
-                # Note: optimizer only adds refs, never values
+                # Only include refs to external nodes, not value params.
+                # Value params are baked into the chain execution and don't need
+                # to be exposed in the composite's interface.
                 if param_input.is_ref and param_input.ref not in chain_node_ids:
+                    if param_name in inputs_dict:
+                        raise ValueError(
+                            f"Parameter name collision in CompositeTaskNode.inputs(): "
+                            f"'{param_name}' from link at position {link.position} "
+                            f"conflicts with existing parameter. "
+                            f"Each parameter name must be unique across the composite chain."
+                        )
                     inputs_dict[param_name] = param_input
 
         return list(inputs_dict.items())
@@ -288,7 +296,15 @@ class CompositeMapTaskNode(CompositeGraphNode):
             inputs_dict[name] = param
 
         for link in self.chain[1:]:
-            inputs_dict.update(link.external_params)
+            for param_name, param_input in link.external_params.items():
+                if param_name in inputs_dict:
+                    raise ValueError(
+                        f"Parameter name collision in CompositeMapTaskNode.inputs(): "
+                        f"'{param_name}' from link at position {link.position} "
+                        f"conflicts with existing parameter. "
+                        f"Each parameter name must be unique across the composite chain."
+                    )
+                inputs_dict[param_name] = param_input
 
         return list(inputs_dict.items())
 
