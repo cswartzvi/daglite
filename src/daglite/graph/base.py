@@ -163,7 +163,7 @@ class GraphNode(abc.ABC):
         Args:
             resolved_backend: Backend instance resolved by the engine.
             resolved_inputs: Pre-resolved parameter inputs for this node.
-            hook_manager: Optional hook manager for firing execution hooks.
+            hook_manager: Hook manager for firing execution hooks.
 
         Returns:
             The node's execution result (single value for TaskNode, list for MapTaskNode).
