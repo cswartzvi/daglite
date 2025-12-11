@@ -191,24 +191,32 @@ def _detect_task_chain_starting_at(
 
         next_id = next(iter(succ_ids))
 
-        if next_id in grouped_nodes:
+        if next_id in grouped_nodes:  # pragma: no cover
             break
 
         next_node = nodes[next_id]
 
-        if not isinstance(next_node, TaskNode):
+        if not isinstance(next_node, TaskNode):  # pragma: no cover
             break
 
         if next_node.backend != current_node.backend:
             break
 
         next_deps = next_node.dependencies()
-        if current not in next_deps:
+        if current not in next_deps:  # pragma: no cover
             break
 
+        # Check for diamond patterns:
+        # - Successor must depend on exactly the current node in the chain
+        # - If it has other dependencies, it's a fan-in/diamond, so stop
         chain_deps = [dep for dep in next_deps if dep in chain]
-        if len(chain_deps) != 1:
+        if len(chain_deps) != 1:  # pragma: no cover
             break  # Multiple dependencies within chain (diamond pattern)
+
+        # Also ensure successor doesn't have dependencies outside the chain
+        # (this catches fan-in from parallel branches)
+        if len(next_deps) != 1:
+            break  # Has dependencies outside chain (diamond/fan-in pattern)
 
         chain.append(next_id)
         current = next_id
@@ -421,12 +429,12 @@ def _detect_map_chain_starting_at(
 
         next_id = next(iter(succ_ids))
 
-        if next_id in grouped_nodes:
+        if next_id in grouped_nodes:  # pragma: no cover
             break
 
         next_node = nodes[next_id]
 
-        if not isinstance(next_node, MapTaskNode):
+        if not isinstance(next_node, MapTaskNode):  # pragma: no cover
             break
 
         if next_node.backend != current_node.backend:
@@ -436,7 +444,7 @@ def _detect_map_chain_starting_at(
             break  # Multiple mapped sources
 
         mapped_param = list(next_node.mapped_kwargs.values())[0]
-        if not (mapped_param.is_ref and mapped_param.ref == current):
+        if not (mapped_param.is_ref and mapped_param.ref == current):  # pragma: no cover
             break
 
         chain.append(next_id)

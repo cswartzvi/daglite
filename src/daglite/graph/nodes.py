@@ -1,7 +1,8 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+import asyncio
+import time
 from collections.abc import Mapping
-from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, Callable, TypeVar
@@ -11,15 +12,17 @@ from typing_extensions import override
 from daglite.backends import Backend
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import GraphNode
+from daglite.graph.base import FunctionGraphNode
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
+from daglite.graph.utils import materialize_async
+from daglite.graph.utils import materialize_sync
 
 T_co = TypeVar("T_co", covariant=True)
 
 
 @dataclass(frozen=True)
-class TaskNode(GraphNode):
+class TaskNode(FunctionGraphNode):
     """Basic function task node representation within the graph IR."""
 
     func: Callable
@@ -38,12 +41,80 @@ class TaskNode(GraphNode):
         return list(self.kwargs.items())
 
     @override
-    def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
-        return resolved_backend.submit(self.func, **resolved_inputs)
+    def execute(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> Any:
+        """Execute the task synchronously and return the result."""
+        # Fire before hook
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
+
+        start_time = time.perf_counter()
+        future = resolved_backend.submit(self.func, **resolved_inputs)
+        result = future.result()
+        result = materialize_sync(result)
+        duration = time.perf_counter() - start_time
+
+        # Fire after hook
+        if hook_manager:
+            hook_manager.hook.after_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                result=result,
+                duration=duration,
+                iteration_count=None,
+            )
+
+        return result
+
+    @override
+    async def execute_async(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> Any:
+        """Execute the task asynchronously and return the result."""
+        # Fire before hook
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
+
+        start_time = time.perf_counter()
+        future = resolved_backend.submit(self.func, **resolved_inputs)
+        wrapped = asyncio.wrap_future(future)
+        result = await wrapped
+        result = await materialize_async(result)
+        duration = time.perf_counter() - start_time
+
+        # Fire after hook
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=result,
+            duration=duration,
+            iteration_count=None,
+        )
+
+        return result
 
 
 @dataclass(frozen=True)
-class MapTaskNode(GraphNode):
+class MapTaskNode(FunctionGraphNode):
     """Map function task node representation within the graph IR."""
 
     func: Callable
@@ -107,11 +178,143 @@ class MapTaskNode(GraphNode):
         return calls
 
     @override
-    def submit(
-        self, resolved_backend: Backend, resolved_inputs: dict[str, Any]
-    ) -> list[Future[Any]]:
-        """Submit multiple task executions."""
+    def execute(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> list[Any]:
+        """Execute map task synchronously, firing iteration hooks for each iteration."""
+        # Fire before_node_execute hook
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,  # Will be set after we know the count
+        )
+
+        node_start = time.perf_counter()
         fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
         mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
         calls = self._build_map_calls(fixed, mapped)
-        return resolved_backend.submit_many(self.func, calls)
+        futures = resolved_backend.submit_many(self.func, calls)
+
+        results = []
+        iteration_total = len(futures)
+
+        for idx, future in enumerate(futures):
+            # Fire before_iteration_execute hook
+            if hook_manager:
+                hook_manager.hook.before_iteration_execute(
+                    node_id=self.id,
+                    node=self,
+                    backend=resolved_backend,
+                    iteration_index=idx,
+                    iteration_total=iteration_total,
+                )
+
+            iter_start = time.perf_counter()
+            iter_result = future.result()
+            iter_result = materialize_sync(iter_result)
+            iter_duration = time.perf_counter() - iter_start
+
+            # Fire after_iteration_execute hook
+            hook_manager.hook.after_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+                result=iter_result,
+                duration=iter_duration,
+            )
+
+            results.append(iter_result)
+
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute hook
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=results,
+            duration=node_duration,
+            iteration_count=iteration_total,
+        )
+
+        return results
+
+    @override
+    async def execute_async(  # pragma: no cover
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any | None = None,
+    ) -> list[Any]:
+        """Execute map task asynchronously, firing iteration hooks for each iteration."""
+        # Fire before_node_execute hook
+        if hook_manager:
+            hook_manager.hook.before_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                inputs=resolved_inputs,
+                iteration_count=None,  # Will be set after we know the count
+            )
+
+        node_start = time.perf_counter()
+        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
+        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
+        calls = self._build_map_calls(fixed, mapped)
+        futures = resolved_backend.submit_many(self.func, calls)
+
+        results = []
+        iteration_total = len(futures)
+
+        for idx, future in enumerate(futures):
+            # Fire before_iteration_execute hook
+            if hook_manager:
+                hook_manager.hook.before_iteration_execute(
+                    node_id=self.id,
+                    node=self,
+                    backend=resolved_backend,
+                    iteration_index=idx,
+                    iteration_total=iteration_total,
+                )
+
+            iter_start = time.perf_counter()
+            wrapped = asyncio.wrap_future(future)
+            iter_result = await wrapped
+            iter_result = await materialize_async(iter_result)
+            iter_duration = time.perf_counter() - iter_start
+
+            # Fire after_iteration_execute hook
+            if hook_manager:
+                hook_manager.hook.after_iteration_execute(
+                    node_id=self.id,
+                    node=self,
+                    backend=resolved_backend,
+                    iteration_index=idx,
+                    iteration_total=iteration_total,
+                    result=iter_result,
+                    duration=iter_duration,
+                )
+
+            results.append(iter_result)
+
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute hook
+        if hook_manager:
+            hook_manager.hook.after_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                result=results,
+                duration=node_duration,
+                iteration_count=iteration_total,
+            )
+
+        return results

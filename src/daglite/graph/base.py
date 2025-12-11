@@ -11,13 +11,12 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
-from concurrent.futures import Future
 from dataclasses import dataclass
 from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol
 from uuid import UUID
 
-from typing_extensions import final
+from typing_extensions import final, override
 
 from daglite.exceptions import ExecutionError
 
@@ -88,6 +87,16 @@ class GraphNode(abc.ABC):
         """Describes the kind of this graph node."""
         ...
 
+    @cached_property
+    def is_composite(self) -> bool:
+        """Returns `True` if this node is a composite node."""
+        return False  # pragma: no cover
+
+    @cached_property
+    def is_mapped(self) -> bool:
+        """Returns `True` if this node is a mapped node (fan-out)."""
+        return self.kind == "map"
+
     @abc.abstractmethod
     def inputs(self) -> list[tuple[str, ParamInput]]:
         """
@@ -108,20 +117,56 @@ class GraphNode(abc.ABC):
         return {p.ref for _, p in self.inputs() if p.is_ref and p.ref is not None}
 
     @abc.abstractmethod
-    def submit(
+    def execute(
         self,
         resolved_backend: Backend,
         resolved_inputs: dict[str, Any],
-    ) -> Future[Any] | list[Future[Any]]:
+        hook_manager: Any,
+    ) -> Any:
         """
-        Submit this node's work to the backend.
+        Execute this node synchronously and return the result.
+
+        Implementations are responsible for:
+        - Submitting work to the backend
+        - Blocking until completion (calling .result() on futures)
+        - Materializing any coroutines/generators
+        - Firing appropriate hooks (iteration hooks for MapTaskNode, internal node hooks for
+          composites)
 
         Args:
             resolved_backend: Backend instance resolved by the engine.
             resolved_inputs: Pre-resolved parameter inputs for this node.
+            hook_manager: Hook manager for firing execution hooks.
 
         Returns:
-            Single Future for TaskNode, list of Futures for MapTaskNode.
+            The node's execution result (single value for TaskNode, list for MapTaskNode).
+        """
+        ...
+
+    @abc.abstractmethod
+    async def execute_async(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> Any:
+        """
+        Execute this node asynchronously and return the result.
+
+        Implementations are responsible for:
+        - Submitting work to the backend
+        - Awaiting completion asynchronously
+        - Materializing any coroutines/generators
+        - Firing appropriate hooks (iteration hooks for MapTaskNode, internal node hooks for
+          composites)
+
+        Args:
+            resolved_backend: Backend instance resolved by the engine.
+            resolved_inputs: Pre-resolved parameter inputs for this node.
+            hook_manager: Optional hook manager for firing execution hooks.
+
+        Returns:
+            The node's execution result (single value for TaskNode, list for MapTaskNode).
         """
         ...
 
@@ -146,6 +191,27 @@ class GraphNode(abc.ABC):
             else:
                 inputs[name] = param.resolve(completed_nodes)
         return inputs
+
+
+@dataclass(frozen=True)
+class FunctionGraphNode(GraphNode, abc.ABC):
+    """Base class for function-executing graph nodes."""
+
+    func: Callable
+    """The callable function associated with this node."""
+
+
+@dataclass(frozen=True)
+class CompositeGraphNode(GraphNode, abc.ABC):
+    """Base class for composite graph nodes (consisting of chains of other nodes)."""
+
+    chain: tuple[ChainLink, ...]
+    """Ordered sequence of nodes forming the chain."""
+
+    @cached_property
+    @override
+    def is_composite(self) -> bool:
+        return True  # pragma: no cover
 
 
 @dataclass(frozen=True)
@@ -233,3 +299,20 @@ class ParamInput:
     def from_sequence_ref(cls, node_id: UUID) -> ParamInput:
         """Creates a ParamInput that references another node's sequence output."""
         return cls(kind="sequence_ref", ref=node_id)
+
+
+@dataclass(frozen=True)
+class ChainLink:
+    """Represents one node in a composite chain with its connection metadata."""
+
+    node: FunctionGraphNode
+    """The actual node in the chain."""
+
+    position: int
+    """Position in the chain (0-indexed)."""
+
+    flow_param: str | None
+    """Name of the parameter that receives the flowed value from the previous node."""
+
+    external_params: dict[str, ParamInput]
+    """Parameters from outside the chain (literals, fixed, or external futures)."""

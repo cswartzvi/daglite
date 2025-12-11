@@ -9,6 +9,7 @@ from daglite.exceptions import ParameterError
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.hooks.manager import get_hook_manager
 
 
 class TestParamInput:
@@ -292,7 +293,7 @@ class TestGraphNodes:
             },
         )
 
-        # This error happens during submit, not initialization
+        # This error happens during execute, not initialization
         from daglite.backends.local import SequentialBackend
 
         backend = SequentialBackend()
@@ -300,7 +301,7 @@ class TestGraphNodes:
         with pytest.raises(
             ParameterError, match="Map task .* with `\\.zip\\(\\)` requires all sequences"
         ):
-            node.submit(backend, resolved_inputs)
+            node.execute(backend, resolved_inputs, get_hook_manager())
 
     def test_map_task_node_invalid_mode(self) -> None:
         """MapTaskNode submission fails with invalid mode."""
@@ -323,4 +324,4 @@ class TestGraphNodes:
 
         backend = SequentialBackend()
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
-            node.submit(backend, {})
+            node.execute(backend, {}, get_hook_manager())

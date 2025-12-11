@@ -162,3 +162,63 @@ class GraphSpec:
             duration: Time taken before failure in seconds
             is_async: True for async execution, False for sequential
         """
+
+    @hook_spec
+    def before_group_execute(
+        self,
+        group_id: UUID,
+        node_count: int,
+        backend: Backend,
+    ) -> None:
+        """
+        Called before a composite group begins execution.
+
+        Composite groups are optimized chains of nodes that execute as a single unit.
+        This hook fires before the entire group executes, with individual node hooks
+        firing for each node within the group.
+
+        Args:
+            group_id: Unique identifier for the composite group node
+            node_count: Number of nodes in the chain
+            backend: Backend instance that will execute the group
+        """
+
+    @hook_spec
+    def after_group_execute(
+        self,
+        group_id: UUID,
+        node_count: int,
+        backend: Backend,
+        result: Any,
+        duration: float,
+    ) -> None:
+        """
+        Called after a composite group completes execution successfully.
+
+        Args:
+            group_id: Unique identifier for the composite group node
+            node_count: Number of nodes in the chain
+            backend: Backend instance that executed the group
+            result: The final result of the group execution
+            duration: Time taken to execute the entire group in seconds
+        """
+
+    @hook_spec
+    def on_group_error(
+        self,
+        group_id: UUID,
+        node_count: int,
+        backend: Backend,
+        error: Exception,
+        duration: float,
+    ) -> None:
+        """
+        Called when a composite group execution fails.
+
+        Args:
+            group_id: Unique identifier for the composite group node
+            node_count: Number of nodes in the chain
+            backend: Backend instance that was executing the group
+            error: The exception that was raised
+            duration: Time taken before failure in seconds
+        """

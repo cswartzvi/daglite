@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
-from concurrent.futures import Future
+import time
 from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, TypeVar
@@ -11,39 +12,19 @@ from typing import Any, TypeVar
 from typing_extensions import override
 
 from daglite.backends import Backend
-from daglite.graph.base import GraphNode
+from daglite.graph.base import ChainLink
+from daglite.graph.base import CompositeGraphNode
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
-from daglite.graph.nodes import TaskNode
+from daglite.graph.utils import materialize_async
+from daglite.graph.utils import materialize_sync
 
 T = TypeVar("T")
 
 
 @dataclass(frozen=True)
-class ChainLink:
-    """
-    Represents one node in a composite chain with its connection metadata.
-
-    This structure enables visualization tools to show the internal
-    structure of composite nodes.
-    """
-
-    node: TaskNode | MapTaskNode
-    """The actual node in the chain."""
-
-    position: int
-    """Position in the chain (0-indexed)."""
-
-    flow_param: str | None
-    """Name of the parameter that receives the flowed value from the previous node."""
-
-    external_params: dict[str, ParamInput]
-    """Parameters from outside the chain (literals, fixed, or external futures)."""
-
-
-@dataclass(frozen=True)
-class CompositeTaskNode(GraphNode):
+class CompositeTaskNode(CompositeGraphNode):
     """
     Represents a linear chain of TaskNodes executed as a single unit.
 
@@ -55,9 +36,6 @@ class CompositeTaskNode(GraphNode):
     - Hook firing for each internal node
     - Error attribution to specific nodes within the chain
     """
-
-    chain: tuple[ChainLink, ...]
-    """Ordered sequence of nodes forming the chain."""
 
     @cached_property
     @override
@@ -80,7 +58,7 @@ class CompositeTaskNode(GraphNode):
         chain_node_ids = {link.node.id for link in self.chain}
 
         # Add first node's inputs
-        if self.chain:
+        if self.chain:  # pragma: no branch
             for param_name, param_input in self.chain[0].node.inputs():
                 inputs_dict[param_name] = param_input
 
@@ -94,21 +72,164 @@ class CompositeTaskNode(GraphNode):
         return list(inputs_dict.items())
 
     @override
-    def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
+    def execute(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> Any:
+        """Execute the composite chain synchronously, firing node hooks for each link."""
+
         def execute_chain(**initial_inputs: Any) -> Any:
-            """Execute all nodes in the chain sequentially."""
+            """Execute all nodes in the chain sequentially with hooks."""
             result = initial_inputs
             for link in self.chain:
+                # Fire before_node_execute hook for this chain link
+                hook_manager.hook.before_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    inputs=initial_inputs
+                    if link.position == 0
+                    else self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    ),
+                    iteration_count=None,
+                )
+
+                link_start = time.perf_counter()
+
                 if link.position == 0:
-                    node_inputs = initial_inputs  # First node uses initial inputs directly
+                    node_inputs = initial_inputs
                 else:
                     node_inputs = self._build_node_inputs(
                         link=link, flow_value=result, resolved_inputs=resolved_inputs
                     )
+
                 result = link.node.func(**node_inputs)
+                link_duration = time.perf_counter() - link_start
+
+                # Fire after_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.after_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        result=result,
+                        duration=link_duration,
+                        iteration_count=None,
+                    )
+
             return result
 
-        return resolved_backend.submit(execute_chain, **resolved_inputs)
+        # Fire before_node_execute for the composite
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
+
+        node_start = time.perf_counter()
+        future = resolved_backend.submit(execute_chain, **resolved_inputs)
+        result = future.result()
+        result = materialize_sync(result)
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute for the composite
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=result,
+            duration=node_duration,
+            iteration_count=None,
+        )
+
+        return result
+
+    @override
+    async def execute_async(  # pragma: no cover
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> Any:
+        """Execute the composite chain asynchronously, firing node hooks for each link."""
+
+        def execute_chain(**initial_inputs: Any) -> Any:
+            """Execute all nodes in the chain sequentially with hooks."""
+            result = initial_inputs
+            for link in self.chain:
+                # Fire before_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.before_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        inputs=initial_inputs
+                        if link.position == 0
+                        else self._build_node_inputs(
+                            link=link, flow_value=result, resolved_inputs=resolved_inputs
+                        ),
+                        iteration_count=None,
+                    )
+
+                link_start = time.perf_counter()
+
+                if link.position == 0:
+                    node_inputs = initial_inputs
+                else:
+                    node_inputs = self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    )
+
+                result = link.node.func(**node_inputs)
+                link_duration = time.perf_counter() - link_start
+
+                # Fire after_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.after_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        result=result,
+                        duration=link_duration,
+                        iteration_count=None,
+                    )
+
+            return result
+
+        # Fire before_node_execute for the composite
+        if hook_manager:
+            hook_manager.hook.before_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                inputs=resolved_inputs,
+                iteration_count=None,
+            )
+
+        node_start = time.perf_counter()
+        future = resolved_backend.submit(execute_chain, **resolved_inputs)
+        wrapped = asyncio.wrap_future(future)
+        result = await wrapped
+        result = await materialize_async(result)
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute for the composite
+        if hook_manager:
+            hook_manager.hook.after_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                result=result,
+                duration=node_duration,
+                iteration_count=None,
+            )
+
+        return result
 
     def _build_node_inputs(
         self, link: ChainLink, flow_value: Any, resolved_inputs: dict[str, Any]
@@ -131,7 +252,7 @@ class CompositeTaskNode(GraphNode):
 
 
 @dataclass(frozen=True)
-class CompositeMapTaskNode(GraphNode):
+class CompositeMapTaskNode(CompositeGraphNode):
     """
     Represents a chain of MapTaskNodes where each iteration executes the full chain.
 
@@ -183,20 +304,34 @@ class CompositeMapTaskNode(GraphNode):
         return list(inputs_dict.items())
 
     @override
-    def submit(
-        self, resolved_backend: Backend, resolved_inputs: dict[str, Any]
-    ) -> list[Future[Any]]:
-        """
-        Execute iterations where each applies the full chain.
+    def execute(
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any,
+    ) -> list[Any]:
+        """Execute composite map synchronously, firing iteration and node hooks."""
 
-        Returns list of Futures, one per iteration.
-        """
-
-        def execute_iteration(**iteration_inputs: Any) -> Any:
-            """Execute full chain for one iteration."""
+        def execute_iteration_with_hooks(**iteration_inputs: Any) -> Any:
+            """Execute full chain for one iteration with node hooks."""
             result = iteration_inputs
 
             for link in self.chain:
+                # Fire before_node_execute hook for this chain link
+                hook_manager.hook.before_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    inputs=iteration_inputs
+                    if link.position == 0
+                    else self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    ),
+                    iteration_count=None,
+                )
+
+                link_start = time.perf_counter()
+
                 if link.position == 0:
                     node_inputs = iteration_inputs
                 else:
@@ -205,15 +340,202 @@ class CompositeMapTaskNode(GraphNode):
                     )
 
                 result = link.node.func(**node_inputs)
+                link_duration = time.perf_counter() - link_start
+
+                # Fire after_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.after_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        result=result,
+                        duration=link_duration,
+                        iteration_count=None,
+                    )
 
             return result
+
+        # Fire before_node_execute for the composite
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
+
+        node_start = time.perf_counter()
 
         # Build calls from source map configuration
         fixed = {k: v for k, v in resolved_inputs.items() if k in self.source_map.fixed_kwargs}
         mapped = {k: v for k, v in resolved_inputs.items() if k in self.source_map.mapped_kwargs}
         calls = self.source_map._build_map_calls(fixed, mapped)
+        futures = resolved_backend.submit_many(execute_iteration_with_hooks, calls)
 
-        return resolved_backend.submit_many(execute_iteration, calls)
+        results = []
+        iteration_total = len(futures)
+
+        for idx, future in enumerate(futures):
+            # Fire before_iteration_execute hook
+            hook_manager.hook.before_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+            )
+
+            iter_start = time.perf_counter()
+            iter_result = future.result()
+            iter_result = materialize_sync(iter_result)
+            iter_duration = time.perf_counter() - iter_start
+
+            # Fire after_iteration_execute hook
+            hook_manager.hook.after_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+                result=iter_result,
+                duration=iter_duration,
+            )
+
+            results.append(iter_result)
+
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute for the composite
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=results,
+            duration=node_duration,
+            iteration_count=iteration_total,
+        )
+
+        return results
+
+    @override
+    async def execute_async(  # pragma: no cover
+        self,
+        resolved_backend: Backend,
+        resolved_inputs: dict[str, Any],
+        hook_manager: Any | None = None,
+    ) -> list[Any]:
+        """Execute composite map asynchronously, firing iteration and node hooks."""
+
+        def execute_iteration_with_hooks(**iteration_inputs: Any) -> Any:
+            """Execute full chain for one iteration with node hooks."""
+            result = iteration_inputs
+
+            for link in self.chain:
+                # Fire before_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.before_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        inputs=iteration_inputs
+                        if link.position == 0
+                        else self._build_node_inputs(
+                            link=link, flow_value=result, resolved_inputs=resolved_inputs
+                        ),
+                        iteration_count=None,
+                    )
+
+                link_start = time.perf_counter()
+
+                if link.position == 0:
+                    node_inputs = iteration_inputs
+                else:
+                    node_inputs = self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    )
+
+                result = link.node.func(**node_inputs)
+                link_duration = time.perf_counter() - link_start
+
+                # Fire after_node_execute hook for this chain link
+                if hook_manager:
+                    hook_manager.hook.after_node_execute(
+                        node_id=link.node.id,
+                        node=link.node,
+                        backend=resolved_backend,
+                        result=result,
+                        duration=link_duration,
+                        iteration_count=None,
+                    )
+
+            return result
+
+        # Fire before_node_execute for the composite
+        if hook_manager:
+            hook_manager.hook.before_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                inputs=resolved_inputs,
+                iteration_count=None,
+            )
+
+        node_start = time.perf_counter()
+
+        # Build calls from source map configuration
+        fixed = {k: v for k, v in resolved_inputs.items() if k in self.source_map.fixed_kwargs}
+        mapped = {k: v for k, v in resolved_inputs.items() if k in self.source_map.mapped_kwargs}
+        calls = self.source_map._build_map_calls(fixed, mapped)
+        futures = resolved_backend.submit_many(execute_iteration_with_hooks, calls)
+
+        results = []
+        iteration_total = len(futures)
+
+        for idx, future in enumerate(futures):
+            # Fire before_iteration_execute hook
+            if hook_manager:
+                hook_manager.hook.before_iteration_execute(
+                    node_id=self.id,
+                    node=self,
+                    backend=resolved_backend,
+                    iteration_index=idx,
+                    iteration_total=iteration_total,
+                )
+
+            iter_start = time.perf_counter()
+            wrapped = asyncio.wrap_future(future)
+            iter_result = await wrapped
+            iter_result = await materialize_async(iter_result)
+            iter_duration = time.perf_counter() - iter_start
+
+            # Fire after_iteration_execute hook
+            if hook_manager:
+                hook_manager.hook.after_iteration_execute(
+                    node_id=self.id,
+                    node=self,
+                    backend=resolved_backend,
+                    iteration_index=idx,
+                    iteration_total=iteration_total,
+                    result=iter_result,
+                    duration=iter_duration,
+                )
+
+            results.append(iter_result)
+
+        node_duration = time.perf_counter() - node_start
+
+        # Fire after_node_execute for the composite
+        if hook_manager:
+            hook_manager.hook.after_node_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                result=results,
+                duration=node_duration,
+                iteration_count=iteration_total,
+            )
+
+        return results
 
     def _build_node_inputs(
         self, link: ChainLink, flow_value: Any, resolved_inputs: dict[str, Any]

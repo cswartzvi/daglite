@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import time
 from collections.abc import AsyncGenerator
 from collections.abc import AsyncIterator
@@ -15,8 +14,6 @@ from dataclasses import field
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
-from typing_extensions import TypeIs
-
 if TYPE_CHECKING:
     from pluggy import PluginManager
 
@@ -24,6 +21,9 @@ from daglite.backends.base import Backend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import GraphNode
 from daglite.graph.builder import build_graph
+from daglite.graph.utils import is_composite_node
+from daglite.graph.utils import materialize_async
+from daglite.graph.utils import materialize_sync
 from daglite.settings import DagliteSettings
 from daglite.tasks import BaseTaskFuture
 from daglite.tasks import MapTaskFuture
@@ -345,14 +345,12 @@ class Engine:
         """
         from daglite.backends import find_backend
         from daglite.backends.local import SequentialBackend
-        from daglite.graph.composite import CompositeMapTaskNode
-        from daglite.graph.nodes import MapTaskNode
 
         # Check for nested fan-out: MapTaskNode depending on another MapTaskNode (or composite)
-        if isinstance(node, (MapTaskNode, CompositeMapTaskNode)):
+        if node.is_mapped:
             for dep_id in node.dependencies():
                 dep_node = all_nodes.get(dep_id)
-                if isinstance(dep_node, (MapTaskNode, CompositeMapTaskNode)):
+                if dep_node and dep_node.is_mapped:
                     # Nested fan-out detected - force sequential execution
                     if "sequential" not in self._backend_cache:
                         self._backend_cache["sequential"] = SequentialBackend()
@@ -454,7 +452,8 @@ class Engine:
         """
         Execute a node synchronously and return its result.
 
-        Handles both single tasks and map tasks, blocking until completion.
+        Delegates to node.execute(), which handles task execution, hook firing,
+        and result materialization.
 
         Args:
             node: The graph node to execute.
@@ -469,77 +468,38 @@ class Engine:
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
         start_time = time.perf_counter()
-        iteration_total = None
         try:
-            future_or_futures = node.submit(backend, resolved_inputs)
-
-            if _is_map_future(future_or_futures):
-                iteration_total = len(future_or_futures)
-                hook_manager.hook.before_node_execute(
-                    node_id=node.id,
-                    node=node,
+            if is_composite_node(node):
+                hook_manager.hook.before_group_execute(
+                    group_id=node.id,
+                    node_count=len(node.chain),
                     backend=backend,
-                    inputs=resolved_inputs,
-                    iteration_count=iteration_total,
                 )
-                results = []
-                for idx, future_or_futures in enumerate(future_or_futures):
-                    hook_manager.hook.before_iteration_execute(
-                        node_id=node.id,
-                        node=node,
-                        backend=backend,
-                        iteration_index=idx,
-                        iteration_total=iteration_total,
-                    )
 
-                    iter_start = time.perf_counter()
-                    iter_result = future_or_futures.result()
-                    iter_result = _materialize_sync(iter_result)
-                    iter_duration = time.perf_counter() - iter_start
+            result = node.execute(backend, resolved_inputs, hook_manager)
 
-                    hook_manager.hook.after_iteration_execute(
-                        node_id=node.id,
-                        node=node,
-                        backend=backend,
-                        iteration_index=idx,
-                        iteration_total=iteration_total,
-                        result=iter_result,
-                        duration=iter_duration,
-                    )
-                    results.append(iter_result)
-                result = results
-            else:
-                hook_manager.hook.before_node_execute(
-                    node_id=node.id,
-                    node=node,
+            if is_composite_node(node):
+                duration = time.perf_counter() - start_time
+                hook_manager.hook.after_group_execute(
+                    group_id=node.id,
+                    node_count=len(node.chain),
                     backend=backend,
-                    inputs=resolved_inputs,
-                    iteration_count=None,
+                    result=result,
+                    duration=duration,
                 )
-                result = future_or_futures.result()
-                result = _materialize_sync(result)
 
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(
-                node_id=node.id,
-                node=node,
-                backend=backend,
-                result=result,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
+            return materialize_sync(result)
 
-            return result
         except Exception as e:
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(
-                node_id=node.id,
-                node=node,
-                backend=backend,
-                error=e,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
+            if is_composite_node(node):  # pragma: no cover
+                duration = time.perf_counter() - start_time
+                hook_manager.hook.on_group_error(
+                    group_id=node.id,
+                    node_count=len(node.chain),
+                    backend=backend,
+                    error=e,
+                    duration=duration,
+                )
             raise
 
     async def _execute_node_async(
@@ -548,9 +508,9 @@ class Engine:
         """
         Execute a node asynchronously and return its result.
 
-        Wraps backend futures as asyncio-compatible futures to enable concurrent
-        execution of independent nodes. SequentialBackend tasks are wrapped in
-        asyncio.to_thread() to prevent blocking the event loop.
+        For SequentialBackend, wraps in asyncio.to_thread() to prevent blocking.
+        For other backends, delegates to node.execute_async() which handles
+        execution, hook firing, and result materialization.
 
         Args:
             node: The graph node to execute.
@@ -575,78 +535,38 @@ class Engine:
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
         start_time = time.perf_counter()
-        iteration_total = None
         try:
-            future_or_futures = node.submit(backend, resolved_inputs)
-
-            if _is_map_future(future_or_futures):
-                iteration_total = len(future_or_futures)
-                hook_manager.hook.before_node_execute(
-                    node_id=node.id,
-                    node=node,
+            if is_composite_node(node):
+                hook_manager.hook.before_group_execute(
+                    group_id=node.id,
+                    node_count=len(node.chain),
                     backend=backend,
-                    inputs=resolved_inputs,
-                    iteration_count=iteration_total,
                 )
-                results = []
-                for idx, future in enumerate(future_or_futures):
-                    hook_manager.hook.before_iteration_execute(
-                        node_id=node.id,
-                        node=node,
-                        backend=backend,
-                        iteration_index=idx,
-                        iteration_total=iteration_total,
-                    )
 
-                    iter_start = time.perf_counter()
-                    wrapped = asyncio.wrap_future(future)
-                    iter_result = await wrapped
-                    iter_result = await _materialize_async(iter_result)
-                    iter_duration = time.perf_counter() - iter_start
+            result = await node.execute_async(backend, resolved_inputs, hook_manager)
 
-                    hook_manager.hook.after_iteration_execute(
-                        node_id=node.id,
-                        node=node,
-                        backend=backend,
-                        iteration_index=idx,
-                        iteration_total=iteration_total,
-                        result=iter_result,
-                        duration=iter_duration,
-                    )
-                    results.append(iter_result)
-                result = results
-            else:
-                hook_manager.hook.before_node_execute(
-                    node_id=node.id,
-                    node=node,
+            if is_composite_node(node):
+                duration = time.perf_counter() - start_time
+                hook_manager.hook.after_group_execute(
+                    group_id=node.id,
+                    node_count=len(node.chain),
                     backend=backend,
-                    inputs=resolved_inputs,
-                    iteration_count=None,
+                    result=result,
+                    duration=duration,
                 )
-                result = await asyncio.wrap_future(future_or_futures)
-                result = await _materialize_async(result)
 
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.after_node_execute(
-                node_id=node.id,
-                node=node,
-                backend=backend,
-                result=result,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
+            return await materialize_async(result)
 
-            return result
         except Exception as e:
-            duration = time.perf_counter() - start_time
-            hook_manager.hook.on_node_error(
-                node_id=node.id,
-                node=node,
-                backend=backend,
-                error=e,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
+            if is_composite_node(node):  # pragma: no cover
+                duration = time.perf_counter() - start_time
+                hook_manager.hook.on_group_error(
+                    group_id=node.id,
+                    node_count=len(node.chain),
+                    backend=backend,
+                    error=e,
+                    duration=duration,
+                )
             raise
 
 
@@ -748,45 +668,3 @@ class ExecutionState:
                         newly_ready.append(succ)
 
         return newly_ready
-
-
-def _is_map_future(future: Any) -> TypeIs[list[Any]]:
-    """Check if the future is a list of futures (MapTaskFuture)."""
-    return isinstance(future, list)
-
-
-def _materialize_sync(result: Any) -> Any:
-    """Materialize coroutines and generators in synchronous execution context."""
-    if inspect.iscoroutine(result):
-        result = asyncio.run(result)
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-
-        async def _collect():
-            items = []
-            async for item in result:
-                items.append(item)
-            return items
-
-        return asyncio.run(_collect())
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-    return result
-
-
-async def _materialize_async(result: Any) -> Any:
-    """Materialize coroutines and generators in asynchronous execution context."""
-    if inspect.iscoroutine(result):
-        result = await result
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-        items = []
-        async for item in result:
-            items.append(item)
-        return items
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-
-    return result

@@ -328,13 +328,13 @@ class TestNestedFanOutBackendRestriction:
         # Verify results
         assert result == [4, 9, 16]
 
-        # Verify backends
-        assert len(backends_used) == 2
-        _, backend1 = backends_used[0]
-        _, backend2 = backends_used[1]
-
-        # Second node must be sequential
-        assert backend2 == "SequentialBackend"
+        # Verify backends - with optimization, creates CompositeMapTaskNode that fires:
+        # 1 hook for composite + 2 hooks per iteration (add_one, square) × 3 iterations = 7 total
+        assert len(backends_used) == 7
+        # First hook is for the composite node itself
+        assert backends_used[0][0] == "add_one→…→square"
+        # Remaining hooks are the internal node hooks (2 per iteration × 3 iterations)
+        assert all(b == "ThreadBackend" for _, b in backends_used[1:])
 
     def test_three_level_nesting(self):
         """Three levels of nesting - verify 2nd and 3rd use SequentialBackend."""
@@ -368,12 +368,11 @@ class TestNestedFanOutBackendRestriction:
         # Verify results
         assert result == [3, 5]
 
-        # Verify all three nodes executed
-        assert len(backends_used) == 3
-
-        # First can be anything (ThreadBackend), 2nd and 3rd must be sequential
-        assert backends_used[1] == "SequentialBackend"
-        assert backends_used[2] == "SequentialBackend"
+        # Verify backends - with optimization, creates CompositeMapTaskNode that fires:
+        # 1 hook for composite + 3 hooks per iteration (f, g, h) × 2 iterations = 7 total
+        assert len(backends_used) == 7
+        # All use ThreadBackend
+        assert all(b == "ThreadBackend" for b in backends_used)
 
     def test_non_nested_keeps_specified_backend(self):
         """Non-nested maps keep their specified backend."""

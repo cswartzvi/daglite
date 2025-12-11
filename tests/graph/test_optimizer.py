@@ -12,6 +12,7 @@ from daglite.graph.composite import CompositeTaskNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 from daglite.graph.optimizer import optimize_graph
+from daglite.hooks.manager import get_hook_manager
 from daglite.settings import DagliteSettings
 
 
@@ -325,6 +326,97 @@ class TestGraphOptimizer:
         # At minimum, D should not be in any composite due to multiple dependencies
         assert len(optimized) >= 3
 
+    def test_parallel_branches_optimized_independently(self) -> None:
+        """Parallel branches with chains are optimized independently before fan-in."""
+        from daglite.backends import SequentialBackend
+
+        backend = SequentialBackend()
+
+        # Create diamond with chains in parallel branches:
+        #     A
+        #    / \
+        #   B   C
+        #   |   |
+        #   B'  C'
+        #    \ /
+        #     D
+        node_a = TaskNode(
+            id=uuid4(),
+            name="a",
+            description=None,
+            backend=backend,
+            func=lambda: 10,
+            kwargs={},
+        )
+        node_b = TaskNode(
+            id=uuid4(),
+            name="b",
+            description=None,
+            backend=backend,
+            func=lambda x: x + 1,
+            kwargs={"x": ParamInput.from_ref(node_a.id)},
+        )
+        node_b_prime = TaskNode(
+            id=uuid4(),
+            name="b_prime",
+            description=None,
+            backend=backend,
+            func=lambda x: x * 2,
+            kwargs={"x": ParamInput.from_ref(node_b.id)},
+        )
+        node_c = TaskNode(
+            id=uuid4(),
+            name="c",
+            description=None,
+            backend=backend,
+            func=lambda x: x - 3,
+            kwargs={"x": ParamInput.from_ref(node_a.id)},
+        )
+        node_c_prime = TaskNode(
+            id=uuid4(),
+            name="c_prime",
+            description=None,
+            backend=backend,
+            func=lambda x: x + 5,
+            kwargs={"x": ParamInput.from_ref(node_c.id)},
+        )
+        node_d = TaskNode(
+            id=uuid4(),
+            name="d",
+            description=None,
+            backend=backend,
+            func=lambda x, y: x + y,
+            kwargs={
+                "x": ParamInput.from_ref(node_b_prime.id),
+                "y": ParamInput.from_ref(node_c_prime.id),
+            },
+        )
+
+        nodes: dict[UUID, GraphNode] = {
+            node_a.id: node_a,
+            node_b.id: node_b,
+            node_b_prime.id: node_b_prime,
+            node_c.id: node_c,
+            node_c_prime.id: node_c_prime,
+            node_d.id: node_d,
+        }
+        optimized, _ = optimize_graph(nodes, node_d.id)
+
+        # Should have 4 nodes:
+        # - A (single node)
+        # - Composite(B, B')
+        # - Composite(C, C')
+        # - D (single node, fan-in point)
+        assert len(optimized) == 4
+
+        # Verify the composites exist
+        composite_nodes = [n for n in optimized.values() if isinstance(n, CompositeTaskNode)]
+        assert len(composite_nodes) == 2
+
+        # Verify each composite has 2 nodes in chain
+        for composite in composite_nodes:
+            assert len(composite.chain) == 2
+
     def test_single_nodes_not_grouped(self) -> None:
         """Single nodes without chain partners stay ungrouped."""
         from daglite.backends import SequentialBackend
@@ -432,10 +524,7 @@ class TestCompositeExecution:
 
         # Execute composite
         resolved_inputs = {"x": 5}
-        future = composite.submit(backend, resolved_inputs)
-        result = future.result()
-
-        # Should compute (5 + 1) * 2 = 12
+        result = composite.execute(backend, resolved_inputs, get_hook_manager())
         assert result == 12
 
     def test_composite_task_node_with_external_params(self) -> None:
@@ -486,9 +575,7 @@ class TestCompositeExecution:
         )
 
         resolved_inputs = {"x": 5}
-        future = composite.submit(backend, resolved_inputs)
-        result = future.result()
-
+        result = composite.execute(backend, resolved_inputs, get_hook_manager())
         # Should compute (5 + 1) * 10 = 60
         assert result == 60
 
@@ -538,8 +625,7 @@ class TestCompositeExecution:
 
         # Execute composite
         resolved_inputs = {"x": [1, 2, 3]}
-        futures = composite.submit(backend, resolved_inputs)
-        results = [f.result() for f in futures]
+        results = composite.execute(backend, resolved_inputs, get_hook_manager())
 
         # Each iteration: (x * 2) + 10
         # [1*2+10, 2*2+10, 3*2+10] = [12, 14, 16]
