@@ -289,13 +289,12 @@ class TestNestedFanOutBackendRestriction:
 
         # Verify backends used
         assert len(backends_used) == 2
-        node1_name, backend1 = backends_used[0]
-        node2_name, backend2 = backends_used[1]
+        node_name, backend = backends_used[1]
 
         # First node can use any backend (no nesting)
         # Second node MUST use SequentialBackend (nested)
-        assert backend2 == "SequentialBackend", (
-            f"Nested MapTaskNode '{node2_name}' should use SequentialBackend, but used {backend2}"
+        assert backend == "SequentialBackend", (
+            f"Nested MapTaskNode '{node_name}' should use SequentialBackend, but used {backend}"
         )
 
     def test_nested_map_forces_sequential_backend(self):
@@ -333,7 +332,9 @@ class TestNestedFanOutBackendRestriction:
         assert len(backends_used) == 7
         # First hook is for the composite node itself
         assert backends_used[0][0] == "add_one→…→square"
-        # Remaining hooks are the internal node hooks (2 per iteration × 3 iterations)
+        # Due to optimization, the two map operations are merged into a CompositeMapTaskNode,
+        # resulting in a single top-level map (no nesting). Therefore, the originally specified
+        # ThreadBackend is used for all internal node hooks (2 per iteration × 3 iterations).
         assert all(b == "ThreadBackend" for _, b in backends_used[1:])
 
     def test_three_level_nesting(self):
