@@ -249,3 +249,151 @@ class TestBackendPickleRequirements:
         # Should work with threading backend (pickle not strictly required)
         result = evaluate(mult_task.with_options(backend="threading").bind(x=6))
         assert result == 30
+
+
+class TestNestedFanOutBackendRestriction:
+    """Test that nested MapTaskNodes are automatically forced to SequentialBackend."""
+
+    def test_nested_product_forces_sequential_backend(self):
+        """Nested .product() operations forced to use SequentialBackend."""
+        from daglite import hooks
+
+        # Track which backends are used
+        backends_used = []
+
+        class BackendTracker:
+            @hooks.hook_impl
+            def before_node_execute(self, node, backend, **kwargs):
+                backends_used.append((node.name, type(backend).__name__))
+
+        @task(backend="threading")
+        def level1(x: int) -> int:
+            return x * 2
+
+        @task(backend="threading")
+        def level2(y: int) -> int:
+            return y + 1
+
+        # First level: product (can use threading)
+        map1 = level1.product(x=[1, 2])
+
+        # Second level: nested product (should be forced to sequential)
+        map2 = level2.product(y=map1)
+
+        result = evaluate(map2, hooks=[BackendTracker()])
+
+        # Verify results are correct
+        # map1: [2, 4]
+        # map2: [3, 5]
+        assert sorted(result) == [3, 5]
+
+        # Verify backends used
+        assert len(backends_used) == 2
+        node1_name, backend1 = backends_used[0]
+        node2_name, backend2 = backends_used[1]
+
+        # First node can use any backend (no nesting)
+        # Second node MUST use SequentialBackend (nested)
+        assert backend2 == "SequentialBackend", (
+            f"Nested MapTaskNode '{node2_name}' should use SequentialBackend, but used {backend2}"
+        )
+
+    def test_nested_map_forces_sequential_backend(self):
+        """Nested .map() operations forced to use SequentialBackend."""
+        from daglite import hooks
+
+        backends_used = []
+
+        class BackendTracker:
+            @hooks.hook_impl
+            def before_node_execute(self, node, backend, **kwargs):
+                backends_used.append((node.name, type(backend).__name__))
+
+        @task(backend="threading")
+        def add_one(x: int) -> int:
+            return x + 1
+
+        @task(backend="threading")
+        def square(x: int) -> int:
+            return x * x
+
+        # First level
+        level1 = add_one.product(x=[1, 2, 3])
+
+        # Second level (nested)
+        level2 = level1.map(square)
+
+        result = evaluate(level2, hooks=[BackendTracker()])
+
+        # Verify results
+        assert result == [4, 9, 16]
+
+        # Verify backends
+        assert len(backends_used) == 2
+        _, backend1 = backends_used[0]
+        _, backend2 = backends_used[1]
+
+        # Second node must be sequential
+        assert backend2 == "SequentialBackend"
+
+    def test_three_level_nesting(self):
+        """Three levels of nesting - verify 2nd and 3rd use SequentialBackend."""
+        from daglite import hooks
+
+        backends_used = []
+
+        class BackendTracker:
+            @hooks.hook_impl
+            def before_node_execute(self, node, backend, **kwargs):
+                backends_used.append(type(backend).__name__)
+
+        @task(backend="threading")
+        def f(x: int) -> int:
+            return x + 1
+
+        @task(backend="threading")
+        def g(x: int) -> int:
+            return x * 2
+
+        @task(backend="threading")
+        def h(x: int) -> int:
+            return x - 1
+
+        level1 = f.product(x=[1, 2])
+        level2 = level1.map(g)
+        level3 = level2.map(h)
+
+        result = evaluate(level3, hooks=[BackendTracker()])
+
+        # Verify results
+        assert result == [3, 5]
+
+        # Verify all three nodes executed
+        assert len(backends_used) == 3
+
+        # First can be anything (ThreadBackend), 2nd and 3rd must be sequential
+        assert backends_used[1] == "SequentialBackend"
+        assert backends_used[2] == "SequentialBackend"
+
+    def test_non_nested_keeps_specified_backend(self):
+        """Non-nested maps keep their specified backend."""
+        from daglite import hooks
+
+        backends_used = []
+
+        class BackendTracker:
+            @hooks.hook_impl
+            def before_node_execute(self, node, backend, **kwargs):
+                backends_used.append(type(backend).__name__)
+
+        @task(backend="threading")
+        def process(x: int) -> int:
+            return x * 2
+
+        # Single level - no nesting
+        result = evaluate(process.product(x=[1, 2, 3]), hooks=[BackendTracker()])
+
+        assert result == [2, 4, 6]
+        assert len(backends_used) == 1
+        # Should NOT be forced to sequential
+        assert backends_used[0] == "ThreadBackend"

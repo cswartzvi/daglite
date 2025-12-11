@@ -313,10 +313,35 @@ class Engine:
                 self._hook_manager = get_hook_manager()
         return self._hook_manager
 
-    def _resolve_node_backend(self, node: GraphNode) -> Backend:
-        """Decide which Backend instance to use for this node's *internal* work."""
-        from daglite.backends import find_backend
+    def _resolve_node_backend(self, node: GraphNode, all_nodes: dict[UUID, GraphNode]) -> Backend:
+        """
+        Decide which Backend instance to use for this node's *internal* work.
 
+        Automatically forces SequentialBackend for nested MapTaskNodes to prevent
+        exponential resource usage from nested fan-outs.
+
+        Args:
+            node: The node to resolve backend for
+            all_nodes: All nodes in the graph (needed to check dependencies)
+
+        Returns:
+            Resolved backend instance
+        """
+        from daglite.backends import find_backend
+        from daglite.backends.local import SequentialBackend
+        from daglite.graph.nodes import MapTaskNode
+
+        # Check for nested fan-out: MapTaskNode depending on another MapTaskNode
+        if isinstance(node, MapTaskNode):
+            for dep_id in node.dependencies():
+                dep_node = all_nodes.get(dep_id)
+                if isinstance(dep_node, MapTaskNode):
+                    # Nested fan-out detected - force sequential execution
+                    if "sequential" not in self._backend_cache:
+                        self._backend_cache["sequential"] = SequentialBackend()
+                    return self._backend_cache["sequential"]
+
+        # Normal backend resolution
         backend_key = node.backend or self.default_backend
         if backend_key not in self._backend_cache:
             backend = find_backend(backend_key)
@@ -338,7 +363,7 @@ class Engine:
             while ready:
                 nid = ready.pop()
                 node = state.nodes[nid]
-                result = self._execute_node_sync(node, state.completed_nodes)
+                result = self._execute_node_sync(node, state.completed_nodes, state.nodes)
                 ready.extend(state.mark_complete(nid, result))
 
             result = state.completed_nodes[root_id]
@@ -371,7 +396,9 @@ class Engine:
             while ready:
                 tasks: dict[asyncio.Task[Any], UUID] = {
                     asyncio.create_task(
-                        self._execute_node_async(state.nodes[nid], state.completed_nodes)
+                        self._execute_node_async(
+                            state.nodes[nid], state.completed_nodes, state.nodes
+                        )
                     ): nid
                     for nid in ready
                 }
@@ -398,7 +425,9 @@ class Engine:
             )
             raise
 
-    def _execute_node_sync(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> Any:
+    def _execute_node_sync(
+        self, node: GraphNode, completed_nodes: dict[UUID, Any], all_nodes: dict[UUID, GraphNode]
+    ) -> Any:
         """
         Execute a node synchronously and return its result.
 
@@ -407,12 +436,13 @@ class Engine:
         Args:
             node: The graph node to execute.
             completed_nodes: Results from all completed dependency nodes.
+            all_nodes: All nodes in the graph (for backend resolution).
 
         Returns:
             The node's execution result (single value or list)
         """
         hook_manager = self._get_hook_manager()
-        backend = self._resolve_node_backend(node)
+        backend = self._resolve_node_backend(node, all_nodes)
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
         start_time = time.perf_counter()
@@ -489,7 +519,9 @@ class Engine:
             )
             raise
 
-    async def _execute_node_async(self, node: GraphNode, completed_nodes: dict[UUID, Any]) -> Any:
+    async def _execute_node_async(
+        self, node: GraphNode, completed_nodes: dict[UUID, Any], all_nodes: dict[UUID, GraphNode]
+    ) -> Any:
         """
         Execute a node asynchronously and return its result.
 
@@ -500,18 +532,21 @@ class Engine:
         Args:
             node: The graph node to execute.
             completed_nodes: Results from all completed dependency nodes.
+            all_nodes: All nodes in the graph (for backend resolution).
 
         Returns:
             The node's execution result (single value or list)
         """
         from daglite.backends.local import SequentialBackend
 
-        backend = self._resolve_node_backend(node)
+        backend = self._resolve_node_backend(node, all_nodes)
 
         # Special case: Sequential backend executes synchronously and would block
         # the event loop, so wrap in thread
         if isinstance(backend, SequentialBackend):
-            return await asyncio.to_thread(self._execute_node_sync, node, completed_nodes)
+            return await asyncio.to_thread(
+                self._execute_node_sync, node, completed_nodes, all_nodes
+            )
 
         hook_manager = self._get_hook_manager()
         resolved_inputs = node.resolve_inputs(completed_nodes)
