@@ -107,22 +107,19 @@ class CompositeTaskNode(CompositeGraphNode):
                     )
 
                 result = link.node.func(**node_inputs)
-                link_duration = time.perf_counter() - link_start
 
-                # Fire after_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.after_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        result=result,
-                        duration=link_duration,
-                        iteration_count=None,
-                    )
+                link_duration = time.perf_counter() - link_start
+                hook_manager.hook.after_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    result=result,
+                    duration=link_duration,
+                    iteration_count=None,
+                )
 
             return result
 
-        # Fire before_node_execute for the composite
         hook_manager.hook.before_node_execute(
             node_id=self.id,
             node=self,
@@ -137,7 +134,6 @@ class CompositeTaskNode(CompositeGraphNode):
         result = materialize_sync(result)
         node_duration = time.perf_counter() - node_start
 
-        # Fire after_node_execute for the composite
         hook_manager.hook.after_node_execute(
             node_id=self.id,
             node=self,
@@ -162,19 +158,17 @@ class CompositeTaskNode(CompositeGraphNode):
             """Execute all nodes in the chain sequentially with hooks."""
             result = initial_inputs
             for link in self.chain:
-                # Fire before_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.before_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        inputs=initial_inputs
-                        if link.position == 0
-                        else self._build_node_inputs(
-                            link=link, flow_value=result, resolved_inputs=resolved_inputs
-                        ),
-                        iteration_count=None,
-                    )
+                hook_manager.hook.before_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    inputs=initial_inputs
+                    if link.position == 0
+                    else self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    ),
+                    iteration_count=None,
+                )
 
                 link_start = time.perf_counter()
 
@@ -188,28 +182,24 @@ class CompositeTaskNode(CompositeGraphNode):
                 result = link.node.func(**node_inputs)
                 link_duration = time.perf_counter() - link_start
 
-                # Fire after_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.after_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        result=result,
-                        duration=link_duration,
-                        iteration_count=None,
-                    )
+                hook_manager.hook.after_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    result=result,
+                    duration=link_duration,
+                    iteration_count=None,
+                )
 
             return result
 
-        # Fire before_node_execute for the composite
-        if hook_manager:
-            hook_manager.hook.before_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                inputs=resolved_inputs,
-                iteration_count=None,
-            )
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
 
         node_start = time.perf_counter()
         future = resolved_backend.submit(execute_chain, **resolved_inputs)
@@ -218,16 +208,14 @@ class CompositeTaskNode(CompositeGraphNode):
         result = await materialize_async(result)
         node_duration = time.perf_counter() - node_start
 
-        # Fire after_node_execute for the composite
-        if hook_manager:
-            hook_manager.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                result=result,
-                duration=node_duration,
-                iteration_count=None,
-            )
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=result,
+            duration=node_duration,
+            iteration_count=None,
+        )
 
         return result
 
@@ -342,16 +330,14 @@ class CompositeMapTaskNode(CompositeGraphNode):
                 result = link.node.func(**node_inputs)
                 link_duration = time.perf_counter() - link_start
 
-                # Fire after_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.after_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        result=result,
-                        duration=link_duration,
-                        iteration_count=None,
-                    )
+                hook_manager.hook.after_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    result=result,
+                    duration=link_duration,
+                    iteration_count=None,
+                )
 
             return result
 
@@ -422,7 +408,7 @@ class CompositeMapTaskNode(CompositeGraphNode):
         self,
         resolved_backend: Backend,
         resolved_inputs: dict[str, Any],
-        hook_manager: Any | None = None,
+        hook_manager: Any,
     ) -> list[Any]:
         """Execute composite map asynchronously, firing iteration and node hooks."""
 
@@ -431,19 +417,17 @@ class CompositeMapTaskNode(CompositeGraphNode):
             result = iteration_inputs
 
             for link in self.chain:
-                # Fire before_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.before_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        inputs=iteration_inputs
-                        if link.position == 0
-                        else self._build_node_inputs(
-                            link=link, flow_value=result, resolved_inputs=resolved_inputs
-                        ),
-                        iteration_count=None,
-                    )
+                hook_manager.hook.before_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    inputs=iteration_inputs
+                    if link.position == 0
+                    else self._build_node_inputs(
+                        link=link, flow_value=result, resolved_inputs=resolved_inputs
+                    ),
+                    iteration_count=None,
+                )
 
                 link_start = time.perf_counter()
 
@@ -457,28 +441,25 @@ class CompositeMapTaskNode(CompositeGraphNode):
                 result = link.node.func(**node_inputs)
                 link_duration = time.perf_counter() - link_start
 
-                # Fire after_node_execute hook for this chain link
-                if hook_manager:
-                    hook_manager.hook.after_node_execute(
-                        node_id=link.node.id,
-                        node=link.node,
-                        backend=resolved_backend,
-                        result=result,
-                        duration=link_duration,
-                        iteration_count=None,
-                    )
+                hook_manager.hook.after_node_execute(
+                    node_id=link.node.id,
+                    node=link.node,
+                    backend=resolved_backend,
+                    result=result,
+                    duration=link_duration,
+                    iteration_count=None,
+                )
 
             return result
 
         # Fire before_node_execute for the composite
-        if hook_manager:
-            hook_manager.hook.before_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                inputs=resolved_inputs,
-                iteration_count=None,
-            )
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,
+        )
 
         node_start = time.perf_counter()
 
@@ -492,15 +473,13 @@ class CompositeMapTaskNode(CompositeGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            # Fire before_iteration_execute hook
-            if hook_manager:
-                hook_manager.hook.before_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=resolved_backend,
-                    iteration_index=idx,
-                    iteration_total=iteration_total,
-                )
+            hook_manager.hook.before_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+            )
 
             iter_start = time.perf_counter()
             wrapped = asyncio.wrap_future(future)
@@ -508,32 +487,27 @@ class CompositeMapTaskNode(CompositeGraphNode):
             iter_result = await materialize_async(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            # Fire after_iteration_execute hook
-            if hook_manager:
-                hook_manager.hook.after_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=resolved_backend,
-                    iteration_index=idx,
-                    iteration_total=iteration_total,
-                    result=iter_result,
-                    duration=iter_duration,
-                )
+            hook_manager.hook.after_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+                result=iter_result,
+                duration=iter_duration,
+            )
 
             results.append(iter_result)
 
         node_duration = time.perf_counter() - node_start
-
-        # Fire after_node_execute for the composite
-        if hook_manager:
-            hook_manager.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                result=results,
-                duration=node_duration,
-                iteration_count=iteration_total,
-            )
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=results,
+            duration=node_duration,
+            iteration_count=iteration_total,
+        )
 
         return results
 

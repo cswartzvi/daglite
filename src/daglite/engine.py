@@ -352,7 +352,7 @@ class Engine:
                 dep_node = all_nodes.get(dep_id)
                 if dep_node and dep_node.is_mapped:
                     # Nested fan-out detected - force sequential execution
-                    if "sequential" not in self._backend_cache:
+                    if "sequential" not in self._backend_cache:  # pragma: no branch
                         self._backend_cache["sequential"] = SequentialBackend()
                     return self._backend_cache["sequential"]
 

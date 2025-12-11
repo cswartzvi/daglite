@@ -47,8 +47,6 @@ class TaskNode(FunctionGraphNode):
         resolved_inputs: dict[str, Any],
         hook_manager: Any,
     ) -> Any:
-        """Execute the task synchronously and return the result."""
-        # Fire before hook
         hook_manager.hook.before_node_execute(
             node_id=self.id,
             node=self,
@@ -63,16 +61,14 @@ class TaskNode(FunctionGraphNode):
         result = materialize_sync(result)
         duration = time.perf_counter() - start_time
 
-        # Fire after hook
-        if hook_manager:
-            hook_manager.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                result=result,
-                duration=duration,
-                iteration_count=None,
-            )
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=result,
+            duration=duration,
+            iteration_count=None,
+        )
 
         return result
 
@@ -83,8 +79,6 @@ class TaskNode(FunctionGraphNode):
         resolved_inputs: dict[str, Any],
         hook_manager: Any,
     ) -> Any:
-        """Execute the task asynchronously and return the result."""
-        # Fire before hook
         hook_manager.hook.before_node_execute(
             node_id=self.id,
             node=self,
@@ -100,7 +94,6 @@ class TaskNode(FunctionGraphNode):
         result = await materialize_async(result)
         duration = time.perf_counter() - start_time
 
-        # Fire after hook
         hook_manager.hook.after_node_execute(
             node_id=self.id,
             node=self,
@@ -184,8 +177,6 @@ class MapTaskNode(FunctionGraphNode):
         resolved_inputs: dict[str, Any],
         hook_manager: Any,
     ) -> list[Any]:
-        """Execute map task synchronously, firing iteration hooks for each iteration."""
-        # Fire before_node_execute hook
         hook_manager.hook.before_node_execute(
             node_id=self.id,
             node=self,
@@ -204,22 +195,19 @@ class MapTaskNode(FunctionGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            # Fire before_iteration_execute hook
-            if hook_manager:
-                hook_manager.hook.before_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=resolved_backend,
-                    iteration_index=idx,
-                    iteration_total=iteration_total,
-                )
+            hook_manager.hook.before_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+            )
 
             iter_start = time.perf_counter()
             iter_result = future.result()
             iter_result = materialize_sync(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            # Fire after_iteration_execute hook
             hook_manager.hook.after_iteration_execute(
                 node_id=self.id,
                 node=self,
@@ -234,7 +222,6 @@ class MapTaskNode(FunctionGraphNode):
 
         node_duration = time.perf_counter() - node_start
 
-        # Fire after_node_execute hook
         hook_manager.hook.after_node_execute(
             node_id=self.id,
             node=self,
@@ -251,18 +238,15 @@ class MapTaskNode(FunctionGraphNode):
         self,
         resolved_backend: Backend,
         resolved_inputs: dict[str, Any],
-        hook_manager: Any | None = None,
+        hook_manager: Any,
     ) -> list[Any]:
-        """Execute map task asynchronously, firing iteration hooks for each iteration."""
-        # Fire before_node_execute hook
-        if hook_manager:
-            hook_manager.hook.before_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                inputs=resolved_inputs,
-                iteration_count=None,  # Will be set after we know the count
-            )
+        hook_manager.hook.before_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            inputs=resolved_inputs,
+            iteration_count=None,  # Will be set after we know the count
+        )
 
         node_start = time.perf_counter()
         fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
@@ -274,15 +258,13 @@ class MapTaskNode(FunctionGraphNode):
         iteration_total = len(futures)
 
         for idx, future in enumerate(futures):
-            # Fire before_iteration_execute hook
-            if hook_manager:
-                hook_manager.hook.before_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=resolved_backend,
-                    iteration_index=idx,
-                    iteration_total=iteration_total,
-                )
+            hook_manager.hook.before_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+            )
 
             iter_start = time.perf_counter()
             wrapped = asyncio.wrap_future(future)
@@ -290,31 +272,27 @@ class MapTaskNode(FunctionGraphNode):
             iter_result = await materialize_async(iter_result)
             iter_duration = time.perf_counter() - iter_start
 
-            # Fire after_iteration_execute hook
-            if hook_manager:
-                hook_manager.hook.after_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=resolved_backend,
-                    iteration_index=idx,
-                    iteration_total=iteration_total,
-                    result=iter_result,
-                    duration=iter_duration,
-                )
+            hook_manager.hook.after_iteration_execute(
+                node_id=self.id,
+                node=self,
+                backend=resolved_backend,
+                iteration_index=idx,
+                iteration_total=iteration_total,
+                result=iter_result,
+                duration=iter_duration,
+            )
 
             results.append(iter_result)
 
         node_duration = time.perf_counter() - node_start
 
-        # Fire after_node_execute hook
-        if hook_manager:
-            hook_manager.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=resolved_backend,
-                result=results,
-                duration=node_duration,
-                iteration_count=iteration_total,
-            )
+        hook_manager.hook.after_node_execute(
+            node_id=self.id,
+            node=self,
+            backend=resolved_backend,
+            result=results,
+            duration=node_duration,
+            iteration_count=iteration_total,
+        )
 
         return results
