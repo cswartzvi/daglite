@@ -4,7 +4,7 @@ from daglite import evaluate
 from daglite import task
 from daglite.plugins import hook_impl
 from daglite.plugins.manager import _get_global_plugin_manager
-from daglite.plugins.manager import register_hooks
+from daglite.plugins.manager import register_plugins
 
 
 class TestHooksBasic:
@@ -28,7 +28,7 @@ class TestHooksBasic:
                 self.called = True
 
         custom_hook = CustomHook()
-        register_hooks(custom_hook)
+        register_plugins(custom_hook)
 
         @task
         def simple() -> int:
@@ -81,7 +81,7 @@ class TestHooksBasic:
                 }
 
         capture = ParameterCapture()
-        register_hooks(capture)
+        register_plugins(capture)
 
         @task
         def add(x: int, y: int) -> int:
@@ -123,7 +123,7 @@ class TestHooksMapTasks:
                 self.inputs.append(inputs)
 
         capture = InputCapture()
-        register_hooks(capture)
+        register_plugins(capture)
 
         @task
         def process(x: int) -> int:

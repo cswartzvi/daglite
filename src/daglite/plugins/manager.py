@@ -22,17 +22,17 @@ _PLUGIN_MANAGER: PluginManager | None = None
 # region API
 
 
-def register_hooks(*hooks: Any) -> None:
-    """Register specified daglite pluggy hooks."""
-    hook_manager = _get_global_plugin_manager()
-    for hooks_collection in hooks:
-        if not hook_manager.is_registered(hooks_collection):
-            if isclass(hooks_collection):
+def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None) -> None:
+    """Registers daglite plugins with the global plugin manager."""
+    _plugin_manager = _plugin_manager if _plugin_manager else _get_global_plugin_manager()
+    for plugin in plugins:
+        if not _plugin_manager.is_registered(plugin):
+            if isclass(plugin):
                 raise TypeError(
-                    "daglite expects hooks to be registered as instances. "
-                    "Have you forgotten the `()` when registering a hook class?"
+                    "daglite expects plugins to be registered as instances. "
+                    "Have you forgotten the `()` when registering a plugin class?"
                 )
-            hook_manager.register(hooks_collection)
+            _plugin_manager.register(plugin)
 
 
 def register_plugins_entry_points(_plugin_manager: PluginManager | None = None) -> None:
@@ -41,39 +41,34 @@ def register_plugins_entry_points(_plugin_manager: PluginManager | None = None) 
     _plugin_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)  # Doesn't use setuptools
 
 
-def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
+def build_plugin_manager(plugins: list[Any]) -> PluginManager:
     """
-    Create a new hook manager with both global and execution-specific plugins.
+    Create a new plugin manager with both global and execution-specific plugins.
 
-    This combines globally registered hooks with additional hooks for a specific execution.
-    Used internally by Engine to support per-execution hooks.
+    This combines globally registered plugins with additional plugin for a specific execution.
 
     Args:
-        plugins: Additional hook implementations to register.
+        plugins: Additional plugin implementations to register.
 
     Returns:
-        A new PluginManager with global + execution-specific hooks.
+        A new PluginManager with global + execution-specific plugins.
     """
     # Create new manager with hook specs
-    manager = _create_plugin_manager()
+    new_manager = _create_plugin_manager()
 
     # Copy global hooks
     global_manager = _get_global_plugin_manager()
     for plugin in global_manager.get_plugins():
-        if not manager.is_registered(plugin):  # pragma: no branch
-            manager.register(plugin)
+        if not new_manager.is_registered(plugin):  # pragma: no branch
+            new_manager.register(plugin)
 
-    # Add execution-specific hooks
-    for plugin in plugins:
-        if not manager.is_registered(plugin):  # pragma: no branch
-            if isclass(plugin):
-                raise TypeError(
-                    "daglite expects hooks to be registered as instances. "
-                    "Have you forgotten the `()` when registering a hook class?"
-                )
-            manager.register(plugin)
+    # Register entry-point plugins
+    new_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)
 
-    return manager
+    # Add execution-specific plugins
+    register_plugins(*plugins, _plugin_manager=new_manager)
+
+    return new_manager
 
 
 def serialize_plugin_manager(plugin_manager: PluginManager) -> dict[str, Any]:

@@ -9,7 +9,7 @@ from daglite.plugins import hooks
 from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.plugins.manager import deserialize_plugin_manager
-from daglite.plugins.manager import register_hooks
+from daglite.plugins.manager import register_plugins
 from daglite.plugins.manager import register_plugins_entry_points
 from daglite.plugins.manager import serialize_plugin_manager
 
@@ -137,7 +137,7 @@ class TestPerExecutionHooks:
         local_counter = LocalCounter()
 
         # Register global hook
-        register_hooks(global_counter)
+        register_plugins(global_counter)
 
         @task
         def add(x: int, y: int) -> int:
@@ -311,7 +311,7 @@ class TestHookManagerFunctions:
 
         # Should raise TypeError when passing class instead of instance
         with pytest.raises(TypeError, match="daglite expects hooks to be registered as instances"):
-            register_hooks(MyHook)  # Missing ()
+            register_plugins(MyHook)  # Missing ()
 
     def test_register_hooks_prevents_duplicates(self) -> None:
         """register_hooks doesn't register the same instance twice."""
@@ -327,8 +327,8 @@ class TestHookManagerFunctions:
         counter = Counter()
 
         # Register twice
-        register_hooks(counter)
-        register_hooks(counter)  # Should be no-op
+        register_plugins(counter)
+        register_plugins(counter)  # Should be no-op
 
         @task
         def add(x: int, y: int) -> int:
