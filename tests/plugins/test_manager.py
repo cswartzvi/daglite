@@ -8,8 +8,58 @@ from daglite.engine import evaluate_async
 from daglite.plugins import hooks
 from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import _initialize_plugin_system
+from daglite.plugins.manager import deserialize_plugin_manager
 from daglite.plugins.manager import register_hooks
 from daglite.plugins.manager import register_plugins_entry_points
+from daglite.plugins.manager import serialize_plugin_manager
+
+
+# Module-level plugin classes for serialization tests
+class SerializableTestPlugin:
+    """Test plugin that supports serialization."""
+
+    def __init__(self, threshold: float = 0.5, name: str = "default"):
+        self.threshold = threshold
+        self.name = name
+        self.call_count = 0  # Runtime state, not serialized
+
+    def to_config(self) -> dict:
+        return {"threshold": self.threshold, "name": self.name}
+
+    @classmethod
+    def from_config(cls, config: dict) -> "SerializableTestPlugin":
+        return cls(**config)
+
+    @hooks.hook_impl
+    def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+        self.call_count += 1
+
+
+class AnotherSerializablePlugin:
+    """Another test plugin for testing multiple plugins."""
+
+    def __init__(self, multiplier: int = 2, enabled: bool = True):
+        self.multiplier = multiplier
+        self.enabled = enabled
+
+    def to_config(self) -> dict:
+        return {"multiplier": self.multiplier, "enabled": self.enabled}
+
+    @classmethod
+    def from_config(cls, config: dict) -> "AnotherSerializablePlugin":
+        return cls(**config)
+
+    @hooks.hook_impl
+    def after_node_execute(self, node_id, node, backend, result, duration):  # pragma: no cover
+        pass
+
+
+class NonSerializableTestPlugin:
+    """Test plugin that does NOT support serialization."""
+
+    @hooks.hook_impl
+    def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+        pass
 
 
 class TestPerExecutionHooks:
@@ -292,3 +342,182 @@ class TestHookManagerFunctions:
         # Cleanup
         hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(counter)
+
+
+class TestPluginSerialization:
+    """Test plugin manager serialization and deserialization."""
+
+    def test_serialize_empty_plugin_manager(self) -> None:
+        """Serializing a plugin manager with no plugins returns empty dict."""
+        from daglite.plugins.manager import _create_plugin_manager
+
+        manager = _create_plugin_manager()
+        config = serialize_plugin_manager(manager)
+        assert config == {}
+
+    def test_serialize_plugin_manager_with_serializable_plugin(self) -> None:
+        """Serializable plugins are included in serialization."""
+        from daglite.plugins.manager import _create_plugin_manager
+
+        manager = _create_plugin_manager()
+        plugin = SerializableTestPlugin(threshold=0.7, name="test")
+        manager.register(plugin)
+
+        config = serialize_plugin_manager(manager)
+
+        # Should have one entry with fully qualified class name as key
+        assert len(config) == 1
+        key = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
+        assert key in config
+        assert config[key] == {"threshold": 0.7, "name": "test"}
+
+    def test_serialize_plugin_manager_skips_non_serializable(self) -> None:
+        """Non-serializable plugins are not included in serialization."""
+        from daglite.plugins.manager import _create_plugin_manager
+
+        manager = _create_plugin_manager()
+        manager.register(NonSerializableTestPlugin())
+        manager.register(SerializableTestPlugin(threshold=0.8, name="included"))
+
+        config = serialize_plugin_manager(manager)
+
+        # Only serializable plugin should be in config
+        assert len(config) == 1
+        key = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
+        assert key in config
+        assert config[key] == {"threshold": 0.8, "name": "included"}
+
+    def test_deserialize_plugin_manager_empty(self) -> None:
+        """Deserializing empty config returns plugin manager with no plugins."""
+        manager = deserialize_plugin_manager({})
+        # Should have no user plugins (only hook specs are registered)
+        plugins = [
+            p
+            for p in manager.get_plugins()
+            if isinstance(p, (SerializableTestPlugin, AnotherSerializablePlugin))
+        ]
+        assert len(plugins) == 0
+
+    def test_deserialize_plugin_manager_with_valid_plugin(self) -> None:
+        """Valid plugin configs are deserialized correctly."""
+        # Serialize then deserialize
+        fqcn = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
+        config = {fqcn: {"threshold": 0.95, "name": "deserialized"}}
+
+        manager = deserialize_plugin_manager(config)
+
+        # Find our plugin
+        plugins = [p for p in manager.get_plugins() if isinstance(p, SerializableTestPlugin)]
+        assert len(plugins) == 1
+
+        plugin = plugins[0]
+        assert plugin.threshold == 0.95
+        assert plugin.name == "deserialized"
+        # Runtime state should be initialized fresh
+        assert plugin.call_count == 0
+
+    def test_serialize_deserialize_roundtrip(self) -> None:
+        """Serialization followed by deserialization preserves plugin state."""
+        from daglite.plugins.manager import _create_plugin_manager
+
+        # Create original manager with plugin
+        original_manager = _create_plugin_manager()
+        original_plugin = SerializableTestPlugin(threshold=0.75, name="roundtrip")
+        original_plugin.call_count = 42  # Runtime state
+        original_manager.register(original_plugin)
+
+        # Serialize
+        config = serialize_plugin_manager(original_manager)
+
+        # Deserialize
+        new_manager = deserialize_plugin_manager(config)
+
+        # Find deserialized plugin
+        plugins = [p for p in new_manager.get_plugins() if isinstance(p, SerializableTestPlugin)]
+        assert len(plugins) == 1
+
+        new_plugin = plugins[0]
+        # Config values should be preserved
+        assert new_plugin.threshold == 0.75
+        assert new_plugin.name == "roundtrip"
+        # Runtime state should be reset
+        assert new_plugin.call_count == 0
+
+    def test_deserialize_with_invalid_class_path_logs_warning(self, caplog) -> None:
+        """Invalid class paths are logged and skipped."""
+        config = {"nonexistent.module.ClassName": {"value": 42}}
+
+        manager = deserialize_plugin_manager(config)
+
+        # Should log warning
+        assert "Could not resolve plugin class" in caplog.text
+        assert "nonexistent.module.ClassName" in caplog.text
+
+        # Should return manager without the plugin
+        plugins = [p for p in manager.get_plugins() if hasattr(p, "value")]
+        assert len(plugins) == 0
+
+    def test_deserialize_with_non_serializable_class_logs_warning(self, caplog) -> None:
+        """Classes without from_config are logged and skipped."""
+        # NonSerializableTestPlugin doesn't have to_config/from_config
+        fqcn = f"{NonSerializableTestPlugin.__module__}.{NonSerializableTestPlugin.__qualname__}"
+        config = {fqcn: {}}  # type: ignore
+
+        manager = deserialize_plugin_manager(config)
+
+        # Should log warning about not being serializable
+        assert "is not serializable" in caplog.text
+
+        # Should return manager without the plugin
+        plugins = [p for p in manager.get_plugins() if isinstance(p, NonSerializableTestPlugin)]
+        assert len(plugins) == 0
+
+    def test_serialize_multiple_plugins(self) -> None:
+        """Multiple serializable plugins are all serialized."""
+        from daglite.plugins.manager import _create_plugin_manager
+
+        manager = _create_plugin_manager()
+        manager.register(SerializableTestPlugin(threshold=0.6, name="plugin1"))
+        manager.register(AnotherSerializablePlugin(multiplier=5, enabled=False))
+
+        config = serialize_plugin_manager(manager)
+
+        assert len(config) == 2
+        key_a = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
+        key_b = (
+            f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
+        )
+
+        assert key_a in config
+        assert key_b in config
+        assert config[key_a] == {"threshold": 0.6, "name": "plugin1"}
+        assert config[key_b] == {"multiplier": 5, "enabled": False}
+
+    def test_deserialize_multiple_plugins(self) -> None:
+        """Multiple plugins can be deserialized together."""
+        key_a = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
+        key_b = (
+            f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
+        )
+
+        config = {
+            key_a: {"threshold": 0.3, "name": "multi1"},
+            key_b: {"multiplier": 10, "enabled": True},
+        }
+
+        manager = deserialize_plugin_manager(config)
+
+        # Find both plugins
+        plugin_a = [p for p in manager.get_plugins() if isinstance(p, SerializableTestPlugin)]
+        plugin_b = [
+            p for p in manager.get_plugins() if isinstance(p, AnotherSerializablePlugin)
+        ]
+
+        assert len(plugin_a) == 1
+        assert len(plugin_b) == 1
+
+        assert plugin_a[0].threshold == 0.3
+        assert plugin_a[0].name == "multi1"
+        assert plugin_b[0].multiplier == 10
+        assert plugin_b[0].enabled is True
+

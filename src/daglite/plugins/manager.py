@@ -7,6 +7,9 @@ from typing import Any
 
 from pluggy import PluginManager
 
+from daglite.plugins.base import isinstance_serializable_plugin
+from daglite.plugins.base import issubclass_serializable_plugin
+
 from .hooks.markers import HOOK_NAMESPACE
 from .hooks.specs import NodeSpec
 
@@ -52,7 +55,7 @@ def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
         A new PluginManager with global + execution-specific hooks.
     """
     # Create new manager with hook specs
-    manager = _create_hook_manager()
+    manager = _create_plugin_manager()
 
     # Copy global hooks
     global_manager = _get_global_plugin_manager()
@@ -73,12 +76,61 @@ def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
     return manager
 
 
+def serialize_plugin_manager(plugin_manager: PluginManager) -> dict[str, Any]:
+    """
+    Serialize the given PluginManager's serializable plugins to a config dict.
+
+    Args:
+        plugin_manager: The PluginManager to serialize.
+
+    Returns:
+        A dict mapping plugin class names to their serialized config.
+    """
+    plugin_configs: dict[str, Any] = {}
+    for plugin in plugin_manager.get_plugins():
+        if isinstance_serializable_plugin(plugin):
+            cls = plugin.__class__
+            fqcn = f"{cls.__module__}.{cls.__qualname__}"
+            plugin_configs[fqcn] = plugin.to_config()
+    return plugin_configs
+
+
+def deserialize_plugin_manager(plugin_configs: dict[str, Any]) -> PluginManager:
+    """
+    Deserialize a PluginManager from a config dict of plugin class names to configs.
+
+    Args:
+        plugin_configs: A dict mapping plugin class names to their serialized config.
+
+    Returns:
+        A PluginManager with the deserialized plugins registered.
+    """
+    plugin_manager = _create_plugin_manager()
+
+    for class_path, plugin_configs in plugin_configs.items():
+        plugin_class = _resolve_class_from_path(class_path)
+
+        if plugin_class is None:
+            logger.warning(f"Could not resolve plugin class '{class_path}' for deserialization.")
+            continue
+
+        # Ensure plugin class supports from_config
+        if not issubclass_serializable_plugin(plugin_class):
+            logger.warning(f"Plugin class '{class_path}' is not serializable.")
+            continue
+
+        plugin_instance = plugin_class.from_config(plugin_configs)
+        plugin_manager.register(plugin_instance)
+
+    return plugin_manager
+
+
 # region Helpers
 
 
 def _initialize_plugin_system() -> PluginManager:
     """Initializes hooks for the daglite library."""
-    manager = _create_hook_manager()
+    manager = _create_plugin_manager()
     global _PLUGIN_MANAGER
     _PLUGIN_MANAGER = manager
     return manager
@@ -92,7 +144,7 @@ def _get_global_plugin_manager() -> PluginManager:
     return plugin_manager
 
 
-def _create_hook_manager() -> PluginManager:
+def _create_plugin_manager() -> PluginManager:
     """Create a new PluginManager instance and register daglite's hook specs."""
     manager = PluginManager(HOOK_NAMESPACE)
     manager.trace.root.setwriter(
