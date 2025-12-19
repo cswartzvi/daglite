@@ -6,8 +6,8 @@ from typing import Any
 
 from pluggy import PluginManager
 
-from .markers import HOOK_NAMESPACE
-from .specs import NodeSpec
+from .hooks.markers import HOOK_NAMESPACE
+from .hooks.specs import NodeSpec
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +100,7 @@ def _create_hook_manager() -> PluginManager:
     )
     manager.enable_tracing()
     manager.add_hookspecs(NodeSpec)
-    from .specs import GraphSpec
+    from .hooks.specs import GraphSpec
 
     manager.add_hookspecs(GraphSpec)
     return manager

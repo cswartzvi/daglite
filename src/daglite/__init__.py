@@ -45,12 +45,12 @@ For more examples, see the repository's test files.
 __version__ = "0.4.0"
 
 from . import backends
-from . import hooks
 from . import settings
 from .engine import evaluate
 from .engine import evaluate_async
 from .pipelines import load_pipeline
 from .pipelines import pipeline
+from .plugins import hooks
 from .tasks import task
 
 # Initialize hooks system on module import

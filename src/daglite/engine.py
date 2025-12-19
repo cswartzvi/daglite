@@ -303,8 +303,8 @@ class Engine:
 
     def _get_hook_manager(self) -> "PluginManager":
         """Get hook manager for this execution."""
-        from daglite.hooks.manager import create_hook_manager_with_plugins
-        from daglite.hooks.manager import get_hook_manager
+        from daglite.plugins.manager import create_hook_manager_with_plugins
+        from daglite.plugins.manager import get_hook_manager
 
         if self._hook_manager is None:
             if self.hooks:
