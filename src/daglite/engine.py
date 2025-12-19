@@ -139,7 +139,7 @@ def evaluate(
         >>> import asyncio
         >>> result = asyncio.run(evaluate_async(my_task))
     """
-    engine = Engine(default_backend=default_backend, hooks=hooks)
+    engine = Engine(default_backend=default_backend, plugins=hooks)
     return engine.evaluate(expr)
 
 
@@ -242,7 +242,7 @@ async def evaluate_async(
         >>> from daglite.hooks.examples import PerformanceProfiler
         >>> result = await evaluate_async(my_task, hooks=[PerformanceProfiler()])
     """
-    engine = Engine(default_backend=default_backend, hooks=hooks)
+    engine = Engine(default_backend=default_backend, plugins=hooks)
     return await engine.evaluate_async(expr)
 
 
@@ -282,14 +282,14 @@ class Engine:
     settings: DagliteSettings = field(default_factory=DagliteSettings)
     """Daglite configuration settings."""
 
-    hooks: list[Any] | None = None
+    plugins: list[Any] | None = None
     """Optional list of hook implementations for this execution only."""
 
     # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
     # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
 
     _backend_cache: dict[str | Backend, Backend] = field(default_factory=dict, init=False)
-    _hook_manager: "PluginManager | None" = field(default=None, init=False, repr=False)
+    _plugin_manager: "PluginManager | None" = field(default=None, init=False, repr=False)
 
     def evaluate(self, root: GraphBuilder) -> Any:
         """Evaluate the graph using sequential execution."""
@@ -303,15 +303,11 @@ class Engine:
 
     def _get_hook_manager(self) -> "PluginManager":
         """Get hook manager for this execution."""
-        from daglite.plugins.manager import create_hook_manager_with_plugins
-        from daglite.plugins.manager import _get_global_plugin_manager
+        from daglite.plugins.manager import build_plugin_manager
 
-        if self._hook_manager is None:
-            if self.hooks:
-                self._hook_manager = create_hook_manager_with_plugins(self.hooks)
-            else:
-                self._hook_manager = _get_global_plugin_manager()
-        return self._hook_manager
+        if self._plugin_manager is None:
+            self._plugin_manager = build_plugin_manager(self.plugins or [])
+        return self._plugin_manager
 
     def _resolve_node_backend(self, node: GraphNode) -> Backend:
         """Decide which Backend instance to use for this node's *internal* work."""
