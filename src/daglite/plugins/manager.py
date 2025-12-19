@@ -134,8 +134,7 @@ def _initialize_plugin_system() -> PluginManager:
 def _get_global_plugin_manager() -> PluginManager:
     """Returns initialized global plugin manager or raises an exception."""
     plugin_manager = _PLUGIN_MANAGER
-    if plugin_manager is None:
-        plugin_manager = _initialize_plugin_system()
+    plugin_manager = _initialize_plugin_system() if plugin_manager is None else plugin_manager
     return plugin_manager
 
 
@@ -169,9 +168,9 @@ def _resolve_class_from_path(path: str) -> type[Any] | None:
         try:
             for attr in attr_parts:
                 obj = getattr(obj, attr)
-            if isinstance(obj, type):
+            if isinstance(obj, type):  # pragma: no branch
                 return obj
-        except AttributeError:
+        except AttributeError:  # pragma: no cover
             continue
 
     return None

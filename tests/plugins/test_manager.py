@@ -251,7 +251,7 @@ class TestPerExecutionHooks:
             return x + y
 
         # Passing class instead of instance should raise TypeError
-        with pytest.raises(TypeError, match="daglite expects hooks to be registered as instances"):
+        with pytest.raises(TypeError, match="daglite expects plugins to be registered as instances"):
             evaluate(add.bind(x=2, y=3), hooks=[MyHook])  # Missing ()
 
 
@@ -310,7 +310,7 @@ class TestHookManagerFunctions:
                 pass
 
         # Should raise TypeError when passing class instead of instance
-        with pytest.raises(TypeError, match="daglite expects hooks to be registered as instances"):
+        with pytest.raises(TypeError, match="daglite expects plugins to be registered as instances"):
             register_plugins(MyHook)  # Missing ()
 
     def test_register_hooks_prevents_duplicates(self) -> None:
