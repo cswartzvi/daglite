@@ -1,5 +1,6 @@
 """Utility functions to manage the project-wide hook configuration."""
 
+import importlib
 import logging
 from inspect import isclass
 from typing import Any
@@ -11,36 +12,16 @@ from .hooks.specs import NodeSpec
 
 logger = logging.getLogger(__name__)
 
-_PLUGIN_HOOKS = "daglite.hooks"  # entry-point to load hooks from for installed plugins
-_HOOK_MANAGER: PluginManager | None = None
+_PLUGIN_ENTRY_POINT = "daglite.hooks"  # entry-point to load hooks from for installed plugins
+_PLUGIN_MANAGER: PluginManager | None = None
 
 
-def initialize_hooks() -> None:
-    """Initializes hooks for the daglite library."""
-    manager = _create_hook_manager()
-    global _HOOK_MANAGER
-    _HOOK_MANAGER = manager
-
-
-def get_hook_manager() -> PluginManager:
-    """Returns initialized hook plugin manager or raises an exception."""
-    hook_manager = _HOOK_MANAGER
-    if hook_manager is None:  # pragma: no cover
-        # NOTE: This should not happen in normal practice since we initialize hooks at the
-        # top-level daglite/__init__.py module. However, it could happen if a distributed
-        # runner is used without proper initialization.
-        raise RuntimeError(
-            "Attempted access of Hook plugin manager without initialization. "
-            "Normally this happens when `initialize_hooks()` has not been called. "
-            "Please report this if you continue to see this error."
-        )
-    assert hook_manager is not None
-    return hook_manager
+# region API
 
 
 def register_hooks(*hooks: Any) -> None:
     """Register specified daglite pluggy hooks."""
-    hook_manager = get_hook_manager()
+    hook_manager = _get_global_plugin_manager()
     for hooks_collection in hooks:
         if not hook_manager.is_registered(hooks_collection):
             if isclass(hooks_collection):
@@ -51,10 +32,10 @@ def register_hooks(*hooks: Any) -> None:
             hook_manager.register(hooks_collection)
 
 
-def register_hooks_entry_points() -> None:
-    """Register daglite pluggy hooks from Python package entrypoints."""
-    hook_manager = get_hook_manager()
-    hook_manager.load_setuptools_entrypoints(_PLUGIN_HOOKS)  # Despite name setuptools not required
+def register_plugins_entry_points(_plugin_manager: PluginManager | None = None) -> None:
+    """Register daglite plugins from Python package entrypoints."""
+    _plugin_manager = _plugin_manager if _plugin_manager else _get_global_plugin_manager()
+    _plugin_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)  # Doesn't use setuptools
 
 
 def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
@@ -74,7 +55,7 @@ def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
     manager = _create_hook_manager()
 
     # Copy global hooks
-    global_manager = get_hook_manager()
+    global_manager = _get_global_plugin_manager()
     for plugin in global_manager.get_plugins():
         if not manager.is_registered(plugin):  # pragma: no branch
             manager.register(plugin)
@@ -92,6 +73,25 @@ def create_hook_manager_with_plugins(plugins: list[Any]) -> PluginManager:
     return manager
 
 
+# region Helpers
+
+
+def _initialize_plugin_system() -> PluginManager:
+    """Initializes hooks for the daglite library."""
+    manager = _create_hook_manager()
+    global _PLUGIN_MANAGER
+    _PLUGIN_MANAGER = manager
+    return manager
+
+
+def _get_global_plugin_manager() -> PluginManager:
+    """Returns initialized global plugin manager or raises an exception."""
+    plugin_manager = _PLUGIN_MANAGER
+    if plugin_manager is None:
+        plugin_manager = _initialize_plugin_system()
+    return plugin_manager
+
+
 def _create_hook_manager() -> PluginManager:
     """Create a new PluginManager instance and register daglite's hook specs."""
     manager = PluginManager(HOOK_NAMESPACE)
@@ -104,3 +104,27 @@ def _create_hook_manager() -> PluginManager:
 
     manager.add_hookspecs(GraphSpec)
     return manager
+
+
+def _resolve_class_from_path(path: str) -> type[Any] | None:
+    """Resolve a dotted import path to a class/type object."""
+    parts = path.split(".")
+
+    for i in range(len(parts) - 1, 0, -1):
+        module_name = ".".join(parts[:i])
+        attr_parts = parts[i:]
+        try:
+            module = importlib.import_module(module_name)
+        except Exception:
+            continue
+
+        obj: Any = module
+        try:
+            for attr in attr_parts:
+                obj = getattr(obj, attr)
+            if isinstance(obj, type):
+                return obj
+        except AttributeError:
+            continue
+
+    return None

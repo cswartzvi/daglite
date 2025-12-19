@@ -304,13 +304,13 @@ class Engine:
     def _get_hook_manager(self) -> "PluginManager":
         """Get hook manager for this execution."""
         from daglite.plugins.manager import create_hook_manager_with_plugins
-        from daglite.plugins.manager import get_hook_manager
+        from daglite.plugins.manager import _get_global_plugin_manager
 
         if self._hook_manager is None:
             if self.hooks:
                 self._hook_manager = create_hook_manager_with_plugins(self.hooks)
             else:
-                self._hook_manager = get_hook_manager()
+                self._hook_manager = _get_global_plugin_manager()
         return self._hook_manager
 
     def _resolve_node_backend(self, node: GraphNode) -> Backend:

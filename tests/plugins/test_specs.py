@@ -1,8 +1,10 @@
 """Tests for the pluggy hooks system."""
 
 from daglite import evaluate
-from daglite import hooks
 from daglite import task
+from daglite.plugins import hook_impl
+from daglite.plugins.manager import _get_global_plugin_manager
+from daglite.plugins.manager import register_hooks
 
 
 class TestHooksBasic:
@@ -10,7 +12,7 @@ class TestHooksBasic:
 
     def test_hooks_initialize_on_import(self) -> None:
         """Hook manager is initialized when daglite is imported."""
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         assert hook_manager is not None
         assert hook_manager.project_name == "daglite"
 
@@ -21,12 +23,12 @@ class TestHooksBasic:
             def __init__(self):
                 self.called = False
 
-            @hooks.hook_impl
+            @hook_impl
             def before_graph_execute(self, root_id, node_count, is_async):
                 self.called = True
 
         custom_hook = CustomHook()
-        hooks.register_hooks(custom_hook)
+        register_hooks(custom_hook)
 
         @task
         def simple() -> int:
@@ -37,7 +39,7 @@ class TestHooksBasic:
         assert custom_hook.called
 
         # Clean up
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(custom_hook)
 
     def test_hook_receives_correct_parameters(self) -> None:
@@ -53,7 +55,7 @@ class TestHooksBasic:
                 self.graph_start = None
                 self.graph_end = None
 
-            @hooks.hook_impl
+            @hook_impl
             def before_graph_execute(self, root_id, node_count, is_async):
                 self.graph_start = {
                     "root_id": root_id,
@@ -61,7 +63,7 @@ class TestHooksBasic:
                     "is_async": is_async,
                 }
 
-            @hooks.hook_impl
+            @hook_impl
             def before_node_execute(self, node_id, node, backend, inputs):
                 assert isinstance(node_id, UUID)
                 assert isinstance(node, GraphNode)
@@ -69,7 +71,7 @@ class TestHooksBasic:
                 assert isinstance(inputs, dict)
                 self.node_executions.append({"node_id": node_id, "inputs": inputs})
 
-            @hooks.hook_impl
+            @hook_impl
             def after_graph_execute(self, root_id, result, duration, is_async):
                 self.graph_end = {
                     "root_id": root_id,
@@ -79,7 +81,7 @@ class TestHooksBasic:
                 }
 
         capture = ParameterCapture()
-        hooks.register_hooks(capture)
+        register_hooks(capture)
 
         @task
         def add(x: int, y: int) -> int:
@@ -102,7 +104,7 @@ class TestHooksBasic:
         assert capture.graph_end["is_async"] is False
 
         # Clean up
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(capture)
 
 
@@ -116,12 +118,12 @@ class TestHooksMapTasks:
             def __init__(self):
                 self.inputs = []
 
-            @hooks.hook_impl
+            @hook_impl
             def before_node_execute(self, node_id, node, backend, inputs):
                 self.inputs.append(inputs)
 
         capture = InputCapture()
-        hooks.register_hooks(capture)
+        register_hooks(capture)
 
         @task
         def process(x: int) -> int:
@@ -140,5 +142,5 @@ class TestHooksMapTasks:
         assert capture.inputs[0]["x"] == [1, 2, 3]
 
         # Clean up
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(capture)

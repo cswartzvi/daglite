@@ -3,9 +3,13 @@
 import pytest
 
 from daglite import evaluate
-from daglite import hooks
 from daglite import task
 from daglite.engine import evaluate_async
+from daglite.plugins import hooks
+from daglite.plugins.manager import _get_global_plugin_manager
+from daglite.plugins.manager import _initialize_plugin_system
+from daglite.plugins.manager import register_hooks
+from daglite.plugins.manager import register_plugins_entry_points
 
 
 class TestPerExecutionHooks:
@@ -83,7 +87,7 @@ class TestPerExecutionHooks:
         local_counter = LocalCounter()
 
         # Register global hook
-        hooks.register_hooks(global_counter)
+        register_hooks(global_counter)
 
         @task
         def add(x: int, y: int) -> int:
@@ -102,7 +106,7 @@ class TestPerExecutionHooks:
         assert local_counter.count == 1  # Unchanged
 
         # Cleanup
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(global_counter)
 
     def test_per_execution_hooks_multiple(self) -> None:
@@ -208,12 +212,12 @@ class TestRegisterHooksEntryPoints:
         """register_hooks_entry_points function exists and is callable."""
         # This just verifies the function exists and can be called
         # without error (even if no entry points are defined)
-        hooks.register_hooks_entry_points()
+        register_plugins_entry_points()
 
     def test_register_hooks_entry_points_no_crash_on_missing(self) -> None:
         """Entry point loading doesn't crash when no plugins are installed."""
         # Should gracefully handle no entry points being defined
-        hooks.register_hooks_entry_points()
+        register_plugins_entry_points()
 
         # Should still be able to evaluate normally
         @task
@@ -230,8 +234,8 @@ class TestHookManagerFunctions:
     def test_initialize_hooks_idempotent(self) -> None:
         """initialize_hooks can be called multiple times safely."""
         # Already called on import, but should be safe to call again
-        hooks.initialize_hooks()
-        hooks.initialize_hooks()
+        _initialize_plugin_system()
+        _initialize_plugin_system()
 
         # Should still work
         @task
@@ -243,8 +247,8 @@ class TestHookManagerFunctions:
 
     def test_get_hook_manager_returns_same_instance(self) -> None:
         """get_hook_manager returns the same global instance."""
-        manager1 = hooks.get_hook_manager()
-        manager2 = hooks.get_hook_manager()
+        manager1 = _get_global_plugin_manager()
+        manager2 = _get_global_plugin_manager()
         assert manager1 is manager2
 
     def test_register_hooks_validation(self) -> None:
@@ -257,7 +261,7 @@ class TestHookManagerFunctions:
 
         # Should raise TypeError when passing class instead of instance
         with pytest.raises(TypeError, match="daglite expects hooks to be registered as instances"):
-            hooks.register_hooks(MyHook)  # Missing ()
+            register_hooks(MyHook)  # Missing ()
 
     def test_register_hooks_prevents_duplicates(self) -> None:
         """register_hooks doesn't register the same instance twice."""
@@ -273,8 +277,8 @@ class TestHookManagerFunctions:
         counter = Counter()
 
         # Register twice
-        hooks.register_hooks(counter)
-        hooks.register_hooks(counter)  # Should be no-op
+        register_hooks(counter)
+        register_hooks(counter)  # Should be no-op
 
         @task
         def add(x: int, y: int) -> int:
@@ -286,5 +290,5 @@ class TestHookManagerFunctions:
         assert counter.count == 1
 
         # Cleanup
-        hook_manager = hooks.get_hook_manager()
+        hook_manager = _get_global_plugin_manager()
         hook_manager.unregister(counter)
