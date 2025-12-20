@@ -9,7 +9,6 @@ import sys
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
-from functools import cached_property
 from typing import Any, Callable
 from uuid import UUID
 
@@ -26,6 +25,7 @@ from daglite.plugins.reporters import EventReporter
 from daglite.plugins.reporters import ProcessReporter
 from daglite.plugins.reporters import ThreadReporter
 from daglite.settings import get_global_settings
+
 
 class SequentialBackend(Backend):
     """Executes immediately in current thread/process, returns completed futures."""
