@@ -64,24 +64,31 @@ class EventProcessor:
             registry: Registry containing event handlers
         """
         self._registry = registry
+        self._sources: list[Any] = []
         self._running = False
         self._thread: Thread | None = None
 
-    def start(self, source: Any) -> None:
+    def add_source(self, source: Any) -> None:
         """
-        Start background processing from source.
+        Add an event source to process.
+
+        Can be called before or after start(). Thread-safe for adding sources
+        while processor is running.
 
         Args:
             source: Event source (e.g., multiprocessing.Queue)
         """
+        self._sources.append(source)
+        logger.debug(f"Added event source: {type(source).__name__}")
+
+    def start(self) -> None:
+        """Start background processing of all registered sources."""
         if self._thread is not None:
             logger.warning("EventProcessor already started")
             return
 
         self._running = True
-        self._thread = Thread(
-            target=self._process_loop, args=(source,), daemon=True, name="EventProcessor"
-        )
+        self._thread = Thread(target=self._process_loop, daemon=True, name="EventProcessor")
         self._thread.start()
         logger.debug("EventProcessor background thread started")
 
@@ -97,19 +104,21 @@ class EventProcessor:
             logger.warning("EventProcessor thread did not stop cleanly")
         self._thread = None
 
-    def _process_loop(self, source: Any) -> None:
-        """
-        Background loop consuming events from source.
-
-        Args:
-            source: Event source to consume from
-        """
+    def _process_loop(self) -> None:
+        """Background loop consuming events from all sources."""
         while self._running:
-            event = self._get_event(source)
-            if event:
-                self._registry.dispatch(event)
-            else:
-                time.sleep(0.001)  # Small sleep to avoid busy-wait
+            has_events = False
+
+            # Poll all sources for events
+            for source in self._sources:
+                event = self._get_event(source)
+                if event:
+                    self._registry.dispatch(event)
+                    has_events = True
+
+            # Sleep if no events to avoid busy-wait
+            if not has_events:
+                time.sleep(0.001)
 
         logger.debug("EventProcessor loop exited")
 
