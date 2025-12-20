@@ -69,25 +69,19 @@ class BackendManager:
 
         return self._cached_backends[backend]
 
-    @contextmanager
-    def start(self) -> Iterator[None]:
-        """
-        Context manager to start and stop the backend manager.
-
-        Yields:
-            None
-        """
+    def start(self) -> None:
+        """Start all backends as needed."""
         if self._started:
             raise RuntimeError("BackendManager is already started.")
 
         self._started = True
-        try:
-            yield
-        finally:
-            for backend in self._cached_backends.values():
-                backend.end()
-            self._cached_backends.clear()
-            self._started = False
+
+    def stop(self) -> None:
+        """Stop all backends and clear cached instances."""
+        for backend in self._cached_backends.values():
+            backend.stop()
+        self._cached_backends.clear()
+        self._started = False
 
     def _clear_backends(self) -> None:
         """Clear all cached backends without stopping them (for testing purposes)."""
