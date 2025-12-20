@@ -92,6 +92,17 @@ class EventProcessor:
         self._thread.start()
         logger.debug("EventProcessor background thread started")
 
+    def dispatch(self, event: dict[str, Any]) -> None:
+        """
+        Dispatch event immediately (bypass background processing).
+
+        Can be used for direct event dispatching from same process.
+
+        Args:
+            event: Event dict to dispatch
+        """
+        self._registry.dispatch(event)
+
     def stop(self) -> None:
         """Stop background processing and join thread."""
         if self._thread is None:
