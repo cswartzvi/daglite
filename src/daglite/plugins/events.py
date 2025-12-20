@@ -5,6 +5,8 @@ import multiprocessing
 import time
 from threading import Thread
 from typing import Any, Callable
+from uuid import UUID
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -64,11 +66,11 @@ class EventProcessor:
             registry: Registry containing event handlers
         """
         self._registry = registry
-        self._sources: list[Any] = []
+        self._sources: dict[UUID, Any] = {}
         self._running = False
         self._thread: Thread | None = None
 
-    def add_source(self, source: Any) -> None:
+    def add_source(self, source: Any) -> UUID:
         """
         Add an event source to process.
 
@@ -76,10 +78,31 @@ class EventProcessor:
         while processor is running.
 
         Args:
-            source: Event source (e.g., multiprocessing.Queue)
+            source: Event source (e.g., multiprocessing.Queue).
+
+        Returns:
+            Unique ID for the added source.
         """
-        self._sources.append(source)
-        logger.debug(f"Added event source: {type(source).__name__}")
+        id = uuid4()
+        self._sources[id] = source
+        logger.debug(f"Added event source (id: {id}): {type(source).__name__}")
+        return id
+
+    def remove_source(self, source_id: UUID) -> None:
+        """
+        Remove an event source by ID.
+
+        Can be called before or after start(). Thread-safe for removing sources
+        while processor is running.
+
+        Args:
+            source_id: Unique ID of the source to remove.
+        """
+        if source_id in self._sources:
+            del self._sources[source_id]
+            logger.debug(f"Removed event source (id: {source_id})")
+        else:
+            logger.warning(f"Tried to remove unknown event source (id: {source_id})")
 
     def start(self) -> None:
         """Start background processing of all registered sources."""
@@ -121,7 +144,7 @@ class EventProcessor:
             has_events = False
 
             # Poll all sources for events
-            for source in self._sources:
+            for source in self._sources.values():
                 event = self._get_event(source)
                 if event:
                     self._registry.dispatch(event)
