@@ -10,7 +10,6 @@ from uuid import uuid4
 
 from typing_extensions import override
 
-from daglite.backends import Backend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
@@ -107,7 +106,7 @@ class TaskFuture(BaseTaskFuture[R]):
     kwargs: Mapping[str, Any]
     """Parameters to be passed to the task during execution, can contain other task futures."""
 
-    backend: Backend
+    backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     @override
@@ -261,7 +260,7 @@ class TaskFuture(BaseTaskFuture[R]):
             description=self.task.description,
             func=self.task.func,
             kwargs=kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
 
@@ -298,7 +297,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
     Note that sequence parameters can be a combination of concrete values and `TaskFuture`s.
     """
 
-    backend: Backend
+    backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     @overload
@@ -369,7 +368,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             mode="product",
             fixed_kwargs=all_fixed,
             mapped_kwargs={unbound_param: self},
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @override
@@ -396,7 +395,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
         return TaskFuture(
             task=actual_task,
             kwargs=merged_kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @overload
@@ -459,7 +458,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             mode=self.mode,
             fixed_kwargs=fixed_kwargs,
             mapped_kwargs=mapped_kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
 

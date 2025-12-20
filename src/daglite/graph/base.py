@@ -66,7 +66,7 @@ class BaseGraphNode(abc.ABC):
     description: str | None
     """Optional human-readable description for this node."""
 
-    backend: str
+    backend_name: str | None
     """Name of the backend to use for executing this node."""
 
     @property

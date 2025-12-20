@@ -13,6 +13,9 @@ _SETTINGS_LOCK = threading.RLock()
 class DagliteSettings:
     """Configuration settings for daglite."""
 
+    default_backend: str = "sequential"
+    """Default backend to use for task execution when none is specified."""
+
     max_backend_threads: int = field(default_factory=lambda: min(32, (os.cpu_count() or 1) + 4))
     """
     Maximum number of threads to be used by the threading backend.

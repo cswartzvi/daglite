@@ -14,8 +14,6 @@ from typing import Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
-from daglite.backends import Backend
-from daglite.backends import find_backend
 from daglite.exceptions import ParameterError
 from daglite.futures import BaseTaskFuture
 from daglite.futures import MapTaskFuture
@@ -37,7 +35,7 @@ def task(
     *,
     name: str | None = None,
     description: str | None = None,
-    backend: str | Backend | None = None,
+    backend_name: str | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -46,7 +44,7 @@ def task(  # noqa: D417
     *,
     name: str | None = None,
     description: str | None = None,
-    backend: str | Backend | None = None,
+    backend_name: str | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -59,34 +57,34 @@ def task(  # noqa: D417
 
     Args:
         name: Custom name for the task. Defaults to the function's `__name__`. For lambda functions,
-              defaults to "unnamed_task".
+            defaults to "unnamed_task".
         description: Task description. Defaults to the function's docstring.
-        backend: Backend for executing this task. Can be a registered backend name or a `Backend`
-            instance. If None, uses the engine's default backend.
+        backend_name: Name of the backend to use for this task. If not provided, uses the default
+            engine backend.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
 
     Examples:
-        >>> # Synchronous function
-        >>> @task
-        >>> def add(x: int, y: int) -> int:
-        >>>     return x + y
-        >>>
-        >>> # Async function
-        >>> @task
-        >>> async def fetch_data(url: str) -> dict:
-        >>>     async with httpx.AsyncClient() as client:
-        >>>         response = await client.get(url)
-        >>>         return response.json()
-        >>>
-        >>> # With parameters
-        >>> @task(name="custom_add", backend="threading")
-        >>> def add(x: int, y: int) -> int:
-        >>>     return x + y
-        >>>
-        >>> # Lambda functions
-        >>> double = task(lambda x: x * 2, name="double")
+    >>> # Synchronous function
+    >>> @task
+    >>> def add(x: int, y: int) -> int:
+    ...     return x + y
+    >>>
+    >>> # Async function
+    >>> @task
+    >>> async def fetch_data(url: str) -> dict:
+    ...     async with httpx.AsyncClient() as client:
+    ...         response = await client.get(url)
+    ...         return response.json()
+    >>>
+    >>> # With parameters
+    >>> @task(name="custom_add", backend="threading")
+    >>> def add(x: int, y: int) -> int:
+    ...     return x + y
+    >>>
+    >>> # Lambda functions
+    >>> double = task(lambda x: x * 2, name="double")
     """
 
     def decorator(fn: Any) -> Any:
@@ -107,7 +105,7 @@ def task(  # noqa: D417
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
             description=description if description is not None else getattr(fn, "__doc__", ""),
-            backend=find_backend(backend),
+            backend_name=backend_name,
             is_async=is_async,
         )
 
@@ -131,8 +129,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
     description: str
     """Description of the task."""
 
-    backend: Backend
-    """Engine backend override for this task, if `None`, uses the default engine backend."""
+    backend_name: str | None
+    """Name of backend to use for this task."""
 
     @cached_property
     @abc.abstractmethod
@@ -145,7 +143,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         *,
         name: str | None = None,
         description: str | None = None,
-        backend: str | Backend | None = None,
+        backend_name: str | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -153,16 +151,15 @@ class BaseTask(abc.ABC, Generic[P, R]):
         Args:
             name: New name for the task. If `None`, keeps the existing name.
             description: New description for the task. If `None`, keeps the existing description.
-            backend: New backend for the task. If `None`, keeps the existing backend.
+            backend_name: New backend name for the task. If `None`, keeps the existing backend name.
 
         Returns:
             A new `BaseTask` instance with updated options.
         """
-        from daglite.backends import find_backend
 
         name = name if name is not None else self.name
         description = description if description is not None else self.description
-        backend = find_backend(backend) if backend is not None else self.backend
+        backend_name = backend_name if backend_name is not None else self.backend_name
 
         # Collect the remaining fields (assumes this is a dataclass)
         remaining_fields = {
@@ -171,7 +168,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
             if f.name not in {"name", "description", "backend"}
         }
 
-        return type(self)(name=name, description=description, backend=backend, **remaining_fields)
+        return type(self)(
+            name=name, description=description, backend_name=backend_name, **remaining_fields
+        )
 
     @abc.abstractmethod
     def bind(self, **kwargs: Any | TaskFuture[Any]) -> "TaskFuture[R]":
@@ -267,7 +266,7 @@ class Task(BaseTask[P, R]):
             description=self.description,
             task=self,
             fixed_kwargs=dict(kwargs),
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @override
@@ -313,7 +312,7 @@ class FixedParamTask(BaseTask[P, R]):
         check_missing_params(self, merged)
         check_overlap_params(self, kwargs)
 
-        return TaskFuture(task=self.task, kwargs=merged, backend=self.backend)
+        return TaskFuture(task=self.task, kwargs=merged, backend_name=self.backend_name)
 
     @override
     def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
@@ -330,7 +329,7 @@ class FixedParamTask(BaseTask[P, R]):
             mode="product",
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @override
@@ -359,7 +358,7 @@ class FixedParamTask(BaseTask[P, R]):
             mode="zip",
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
 
