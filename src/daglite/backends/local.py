@@ -81,7 +81,7 @@ class ThreadBackend(Backend):
         )
 
     @override
-    def _end(self) -> None:
+    def _stop(self) -> None:
         self._executor.shutdown(wait=True)
         self._event_processor.remove_source(self._reporter_id)
 
@@ -132,7 +132,7 @@ class ProcessBackend(Backend):
         )
 
     @override
-    def _end(self) -> None:
+    def _stop(self) -> None:
         self._executor.shutdown(wait=True)
         self._event_processor.remove_source(self._reporter_id)
 

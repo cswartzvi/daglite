@@ -54,19 +54,19 @@ class Backend(abc.ABC):
         pass
 
     @final
-    def end(self) -> None:
+    def stop(self) -> None:
         """
         Clean up any global backend resources.
 
         Subclasses should NOT override this method. Instead, override `_end()`.
         """
-        self._end()
+        self._stop()
         delattr(self, "_plugin_manager")
         delattr(self, "_event_processor")
         if hasattr(self, "_reporter"):
             del self._reporter
 
-    def _end(self) -> None:
+    def _stop(self) -> None:
         """
         Clean up any per-execution-context resources.
 
