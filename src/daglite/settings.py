@@ -54,7 +54,7 @@ def set_global_settings(settings: DagliteSettings) -> None:
     once at application startup before any task execution.
 
     Args:
-        settings (DagliteSettings): Settings to set as global.
+        settings: Settings to set as global.
 
     Example:
         >>> from daglite import set_global_settings, DagliteSettings

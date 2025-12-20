@@ -13,8 +13,8 @@ Key components:
 
 Example:
     >>> from daglite.serialization import default_registry
-    >>>
-    >>> # Register a custom type
+
+    Register a custom type
     >>> default_registry.register(
     ...     MyModel,
     ...     lambda m: m.to_bytes(),
@@ -22,13 +22,13 @@ Example:
     ...     format="default",
     ...     file_extension="model",
     ... )
-    >>>
-    >>> # Register hash strategy
+
+    Register hash strategy
     >>> default_registry.register_hash_strategy(
     ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
     ... )
-    >>>
-    >>> # Use it
+
+    Use it
     >>> data, ext = default_registry.serialize(my_model)
     >>> hash_key = default_registry.hash_value(my_model)
 """
@@ -89,17 +89,16 @@ class SerializationRegistry:
     """
     Central registry for type-based serialization and hashing.
 
-    This registry maps Python types to:
-    1. Serialization handlers (one or more per type)
-    2. Hash strategies (one per type)
+    This registry maps Python types to
+        1. Serialization handlers (one or more per type)
+        2. Hash strategies (one per type)
 
     Hash strategies support recursive hashing, so collections containing
     registered types (like dict[str, np.ndarray]) automatically work.
 
-    Example:
+    Examples:
+        Register a custom type:
         >>> registry = SerializationRegistry()
-        >>>
-        >>> # Register a custom type
         >>> registry.register(
         ...     MyModel,
         ...     lambda m: m.to_bytes(),
@@ -107,13 +106,13 @@ class SerializationRegistry:
         ...     format="default",
         ...     file_extension="model",
         ... )
-        >>>
-        >>> # Register hash strategy
+
+        Register hash strategy:
         >>> registry.register_hash_strategy(
         ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
         ... )
-        >>>
-        >>> # Use it
+
+        Use it:
         >>> data, ext = registry.serialize(my_model)
         >>> hash_key = registry.hash_value(my_model)
     """

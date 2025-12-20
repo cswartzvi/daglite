@@ -197,26 +197,26 @@ class TaskFuture(BaseTaskFuture[R]):
             DagliteError: If size cannot be inferred from type hints and size parameter is not
             provided.
 
-        Examples:
+        Example:
             With type annotations (size inferred):
             >>> @task
             >>> def make_pair() -> tuple[int, str]:
-            >>>     return (42, "hello")
-            >>>
+            ...     return (42, "hello")
+
             >>> num, text = make_pair.bind().split()
 
             With explicit size:
             >>> @task
             >>> def make_triple():
-            >>>     return (1, 2, 3)
-            >>>
+            ...     return (1, 2, 3)
+
             >>> a, b, c = make_triple.bind().split(size=3)
 
             Chaining after split:
             >>> @task
             >>> def get_coords() -> tuple[int, int]:
-            >>>     return (10, 20)
-            >>>
+            ...     return (10, 20)
+
             >>> x, y = get_coords.bind().split()
             >>> result = process.bind(x=x, y=y)
         """

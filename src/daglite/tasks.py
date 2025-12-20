@@ -23,6 +23,7 @@ P = ParamSpec("P")
 R = TypeVar("R")
 S = TypeVar("S")
 
+
 # region Decorator
 
 
@@ -66,25 +67,25 @@ def task(  # noqa: D417
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
 
     Examples:
-    >>> # Synchronous function
-    >>> @task
-    >>> def add(x: int, y: int) -> int:
-    ...     return x + y
-    >>>
-    >>> # Async function
-    >>> @task
-    >>> async def fetch_data(url: str) -> dict:
-    ...     async with httpx.AsyncClient() as client:
-    ...         response = await client.get(url)
-    ...         return response.json()
-    >>>
-    >>> # With parameters
-    >>> @task(name="custom_add", backend="threading")
-    >>> def add(x: int, y: int) -> int:
-    ...     return x + y
-    >>>
-    >>> # Lambda functions
-    >>> double = task(lambda x: x * 2, name="double")
+        Synchronous function:
+        >>> @task
+        >>> def add(x: int, y: int) -> int:
+        ...     return x + y
+
+        Async function:
+        >>> @task
+        >>> async def fetch_data(url: str) -> dict:
+        ...     async with httpx.AsyncClient() as client:
+        ...         response = await client.get(url)
+        ...         return response.json()
+
+        With parameters:
+        >>> @task(name="custom_add", backend="threading")
+        >>> def add(x: int, y: int) -> int:
+        ...     return x + y
+
+        # Lambda functions
+        >>> double = task(lambda x: x * 2, name="double")
     """
 
     def decorator(fn: Any) -> Any:
@@ -254,11 +255,11 @@ class Task(BaseTask[P, R]):
                 values and TaskFutures.
 
         Examples:
-        >>> def score(x: int, y: int) -> float: ...
-        >>>
-        >>> base = score.fix(y=seed)
-        >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
-        >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
+            >>> def score(x: int, y: int) -> float: ...
+            >>>
+            >>> base = score.fix(y=seed)
+            >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
+            >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
         """
         check_invalid_params(self, kwargs)
         return FixedParamTask(

@@ -107,7 +107,6 @@ class ProcessBackend(Backend):
 
     @override
     def _start(self) -> None:
-        """Set up multiprocessing queue and register with event processor."""
         import multiprocessing as mp
         from multiprocessing.context import BaseContext
 
