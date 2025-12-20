@@ -11,20 +11,11 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
-from concurrent.futures import Future
 from dataclasses import dataclass
-from functools import cached_property
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from typing_extensions import final
-
 from daglite.exceptions import ExecutionError
-
-if TYPE_CHECKING:
-    from daglite.engine import Backend
-else:
-    Backend = object
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "artifact"]
@@ -33,8 +24,7 @@ NodeKind = Literal["task", "map", "artifact"]
 class GraphBuilder(Protocol):
     """Protocol for building graph Intermediate Representation (IR) components from tasks."""
 
-    @cached_property
-    @abc.abstractmethod
+    @property
     def id(self) -> UUID:
         """Returns the unique identifier for this builder's graph node."""
         ...
@@ -50,7 +40,7 @@ class GraphBuilder(Protocol):
         ...
 
     @abc.abstractmethod
-    def to_graph(self) -> GraphNode:
+    def to_graph(self) -> BaseGraphNode:
         """
         Convert this builder into a GraphNode.
 
@@ -64,7 +54,7 @@ class GraphBuilder(Protocol):
 
 
 @dataclass(frozen=True)
-class GraphNode(abc.ABC):
+class BaseGraphNode(abc.ABC):
     """Represents a node in the compiled graph Intermediate Representation (IR)."""
 
     id: UUID
@@ -76,49 +66,81 @@ class GraphNode(abc.ABC):
     description: str | None
     """Optional human-readable description for this node."""
 
-    backend: str | Backend | None
-    """Optional backend specified by the user for this node."""
+    backend: str
+    """Name of the backend to use for executing this node."""
 
-    @cached_property
+    @property
     @abc.abstractmethod
     def kind(self) -> NodeKind:
         """Describes the kind of this graph node."""
         ...
 
     @abc.abstractmethod
-    def inputs(self) -> list[tuple[str, ParamInput]]:
-        """
-        Pairs of parameter names and their corresponding graph IR inputs.
-
-        Note that this includes **both** value and reference inputs.
-        """
-        ...
-
-    @final
     def dependencies(self) -> set[UUID]:
         """
         IDs of nodes that the current node depends on (its direct predecessors).
 
-        Note that dependencies are derived from reference inputs only - value inputs are **not**
-        considered dependencies.
+        Each node implementation determines its own dependencies based on its
+        internal structure (e.g., from ParamInputs, sub-graphs, etc.).
         """
-        return {p.ref for _, p in self.inputs() if p.is_ref and p.ref is not None}
+        ...
 
     @abc.abstractmethod
-    def submit(
-        self,
-        resolved_backend: Backend,
-        resolved_inputs: dict[str, Any],
-    ) -> Future[Any] | list[Future[Any]]:
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
         """
-        Submit this node's work to the backend.
+        Resolve this node's inputs from completed predecessor nodes.
 
         Args:
-            resolved_backend: Backend instance resolved by the engine.
+            completed_nodes: Mapping from node IDs to their computed results.
+
+        Returns:
+            Dictionary of resolved parameter names to values, ready for execution.
+        """
+        ...
+
+    @abc.abstractmethod
+    def run(self, resolved_inputs: dict[str, Any]) -> Any:
+        """
+        Execute this node synchronously with resolved inputs.
+
+        This method runs in the worker context where plugin_manager and reporter
+        are available via execution context (see daglite.backends.context).
+
+        Args:
             resolved_inputs: Pre-resolved parameter inputs for this node.
 
         Returns:
-            Single Future for TaskNode, list of Futures for MapTaskNode.
+            Node execution result. May be a coroutine, generator, or regular value.
+        """
+        ...
+
+    @abc.abstractmethod
+    async def run_async(self, resolved_inputs: dict[str, Any]) -> Any:
+        """
+        Execute this node asynchronously with resolved inputs.
+
+        Similar to run() but for async execution contexts. This allows proper
+        handling of async functions without forcing materialization.
+
+        Args:
+            resolved_inputs: Pre-resolved parameter inputs for this node.
+
+        Returns:
+            Node execution result. May be an async generator or regular value.
+        """
+        ...
+
+
+class BaseMapGraphNode(BaseGraphNode, abc.ABC):
+    """Mixin for graph nodes that support mapping over inputs."""
+
+    @abc.abstractmethod
+    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Build the list of input dictionaries for each iteration of the mapped node.
+
+        Args:
+            resolved_inputs: Pre-resolved parameter inputs for this node.
         """
         ...
 

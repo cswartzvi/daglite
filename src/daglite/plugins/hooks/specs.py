@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from daglite.backends.base import Backend
-from daglite.graph.base import GraphNode
+from daglite.graph.base import BaseGraphNode
 
 from .markers import hook_spec
 
@@ -16,7 +16,7 @@ class NodeSpec:
     def before_node_execute(
         self,
         node_id: UUID,
-        node: GraphNode,
+        node: BaseGraphNode,
         backend: Backend,
         inputs: dict[str, Any],
         iteration_count: int | None = None,
@@ -36,7 +36,7 @@ class NodeSpec:
     def after_node_execute(
         self,
         node_id: UUID,
-        node: GraphNode,
+        node: BaseGraphNode,
         backend: Backend,
         result: Any,
         duration: float,
@@ -58,7 +58,7 @@ class NodeSpec:
     def on_node_error(
         self,
         node_id: UUID,
-        node: GraphNode,
+        node: BaseGraphNode,
         backend: Backend,
         error: Exception,
         duration: float,
@@ -80,7 +80,7 @@ class NodeSpec:
     def before_iteration_execute(
         self,
         node_id: UUID,
-        node: GraphNode,
+        node: BaseGraphNode,
         backend: Backend,
         iteration_index: int,
         iteration_total: int,
@@ -100,7 +100,7 @@ class NodeSpec:
     def after_iteration_execute(
         self,
         node_id: UUID,
-        node: GraphNode,
+        node: BaseGraphNode,
         backend: Backend,
         iteration_index: int,
         iteration_total: int,
