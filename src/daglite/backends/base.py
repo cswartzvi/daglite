@@ -92,8 +92,12 @@ class Backend(abc.ABC):
         from daglite.graph.base import BaseMapGraphNode
 
         if isinstance(node, BaseMapGraphNode):
-            calls = node.build_iteration_calls(resolved_inputs)
-            return [self._submit_impl(node.run, call) for call in calls]
+            futures = []
+            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+                kwargs = {"iteration_index": idx}
+                future = self._submit_impl(node.run, call, **kwargs)
+                futures.append(future)
+            return futures
         else:
             return self._submit_impl(node.run, resolved_inputs)
 
@@ -118,8 +122,11 @@ class Backend(abc.ABC):
         from daglite.graph.base import BaseMapGraphNode
 
         if isinstance(node, BaseMapGraphNode):
-            calls = node.build_iteration_calls(resolved_inputs)
-            futures = [wrap_future(self._submit_impl(node.run_async, call)) for call in calls]
+            futures: list[AsyncioFuture[Any]] = []
+            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+                kwargs = {"iteration_index": idx}
+                future = wrap_future(self._submit_impl(node.run_async, call, **kwargs))
+                futures.append(future)
             return futures
         else:
             future = wrap_future(self._submit_impl(node.run_async, resolved_inputs))
@@ -127,7 +134,7 @@ class Backend(abc.ABC):
 
     @abc.abstractmethod
     def _submit_impl(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any]
+        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> ConcurrentFuture[Any]:
         """
         Submit a callable for execution in the backend.
@@ -135,6 +142,7 @@ class Backend(abc.ABC):
         Args:
             func: Callable to execute
             inputs: Pre-resolved parameter inputs
+            **kwargs: Additional backend-specific execution parameters
 
         Returns:
             Future representing the execution

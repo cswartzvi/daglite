@@ -11,6 +11,8 @@ from typing_extensions import override
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
+from daglite.graph.base import BaseMapGraphNode
+from daglite.graph.base import GraphMetadata
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
 
@@ -34,12 +36,10 @@ class TaskNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        """Derive dependencies from reference inputs."""
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        """Resolve all keyword parameters."""
         inputs = {}
         for name, param in self.kwargs.items():
             if param.kind in ("sequence", "sequence_ref"):
@@ -49,100 +49,44 @@ class TaskNode(BaseGraphNode):
         return inputs
 
     @override
-    def run(self, resolved_inputs: dict[str, Any]) -> Any:
-        """Execute task function with plugin hooks."""
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from daglite.backends.context import get_plugin_manager
         from daglite.backends.context import get_reporter
 
-        pm = get_plugin_manager()
-        _reporter = get_reporter()  # Available for future use
+        plugin_manager = get_plugin_manager()
+        reporter = get_reporter()
+        metadata = self.to_metadata()
 
-        # Fire before hook
-        pm.hook.before_node_execute(
-            node_id=self.id,
-            node=self,
-            backend=None,  # Backend not available in worker context
-            inputs=resolved_inputs,
+        return _run_sync_impl(
+            func=self.func,
+            key=self.name,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+            plugin_manager=plugin_manager,
+            reporter=reporter,
         )
-
-        start_time = time.time()
-        try:
-            result = self.func(**resolved_inputs)
-            duration = time.time() - start_time
-
-            # Fire after hook
-            pm.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                result=result,
-                duration=duration,
-            )
-
-            return result
-
-        except Exception as e:
-            duration = time.time() - start_time
-
-            # Fire error hook
-            pm.hook.on_node_error(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                error=e,
-                duration=duration,
-            )
-            raise
 
     @override
-    async def run_async(self, resolved_inputs: dict[str, Any]) -> Any:
-        """Execute task function asynchronously with plugin hooks."""
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from daglite.backends.context import get_plugin_manager
         from daglite.backends.context import get_reporter
 
-        pm = get_plugin_manager()
-        _reporter = get_reporter()  # Available for future use
+        plugin_manager = get_plugin_manager()
+        reporter = get_reporter()
+        metadata = self.to_metadata()
 
-        # Fire before hook
-        pm.hook.before_node_execute(
-            node_id=self.id,
-            node=self,
-            backend=None,
-            inputs=resolved_inputs,
+        return await _run_async_impl(
+            func=self.func,
+            key=self.name,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+            plugin_manager=plugin_manager,
+            reporter=reporter,
         )
-
-        start_time = time.time()
-        try:
-            result = self.func(**resolved_inputs)
-            duration = time.time() - start_time
-
-            # Fire after hook
-            pm.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                result=result,
-                duration=duration,
-            )
-
-            return result
-
-        except Exception as e:
-            duration = time.time() - start_time
-
-            # Fire error hook
-            pm.hook.on_node_error(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                error=e,
-                duration=duration,
-            )
-            raise
 
 
 @dataclass(frozen=True)
-class MapTaskNode(BaseGraphNode):
+class MapTaskNode(BaseMapGraphNode):
     """Map function task node representation within the graph IR."""
 
     func: Callable
@@ -157,14 +101,8 @@ class MapTaskNode(BaseGraphNode):
     mapped_kwargs: Mapping[str, ParamInput]
     """Mapped keyword arguments for the mapped function."""
 
-    @property
-    @override
-    def kind(self) -> NodeKind:
-        return "map"
-
     @override
     def dependencies(self) -> set[UUID]:
-        """Derive dependencies from both fixed and mapped inputs."""
         deps = set()
         for param in self.fixed_kwargs.values():
             if param.is_ref and param.ref is not None:
@@ -176,7 +114,6 @@ class MapTaskNode(BaseGraphNode):
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        """Resolve all fixed and mapped parameters."""
         inputs = {}
 
         # Resolve fixed kwargs
@@ -195,11 +132,12 @@ class MapTaskNode(BaseGraphNode):
 
         return inputs
 
-    def _build_map_calls(
-        self, fixed: Mapping[str, Any], mapped: Mapping[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Build the list of function calls for map execution."""
+    @override
+    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
         from itertools import product
+
+        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
+        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
 
         calls: list[dict[str, Any]] = []
 
@@ -235,181 +173,136 @@ class MapTaskNode(BaseGraphNode):
         return calls
 
     @override
-    def run(self, resolved_inputs: dict[str, Any]) -> list[Any]:
-        """Execute map iterations with plugin hooks."""
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from daglite.backends.context import get_plugin_manager
         from daglite.backends.context import get_reporter
 
-        pm = get_plugin_manager()
-        _reporter = get_reporter()  # Available for future use
+        plugin_manager = get_plugin_manager()
+        reporter = get_reporter()
+        metadata = self.to_metadata()
+        node_key = f"{self.name}-{kwargs['iteration_index']}"
 
-        # Split inputs into fixed and mapped
-        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
-        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
-
-        # Build individual calls
-        calls = self._build_map_calls(fixed, mapped)
-        iteration_total = len(calls)
-
-        # Fire before hook
-        pm.hook.before_node_execute(
-            node_id=self.id,
-            node=self,
-            backend=None,
-            inputs=resolved_inputs,
-            iteration_count=iteration_total,
+        return _run_sync_impl(
+            func=self.func,
+            key=node_key,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+            plugin_manager=plugin_manager,
+            reporter=reporter,
         )
-
-        start_time = time.time()
-        results = []
-
-        try:
-            for iteration_index, call_kwargs in enumerate(calls):
-                # Fire before iteration hook
-                pm.hook.before_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=None,
-                    iteration_index=iteration_index,
-                    iteration_total=iteration_total,
-                )
-
-                iter_start = time.time()
-                try:
-                    result = self.func(**call_kwargs)
-                    iter_duration = time.time() - iter_start
-
-                    # Fire after iteration hook
-                    pm.hook.after_iteration_execute(
-                        node_id=self.id,
-                        node=self,
-                        backend=None,
-                        iteration_index=iteration_index,
-                        iteration_total=iteration_total,
-                        result=result,
-                        duration=iter_duration,
-                    )
-
-                    results.append(result)
-
-                except Exception:
-                    # Iteration-level error - propagate up
-                    raise
-
-            duration = time.time() - start_time
-
-            # Fire after hook
-            pm.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                result=results,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
-
-            return results
-
-        except Exception as e:
-            duration = time.time() - start_time
-
-            # Fire error hook
-            pm.hook.on_node_error(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                error=e,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
-            raise
 
     @override
-    async def run_async(self, resolved_inputs: dict[str, Any]) -> list[Any]:
-        """Execute map iterations asynchronously with plugin hooks."""
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from daglite.backends.context import get_plugin_manager
         from daglite.backends.context import get_reporter
 
-        pm = get_plugin_manager()
-        _reporter = get_reporter()  # Available for future use
+        plugin_manager = get_plugin_manager()
+        reporter = get_reporter()
+        metadata = self.to_metadata()
+        node_key = f"{self.name}-{kwargs['iteration_index']}"
 
-        # Split inputs into fixed and mapped
-        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
-        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
-
-        # Build individual calls
-        calls = self._build_map_calls(fixed, mapped)
-        iteration_total = len(calls)
-
-        # Fire before hook
-        pm.hook.before_node_execute(
-            node_id=self.id,
-            node=self,
-            backend=None,
-            inputs=resolved_inputs,
-            iteration_count=iteration_total,
+        return await _run_async_impl(
+            func=self.func,
+            key=node_key,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+            plugin_manager=plugin_manager,
+            reporter=reporter,
         )
 
-        start_time = time.time()
-        results = []
 
-        try:
-            for iteration_index, call_kwargs in enumerate(calls):
-                # Fire before iteration hook
-                pm.hook.before_iteration_execute(
-                    node_id=self.id,
-                    node=self,
-                    backend=None,
-                    iteration_index=iteration_index,
-                    iteration_total=iteration_total,
-                )
+# region Helpers
 
-                iter_start = time.time()
-                try:
-                    result = self.func(**call_kwargs)
-                    iter_duration = time.time() - iter_start
 
-                    # Fire after iteration hook
-                    pm.hook.after_iteration_execute(
-                        node_id=self.id,
-                        node=self,
-                        backend=None,
-                        iteration_index=iteration_index,
-                        iteration_total=iteration_total,
-                        result=result,
-                        duration=iter_duration,
-                    )
+def _run_sync_impl(
+    func: Callable[..., Any],
+    key: str,
+    metadata: GraphMetadata,
+    resolved_inputs: dict[str, Any],
+    plugin_manager: Any,
+    reporter: Any,
+) -> Any:
+    """Helper to run a node synchronously with context setup."""
 
-                    results.append(result)
+    plugin_manager.hook.before_node_execute(
+        key=key,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        reporter=reporter,
+    )
 
-                except Exception:
-                    # Iteration-level error - propagate up
-                    raise
+    start_time = time.time()
+    try:
+        result = func(**resolved_inputs)
+        duration = time.time() - start_time
 
-            duration = time.time() - start_time
+        plugin_manager.hook.after_node_execute(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            duration=duration,
+            reporter=reporter,
+        )
 
-            # Fire after hook
-            pm.hook.after_node_execute(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                result=results,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
+        return result
 
-            return results
+    except Exception as error:
+        duration = time.time() - start_time
 
-        except Exception as e:
-            duration = time.time() - start_time
+        plugin_manager.hook.on_node_error(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            error=error,
+            duration=duration,
+            reporter=reporter,
+        )
+        raise
 
-            # Fire error hook
-            pm.hook.on_node_error(
-                node_id=self.id,
-                node=self,
-                backend=None,
-                error=e,
-                duration=duration,
-                iteration_count=iteration_total,
-            )
-            raise
+
+async def _run_async_impl(
+    func: Callable[..., Any],
+    key: str,
+    metadata: GraphMetadata,
+    resolved_inputs: dict[str, Any],
+    plugin_manager: Any,
+    reporter: Any,
+) -> Any:
+    """Helper to run a node asynchronously with context setup."""
+
+    plugin_manager.hook.before_node_execute(
+        key=key,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        reporter=reporter,
+    )
+
+    start_time = time.time()
+    try:
+        result = await func(**resolved_inputs)
+        duration = time.time() - start_time
+
+        plugin_manager.hook.after_node_execute(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            duration=duration,
+            reporter=reporter,
+        )
+
+        return result
+
+    except Exception as error:
+        duration = time.time() - start_time
+
+        plugin_manager.hook.on_node_error(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            error=error,
+            duration=duration,
+            reporter=reporter,
+        )
+        raise

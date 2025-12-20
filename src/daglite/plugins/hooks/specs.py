@@ -3,10 +3,9 @@
 from typing import Any
 from uuid import UUID
 
-from daglite.backends.base import Backend
-from daglite.graph.base import BaseGraphNode
-
-from .markers import hook_spec
+from daglite.graph.base import GraphMetadata
+from daglite.plugins.hooks.markers import hook_spec
+from daglite.plugins.reporters import EventReporter
 
 
 class NodeSpec:
@@ -15,109 +14,63 @@ class NodeSpec:
     @hook_spec
     def before_node_execute(
         self,
-        node_id: UUID,
-        node: BaseGraphNode,
-        backend: Backend,
+        key: str,
+        metadata: GraphMetadata,
         inputs: dict[str, Any],
-        iteration_count: int | None = None,
+        reporter: EventReporter | None = None,
     ) -> None:
         """
         Called before a node begins execution.
 
         Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode being executed
-            backend: Backend instance that will execute the node
-            inputs: Resolved input values for the node
-            iteration_count: Number of iterations for batch nodes, None for regular tasks
+            key: Unique key for the node.
+            metadata: Metadata for the node to be executed.
+            inputs: Resolved inputs for the node execution.
+            reporter: Optional event reporter for this execution context.
         """
 
     @hook_spec
     def after_node_execute(
         self,
-        node_id: UUID,
-        node: BaseGraphNode,
-        backend: Backend,
+        key: str,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
         result: Any,
         duration: float,
-        iteration_count: int | None = None,
+        reporter: EventReporter | None = None,
     ) -> None:
         """
         Called after a node completes execution successfully.
 
         Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode that was executed
-            backend: Backend instance that executed the node
-            result: The execution result
-            duration: Time taken to execute in seconds
-            iteration_count: Number of iterations for batch nodes, None for regular tasks
+            key: Unique key for the node.
+            metadata: Metadata for the executed node.
+            inputs: Resolved inputs for the node execution.
+            result: Result produced by the node execution.
+            duration: Time taken to execute in seconds.
+            reporter: Optional event reporter for this execution context.
         """
 
     @hook_spec
     def on_node_error(
         self,
-        node_id: UUID,
-        node: BaseGraphNode,
-        backend: Backend,
+        key: str,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
         error: Exception,
         duration: float,
-        iteration_count: int | None = None,
+        reporter: EventReporter | None = None,
     ) -> None:
         """
         Called when a node execution fails.
 
         Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode that failed
-            backend: Backend instance that was executing the node
-            error: The exception that was raised
-            duration: Time taken before failure in seconds
-            iteration_count: Number of iterations for batch nodes, None for regular tasks
-        """
-
-    @hook_spec
-    def before_iteration_execute(
-        self,
-        node_id: UUID,
-        node: BaseGraphNode,
-        backend: Backend,
-        iteration_index: int,
-        iteration_total: int,
-    ) -> None:
-        """
-        Called before each iteration in a batch node (e.g., map).
-
-        Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode being executed
-            backend: Backend instance executing the iteration
-            iteration_index: Zero-based index of this iteration
-            iteration_total: Total number of iterations
-        """
-
-    @hook_spec
-    def after_iteration_execute(
-        self,
-        node_id: UUID,
-        node: BaseGraphNode,
-        backend: Backend,
-        iteration_index: int,
-        iteration_total: int,
-        result: Any,
-        duration: float,
-    ) -> None:
-        """
-        Called after each iteration completes successfully.
-
-        Args:
-            node_id: Unique identifier for the node
-            node: The GraphNode being executed
-            backend: Backend instance that executed the iteration
-            iteration_index: Zero-based index of this iteration
-            iteration_total: Total number of iterations
-            result: The execution result for this iteration
-            duration: Time taken to execute this iteration in seconds
+            key: Unique key for the node.
+            metadata: Metadata for the executed node.
+            inputs: Resolved inputs for the node execution.
+            error: The exception that was raised.
+            duration: Time taken before failure in seconds.
+            reporter: Optional event reporter for this execution context.
         """
 
 
@@ -125,7 +78,12 @@ class GraphSpec:
     """Hook specifications for graph-level execution events."""
 
     @hook_spec
-    def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
+    def before_graph_execute(
+        self,
+        root_id: UUID,
+        node_count: int,
+        is_async: bool,
+    ) -> None:
         """
         Called before graph execution begins.
 
@@ -137,7 +95,11 @@ class GraphSpec:
 
     @hook_spec
     def after_graph_execute(
-        self, root_id: UUID, result: Any, duration: float, is_async: bool
+        self,
+        root_id: UUID,
+        result: Any,
+        duration: float,
+        is_async: bool,
     ) -> None:
         """
         Called after graph execution completes successfully.
@@ -151,7 +113,11 @@ class GraphSpec:
 
     @hook_spec
     def on_graph_error(
-        self, root_id: UUID, error: Exception, duration: float, is_async: bool
+        self,
+        root_id: UUID,
+        error: Exception,
+        duration: float,
+        is_async: bool,
     ) -> None:
         """
         Called when graph execution fails.

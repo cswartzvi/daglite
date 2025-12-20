@@ -12,7 +12,7 @@ import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, override
 from uuid import UUID
 
 from daglite.exceptions import ExecutionError
@@ -54,20 +54,34 @@ class GraphBuilder(Protocol):
 
 
 @dataclass(frozen=True)
-class BaseGraphNode(abc.ABC):
-    """Represents a node in the compiled graph Intermediate Representation (IR)."""
+class GraphMetadata:
+    """Metadata for a compiled graph."""
 
     id: UUID
     """Unique identifier for this node."""
 
     name: str
-    """Human-readable name for this node."""
+    """Human-readable name for the graph."""
 
     description: str | None
-    """Optional human-readable description for this node."""
+    """Optional human-readable description for the graph."""
 
     backend_name: str | None
-    """Name of the backend to use for executing this node."""
+    """Default backend name for executing nodes in this graph."""
+
+    def to_metadata(self) -> "GraphMetadata":
+        """Returns a metadata object for this graph node."""
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            description=self.description,
+            backend_name=self.backend_name,
+        )
+
+
+@dataclass(frozen=True)
+class BaseGraphNode(GraphMetadata, abc.ABC):
+    """Represents a node in the compiled graph Intermediate Representation (IR)."""
 
     @property
     @abc.abstractmethod
@@ -99,7 +113,7 @@ class BaseGraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def run(self, resolved_inputs: dict[str, Any]) -> Any:
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         """
         Execute this node synchronously with resolved inputs.
 
@@ -108,6 +122,7 @@ class BaseGraphNode(abc.ABC):
 
         Args:
             resolved_inputs: Pre-resolved parameter inputs for this node.
+            **kwargs: Additional backend-specific execution parameters.
 
         Returns:
             Node execution result. May be a coroutine, generator, or regular value.
@@ -115,7 +130,7 @@ class BaseGraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    async def run_async(self, resolved_inputs: dict[str, Any]) -> Any:
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         """
         Execute this node asynchronously with resolved inputs.
 
@@ -124,6 +139,7 @@ class BaseGraphNode(abc.ABC):
 
         Args:
             resolved_inputs: Pre-resolved parameter inputs for this node.
+            **kwargs: Additional backend-specific execution parameters.
 
         Returns:
             Node execution result. May be an async generator or regular value.
@@ -133,6 +149,11 @@ class BaseGraphNode(abc.ABC):
 
 class BaseMapGraphNode(BaseGraphNode, abc.ABC):
     """Mixin for graph nodes that support mapping over inputs."""
+
+    @property
+    @override
+    def kind(self) -> NodeKind:
+        return "map"
 
     @abc.abstractmethod
     def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:

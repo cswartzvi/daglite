@@ -36,7 +36,7 @@ class SequentialBackend(Backend):
 
     @override
     def _submit_impl(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any]
+        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> Future[Any]:
         future: Future[Any] = Future()
 
@@ -44,7 +44,7 @@ class SequentialBackend(Backend):
         tokens = set_execution_context(self._plugin_manager, self._reporter)
 
         try:
-            result = func(inputs)
+            result = func(inputs, **kwargs)
             future.set_result(result)
         except Exception as e:
             future.set_exception(e)
@@ -87,9 +87,9 @@ class ThreadBackend(Backend):
 
     @override
     def _submit_impl(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any]
+        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> Future[Any]:
-        return self._executor.submit(func, inputs)
+        return self._executor.submit(func, inputs, **kwargs)
 
 
 class ProcessBackend(Backend):
@@ -140,8 +140,8 @@ class ProcessBackend(Backend):
         self._reporter.queue.close()
 
     @override
-    def _submit_impl(self, func, inputs: dict[str, Any]) -> Future[Any]:
-        return self._executor.submit(func, inputs)
+    def _submit_impl(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
+        return self._executor.submit(func, inputs, **kwargs)
 
 
 def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
