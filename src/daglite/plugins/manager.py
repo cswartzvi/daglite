@@ -7,8 +7,9 @@ from typing import Any
 
 from pluggy import PluginManager
 
-from daglite.plugins.base import isinstance_serializable_plugin
+from daglite.plugins.base import isinstance_bidirectional_plugin, isinstance_serializable_plugin
 from daglite.plugins.base import issubclass_serializable_plugin
+from daglite.plugins.events import EventRegistry
 
 from .hooks.markers import HOOK_NAMESPACE
 from .hooks.specs import NodeSpec
@@ -23,7 +24,16 @@ _PLUGIN_MANAGER: PluginManager | None = None
 
 
 def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None) -> None:
-    """Registers daglite plugins with the global plugin manager."""
+    """
+    Registers daglite plugins with the global plugin manager.
+
+    This function can be used by the user to register custom plugins globally. Note that the
+    plugins registered here will be present in all evaluation contexts, however they will not
+    run outside of the evaluation process (e.g., start immediately upon registration).
+
+    Args:
+        plugins: Plugin instances to register.
+    """
     _plugin_manager = _plugin_manager if _plugin_manager else _get_global_plugin_manager()
     for plugin in plugins:
         if not _plugin_manager.is_registered(plugin):
@@ -36,19 +46,21 @@ def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None
 
 
 def register_plugins_entry_points(_plugin_manager: PluginManager | None = None) -> None:
-    """Register daglite plugins from Python package entrypoints."""
+    """Registers daglite plugins from Python package entrypoints with the global plugin manager."""
     _plugin_manager = _plugin_manager if _plugin_manager else _get_global_plugin_manager()
     _plugin_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)  # Doesn't use setuptools
 
 
-def build_plugin_manager(plugins: list[Any]) -> PluginManager:
+def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginManager:
     """
-    Create a new plugin manager with both global and execution-specific plugins.
+    Creates a new plugin manager with both global and execution-specific plugins.
 
-    This combines globally registered plugins with additional plugin for a specific execution.
+    This is the canonical way to create a PluginManager for a specific execution context,
+    ensuring that both global and execution-specific plugins are registered, and that event
 
     Args:
         plugins: Additional plugin implementations to register.
+        registry: Event registry for event handling.
 
     Returns:
         A new PluginManager with global + execution-specific plugins.
@@ -63,10 +75,15 @@ def build_plugin_manager(plugins: list[Any]) -> PluginManager:
             new_manager.register(plugin)
 
     # Register entry-point plugins
-    new_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)
+    register_plugins_entry_points(_plugin_manager=new_manager)
 
     # Add execution-specific plugins
     register_plugins(*plugins, _plugin_manager=new_manager)
+
+    # Register event handlers from bidirectional plugins
+    for plugin in new_manager.get_plugins():
+        if isinstance_bidirectional_plugin(plugin):
+            plugin.register_event_handlers(registry)
 
     return new_manager
 
