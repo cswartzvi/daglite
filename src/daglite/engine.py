@@ -47,7 +47,7 @@ T = TypeVar("T")
 def evaluate(
     expr: TaskFuture[Coroutine[Any, Any, T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> T: ...
 
 
@@ -55,7 +55,7 @@ def evaluate(
 def evaluate(
     expr: TaskFuture[AsyncGenerator[T, Any]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -63,7 +63,7 @@ def evaluate(
 def evaluate(
     expr: TaskFuture[AsyncIterator[T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -71,7 +71,7 @@ def evaluate(
 def evaluate(
     expr: TaskFuture[Generator[T, Any, Any]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -79,7 +79,7 @@ def evaluate(
 def evaluate(
     expr: TaskFuture[Iterator[T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -88,7 +88,7 @@ def evaluate(
 def evaluate(
     expr: TaskFuture[T],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> T: ...
 
 
@@ -96,14 +96,14 @@ def evaluate(
 def evaluate(
     expr: MapTaskFuture[T],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 def evaluate(
     expr: BaseTaskFuture[Any],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> Any:
     """
     Evaluate a task graph synchronously.
@@ -113,8 +113,8 @@ def evaluate(
 
     Args:
         expr: The task graph to evaluate.
-        hooks: Optional list of hook implementations for this execution only.
-            These are combined with any globally registered hooks.
+        plugins: Optional list of plugin implementations for this execution only.
+            These are combined with any globally registered plugins.
 
     Returns:
         The result of evaluating the root task
@@ -126,15 +126,15 @@ def evaluate(
         >>> # With custom backend
         >>> result = evaluate(my_task, default_backend="threading")
         >>>
-        >>> # With execution-specific hooks
-        >>> from daglite.hooks.examples import ProgressTracker
-        >>> result = evaluate(my_task, hooks=[ProgressTracker()])
+        >>> # With execution-specific plugins
+        >>> from daglite.plugins.examples import ProgressTracker
+        >>> result = evaluate(my_task, plugins=[ProgressTracker()])
         >>>
         >>> # For async execution with sibling parallelism
         >>> import asyncio
         >>> result = asyncio.run(evaluate_async(my_task))
     """
-    engine = Engine(plugins=hooks)
+    engine = Engine(plugins=plugins)
     return engine.evaluate(expr)
 
 
@@ -143,7 +143,7 @@ def evaluate(
 async def evaluate_async(
     expr: TaskFuture[Coroutine[Any, Any, T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> T: ...
 
 
@@ -151,7 +151,7 @@ async def evaluate_async(
 async def evaluate_async(
     expr: TaskFuture[AsyncGenerator[T, Any]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -159,7 +159,7 @@ async def evaluate_async(
 async def evaluate_async(
     expr: TaskFuture[AsyncIterator[T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -167,7 +167,7 @@ async def evaluate_async(
 async def evaluate_async(
     expr: TaskFuture[Generator[T, Any, Any]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -175,7 +175,7 @@ async def evaluate_async(
 async def evaluate_async(
     expr: TaskFuture[Iterator[T]],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
@@ -184,7 +184,7 @@ async def evaluate_async(
 async def evaluate_async(
     expr: TaskFuture[T],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> T: ...
 
 
@@ -192,14 +192,14 @@ async def evaluate_async(
 async def evaluate_async(
     expr: MapTaskFuture[T],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 async def evaluate_async(
     expr: BaseTaskFuture[Any],
     *,
-    hooks: list[Any] | None = None,
+    plugins: list[Any] | None = None,
 ) -> Any:
     """
     Evaluate a task graph asynchronously.
@@ -209,8 +209,8 @@ async def evaluate_async(
 
     Args:
         expr: The task graph to evaluate.
-        hooks: Optional list of hook implementations for this execution only.
-            These are combined with any globally registered hooks.
+        plugins: Optional list of plugin implementations for this execution only.
+            These are combined with any globally registered plugins.
 
     Returns:
         The result of evaluating the root task
@@ -220,11 +220,11 @@ async def evaluate_async(
         ...     result = await evaluate_async(my_task)
         ...     return result
         >>>
-        >>> # With execution-specific hooks
-        >>> from daglite.hooks.examples import PerformanceProfiler
-        >>> result = await evaluate_async(my_task, hooks=[PerformanceProfiler()])
+        >>> # With execution-specific plugins
+        >>> from daglite.plugins.examples import PerformanceProfiler
+        >>> result = await evaluate_async(my_task, plugins=[PerformanceProfiler()])
     """
-    engine = Engine(plugins=hooks)
+    engine = Engine(plugins=plugins)
     return await engine.evaluate_async(expr)
 
 
