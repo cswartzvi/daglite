@@ -2,6 +2,7 @@
 
 import logging
 from multiprocessing import Queue as MultiprocessingQueue
+from queue import Queue
 from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,37 @@ class DirectReporter:
             logger.exception(f"Error reporting event {event_type}: {e}")
 
 
-class QueueReporter:
+class ThreadReporter:
+    """
+    Thread-based reporter for ThreadBackend.
+
+    Uses a thread-safe queue to send events from worker threads to coordinator.
+    """
+
+    def __init__(self, queue: Queue[Any]):
+        """
+        Initialize reporter with queue.
+
+        Args:
+            queue: Thread-safe queue for sending events
+        """
+        self._queue = queue
+
+    @property
+    def queue(self) -> Queue[Any]:
+        """Get the underlying queue."""
+        return self._queue
+
+    def report(self, event_type: str, data: dict[str, Any]) -> None:
+        """Send event via queue."""
+        event = {"type": event_type, **data}
+        try:
+            self._queue.put(event)
+        except Exception as e:
+            logger.exception(f"Error reporting event {event_type}: {e}")
+
+
+class ProcessReporter:
     """
     Queue-based reporter for ProcessPoolBackend.
 
