@@ -1,7 +1,7 @@
 """Event reporter implementations for different backend types."""
 
 import logging
-import multiprocessing
+from multiprocessing import Queue as MultiprocessingQueue
 from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class QueueReporter:
     dispatches events.
     """
 
-    def __init__(self, queue: multiprocessing.Queue):
+    def __init__(self, queue: MultiprocessingQueue):
         """
         Initialize reporter with queue.
 
@@ -64,6 +64,11 @@ class QueueReporter:
         """
         self._queue = queue
 
+    @property
+    def queue(self) -> MultiprocessingQueue:
+        """Get the underlying multiprocessing queue."""
+        return self._queue
+
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event via queue."""
         event = {"type": event_type, **data}
@@ -71,6 +76,10 @@ class QueueReporter:
             self._queue.put(event)
         except Exception as e:
             logger.exception(f"Error reporting event {event_type}: {e}")
+
+    def close(self) -> None:
+        """Close the underlying queue."""
+        self._queue.close()
 
 
 class RemoteReporter:  # pragma: no cover
