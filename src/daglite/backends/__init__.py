@@ -1,6 +1,3 @@
-from collections.abc import Iterator
-from contextlib import contextmanager
-
 from pluggy import PluginManager
 
 from daglite.backends.base import Backend
@@ -31,12 +28,13 @@ class BackendManager:
 
         # TODO : dynamic discovery of backends from entry points
 
-    def get(self, backend: str = "") -> Backend:
+    def get(self, backend_name: str | None = None) -> Backend:
         """
         Get or create backend instance by name.
 
         Args:
-            backend: Name of the backend to get. If not provided, uses the default settings backend.
+            backend_name: Name of the backend to get. If not provided, uses the default settings
+                backend.
 
         Returns:
             An instance of the requested backend class (or the default).
@@ -49,25 +47,26 @@ class BackendManager:
         if not self._started:
             raise RuntimeError("BackendManager has not been started yet.")
 
-        if not backend:
+        if not backend_name:
             from daglite.settings import get_global_settings
 
             settings = get_global_settings()
-            backend = settings.default_backend
+            backend_name = settings.default_backend
 
-        if backend not in self._cached_backends:
+        if backend_name not in self._cached_backends:
             try:
-                backend_class = self._backend_types[backend]
+                backend_class = self._backend_types[backend_name]
             except KeyError:
                 raise BackendError(
-                    f"Unknown backend '{backend}'; available: {list(self._backend_types.keys())}"
+                    f"Unknown backend '{backend_name}'; "
+                    f"available: {list(self._backend_types.keys())}"
                 ) from None
 
             backend_instance = backend_class()
             backend_instance.start(self._plugin_manager, self._event_processor)
-            self._cached_backends[backend] = backend_instance
+            self._cached_backends[backend_name] = backend_instance
 
-        return self._cached_backends[backend]
+        return self._cached_backends[backend_name]
 
     def start(self) -> None:
         """Start all backends as needed."""
