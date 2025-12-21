@@ -1,8 +1,13 @@
-status:
-  project:
-    default:
-      target: 90  # TODO: set to 100 for 1.0 release
-  patch:
-    default:
-      target: 0  # TODO: set to 100 for 1.0 release
-      threshold: 0
+coverage:
+  status:
+    project:
+      default:
+        target: 95%
+        threshold: 5%  # Allows coverage to drop to 90% (95% - 5%)
+    patch:
+      default:
+        target: 70%
+
+comment:
+  layout: "reach, diff, files"
+  behavior: default

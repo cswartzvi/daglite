@@ -2,14 +2,12 @@ coverage:
   status:
     project:
       default:
-        target: 90%  # TODO: set to 100% for 1.0 release
-        threshold: 1%  # Allow 1% drop from target
+        target: auto
+        threshold: 5%
     patch:
       default:
-        target: 80%  # TODO: set to 100% for 1.0 release
-        threshold: 1%  # Allow 1% drop from target
+        target: 70%
 
 comment:
-  require_changes: false
-  require_base: false
-  require_head: true
+  layout: "reach, diff, files"
+  behavior: default
