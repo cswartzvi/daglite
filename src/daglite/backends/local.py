@@ -128,7 +128,7 @@ class ProcessBackend(Backend):
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
             mp_context=mp_context,
-            initializer=_process_initilizer,
+            initializer=_process_initializer,
             initargs=(serialized_pm, self._reporter.queue),
         )
 
@@ -157,7 +157,7 @@ def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: A
     return asyncio.run(func(inputs, **kwargs))
 
 
-def _process_initilizer(serialized_plugin_manager: dict, queue) -> None:
+def _process_initializer(serialized_plugin_manager: dict, queue) -> None:
     """Initializer for process pool workers to set execution context."""
     plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
     reporter = ProcessReporter(queue)

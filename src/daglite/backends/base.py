@@ -58,7 +58,7 @@ class Backend(abc.ABC):
         """
         Clean up any global backend resources.
 
-        Subclasses should NOT override this method. Instead, override `_end()`.
+        Subclasses should NOT override this method. Instead, override `_stop()`.
         """
         self._stop()
         delattr(self, "_plugin_manager")
