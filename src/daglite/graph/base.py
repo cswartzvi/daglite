@@ -12,8 +12,10 @@ import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Literal, Protocol, override
+from typing import Any, Literal, Protocol
 from uuid import UUID
+
+from typing_extensions import override
 
 from daglite.exceptions import ExecutionError
 
