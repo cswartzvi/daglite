@@ -166,7 +166,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         remaining_fields = {
             f.name: getattr(self, f.name)
             for f in fields(self)
-            if f.name not in {"name", "description", "backend"}
+            if f.name not in {"name", "description", "backend_name"}
         }
 
         return type(self)(
