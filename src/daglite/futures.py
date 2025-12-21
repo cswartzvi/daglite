@@ -155,6 +155,7 @@ class TaskFuture(BaseTaskFuture[R]):
             >>> evaluate(future)
             [12, 22, 14, 24, 16, 26]
         """
+        from daglite.exceptions import ParameterError
         from daglite.tasks import FixedParamTask
         from daglite.tasks import check_invalid_map_params
         from daglite.tasks import check_invalid_params
@@ -169,20 +170,26 @@ class TaskFuture(BaseTaskFuture[R]):
             all_fixed = {}
             actual_task = next_task
 
-        # Validate that provided mapped_kwargs are valid parameters
         check_invalid_params(actual_task, mapped_kwargs)
         check_invalid_map_params(actual_task, mapped_kwargs)
 
-        # Get the unbound parameter that will receive values from self
+        if not mapped_kwargs:
+            raise ParameterError(
+                f"At least one mapped parameter required for task '{actual_task.name}' "
+                f"with .then_product(). Use .then() for 1-to-1 chaining instead."
+            )
+
         merged = {**all_fixed, **mapped_kwargs}
         unbound_param = get_unbound_param(actual_task, merged)
-        all_mapped = {**mapped_kwargs, unbound_param: self}
+
+        # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
+        all_fixed = {**all_fixed, unbound_param: self}
 
         return MapTaskFuture(
             task=actual_task,
             mode="product",
             fixed_kwargs=all_fixed,
-            mapped_kwargs=all_mapped,
+            mapped_kwargs=mapped_kwargs,
             backend_name=self.backend_name,
         )
 
@@ -236,9 +243,14 @@ class TaskFuture(BaseTaskFuture[R]):
             all_fixed = {}
             actual_task = next_task
 
-        # Validate that provided mapped_kwargs are valid parameters
         check_invalid_params(actual_task, mapped_kwargs)
         check_invalid_map_params(actual_task, mapped_kwargs)
+
+        if not mapped_kwargs:
+            raise ParameterError(
+                f"At least one mapped parameter required for task '{actual_task.name}' "
+                f"with .then_zip(). Use .then() for 1-to-1 chaining instead."
+            )
 
         # Check that all concrete sequences have the same length
         len_details = {
@@ -251,16 +263,17 @@ class TaskFuture(BaseTaskFuture[R]):
                 f"Found lengths: {sorted(len_details)}"
             )
 
-        # Get the unbound parameter that will receive values from self
         merged = {**all_fixed, **mapped_kwargs}
         unbound_param = get_unbound_param(actual_task, merged)
-        all_mapped = {**mapped_kwargs, unbound_param: self}
+
+        # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
+        all_fixed = {**all_fixed, unbound_param: self}
 
         return MapTaskFuture(
             task=actual_task,
             mode="zip",
             fixed_kwargs=all_fixed,
-            mapped_kwargs=all_mapped,
+            mapped_kwargs=mapped_kwargs,
             backend_name=self.backend_name,
         )
 
@@ -565,12 +578,13 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
         for name, seq in self.mapped_kwargs.items():
             if isinstance(seq, MapTaskFuture):
-                # MapTaskFuture produces a sequence
+                # MapTaskFuture produces a sequence - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
             elif isinstance(seq, TaskFuture):
-                # TaskFuture produces a scalar - will be broadcast if needed
-                mapped_kwargs[name] = ParamInput.from_ref(seq.id)
+                # TaskFuture produces a sequence (e.g., list) - iterate over it
+                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
             else:
+                # Concrete sequence - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
         return MapTaskNode(
