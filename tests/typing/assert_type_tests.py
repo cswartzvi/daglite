@@ -129,7 +129,7 @@ def test_task_fanout_operations() -> None:
     # product: fan-out -> map -> join
     product_result = prepare.product(n=[1, 2, 3])
     assert_type(product_result, MapTaskFuture[int])
-    product_mapped = product_result.map(double)
+    product_mapped = product_result.then(double)
     assert_type(product_mapped, MapTaskFuture[int])
     product_joined = product_mapped.join(sum_list)
     assert_type(product_joined, TaskFuture[int])
@@ -137,7 +137,7 @@ def test_task_fanout_operations() -> None:
     # zip: fan-out -> map -> join
     zip_result = prepare.zip(n=[1, 2, 3])
     assert_type(zip_result, MapTaskFuture[int])
-    zip_mapped = zip_result.map(double)
+    zip_mapped = zip_result.then(double)
     assert_type(zip_mapped, MapTaskFuture[int])
     zip_joined = zip_mapped.join(sum_list)
     assert_type(zip_joined, TaskFuture[int])
@@ -186,11 +186,11 @@ def test_task_complex_graphs() -> None:
     assert_type(combined, TaskFuture[int])
 
     # Nested map chains
-    nested_maps = prepare.product(n=[1, 2, 3]).map(double).map(double).join(sum_list)
+    nested_maps = prepare.product(n=[1, 2, 3]).then(double).then(double).join(sum_list)
     assert_type(nested_maps, TaskFuture[int])
 
     # MapTaskFuture without join
-    mapped_only = prepare.product(n=[1, 2]).map(double)
+    mapped_only = prepare.product(n=[1, 2]).then(double)
     assert_type(mapped_only, MapTaskFuture[int])
 
 
@@ -238,7 +238,7 @@ def test_task_nested_fanout() -> None:
 def test_task_type_transformations() -> None:
     """Test that type changes propagate correctly through map chains."""
     # Type changes: int -> int -> str
-    type_changing_chain = prepare.product(n=[1, 2, 3]).map(double).map(to_string)
+    type_changing_chain = prepare.product(n=[1, 2, 3]).then(double).then(to_string)
     assert_type(type_changing_chain, MapTaskFuture[str])
     type_change_joined = type_changing_chain.join(join_strings)
     assert_type(type_change_joined, TaskFuture[str])

@@ -93,77 +93,8 @@ class TestTaskFutureThen:
         assert isinstance(evaluate(result), str)
 
 
-class TestMapTaskFutureThen:
-    """Tests for MapTaskFuture.then() chaining."""
-
-    def test_map_task_future_then(self) -> None:
-        """MapTaskFuture.then() passes entire list to next task."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3, 4])
-        result = numbers.then(sum_list)
-        assert evaluate(result) == 20  # (2 + 4 + 6 + 8)
-
-    def test_map_task_future_then_with_kwargs(self) -> None:
-        """MapTaskFuture.then() with additional kwargs."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def weighted_sum(xs: list[int], weight: float) -> float:
-            return sum(xs) * weight
-
-        numbers = double.product(x=[1, 2, 3])
-        result = numbers.then(weighted_sum, weight=0.5)
-        assert evaluate(result) == 6.0  # (2 + 4 + 6) * 0.5
-
-    def test_map_task_future_then_equivalent_to_join(self) -> None:
-        """MapTaskFuture.then() is equivalent to .join()."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3, 4])
-        result_then = numbers.then(sum_list)
-        result_join = numbers.join(sum_list)
-
-        assert evaluate(result_then) == evaluate(result_join)
-
-    def test_then_return_type_preservation(self) -> None:
-        """MapTaskFuture.then() preserves return types correctly."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3])
-        total = numbers.then(sum_list)
-        from daglite.tasks import TaskFuture
-
-        assert isinstance(total, TaskFuture)
-        assert isinstance(evaluate(total), int)
-
-
 class TestMapOperations:
-    """Tests for .map() fluent API."""
+    """Tests for .then() fluent API."""
 
     def test_map_with_kwargs(self) -> None:
         """Fluent .map() accepts inline kwargs."""
@@ -176,7 +107,7 @@ class TestMapOperations:
         def identity(x: int) -> int:
             return x
 
-        result = evaluate(identity.product(x=[1, 2, 3]).map(scale, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).then(scale, factor=2))
         assert result == [2, 4, 6]  # Each element * 2
 
     def test_map_chain_with_kwargs(self) -> None:
@@ -195,7 +126,7 @@ class TestMapOperations:
             return x * factor
 
         # [1, 2, 3] -> add(y=10) -> [11, 12, 13] -> multiply(factor=2) -> [22, 24, 26]
-        result = evaluate(identity.product(x=[1, 2, 3]).map(add, y=10).map(multiply, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).then(add, y=10).then(multiply, factor=2))
         assert result == [22, 24, 26]
 
 
@@ -238,8 +169,8 @@ class TestJoinOperations:
         # [1, 2, 3] -> add(y=5) -> [6, 7, 8] -> multiply(factor=2) -> [12, 14, 16] -> sum+10 -> 52
         result = evaluate(
             identity.product(x=[1, 2, 3])
-            .map(add, y=5)
-            .map(multiply, factor=2)
+            .then(add, y=5)
+            .then(multiply, factor=2)
             .join(reduce_with_offset, offset=10)
         )
         assert result == 52  # (12 + 14 + 16) + 10
@@ -273,7 +204,7 @@ class TestComplexPipelines:
         # sum = 130, * 2 = 260
         result = evaluate(
             scale.product(x=fetch_range.bind(count=4), factor=[2, 3])
-            .map(add_values, offset=10)
+            .then(add_values, offset=10)
             .join(compute_total, multiplier=2)
         )
         assert result == 260
@@ -297,7 +228,7 @@ class TestComplexPipelines:
         # [1,2,3] zip [2,3,4] -> [2, 6, 12] -> add 10 -> [12, 16, 22] -> sum*2 -> 100
         result = evaluate(
             scale.zip(x=[1, 2, 3], factor=[2, 3, 4])
-            .map(add.fix(offset=10))
+            .then(add.fix(offset=10))
             .join(sum_with_multiplier, multiplier=2)
         )
         assert result == 100  # (12 + 16 + 22) * 2
@@ -335,7 +266,7 @@ class TestComplexPipelines:
         list_future = start.bind(x=5).then(increment, amount=3).then(transform_list)
         result = evaluate(
             scale.product(x=list_future, factor=[2, 3])
-            .map(add_offset, offset=10)
+            .then(add_offset, offset=10)
             .join(sum_with_bonus, bonus=100)
         )
         assert result == 370  # (36+38+40+49+52+55) + 100
@@ -372,7 +303,7 @@ class TestComplexPipelines:
         multipliers = fetch_multipliers.bind(count=3)
 
         result = evaluate(
-            multiply.zip(x=base, factor=multipliers).map(add_offset, offset=5).join(product)
+            multiply.zip(x=base, factor=multipliers).then(add_offset, offset=5).join(product)
         )
         assert result == 13125  # 15 * 25 * 35
 

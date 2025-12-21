@@ -314,7 +314,7 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         prepared = prepare.product(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.map(mapping)
+            prepared.then(mapping)
 
     def test_task_map_with_kwargs(self) -> None:
         """Mapping with inline kwargs works correctly."""
@@ -330,7 +330,7 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         prepared = prepare.product(data=[1, 2, 3])
         # Should work with inline kwargs
-        scaled = prepared.map(scale, factor=10)
+        scaled = prepared.then(scale, factor=10)
         assert scaled is not None
 
     def test_task_map_with_kwargs_multiple_unbound(self) -> None:
@@ -347,7 +347,7 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         prepared = prepare.product(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.map(add, z=5)
+            prepared.then(add, z=5)
 
     def test_task_map_with_overlapping_kwargs(self) -> None:
         """Mapping with overlapping kwargs fails."""
@@ -364,7 +364,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         prepared = prepare.product(data=[1, 2, 3])
         fixed_scale = scale.fix(factor=10)
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            prepared.map(fixed_scale, factor=20)
+            prepared.then(fixed_scale, factor=20)
 
     def test_task_join_with_kwargs(self) -> None:
         """Reducing with inline kwargs works correctly."""
@@ -400,7 +400,7 @@ class TestInvalidTaskAndTaskFutureUsage:
             return a * 2
 
         prepared = prepare.product(data=[1, 2, 3])
-        mapped = prepared.map(mapping)
+        mapped = prepared.then(mapping)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(joining)
 
@@ -520,7 +520,7 @@ class TestInvalidTaskAndTaskFutureUsage:
         prepared = prepare.product(data=[1, 2, 3])
         fixed_mapping = mapping.fix(c=20)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.map(fixed_mapping)
+            prepared.then(fixed_mapping)
 
     def test_fixed_task_join_with_invalid_signature(self) -> None:
         """Reducing with partially bound tasks requires exactly one unbound parameter."""
@@ -539,7 +539,7 @@ class TestInvalidTaskAndTaskFutureUsage:
             return a + b + c
 
         prepared = prepare.product(data=[1, 2, 3])
-        mapped = prepared.map(mapping)
+        mapped = prepared.then(mapping)
         fixed_joining = joining.fix(c=10)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(fixed_joining)
