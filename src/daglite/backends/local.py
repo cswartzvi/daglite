@@ -109,7 +109,7 @@ class ProcessBackend(Backend):
 
     @override
     def _start(self) -> None:
-        import multiprocessing as mp
+        from multiprocessing import get_context
         from multiprocessing.context import BaseContext
 
         settings = get_global_settings()
@@ -117,10 +117,10 @@ class ProcessBackend(Backend):
         mp_context: BaseContext
         if os.name == "nt" or sys.platform == "darwin":
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
-            mp_context = mp.get_context("spawn")
+            mp_context = get_context("spawn")
         else:
             # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
-            mp_context = mp.get_context("fork")
+            mp_context = get_context("fork")
 
         assert isinstance(self._reporter, ProcessReporter)
         self._reporter_id = self._event_processor.add_source(self._reporter.queue)
