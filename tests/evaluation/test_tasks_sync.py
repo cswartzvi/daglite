@@ -270,7 +270,7 @@ class TestProductEvaluation:
             return x * 3
 
         doubled = double.product(x=[1, 2, 3])
-        tripled = doubled.map(triple)
+        tripled = doubled.then(triple)
         result = evaluate(tripled)
         assert result == [6, 12, 18]  # = [2*3, 4*3, 6*3]
 
@@ -303,7 +303,7 @@ class TestProductEvaluation:
 
         fixed_add = add.fix(y=5)
         added_seq = fixed_add.product(x=[1, 2, 3])
-        squared_seq = added_seq.map(square)
+        squared_seq = added_seq.then(square)
         result = evaluate(squared_seq)
         assert result == [36, 49, 64]  # = [(1+5)^2, (2+5)^2, (3+5)^2]
 
@@ -340,7 +340,7 @@ class TestProductEvaluation:
             return max(values)
 
         added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
-        tripled_seq = added_seq.map(triple)  # [33, 63, 36, 66]
+        tripled_seq = added_seq.then(triple)  # [33, 63, 36, 66]
         maximum = tripled_seq.join(max_value)
         result = evaluate(maximum)
         assert result == 66
@@ -372,7 +372,7 @@ class TestProductEvaluation:
         def add(x: int, offset: int) -> int:
             return x + offset
 
-        result = evaluate(double.product(x=[1, 2, 3]).map(add, offset=10))
+        result = evaluate(double.product(x=[1, 2, 3]).then(add, offset=10))
         assert result == [12, 14, 16]  # [2, 4, 6] -> add 10 -> [12, 14, 16]
 
     def test_product_with_join_kwargs(self) -> None:
@@ -494,7 +494,7 @@ class TestZipEvaluation:
             return z**2
 
         added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        squared_seq = added_seq.map(square)
+        squared_seq = added_seq.then(square)
         result = evaluate(squared_seq)
         assert result == [121, 484, 1089]  # = [11^2, 22^2, 33^2]
 
@@ -527,7 +527,7 @@ class TestZipEvaluation:
 
         fixed_multiply = multiply.fix(factor=3)
         multiplied_seq = fixed_multiply.zip(x=[2, 4, 6])
-        doubled_seq = multiplied_seq.map(double)
+        doubled_seq = multiplied_seq.then(double)
         result = evaluate(doubled_seq)
         assert result == [12, 24, 36]  # = [(2*3)*2, (4*3)*2, (6*3)*2]
 
@@ -565,7 +565,7 @@ class TestZipEvaluation:
 
         fixed_increment = increment.fix(increment_by=5)
         added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
-        incremented_seq = added_seq.map(fixed_increment)  # [16, 27, 38]
+        incremented_seq = added_seq.then(fixed_increment)  # [16, 27, 38]
         total = incremented_seq.join(sum_all)
         result = evaluate(total)
         assert result == 81  # 16 + 27 + 38
@@ -597,7 +597,7 @@ class TestZipEvaluation:
         def multiply(x: int, factor: int) -> int:
             return x * factor
 
-        result = evaluate(add.zip(x=[1, 2, 3], y=[10, 20, 30]).map(multiply, factor=2))
+        result = evaluate(add.zip(x=[1, 2, 3], y=[10, 20, 30]).then(multiply, factor=2))
         assert result == [22, 44, 66]  # [11, 22, 33] -> multiply by 2
 
     def test_zip_with_join_kwargs(self) -> None:
@@ -821,7 +821,7 @@ class TestGeneratorMaterialization:
 
         # Multiple generators from product operation
         ranges = generate_range.product(n=[3, 4, 5])
-        totals = ranges.map(sum_values)
+        totals = ranges.then(sum_values)
 
         result = evaluate(totals)
         # [0,1,2] -> 3, [0,1,2,3] -> 6, [0,1,2,3,4] -> 10

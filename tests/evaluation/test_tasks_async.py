@@ -177,7 +177,7 @@ class TestAsyncExecution:
             return z**2
 
         doubled = double.product(x=[1, 2, 3])
-        squared = doubled.map(square)
+        squared = doubled.then(square)
 
         async def run():
             return await evaluate_async(squared)
@@ -217,7 +217,7 @@ class TestAsyncExecution:
             return z**2
 
         doubled: MapTaskFuture[int] = double.product(x=[1, 2, 3])
-        squared: MapTaskFuture[int] = doubled.map(square)
+        squared: MapTaskFuture[int] = doubled.then(square)
 
         async def run():
             return await evaluate_async(squared)

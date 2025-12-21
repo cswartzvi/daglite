@@ -51,7 +51,33 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    @abc.abstractmethod
+    # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
+
+    def __bool__(self) -> bool:
+        raise TypeError(
+            "TaskFutures cannot be used in boolean context. Did you mean to call evaluate() first?"
+        )
+
+    def __len__(self) -> int:
+        raise TypeError("TaskFutures do not support len(). Did you mean to call evaluate() first?")
+
+    def __repr__(self) -> str:  # pragma : no cover
+        return f"<Lazy {id(self):#x}>"
+
+
+@dataclass(frozen=True)
+class TaskFuture(BaseTaskFuture[R]):
+    """Represents a single task invocation that will produce a value of type R."""
+
+    task: Task[Any, R]
+    """Underlying task to be called."""
+
+    kwargs: Mapping[str, Any]
+    """Parameters to be passed to the task during execution, can contain other task futures."""
+
+    backend_name: str | None
+    """Engine backend override for this task, if `None`, uses the default engine backend."""
+
     def then(
         self,
         next_task: Task[Any, T] | FixedParamTask[Any, T],
@@ -80,41 +106,6 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> # NOTE: 'x' is unbound and will receive the value from 'prepare' during evaluation.
             >>> future = prepare.bind(n=5).then(add, y=10)
         """
-        raise NotImplementedError()
-
-    # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
-
-    def __bool__(self) -> bool:
-        raise TypeError(
-            "TaskFutures cannot be used in boolean context. Did you mean to call evaluate() first?"
-        )
-
-    def __len__(self) -> int:
-        raise TypeError("TaskFutures do not support len(). Did you mean to call evaluate() first?")
-
-    def __repr__(self) -> str:  # pragma : no cover
-        return f"<Lazy {id(self):#x}>"
-
-
-@dataclass(frozen=True)
-class TaskFuture(BaseTaskFuture[R]):
-    """Represents a single task invocation that will produce a value of type R."""
-
-    task: Task[Any, R]
-    """Underlying task to be called."""
-
-    kwargs: Mapping[str, Any]
-    """Parameters to be passed to the task during execution, can contain other task futures."""
-
-    backend_name: str | None
-    """Engine backend override for this task, if `None`, uses the default engine backend."""
-
-    @override
-    def then(
-        self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
-        **kwargs: Any,
-    ) -> "TaskFuture[T]":
         from daglite.tasks import FixedParamTask
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
@@ -129,6 +120,167 @@ class TaskFuture(BaseTaskFuture[R]):
 
         unbound_param = get_unbound_param(actual_task, all_fixed)
         return actual_task.bind(**{unbound_param: self}, **all_fixed)
+
+    def then_product(
+        self,
+        next_task: Task[Any, T] | FixedParamTask[Any, T],
+        **mapped_kwargs: Any,
+    ) -> MapTaskFuture[T]:
+        """
+        Fan out this future as input to another task by creating a Cartesian product.
+
+        The current future's result is used as a fixed (scalar) argument to `next_task`,
+        while a Cartesian product is formed over the provided mapped parameter sequences
+        in `mapped_kwargs`. The next task is called once for each combination of the
+        mapped parameters, with the same future value passed to every call.
+
+        Args:
+            next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+                with ONE unbound parameter; this unbound parameter will receive the current
+                future's value for every combination of mapped parameters.
+            **mapped_kwargs: Additional parameters to map over (sequences). Each sequence element
+                will be combined with elements from other sequences in a Cartesian product.
+
+        Returns:
+            A `MapTaskFuture` representing the result of applying the task to all combinations.
+
+        Examples:
+            >>> @task
+            >>> def prepare(n: int) -> int:
+            >>>     return n * 2
+            >>>
+            >>> @task
+            >>> def combine(x: int, y: int) -> int:
+            >>>     return x + y
+            >>>
+            >>> # Prepare single value, then fan out with y in Cartesian product
+            >>> future = prepare.bind(n=5).then_product(combine, y=[10, 20, 30])
+            >>> evaluate(future)
+            [20, 30, 40]  # 10 combined with [10, 20, 30]
+        """
+        from daglite.exceptions import ParameterError
+        from daglite.tasks import FixedParamTask
+        from daglite.tasks import check_invalid_map_params
+        from daglite.tasks import check_invalid_params
+        from daglite.tasks import check_overlap_params
+        from daglite.tasks import get_unbound_param
+
+        if isinstance(next_task, FixedParamTask):
+            check_overlap_params(next_task, mapped_kwargs)
+            all_fixed = next_task.fixed_kwargs
+            actual_task = next_task.task
+        else:
+            all_fixed = {}
+            actual_task = next_task
+
+        check_invalid_params(actual_task, mapped_kwargs)
+        check_invalid_map_params(actual_task, mapped_kwargs)
+
+        if not mapped_kwargs:
+            raise ParameterError(
+                f"At least one mapped parameter required for task '{actual_task.name}' "
+                f"with .then_product(). Use .then() for 1-to-1 chaining instead."
+            )
+
+        merged = {**all_fixed, **mapped_kwargs}
+        unbound_param = get_unbound_param(actual_task, merged)
+
+        # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
+        all_fixed = {**all_fixed, unbound_param: self}
+
+        return MapTaskFuture(
+            task=actual_task,
+            mode="product",
+            fixed_kwargs=all_fixed,
+            mapped_kwargs=mapped_kwargs,
+            backend_name=self.backend_name,
+        )
+
+    def then_zip(
+        self,
+        next_task: Task[Any, T] | FixedParamTask[Any, T],
+        **mapped_kwargs: Any,
+    ) -> MapTaskFuture[T]:
+        """
+        Fan out this future as input to another task by zipping with other sequences.
+
+        The current future's result is used as a fixed (scalar) argument to `next_task`,
+        while elements from the provided mapped parameter sequences in `mapped_kwargs`
+        are paired by their index. The next task is called once for each index, with the
+        same future value passed to every call.
+
+        Args:
+            next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+                with ONE unbound parameter; this unbound parameter will receive the current
+                future's value for every paired set of mapped parameters.
+            **mapped_kwargs: Additional equal-length sequences to zip with. Elements at the
+                same index across sequences are combined in each call.
+
+        Returns:
+            A `MapTaskFuture` representing the result of applying the task to zipped elements.
+
+        Examples:
+            >>> @task
+            >>> def prepare(n: int) -> int:
+            >>>     return n * 2
+            >>>
+            >>> @task
+            >>> def combine(x: int, y: int) -> int:
+            >>>     return x + y
+            >>>
+            >>> # Prepare single value, then zip with y
+            >>> future = prepare.bind(n=5).then_zip(combine, y=[10, 20, 30])
+            >>> evaluate(future)
+            [20, 30, 40]  # 10 zipped with [10, 20, 30]
+        """
+        from daglite.exceptions import ParameterError
+        from daglite.tasks import FixedParamTask
+        from daglite.tasks import check_invalid_map_params
+        from daglite.tasks import check_invalid_params
+        from daglite.tasks import check_overlap_params
+        from daglite.tasks import get_unbound_param
+
+        if isinstance(next_task, FixedParamTask):
+            check_overlap_params(next_task, mapped_kwargs)
+            all_fixed = next_task.fixed_kwargs
+            actual_task = next_task.task
+        else:
+            all_fixed = {}
+            actual_task = next_task
+
+        check_invalid_params(actual_task, mapped_kwargs)
+        check_invalid_map_params(actual_task, mapped_kwargs)
+
+        if not mapped_kwargs:
+            raise ParameterError(
+                f"At least one mapped parameter required for task '{actual_task.name}' "
+                f"with .then_zip(). Use .then() for 1-to-1 chaining instead."
+            )
+
+        # Check that all concrete sequences have the same length
+        len_details = {
+            len(val) for val in mapped_kwargs.values() if not isinstance(val, BaseTaskFuture)
+        }
+        if len(len_details) > 1:
+            raise ParameterError(
+                f"Mixed lengths for task '{actual_task.name}', pairwise fan-out with "
+                f"`.then_zip()` requires all sequences to have the same length. "
+                f"Found lengths: {sorted(len_details)}"
+            )
+
+        merged = {**all_fixed, **mapped_kwargs}
+        unbound_param = get_unbound_param(actual_task, merged)
+
+        # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
+        all_fixed = {**all_fixed, unbound_param: self}
+
+        return MapTaskFuture(
+            task=actual_task,
+            mode="zip",
+            fixed_kwargs=all_fixed,
+            mapped_kwargs=mapped_kwargs,
+            backend_name=self.backend_name,
+        )
 
     @overload
     def split(self: TaskFuture[tuple[S1]]) -> tuple[TaskFuture[S1]]: ...
@@ -300,55 +452,46 @@ class MapTaskFuture(BaseTaskFuture[R]):
     backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
-    @overload
-    def map(self, mapped_task: Task[Any, T]) -> "MapTaskFuture[T]": ...
-
-    @overload
-    def map(
-        self, mapped_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
-    ) -> "MapTaskFuture[T]": ...
-
-    def map(
+    def then(
         self, mapped_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
     ) -> MapTaskFuture[T]:
         """
-        Apply a task to each element of this sequence.
+        Chain this mapped future as input to another mapped task during evaluation.
+
+        The mapped task is applied to each element of this future's sequence of values,
+        continuing the chain.
 
         Args:
             mapped_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
                 with ONE unbound parameter.
-            **kwargs: Additional parameters to pass to the task. The sequence element
-                will be bound to the single remaining unbound parameter.
-
-        Returns:
-            A new MapTaskFuture with the mapped task applied to each element.
+            **kwargs: Additional fixed parameters to pass to the mapped task.
 
         Examples:
-            >>> # Single-parameter task
             >>> @task
-            >>> def double(x: int) -> int:
-            >>>     return x * 2
+            >>> def generate_numbers(n: int) -> int:
+            ...     return n
             >>>
-            >>> numbers = identity.product(x=[1, 2, 3])
-            >>> doubled = numbers.map(double)  # [2, 4, 6]
-            >>>
-            >>> # Multi-parameter task with inline kwargs
             >>> @task
-            >>> def scale(x: int, factor: int) -> int:
-            >>>     return x * factor
+            >>> def square(x: int) -> int:
+            ...     return x * x
             >>>
-            >>> scaled = numbers.map(scale, factor=10)  # [10, 20, 30]
+            >>> @task
+            >>> def sum_values(a: int, b: int) -> int:
+            ...     return a + b
             >>>
-            >>> # Chaining map operations
-            >>> result = (
-            >>>     numbers
-            >>>     .map(scale, factor=2)
-            >>>     .map(add, offset=10)
-            >>>     .map(square)
-            >>> )
+            >>> # Create a mapped future generating numbers 0 to 4
+            >>> numbers_future = generate_numbers.bind(n=[0, 1, 2, 3, 4])
             >>>
-            >>> # With pre-fixed tasks (still supported):
-            >>> scaled = numbers.map(scale.fix(factor=10))  # [10, 20, 30]
+            >>> # Chain to square each generated number and then sum the squares
+            >>> squared_future = numbers_future.then(square).join(sum_values)
+            >>>
+            >>> # Evaluate the final result
+            >>> evaluate(squared_future)
+            30  # 0^2 + 1^2 + 2^2 + 3^2 + 4^2
+
+        Returns:
+            A `MapTaskFuture` representing the result of applying the mapped task to this
+            future's sequence of values.
         """
         from daglite.tasks import FixedParamTask
         from daglite.tasks import check_overlap_params
@@ -371,33 +514,6 @@ class MapTaskFuture(BaseTaskFuture[R]):
             backend_name=self.backend_name,
         )
 
-    @override
-    def then(
-        self, next_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
-    ) -> TaskFuture[T]:
-        from daglite.tasks import FixedParamTask
-        from daglite.tasks import check_overlap_params
-        from daglite.tasks import get_unbound_param
-
-        if isinstance(next_task, FixedParamTask):
-            check_overlap_params(next_task, kwargs)
-            all_fixed = {**next_task.fixed_kwargs, **kwargs}
-            actual_task = next_task.task
-        else:
-            all_fixed = kwargs
-            actual_task = next_task
-
-        # Add unbound param to merged kwargs
-        unbound_param = get_unbound_param(actual_task, all_fixed)
-        merged_kwargs = dict(all_fixed)
-        merged_kwargs[unbound_param] = self
-
-        return TaskFuture(
-            task=actual_task,
-            kwargs=merged_kwargs,
-            backend_name=self.backend_name,
-        )
-
     @overload
     def join(self, reducer_task: Task[Any, T]) -> "TaskFuture[T]": ...
 
@@ -410,7 +526,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
         self, reducer_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
     ) -> TaskFuture[T]:
         """
-        Reduce this sequence to a single value (alias for `then()`).
+        Reduce this sequence to a single value by applying a reducer task.
 
         Args:
             reducer_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
@@ -420,7 +536,28 @@ class MapTaskFuture(BaseTaskFuture[R]):
         Returns:
             A TaskFuture representing the reduced single value.
         """
-        return self.then(reducer_task, **kwargs)
+        from daglite.tasks import FixedParamTask
+        from daglite.tasks import check_overlap_params
+        from daglite.tasks import get_unbound_param
+
+        if isinstance(reducer_task, FixedParamTask):
+            check_overlap_params(reducer_task, kwargs)
+            all_fixed = {**reducer_task.fixed_kwargs, **kwargs}
+            actual_task = reducer_task.task
+        else:
+            all_fixed = kwargs
+            actual_task = reducer_task
+
+        # Add unbound param to merged kwargs
+        unbound_param = get_unbound_param(actual_task, all_fixed)
+        merged_kwargs = dict(all_fixed)
+        merged_kwargs[unbound_param] = self
+
+        return TaskFuture(
+            task=actual_task,
+            kwargs=merged_kwargs,
+            backend_name=self.backend_name,
+        )
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
@@ -445,9 +582,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
                 fixed_kwargs[name] = ParamInput.from_value(value)
 
         for name, seq in self.mapped_kwargs.items():
-            if isinstance(seq, BaseTaskFuture):
+            if isinstance(seq, MapTaskFuture):
+                # MapTaskFuture produces a sequence - iterate over it
+                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
+            elif isinstance(seq, TaskFuture):
+                # TaskFuture produces a sequence (e.g., list) - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
             else:
+                # Concrete sequence - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
         return MapTaskNode(

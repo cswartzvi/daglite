@@ -93,80 +93,11 @@ class TestTaskFutureThen:
         assert isinstance(evaluate(result), str)
 
 
-class TestMapTaskFutureThen:
-    """Tests for MapTaskFuture.then() chaining."""
-
-    def test_map_task_future_then(self) -> None:
-        """MapTaskFuture.then() passes entire list to next task."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3, 4])
-        result = numbers.then(sum_list)
-        assert evaluate(result) == 20  # (2 + 4 + 6 + 8)
-
-    def test_map_task_future_then_with_kwargs(self) -> None:
-        """MapTaskFuture.then() with additional kwargs."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def weighted_sum(xs: list[int], weight: float) -> float:
-            return sum(xs) * weight
-
-        numbers = double.product(x=[1, 2, 3])
-        result = numbers.then(weighted_sum, weight=0.5)
-        assert evaluate(result) == 6.0  # (2 + 4 + 6) * 0.5
-
-    def test_map_task_future_then_equivalent_to_join(self) -> None:
-        """MapTaskFuture.then() is equivalent to .join()."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3, 4])
-        result_then = numbers.then(sum_list)
-        result_join = numbers.join(sum_list)
-
-        assert evaluate(result_then) == evaluate(result_join)
-
-    def test_then_return_type_preservation(self) -> None:
-        """MapTaskFuture.then() preserves return types correctly."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def sum_list(xs: list[int]) -> int:
-            return sum(xs)
-
-        numbers = double.product(x=[1, 2, 3])
-        total = numbers.then(sum_list)
-        from daglite.tasks import TaskFuture
-
-        assert isinstance(total, TaskFuture)
-        assert isinstance(evaluate(total), int)
-
-
 class TestMapOperations:
-    """Tests for .map() fluent API."""
+    """Tests for .then() fluent API."""
 
-    def test_map_with_kwargs(self) -> None:
-        """Fluent .map() accepts inline kwargs."""
+    def test_mapped_then_with_kwargs(self) -> None:
+        """Fluent .then() accepts inline kwargs."""
 
         @task
         def scale(x: int, factor: int) -> int:
@@ -176,11 +107,11 @@ class TestMapOperations:
         def identity(x: int) -> int:
             return x
 
-        result = evaluate(identity.product(x=[1, 2, 3]).map(scale, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).then(scale, factor=2))
         assert result == [2, 4, 6]  # Each element * 2
 
-    def test_map_chain_with_kwargs(self) -> None:
-        """Fluent .map() chains with inline kwargs."""
+    def test_mapped_then_chain_with_kwargs(self) -> None:
+        """Fluent .then() chains with inline kwargs."""
 
         @task
         def identity(x: int) -> int:
@@ -195,7 +126,7 @@ class TestMapOperations:
             return x * factor
 
         # [1, 2, 3] -> add(y=10) -> [11, 12, 13] -> multiply(factor=2) -> [22, 24, 26]
-        result = evaluate(identity.product(x=[1, 2, 3]).map(add, y=10).map(multiply, factor=2))
+        result = evaluate(identity.product(x=[1, 2, 3]).then(add, y=10).then(multiply, factor=2))
         assert result == [22, 24, 26]
 
 
@@ -238,8 +169,8 @@ class TestJoinOperations:
         # [1, 2, 3] -> add(y=5) -> [6, 7, 8] -> multiply(factor=2) -> [12, 14, 16] -> sum+10 -> 52
         result = evaluate(
             identity.product(x=[1, 2, 3])
-            .map(add, y=5)
-            .map(multiply, factor=2)
+            .then(add, y=5)
+            .then(multiply, factor=2)
             .join(reduce_with_offset, offset=10)
         )
         assert result == 52  # (12 + 14 + 16) + 10
@@ -273,7 +204,7 @@ class TestComplexPipelines:
         # sum = 130, * 2 = 260
         result = evaluate(
             scale.product(x=fetch_range.bind(count=4), factor=[2, 3])
-            .map(add_values, offset=10)
+            .then(add_values, offset=10)
             .join(compute_total, multiplier=2)
         )
         assert result == 260
@@ -297,7 +228,7 @@ class TestComplexPipelines:
         # [1,2,3] zip [2,3,4] -> [2, 6, 12] -> add 10 -> [12, 16, 22] -> sum*2 -> 100
         result = evaluate(
             scale.zip(x=[1, 2, 3], factor=[2, 3, 4])
-            .map(add.fix(offset=10))
+            .then(add.fix(offset=10))
             .join(sum_with_multiplier, multiplier=2)
         )
         assert result == 100  # (12 + 16 + 22) * 2
@@ -335,7 +266,7 @@ class TestComplexPipelines:
         list_future = start.bind(x=5).then(increment, amount=3).then(transform_list)
         result = evaluate(
             scale.product(x=list_future, factor=[2, 3])
-            .map(add_offset, offset=10)
+            .then(add_offset, offset=10)
             .join(sum_with_bonus, bonus=100)
         )
         assert result == 370  # (36+38+40+49+52+55) + 100
@@ -372,7 +303,7 @@ class TestComplexPipelines:
         multipliers = fetch_multipliers.bind(count=3)
 
         result = evaluate(
-            multiply.zip(x=base, factor=multipliers).map(add_offset, offset=5).join(product)
+            multiply.zip(x=base, factor=multipliers).then(add_offset, offset=5).join(product)
         )
         assert result == 13125  # 15 * 25 * 35
 
@@ -740,3 +671,112 @@ class TestSplitOperations:
         assert evaluate(f1) == evaluate(m1) == 42
         assert evaluate(f2) == evaluate(m2) == "test"
         assert evaluate(f3) is True and evaluate(m3) is True
+
+
+class TestThenProductAndZip:
+    """Tests for TaskFuture.then_product() and TaskFuture.then_zip() fan-out operations."""
+
+    def test_then_product_basic(self) -> None:
+        """then_product() creates Cartesian product fan-out."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n * 2
+
+        @task
+        def combine(x: int, y: int) -> int:
+            return x + y
+
+        # Scalar result fans out with y=[10, 20, 30]
+        result = evaluate(prepare.bind(n=5).then_product(combine, y=[10, 20, 30]))
+        assert result == [20, 30, 40]  # 10 + [10, 20, 30]
+
+    def test_then_product_multiple_params(self) -> None:
+        """then_product() handles multiple mapped parameters via Cartesian product."""
+
+        @task
+        def start() -> int:
+            return 1
+
+        @task
+        def multiply(x: int, y: int, z: int) -> int:
+            return x * y * z
+
+        # x=1 fans out with y=[2, 3] and z=[10, 20]
+        result = evaluate(start.bind().then_product(multiply, y=[2, 3], z=[10, 20]))
+        assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
+
+    def test_then_product_with_fixed_param(self) -> None:
+        """then_product() works with pre-fixed tasks."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n + 5
+
+        @task
+        def compute(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        fixed_compute = compute.fix(z=100)
+        result = evaluate(prepare.bind(n=3).then_product(fixed_compute, y=[1, 2, 3]))
+        assert result == [109, 110, 111]  # 8 + [1, 2, 3] + 100
+
+    def test_then_zip_basic(self) -> None:
+        """then_zip() creates element-wise fan-out."""
+
+        @task
+        def scalar() -> int:
+            return 12
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        # Scalar 12 paired element-wise with y=[10, 20, 30]
+        result = evaluate(scalar.bind().then_zip(multiply, y=[10, 20, 30]))
+        assert result == [120, 240, 360]  # 12 * [10, 20, 30]
+
+    def test_then_zip_multiple_params(self) -> None:
+        """then_zip() handles multiple mapped parameters via zip."""
+
+        @task
+        def start() -> int:
+            return 2
+
+        @task
+        def compute(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        # x=2 zipped with y=[10, 20, 30] and z=[1, 2, 3]
+        result = evaluate(start.bind().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
+        assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
+
+    def test_then_zip_with_fixed_param(self) -> None:
+        """then_zip() works with pre-fixed tasks."""
+
+        @task
+        def prepare() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int, offset: int) -> int:
+            return x + y + offset
+
+        fixed_combine = combine.fix(offset=100)
+        result = evaluate(prepare.bind().then_zip(fixed_combine, y=[1, 2, 3]))
+        assert result == [106, 107, 108]  # 5 + [1, 2, 3] + 100
+
+    def test_scalar_broadcasting_in_product(self) -> None:
+        """Scalar TaskFuture results act as fixed constants in product mode."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n * 2
+
+        @task
+        def combine(x: int, y: int) -> int:
+            return x + y
+
+        # prepare result is scalar, used as constant across all iterations
+        result = evaluate(prepare.product(n=[1, 2, 3]).then(combine.fix(y=10)))
+        assert result == [12, 14, 16]  # [2, 4, 6] + 10
