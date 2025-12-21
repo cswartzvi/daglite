@@ -150,10 +150,10 @@ class TaskFuture(BaseTaskFuture[R]):
             >>> def combine(x: int, y: int) -> int:
             >>>     return x + y
             >>>
-            >>> # Create [2, 4, 6] then combine with [10, 20] in Cartesian product
-            >>> future = prepare.product(n=[1, 2, 3]).then_product(combine, y=[10, 20])
+            >>> # Prepare single value, then fan out with y in Cartesian product
+            >>> future = prepare.bind(n=5).then_product(combine, y=[10, 20, 30])
             >>> evaluate(future)
-            [12, 22, 14, 24, 16, 26]
+            [20, 30, 40]  # 10 combined with [10, 20, 30]
         """
         from daglite.exceptions import ParameterError
         from daglite.tasks import FixedParamTask
@@ -223,10 +223,10 @@ class TaskFuture(BaseTaskFuture[R]):
             >>> def combine(x: int, y: int) -> int:
             >>>     return x + y
             >>>
-            >>> # Create [2, 4, 6] then zip with [10, 20, 30]
-            >>> future = prepare.product(n=[1, 2, 3]).then_zip(combine, y=[10, 20, 30])
+            >>> # Prepare single value, then zip with y
+            >>> future = prepare.bind(n=5).then_zip(combine, y=[10, 20, 30])
             >>> evaluate(future)
-            [12, 24, 36]
+            [20, 30, 40]  # 10 zipped with [10, 20, 30]
         """
         from daglite.exceptions import ParameterError
         from daglite.tasks import FixedParamTask
@@ -453,8 +453,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
         """
         Chain this mapped future as input to another mapped task during evaluation.
 
-        Note that the mapped task must is applied to each element of this future's sequence of
-        values continuing
+        The mapped task is applied to each element of this future's sequence of values,
+        continuing the chain.
 
         Args:
             mapped_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
