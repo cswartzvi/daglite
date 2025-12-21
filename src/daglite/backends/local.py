@@ -4,6 +4,8 @@ Backend implementations for local execution (direct, threading, multiprocessing)
 Warning: This module is intended for internal use only.
 """
 
+import asyncio
+import inspect
 import os
 import sys
 from concurrent.futures import Future
@@ -16,7 +18,6 @@ from pluggy import PluginManager
 from typing_extensions import override
 
 from daglite.backends.base import Backend
-from daglite.backends.context import reset_execution_context
 from daglite.backends.context import set_execution_context
 from daglite.plugins.manager import deserialize_plugin_manager
 from daglite.plugins.manager import serialize_plugin_manager
@@ -88,6 +89,8 @@ class ThreadBackend(Backend):
     def _submit_impl(
         self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> Future[Any]:
+        if inspect.iscoroutinefunction(func):
+            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
         return self._executor.submit(func, inputs, **kwargs)
 
 
@@ -139,12 +142,19 @@ class ProcessBackend(Backend):
 
     @override
     def _submit_impl(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
+        if inspect.iscoroutinefunction(func):
+            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
         return self._executor.submit(func, inputs, **kwargs)
 
 
 def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
     """Initializer for thread pool workers to set execution context."""
     set_execution_context(plugin_manager, reporter)
+
+
+def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
+    """Run an async function to completion in a worker thread/process."""
+    return asyncio.run(func(inputs, **kwargs))
 
 
 def _process_initilizer(serialized_plugin_manager: dict, queue) -> None:
