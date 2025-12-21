@@ -671,3 +671,112 @@ class TestSplitOperations:
         assert evaluate(f1) == evaluate(m1) == 42
         assert evaluate(f2) == evaluate(m2) == "test"
         assert evaluate(f3) is True and evaluate(m3) is True
+
+
+class TestThenProductAndZip:
+    """Tests for TaskFuture.then_product() and TaskFuture.then_zip() fan-out operations."""
+
+    def test_then_product_basic(self) -> None:
+        """then_product() creates Cartesian product fan-out."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n * 2
+
+        @task
+        def combine(x: int, y: int) -> int:
+            return x + y
+
+        # Scalar result fans out with y=[10, 20, 30]
+        result = evaluate(prepare.bind(n=5).then_product(combine, y=[10, 20, 30]))
+        assert result == [20, 30, 40]  # 10 + [10, 20, 30]
+
+    def test_then_product_multiple_params(self) -> None:
+        """then_product() handles multiple mapped parameters via Cartesian product."""
+
+        @task
+        def start() -> int:
+            return 1
+
+        @task
+        def multiply(x: int, y: int, z: int) -> int:
+            return x * y * z
+
+        # x=1 fans out with y=[2, 3] and z=[10, 20]
+        result = evaluate(start.bind().then_product(multiply, y=[2, 3], z=[10, 20]))
+        assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
+
+    def test_then_product_with_fixed_param(self) -> None:
+        """then_product() works with pre-fixed tasks."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n + 5
+
+        @task
+        def compute(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        fixed_compute = compute.fix(z=100)
+        result = evaluate(prepare.bind(n=3).then_product(fixed_compute, y=[1, 2, 3]))
+        assert result == [109, 110, 111]  # 8 + [1, 2, 3] + 100
+
+    def test_then_zip_basic(self) -> None:
+        """then_zip() creates element-wise fan-out."""
+
+        @task
+        def scalar() -> int:
+            return 12
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        # Scalar 12 paired element-wise with y=[10, 20, 30]
+        result = evaluate(scalar.bind().then_zip(multiply, y=[10, 20, 30]))
+        assert result == [120, 240, 360]  # 12 * [10, 20, 30]
+
+    def test_then_zip_multiple_params(self) -> None:
+        """then_zip() handles multiple mapped parameters via zip."""
+
+        @task
+        def start() -> int:
+            return 2
+
+        @task
+        def compute(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        # x=2 zipped with y=[10, 20, 30] and z=[1, 2, 3]
+        result = evaluate(start.bind().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
+        assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
+
+    def test_then_zip_with_fixed_param(self) -> None:
+        """then_zip() works with pre-fixed tasks."""
+
+        @task
+        def prepare() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int, offset: int) -> int:
+            return x + y + offset
+
+        fixed_combine = combine.fix(offset=100)
+        result = evaluate(prepare.bind().then_zip(fixed_combine, y=[1, 2, 3]))
+        assert result == [106, 107, 108]  # 5 + [1, 2, 3] + 100
+
+    def test_scalar_broadcasting_in_product(self) -> None:
+        """Scalar TaskFuture results act as fixed constants in product mode."""
+
+        @task
+        def prepare(n: int) -> int:
+            return n * 2
+
+        @task
+        def combine(x: int, y: int) -> int:
+            return x + y
+
+        # prepare result is scalar, used as constant across all iterations
+        result = evaluate(prepare.product(n=[1, 2, 3]).then(combine.fix(y=10)))
+        assert result == [12, 14, 16]  # [2, 4, 6] + 10

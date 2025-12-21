@@ -249,8 +249,135 @@ class TestInvalidTaskAndTaskFutureUsage:
             """Simple division function."""
             return x / y
 
+    def test_then_product_with_invalid_params(self) -> None:
+        """then_product() fails when given parameters that don't exist."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        with pytest.raises(ParameterError, match="Invalid parameters for task"):
+            start.bind().then_product(combine, z=[1, 2, 3])
+
+    def test_then_product_with_non_iterable_params(self) -> None:
+        """then_product() requires mapped parameters to be iterable."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            divide.zip(x=10, y=5)
+            start.bind().then_product(combine, y=10)
+
+    def test_then_product_with_overlapping_params(self) -> None:
+        """then_product() fails when trying to rebind fixed parameters."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int, z: int) -> int:  # pragma: no cover
+            return x + y + z
+
+        fixed = combine.fix(y=10)
+
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            start.bind().then_product(fixed, y=[1, 2, 3])
+
+    def test_then_zip_with_invalid_params(self) -> None:
+        """then_zip() fails when given parameters that don't exist."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        with pytest.raises(ParameterError, match="Invalid parameters for task"):
+            start.bind().then_zip(combine, z=[1, 2, 3])
+
+    def test_then_zip_with_non_iterable_params(self) -> None:
+        """then_zip() requires mapped parameters to be iterable."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        with pytest.raises(ParameterError, match="Non-iterable parameters"):
+            start.bind().then_zip(combine, y=10)
+
+    def test_then_zip_with_mismatched_lengths(self) -> None:
+        """then_zip() fails when mapped parameter lengths don't match."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def compute(x: int, y: int, z: int) -> int:  # pragma: no cover
+            return x + y + z
+
+        with pytest.raises(ParameterError, match="Mixed lengths"):
+            start.bind().then_zip(compute, y=[1, 2, 3], z=[10, 20])
+
+    def test_then_zip_with_overlapping_params(self) -> None:
+        """then_zip() fails when trying to rebind fixed parameters."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def combine(x: int, y: int, z: int) -> int:  # pragma: no cover
+            return x + y + z
+
+        fixed = combine.fix(y=10)
+
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            start.bind().then_zip(fixed, y=[1, 2, 3])
+
+    def test_then_product_with_no_mapped_params(self) -> None:
+        """then_product() fails when no mapped parameters are provided."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def identity(x: int) -> int:  # pragma: no cover
+            return x
+
+        with pytest.raises(ParameterError, match="At least one mapped parameter required"):
+            start.bind().then_product(identity)
+
+    def test_then_zip_with_no_mapped_params(self) -> None:
+        """then_zip() fails when no mapped parameters are provided."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def identity(x: int) -> int:  # pragma: no cover
+            return x
+
+        with pytest.raises(ParameterError, match="At least one mapped parameter required"):
+            start.bind().then_zip(identity)
 
     def test_task_zip_with_overlapping_params(self) -> None:
         """Pairwise operations fail when attempting to rebind fixed parameters."""
