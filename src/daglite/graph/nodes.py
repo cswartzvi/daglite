@@ -50,11 +50,6 @@ class TaskNode(BaseGraphNode):
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from daglite.backends.context import get_plugin_manager
-        from daglite.backends.context import get_reporter
-
-        plugin_manager = get_plugin_manager()
-        reporter = get_reporter()
         metadata = self.to_metadata()
 
         return _run_sync_impl(
@@ -62,17 +57,10 @@ class TaskNode(BaseGraphNode):
             key=self.name,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
-            plugin_manager=plugin_manager,
-            reporter=reporter,
         )
 
     @override
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from daglite.backends.context import get_plugin_manager
-        from daglite.backends.context import get_reporter
-
-        plugin_manager = get_plugin_manager()
-        reporter = get_reporter()
         metadata = self.to_metadata()
 
         return await _run_async_impl(
@@ -80,8 +68,6 @@ class TaskNode(BaseGraphNode):
             key=self.name,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
-            plugin_manager=plugin_manager,
-            reporter=reporter,
         )
 
 
@@ -174,11 +160,6 @@ class MapTaskNode(BaseMapGraphNode):
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from daglite.backends.context import get_plugin_manager
-        from daglite.backends.context import get_reporter
-
-        plugin_manager = get_plugin_manager()
-        reporter = get_reporter()
         metadata = self.to_metadata()
         node_key = f"{self.name}-{kwargs['iteration_index']}"
 
@@ -187,17 +168,10 @@ class MapTaskNode(BaseMapGraphNode):
             key=node_key,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
-            plugin_manager=plugin_manager,
-            reporter=reporter,
         )
 
     @override
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from daglite.backends.context import get_plugin_manager
-        from daglite.backends.context import get_reporter
-
-        plugin_manager = get_plugin_manager()
-        reporter = get_reporter()
         metadata = self.to_metadata()
         node_key = f"{self.name}-{kwargs['iteration_index']}"
 
@@ -206,8 +180,6 @@ class MapTaskNode(BaseMapGraphNode):
             key=node_key,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
-            plugin_manager=plugin_manager,
-            reporter=reporter,
         )
 
 
@@ -219,10 +191,14 @@ def _run_sync_impl(
     key: str,
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
-    plugin_manager: Any,
-    reporter: Any,
 ) -> Any:
     """Helper to run a node synchronously with context setup."""
+    from daglite.backends.context import get_plugin_manager
+    from daglite.backends.context import get_reporter
+
+    # Get context from the executing thread
+    plugin_manager = get_plugin_manager()
+    reporter = get_reporter()
 
     plugin_manager.hook.before_node_execute(
         key=key,
@@ -266,11 +242,16 @@ async def _run_async_impl(
     key: str,
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
-    plugin_manager: Any,
-    reporter: Any,
 ) -> Any:
     """Helper to run a node asynchronously with context setup."""
     import inspect
+
+    from daglite.backends.context import get_plugin_manager
+    from daglite.backends.context import get_reporter
+
+    # Get context from the executing thread (important for thread pool execution)
+    plugin_manager = get_plugin_manager()
+    reporter = get_reporter()
 
     plugin_manager.hook.before_node_execute(
         key=key,
