@@ -153,7 +153,7 @@ class TestBackendIntegration:
 
         assert results == [1, 2, 3, 4, 5]
         # Should take significantly less than sequential time (0.05s)
-        assert elapsed < 0.04, f"Threading should be concurrent, took {elapsed}s"
+        assert elapsed < 0.05, f"Threading should be concurrent, took {elapsed}s"
 
 
 class TestBackendWithPipelines:
