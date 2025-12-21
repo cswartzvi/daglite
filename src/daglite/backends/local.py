@@ -40,8 +40,9 @@ class SequentialBackend(Backend):
     ) -> Future[Any]:
         future: Future[Any] = Future()
 
-        # Set execution context for immediate execution
-        tokens = set_execution_context(self._plugin_manager, self._reporter)
+        # Set execution context for immediate execution (runs in main thread)
+        # Context cleanup happens when backend stops, not per-task
+        set_execution_context(self._plugin_manager, self._reporter)
 
         try:
             result = func(inputs, **kwargs)
@@ -49,8 +50,6 @@ class SequentialBackend(Backend):
         except Exception as e:
             future.set_exception(e)
 
-        # Reset context after immediate execution
-        reset_execution_context(*tokens)
         return future
 
 
