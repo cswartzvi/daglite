@@ -1,0 +1,8 @@
+status:
+  project:
+    default:
+      target: 90  # TODO: set to 100 for 1.0 release
+  patch:
+    default:
+      target: 0  # TODO: set to 100 for 1.0 release
+      threshold: 0
