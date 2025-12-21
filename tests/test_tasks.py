@@ -11,8 +11,6 @@ integration tests, see tests_evaluation.py.
 
 import pytest
 
-from daglite.backends.local import SequentialBackend
-from daglite.backends.local import ThreadBackend
 from daglite.exceptions import ParameterError
 from daglite.tasks import FixedParamTask
 from daglite.tasks import Task
@@ -33,20 +31,20 @@ class TestTaskValidDefinitions:
         assert isinstance(add, Task)
         assert add.name == "add"
         assert add.description == "Simple addition function."
-        assert isinstance(add.backend, SequentialBackend)
+        assert add.backend_name is None  # Default is None (uses engine's default)
         assert add.func(1, 2) == 3
 
     def test_task_decorator_with_params(self) -> None:
         """Decorator accepts custom name, description, and backend configuration."""
 
-        @task(name="custom_add", description="Custom addition task", backend=ThreadBackend())
+        @task(name="custom_add", description="Custom addition task", backend_name="threading")
         def add(x: int, y: int) -> int:  # pragma: no cover
             """Not used docstring."""
             return x + y
 
         assert add.name == "custom_add"
         assert add.description == "Custom addition task"
-        assert isinstance(add.backend, ThreadBackend)
+        assert add.backend_name == "threading"
 
     def test_async_task_is_async_attribute(self) -> None:
         """Task.is_async correctly identifies async functions."""

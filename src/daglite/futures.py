@@ -3,14 +3,13 @@ from __future__ import annotations
 import abc
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import cached_property
+from dataclasses import field
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
 
 from typing_extensions import override
 
-from daglite.backends import Backend
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
@@ -41,10 +40,16 @@ S6 = TypeVar("S6")
 class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
-    @cached_property
+    _id: UUID = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Generate unique ID at creation time."""
+        object.__setattr__(self, "_id", uuid4())
+
+    @property
     @override
     def id(self) -> UUID:
-        return uuid4()
+        return self._id
 
     @abc.abstractmethod
     def then(
@@ -101,7 +106,7 @@ class TaskFuture(BaseTaskFuture[R]):
     kwargs: Mapping[str, Any]
     """Parameters to be passed to the task during execution, can contain other task futures."""
 
-    backend: Backend
+    backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     @override
@@ -192,26 +197,26 @@ class TaskFuture(BaseTaskFuture[R]):
             DagliteError: If size cannot be inferred from type hints and size parameter is not
             provided.
 
-        Examples:
+        Example:
             With type annotations (size inferred):
             >>> @task
             >>> def make_pair() -> tuple[int, str]:
-            >>>     return (42, "hello")
-            >>>
+            ...     return (42, "hello")
+
             >>> num, text = make_pair.bind().split()
 
             With explicit size:
             >>> @task
             >>> def make_triple():
-            >>>     return (1, 2, 3)
-            >>>
+            ...     return (1, 2, 3)
+
             >>> a, b, c = make_triple.bind().split(size=3)
 
             Chaining after split:
             >>> @task
             >>> def get_coords() -> tuple[int, int]:
-            >>>     return (10, 20)
-            >>>
+            ...     return (10, 20)
+
             >>> x, y = get_coords.bind().split()
             >>> result = process.bind(x=x, y=y)
         """
@@ -255,7 +260,7 @@ class TaskFuture(BaseTaskFuture[R]):
             description=self.task.description,
             func=self.task.func,
             kwargs=kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
 
@@ -292,7 +297,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
     Note that sequence parameters can be a combination of concrete values and `TaskFuture`s.
     """
 
-    backend: Backend
+    backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     @overload
@@ -363,7 +368,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             mode="product",
             fixed_kwargs=all_fixed,
             mapped_kwargs={unbound_param: self},
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @override
@@ -390,7 +395,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
         return TaskFuture(
             task=actual_task,
             kwargs=merged_kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
     @overload
@@ -453,7 +458,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             mode=self.mode,
             fixed_kwargs=fixed_kwargs,
             mapped_kwargs=mapped_kwargs,
-            backend=self.backend,
+            backend_name=self.backend_name,
         )
 
 

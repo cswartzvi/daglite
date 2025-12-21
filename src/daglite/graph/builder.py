@@ -3,11 +3,11 @@
 from uuid import UUID
 
 from daglite.exceptions import GraphConstructionError
+from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphBuilder
-from daglite.graph.base import GraphNode
 
 
-def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
+def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
     """
     Compile a GraphBuilder tree into a dict of GraphNodes keyed by node id.
 
@@ -16,7 +16,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, GraphNode]:
     Raises:
         GraphConstructionError: If a circular dependency is detected.
     """
-    nodes: dict[UUID, GraphNode] = {}
+    nodes: dict[UUID, BaseGraphNode] = {}
     visiting: set[UUID] = set()
     stack: list[tuple[GraphBuilder, bool]] = [(root, False)]
 

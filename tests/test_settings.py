@@ -45,14 +45,12 @@ class TestGlobalSettings:
 
     def test_set_and_get_global_settings(self) -> None:
         """set_global_settings stores and retrieves custom settings."""
-        from daglite.backends.local import _reset_global_pools
 
         custom_settings = DagliteSettings(
             max_backend_threads=16,
             max_parallel_processes=8,
         )
         set_global_settings(custom_settings)
-        _reset_global_pools()  # Reset pools so they pick up new settings
 
         retrieved = get_global_settings()
         assert retrieved.max_backend_threads == 16
@@ -60,15 +58,12 @@ class TestGlobalSettings:
 
         # Cleanup: reset to defaults for other tests
         set_global_settings(DagliteSettings())
-        _reset_global_pools()
 
     def test_settings_persist_across_calls(self) -> None:
         """Global settings persist across multiple get_global_settings calls."""
-        from daglite.backends.local import _reset_global_pools
 
         custom_settings = DagliteSettings(max_backend_threads=24)
         set_global_settings(custom_settings)
-        _reset_global_pools()
 
         settings1 = get_global_settings()
         settings2 = get_global_settings()
@@ -79,4 +74,3 @@ class TestGlobalSettings:
 
         # Cleanup
         set_global_settings(DagliteSettings())
-        _reset_global_pools()

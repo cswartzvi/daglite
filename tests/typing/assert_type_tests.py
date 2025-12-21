@@ -117,9 +117,9 @@ def test_task_basic_operations() -> None:
     assert_type(combined, TaskFuture[int])
 
     # with_options works on tasks and fixed tasks
-    with_options = score.with_options(backend="threading").bind(x=1, y=2)
+    with_options = score.with_options(backend_name="threading").bind(x=1, y=2)
     assert_type(with_options, TaskFuture[int])
-    fixed_with_options = score.fix(y=10).with_options(backend="threading").bind(x=5)
+    fixed_with_options = score.fix(y=10).with_options(backend_name="threading").bind(x=5)
     assert_type(fixed_with_options, TaskFuture[int])
 
 

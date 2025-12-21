@@ -1,178 +1,164 @@
+"""
+Backend implementations for local execution (direct, threading, multiprocessing).
+
+Warning: This module is intended for internal use only.
+"""
+
+import asyncio
+import inspect
 import os
 import sys
-from concurrent.futures import Executor
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import as_completed
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable
+from uuid import UUID
 
+from pluggy import PluginManager
 from typing_extensions import override
 
+from daglite.backends.base import Backend
+from daglite.backends.context import set_execution_context
+from daglite.plugins.manager import deserialize_plugin_manager
+from daglite.plugins.manager import serialize_plugin_manager
+from daglite.plugins.reporters import DirectReporter
+from daglite.plugins.reporters import EventReporter
+from daglite.plugins.reporters import ProcessReporter
+from daglite.plugins.reporters import ThreadReporter
 from daglite.settings import get_global_settings
-
-from .base import Backend
-
-T = TypeVar("T")
-
-
-_GLOBAL_THREAD_POOL: ThreadPoolExecutor | None = None
-_GLOBAL_PROCESS_POOL: ProcessPoolExecutor | None = None
-
-
-def _get_global_thread_pool() -> ThreadPoolExecutor:
-    global _GLOBAL_THREAD_POOL
-    if _GLOBAL_THREAD_POOL is None:
-        settings = get_global_settings()
-        max_workers = settings.max_backend_threads
-        _GLOBAL_THREAD_POOL = ThreadPoolExecutor(max_workers=max_workers)
-    return _GLOBAL_THREAD_POOL
-
-
-def _get_global_process_pool() -> ProcessPoolExecutor:
-    global _GLOBAL_PROCESS_POOL
-    if _GLOBAL_PROCESS_POOL is not None:  # pragma: no cover
-        return _GLOBAL_PROCESS_POOL
-
-    import multiprocessing as mp
-    from multiprocessing.context import BaseContext
-
-    settings = get_global_settings()
-    max_workers = settings.max_parallel_processes
-    mp_context: BaseContext
-    if os.name == "nt" or sys.platform == "darwin":
-        # Use 'spawn' on Windows (required) and macOS (fork deprecated)
-        mp_context = mp.get_context("spawn")
-    else:
-        # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
-        mp_context = mp.get_context("fork")
-    _GLOBAL_PROCESS_POOL = ProcessPoolExecutor(max_workers=max_workers, mp_context=mp_context)
-    return _GLOBAL_PROCESS_POOL
-
-
-def _get_global_thread_pool_size() -> int:
-    """Get the actual size of the global thread pool."""
-    settings = get_global_settings()
-    return settings.max_backend_threads
-
-
-def _get_global_process_pool_size() -> int:
-    """Get the actual size of the global process pool."""
-    settings = get_global_settings()
-    return settings.max_parallel_processes
-
-
-def _reset_global_pools() -> None:
-    """
-    Reset global executor pools.
-
-    Useful for testing or after forking processes where the pools may be in
-    an inconsistent state.
-    """
-    global _GLOBAL_THREAD_POOL, _GLOBAL_PROCESS_POOL
-    _GLOBAL_THREAD_POOL = None
-    _GLOBAL_PROCESS_POOL = None
 
 
 class SequentialBackend(Backend):
-    """Executes immediately in current thread, returns completed futures."""
+    """Executes immediately in current thread/process, returns completed futures."""
 
     @override
-    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
-        future: Future[T] = Future()
+    def _get_reporter(self) -> DirectReporter:
+        return DirectReporter(self._event_processor.dispatch)
+
+    @override
+    def _submit_impl(
+        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+    ) -> Future[Any]:
+        future: Future[Any] = Future()
+
+        # Set execution context for immediate execution (runs in main thread)
+        # Context cleanup happens when backend stops, not per-task
+        set_execution_context(self._plugin_manager, self._reporter)
+
         try:
-            result = fn(**kwargs)
+            result = func(inputs, **kwargs)
             future.set_result(result)
         except Exception as e:
             future.set_exception(e)
-        return future
 
-    @override
-    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
-        futures: list[Future[T]] = []
-        for kwargs in calls:
-            future: Future[T] = Future()
-            try:
-                result = fn(**kwargs)
-                future.set_result(result)
-            except Exception as e:
-                future.set_exception(e)
-            futures.append(future)
-        return futures
+        return future
 
 
 class ThreadBackend(Backend):
     """Executes in thread pool, returns pending futures."""
 
-    def __init__(self, max_workers: int | None = None):
-        self._max_workers = max_workers
+    _executor: ThreadPoolExecutor
+    _reporter_id: UUID
 
     @override
-    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
-        executor = _get_global_thread_pool()
-        return executor.submit(fn, **kwargs)
+    def _get_reporter(self) -> ThreadReporter:
+        from queue import Queue
+
+        queue: Queue[Any] = Queue()
+        return ThreadReporter(queue)
 
     @override
-    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
-        executor = _get_global_thread_pool()
-        if self._max_workers is None:
-            return [executor.submit(fn, **kw) for kw in calls]
-        max_concurrent = min(self._max_workers, _get_global_thread_pool_size())
-        futures = _submit_many_limited(executor, fn, calls, max_concurrent)
-        return futures
+    def _start(self) -> None:
+        settings = get_global_settings()
+        max_workers = settings.max_backend_threads
+
+        assert isinstance(self._reporter, ThreadReporter)
+        self._reporter_id = self._event_processor.add_source(self._reporter.queue)
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            initializer=_thread_initializer,
+            initargs=(self._plugin_manager, self._reporter),
+        )
+
+    @override
+    def _stop(self) -> None:
+        self._executor.shutdown(wait=True)
+        self._event_processor.remove_source(self._reporter_id)
+
+    @override
+    def _submit_impl(
+        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+    ) -> Future[Any]:
+        if inspect.iscoroutinefunction(func):
+            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
+        return self._executor.submit(func, inputs, **kwargs)
 
 
 class ProcessBackend(Backend):
     """Executes in process pool, returns pending futures."""
 
-    def __init__(self, max_workers: int | None = None):
-        self._max_workers = max_workers
+    _executor: ProcessPoolExecutor
+    _reporter_id: UUID
 
     @override
-    def submit(self, fn: Callable[..., T], **kwargs: Any) -> Future[T]:
-        executor = _get_global_process_pool()
-        return executor.submit(fn, **kwargs)
+    def _get_reporter(self) -> ProcessReporter:
+        from multiprocessing import Queue
+
+        queue: Queue[Any] = Queue()
+        return ProcessReporter(queue)
 
     @override
-    def submit_many(self, fn: Callable[..., T], calls: list[dict[str, Any]]) -> list[Future[T]]:
-        executor = _get_global_process_pool()
-        if self._max_workers is None:
-            return [executor.submit(fn, **kw) for kw in calls]
-        max_concurrent = min(self._max_workers, _get_global_process_pool_size())
-        futures = _submit_many_limited(executor, fn, calls, max_concurrent)
-        return futures
+    def _start(self) -> None:
+        from multiprocessing import get_context
+        from multiprocessing.context import BaseContext
+
+        settings = get_global_settings()
+        max_workers = settings.max_parallel_processes
+        mp_context: BaseContext
+        if os.name == "nt" or sys.platform == "darwin":
+            # Use 'spawn' on Windows (required) and macOS (fork deprecated)
+            mp_context = get_context("spawn")
+        else:
+            # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
+            mp_context = get_context("fork")
+
+        assert isinstance(self._reporter, ProcessReporter)
+        self._reporter_id = self._event_processor.add_source(self._reporter.queue)
+        serialized_pm = serialize_plugin_manager(self._plugin_manager)
+        self._executor = ProcessPoolExecutor(
+            max_workers=max_workers,
+            mp_context=mp_context,
+            initializer=_process_initializer,
+            initargs=(serialized_pm, self._reporter.queue),
+        )
+
+    @override
+    def _stop(self) -> None:
+        self._executor.shutdown(wait=True)
+        self._event_processor.remove_source(self._reporter_id)
+
+        assert isinstance(self._reporter, ProcessReporter)
+        self._reporter.queue.close()
+
+    @override
+    def _submit_impl(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
+        if inspect.iscoroutinefunction(func):
+            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
+        return self._executor.submit(func, inputs, **kwargs)
 
 
-def _submit_many_limited(
-    executor: Executor,
-    fn: Callable[..., T],
-    calls: list[dict[str, Any]],
-    max_concurrent: int,
-) -> list[Future[T]]:
-    """Submit calls to executor with concurrency limit."""
-    # Pre-create all futures
-    futures: list[Future[T]] = [Future() for _ in calls]
+def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
+    """Initializer for thread pool workers to set execution context."""
+    set_execution_context(plugin_manager, reporter)
 
-    remaining = list(enumerate(calls))
-    in_flight: dict[Future, int] = {}  # executor future -> output index
 
-    while remaining or in_flight:
-        # Submit up to limit
-        while remaining and len(in_flight) < max_concurrent:
-            idx, kwargs = remaining.pop(0)
-            exec_future = executor.submit(fn, **kwargs)
-            in_flight[exec_future] = idx
+def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
+    """Run an async function to completion in a worker thread/process."""
+    return asyncio.run(func(inputs, **kwargs))
 
-        # Wait for one to complete
-        if in_flight:  # pragma: no branch
-            done = next(as_completed(in_flight.keys()))
-            idx = in_flight.pop(done)
 
-            # Transfer result to output future
-            try:
-                result = done.result()
-                futures[idx].set_result(result)
-            except Exception as e:  # pragma: no cover
-                futures[idx].set_exception(e)
-
-    return futures
+def _process_initializer(serialized_plugin_manager: dict, queue) -> None:
+    """Initializer for process pool workers to set execution context."""
+    plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
+    reporter = ProcessReporter(queue)
+    set_execution_context(plugin_manager, reporter)

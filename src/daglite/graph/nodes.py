@@ -1,17 +1,18 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+import time
 from collections.abc import Mapping
-from concurrent.futures import Future
 from dataclasses import dataclass
-from functools import cached_property
 from typing import Any, Callable, TypeVar
+from uuid import UUID
 
 from typing_extensions import override
 
-from daglite.backends import Backend
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import GraphNode
+from daglite.graph.base import BaseGraphNode
+from daglite.graph.base import BaseMapGraphNode
+from daglite.graph.base import GraphMetadata
 from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
 
@@ -19,7 +20,7 @@ T_co = TypeVar("T_co", covariant=True)
 
 
 @dataclass(frozen=True)
-class TaskNode(GraphNode):
+class TaskNode(BaseGraphNode):
     """Basic function task node representation within the graph IR."""
 
     func: Callable
@@ -28,22 +29,50 @@ class TaskNode(GraphNode):
     kwargs: Mapping[str, ParamInput]
     """Keyword parameters for the task function."""
 
-    @cached_property
+    @property
     @override
     def kind(self) -> NodeKind:
         return "task"
 
     @override
-    def inputs(self) -> list[tuple[str, ParamInput]]:
-        return list(self.kwargs.items())
+    def dependencies(self) -> set[UUID]:
+        return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
 
     @override
-    def submit(self, resolved_backend: Backend, resolved_inputs: dict[str, Any]) -> Future[Any]:
-        return resolved_backend.submit(self.func, **resolved_inputs)
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
+        inputs = {}
+        for name, param in self.kwargs.items():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(completed_nodes)
+            else:
+                inputs[name] = param.resolve(completed_nodes)
+        return inputs
+
+    @override
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        metadata = self.to_metadata()
+
+        return _run_sync_impl(
+            func=self.func,
+            key=self.name,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+        )
+
+    @override
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        metadata = self.to_metadata()
+
+        return await _run_async_impl(
+            func=self.func,
+            key=self.name,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+        )
 
 
 @dataclass(frozen=True)
-class MapTaskNode(GraphNode):
+class MapTaskNode(BaseMapGraphNode):
     """Map function task node representation within the graph IR."""
 
     func: Callable
@@ -58,20 +87,43 @@ class MapTaskNode(GraphNode):
     mapped_kwargs: Mapping[str, ParamInput]
     """Mapped keyword arguments for the mapped function."""
 
-    @cached_property
     @override
-    def kind(self) -> NodeKind:
-        return "map"
+    def dependencies(self) -> set[UUID]:
+        deps = set()
+        for param in self.fixed_kwargs.values():
+            if param.is_ref and param.ref is not None:
+                deps.add(param.ref)
+        for param in self.mapped_kwargs.values():
+            if param.is_ref and param.ref is not None:
+                deps.add(param.ref)
+        return deps
 
     @override
-    def inputs(self) -> list[tuple[str, ParamInput]]:
-        return [*self.fixed_kwargs.items(), *self.mapped_kwargs.items()]
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
+        inputs = {}
 
-    def _build_map_calls(
-        self, fixed: Mapping[str, Any], mapped: Mapping[str, Any]
-    ) -> list[dict[str, Any]]:
-        """Build the list of function calls for map execution."""
+        # Resolve fixed kwargs
+        for name, param in self.fixed_kwargs.items():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(completed_nodes)
+            else:
+                inputs[name] = param.resolve(completed_nodes)
+
+        # Resolve mapped kwargs
+        for name, param in self.mapped_kwargs.items():
+            if param.kind in ("sequence", "sequence_ref"):
+                inputs[name] = param.resolve_sequence(completed_nodes)
+            else:
+                inputs[name] = param.resolve(completed_nodes)
+
+        return inputs
+
+    @override
+    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
         from itertools import product
+
+        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
+        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
 
         calls: list[dict[str, Any]] = []
 
@@ -107,11 +159,137 @@ class MapTaskNode(GraphNode):
         return calls
 
     @override
-    def submit(
-        self, resolved_backend: Backend, resolved_inputs: dict[str, Any]
-    ) -> list[Future[Any]]:
-        """Submit multiple task executions."""
-        fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
-        mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
-        calls = self._build_map_calls(fixed, mapped)
-        return resolved_backend.submit_many(self.func, calls)
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        metadata = self.to_metadata()
+        node_key = f"{self.name}-{kwargs['iteration_index']}"
+
+        return _run_sync_impl(
+            func=self.func,
+            key=node_key,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+        )
+
+    @override
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        metadata = self.to_metadata()
+        node_key = f"{self.name}-{kwargs['iteration_index']}"
+
+        return await _run_async_impl(
+            func=self.func,
+            key=node_key,
+            metadata=metadata,
+            resolved_inputs=resolved_inputs,
+        )
+
+
+# region Helpers
+
+
+def _run_sync_impl(
+    func: Callable[..., Any],
+    key: str,
+    metadata: GraphMetadata,
+    resolved_inputs: dict[str, Any],
+) -> Any:
+    """Helper to run a node synchronously with context setup."""
+    from daglite.backends.context import get_plugin_manager
+    from daglite.backends.context import get_reporter
+
+    # Get context from the executing thread
+    plugin_manager = get_plugin_manager()
+    reporter = get_reporter()
+
+    plugin_manager.hook.before_node_execute(
+        key=key,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        reporter=reporter,
+    )
+
+    start_time = time.time()
+    try:
+        result = func(**resolved_inputs)
+        duration = time.time() - start_time
+
+        plugin_manager.hook.after_node_execute(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            duration=duration,
+            reporter=reporter,
+        )
+
+        return result
+
+    except Exception as error:
+        duration = time.time() - start_time
+
+        plugin_manager.hook.on_node_error(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            error=error,
+            duration=duration,
+            reporter=reporter,
+        )
+        raise
+
+
+async def _run_async_impl(
+    func: Callable[..., Any],
+    key: str,
+    metadata: GraphMetadata,
+    resolved_inputs: dict[str, Any],
+) -> Any:
+    """Helper to run a node asynchronously with context setup."""
+    import inspect
+
+    from daglite.backends.context import get_plugin_manager
+    from daglite.backends.context import get_reporter
+
+    # Get context from the executing thread (important for thread pool execution)
+    plugin_manager = get_plugin_manager()
+    reporter = get_reporter()
+
+    plugin_manager.hook.before_node_execute(
+        key=key,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        reporter=reporter,
+    )
+
+    start_time = time.time()
+    try:
+        # Handle both async and sync functions
+        if inspect.iscoroutinefunction(func):
+            result = await func(**resolved_inputs)
+        else:
+            result = func(**resolved_inputs)
+
+        duration = time.time() - start_time
+
+        plugin_manager.hook.after_node_execute(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            duration=duration,
+            reporter=reporter,
+        )
+
+        return result
+
+    except Exception as error:
+        duration = time.time() - start_time
+
+        plugin_manager.hook.on_node_error(
+            key=key,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            error=error,
+            duration=duration,
+            reporter=reporter,
+        )
+        raise

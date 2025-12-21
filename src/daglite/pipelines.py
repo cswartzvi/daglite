@@ -38,13 +38,10 @@ def pipeline(
     to parameterize DAG construction.
 
     Args:
-        func (Callable[P, R], optional):
-            The function to wrap. When used without parentheses (`@pipeline`), this is
+        func: The function to wrap. When used without parentheses (`@pipeline`), this is
             automatically passed. When used with parentheses (`@pipeline()`), this is None.
-        name (str, optional):
-            Custom name for the pipeline. Defaults to the function's `__name__`.
-        description (str, optional):
-            Pipeline description. Defaults to the function's docstring.
+        name: Custom name for the pipeline. Defaults to the function's `__name__`.
+        description: Pipeline description. Defaults to the function's docstring.
 
     Returns:
         Either a `Pipeline` (when used as `@pipeline`) or a decorator function
@@ -54,12 +51,12 @@ def pipeline(
         Basic usage
         >>> @pipeline
         >>> def my_pipeline(x: int, y: int) -> GraphBuilder:
-        >>>     return some_task.bind(x=x, y=y)
+        ...     return some_task.bind(x=x, y=y)
 
         With parameters
         >>> @pipeline(name="custom_pipeline", description="Does something cool")
         >>> def my_pipeline(x: int, y: int) -> GraphBuilder:
-        >>>     return some_task.bind(x=x, y=y)
+        ...     return some_task.bind(x=x, y=y)
     """
 
     def decorator(fn: Callable[P, R]) -> Pipeline[P, R]:

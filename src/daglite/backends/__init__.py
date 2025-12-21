@@ -1,40 +1,87 @@
-from daglite.backends.local import ProcessBackend
-from daglite.backends.local import SequentialBackend
-from daglite.backends.local import ThreadBackend
-from daglite.exceptions import BackendError
+from pluggy import PluginManager
 
-from .base import Backend
+from daglite.backends.base import Backend
+from daglite.plugins.events import EventProcessor
 
 
-def find_backend(backend: str | Backend | None = None) -> Backend:
-    """
-    Find a backend class by name.
+class BackendManager:
+    """Manages global backend instance."""
 
-    Args:
-        backend (daglite.engine.Backend | str, optional):
-            Name or instance of the backend to find. If an instance is given, it is
-            returned directly. If None, defaults to "sequential".
+    def __init__(self, plugin_manager: PluginManager, event_processor: EventProcessor) -> None:
+        from daglite.backends.local import ProcessBackend
+        from daglite.backends.local import SequentialBackend
+        from daglite.backends.local import ThreadBackend
 
-    Returns:
-        An instance of the requested backend class (or the default).
-    """
+        self._started = False
+        self._plugin_manager = plugin_manager
+        self._event_processor = event_processor
 
-    if isinstance(backend, Backend):
-        return backend
+        self._cached_backends: dict[str, Backend] = {}
+        self._backend_types: dict[str, type[Backend]] = {
+            "sequential": SequentialBackend,
+            "synchronous": SequentialBackend,  # alias
+            "threading": ThreadBackend,
+            "threads": ThreadBackend,  # alias
+            "multiprocessing": ProcessBackend,
+            "processes": ProcessBackend,  # alias
+        }
 
-    backend = backend if backend is not None else "sequential"
+        # TODO : dynamic discovery of backends from entry points
 
-    backends = {
-        "sequential": SequentialBackend,
-        "synchronous": SequentialBackend,
-        "threading": ThreadBackend,
-        "threads": ThreadBackend,
-        "multiprocessing": ProcessBackend,
-        "processes": ProcessBackend,
-    }
+    def get(self, backend_name: str | None = None) -> Backend:
+        """
+        Get or create backend instance by name.
 
-    # TODO : dynamic discovery of backends from entry points
+        Args:
+            backend_name: Name of the backend to get. If not provided, uses the default settings
+                backend.
 
-    if backend not in backends:
-        raise BackendError(f"Unknown backend '{backend}'; available: {list(backends.keys())}")
-    return backends[backend]()
+        Returns:
+            An instance of the requested backend class (or the default).
+
+        Raises:
+            BackendError: If the requested backend is unknown.
+        """
+        from daglite.exceptions import BackendError
+
+        if not self._started:
+            raise RuntimeError("BackendManager has not been started yet.")
+
+        if not backend_name:
+            from daglite.settings import get_global_settings
+
+            settings = get_global_settings()
+            backend_name = settings.default_backend
+
+        if backend_name not in self._cached_backends:
+            try:
+                backend_class = self._backend_types[backend_name]
+            except KeyError:
+                raise BackendError(
+                    f"Unknown backend '{backend_name}'; "
+                    f"available: {list(self._backend_types.keys())}"
+                ) from None
+
+            backend_instance = backend_class()
+            backend_instance.start(self._plugin_manager, self._event_processor)
+            self._cached_backends[backend_name] = backend_instance
+
+        return self._cached_backends[backend_name]
+
+    def start(self) -> None:
+        """Start all backends as needed."""
+        if self._started:
+            raise RuntimeError("BackendManager is already started.")
+
+        self._started = True
+
+    def stop(self) -> None:
+        """Stop all backends and clear cached instances."""
+        for backend in self._cached_backends.values():
+            backend.stop()
+        self._cached_backends.clear()
+        self._started = False
+
+    def _clear_backends(self) -> None:
+        """Clear all cached backends without stopping them (for testing purposes)."""
+        self._cached_backends.clear()
