@@ -1,7 +1,6 @@
 """Event registry and processing for coordinator-side event handling."""
 
 import logging
-import multiprocessing
 import time
 from threading import Thread
 from typing import Any, Callable
@@ -166,9 +165,10 @@ class EventProcessor:
         Returns:
             Event dict or None if no event available
         """
-        if isinstance(source, multiprocessing.Queue):
+        # Check if source has a get method (duck typing for Queue-like objects)
+        if hasattr(source, "get"):
             try:
-                return source.get(timeout=0.1)
+                return source.get(timeout=0.001)
             except Exception:
                 return None
 
