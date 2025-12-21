@@ -47,7 +47,7 @@ class TestHooksBasic:
         from uuid import UUID
 
         from daglite.backends.base import Backend
-        from daglite.graph.base import GraphNode
+        from daglite.graph.base import BaseGraphNode
 
         class ParameterCapture:
             def __init__(self):
@@ -64,12 +64,13 @@ class TestHooksBasic:
                 }
 
             @hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
-                assert isinstance(node_id, UUID)
-                assert isinstance(node, GraphNode)
-                assert isinstance(backend, Backend)
+            def before_node_execute(self, key, metadata, inputs):
+                from daglite.graph.base import GraphMetadata
+
+                assert isinstance(key, str)
+                assert isinstance(metadata, GraphMetadata)
                 assert isinstance(inputs, dict)
-                self.node_executions.append({"node_id": node_id, "inputs": inputs})
+                self.node_executions.append({"key": key, "inputs": inputs})
 
             @hook_impl
             def after_graph_execute(self, root_id, result, duration, is_async):
@@ -119,7 +120,7 @@ class TestHooksMapTasks:
                 self.inputs = []
 
             @hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.inputs.append(inputs)
 
         capture = InputCapture()
@@ -136,10 +137,14 @@ class TestHooksMapTasks:
         result = evaluate(process.product(x=[1, 2, 3]).join(sum_all))
         assert result == 12
 
-        # First node should have sequence input
-        assert len(capture.inputs) == 2
-        assert "x" in capture.inputs[0]
-        assert capture.inputs[0]["x"] == [1, 2, 3]
+        # Map task calls hook for each iteration (3) + join task (1) = 4 total
+        assert len(capture.inputs) == 4
+        # First three are map iterations
+        assert capture.inputs[0] == {"x": 1}
+        assert capture.inputs[1] == {"x": 2}
+        assert capture.inputs[2] == {"x": 3}
+        # Last is the join
+        assert capture.inputs[3] == {"vals": [2, 4, 6]}
 
         # Clean up
         hook_manager = _get_global_plugin_manager()

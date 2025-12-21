@@ -59,13 +59,13 @@ class TestAsyncExecution:
 
         threads = set()
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         def left() -> int:
             time.sleep(0.1)
             threads.add(threading.get_ident())
             return 5
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         def right() -> int:
             threads.add(threading.get_ident())
             return 10
@@ -131,7 +131,7 @@ class TestAsyncExecution:
     def test_error_propagation_async(self) -> None:
         """Async evaluation propagates exceptions correctly."""
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         def divide(x: int, y: int) -> float:
             return x / y
 
@@ -208,11 +208,11 @@ class TestAsyncExecution:
     def test_map_async_with_thread_backend(self) -> None:
         """Async evaluation handles map with ThreadBackend (tests asyncio.gather path)."""
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         def double(x: int) -> int:
             return x * 2
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         def square(z: int) -> int:
             return z**2
 
@@ -302,7 +302,7 @@ class TestAsyncTasksWithEvaluateAsync:
     def test_async_with_thread_backend_coroutine_result(self) -> None:
         """Async evaluation with ThreadBackend awaits coroutine results."""
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         async def async_compute(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * 2
@@ -381,7 +381,7 @@ class TestGeneratorMaterializationAsync:
         """Async evaluation with ThreadBackend materializes generator results."""
         from typing import Iterator
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         async def async_generate(n: int) -> Iterator[int]:
             await asyncio.sleep(0.001)
             return (i * 2 for i in range(n))
@@ -453,7 +453,7 @@ class TestGeneratorMaterializationAsync:
         """Async evaluation with ThreadBackend materializes async generator results."""
         from collections.abc import AsyncGenerator
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         async def async_generate(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):

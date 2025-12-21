@@ -31,7 +31,7 @@ class SerializableTestPlugin:
         return cls(**config)
 
     @hooks.hook_impl
-    def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+    def before_node_execute(self, key, metadata, inputs):  # pragma: no cover
         self.call_count += 1
 
 
@@ -50,7 +50,9 @@ class AnotherSerializablePlugin:
         return cls(**config)
 
     @hooks.hook_impl
-    def after_node_execute(self, node_id, node, backend, result, duration):  # pragma: no cover
+    def after_node_execute(
+        self, key, metadata, inputs, result, duration, reporter = None
+    ):  # pragma: no cover
         pass
 
 
@@ -58,7 +60,7 @@ class NonSerializableTestPlugin:
     """Test plugin that does NOT support serialization."""
 
     @hooks.hook_impl
-    def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+    def before_node_execute(self, key, metadata, inputs):  # pragma: no cover
         pass
 
 
@@ -73,7 +75,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         counter = Counter()
@@ -82,7 +84,7 @@ class TestPerExecutionHooks:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add.bind(x=2, y=3), hooks=[counter])
+        result = evaluate(add.bind(x=2, y=3), plugins=[counter])
         assert result == 5
         assert counter.count == 1
 
@@ -94,7 +96,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         @task
@@ -103,13 +105,13 @@ class TestPerExecutionHooks:
 
         # First execution with counter1
         counter1 = Counter()
-        result1 = evaluate(add.bind(x=2, y=3), hooks=[counter1])
+        result1 = evaluate(add.bind(x=2, y=3), plugins=[counter1])
         assert result1 == 5
         assert counter1.count == 1
 
         # Second execution with counter2
         counter2 = Counter()
-        result2 = evaluate(add.bind(x=5, y=7), hooks=[counter2])
+        result2 = evaluate(add.bind(x=5, y=7), plugins=[counter2])
         assert result2 == 12
         assert counter1.count == 1  # Unchanged
         assert counter2.count == 1
@@ -122,7 +124,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         class LocalCounter:
@@ -130,7 +132,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         global_counter = GlobalCounter()
@@ -144,7 +146,7 @@ class TestPerExecutionHooks:
             return x + y
 
         # Execute with local hook - both should fire
-        result = evaluate(add.bind(x=2, y=3), hooks=[local_counter])
+        result = evaluate(add.bind(x=2, y=3), plugins=[local_counter])
         assert result == 5
         assert global_counter.count == 1
         assert local_counter.count == 1
@@ -167,7 +169,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         class Counter2:
@@ -175,7 +177,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         counter1 = Counter1()
@@ -185,7 +187,7 @@ class TestPerExecutionHooks:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add.bind(x=2, y=3), hooks=[counter1, counter2])
+        result = evaluate(add.bind(x=2, y=3), plugins=[counter1, counter2])
         assert result == 5
         assert counter1.count == 1
         assert counter2.count == 1
@@ -199,7 +201,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         counter = Counter()
@@ -209,7 +211,7 @@ class TestPerExecutionHooks:
             return x + y
 
         async def run():
-            return await evaluate_async(add.bind(x=2, y=3), hooks=[counter])
+            return await evaluate_async(add.bind(x=2, y=3), plugins=[counter])
 
         result = asyncio.run(run())
         assert result == 5
@@ -223,7 +225,7 @@ class TestPerExecutionHooks:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         counter = Counter()
@@ -233,7 +235,7 @@ class TestPerExecutionHooks:
             raise ValueError("Test error")
 
         with pytest.raises(ValueError, match="Test error"):
-            evaluate(failing_task.bind(), hooks=[counter])
+            evaluate(failing_task.bind(), plugins=[counter])
 
         # Hook should have been called before the error
         assert counter.count == 1
@@ -243,7 +245,7 @@ class TestPerExecutionHooks:
 
         class MyHook:
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+            def before_node_execute(self, key, metadata, inputs):  # pragma: no cover
                 pass
 
         @task
@@ -251,8 +253,10 @@ class TestPerExecutionHooks:
             return x + y
 
         # Passing class instead of instance should raise TypeError
-        with pytest.raises(TypeError, match="daglite expects plugins to be registered as instances"):
-            evaluate(add.bind(x=2, y=3), hooks=[MyHook])  # Missing ()
+        with pytest.raises(
+            TypeError, match="daglite expects plugins to be registered as instances"
+        ):
+            evaluate(add.bind(x=2, y=3), plugins=[MyHook])  # Missing ()
 
 
 class TestRegisterHooksEntryPoints:
@@ -306,11 +310,13 @@ class TestHookManagerFunctions:
 
         class MyHook:
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):  # pragma: no cover
+            def before_node_execute(self, key, metadata, inputs):  # pragma: no cover
                 pass
 
         # Should raise TypeError when passing class instead of instance
-        with pytest.raises(TypeError, match="daglite expects plugins to be registered as instances"):
+        with pytest.raises(
+            TypeError, match="daglite expects plugins to be registered as instances"
+        ):
             register_plugins(MyHook)  # Missing ()
 
     def test_register_hooks_prevents_duplicates(self) -> None:
@@ -321,7 +327,7 @@ class TestHookManagerFunctions:
                 self.count = 0
 
             @hooks.hook_impl
-            def before_node_execute(self, node_id, node, backend, inputs):
+            def before_node_execute(self, key, metadata, inputs):
                 self.count += 1
 
         counter = Counter()
@@ -484,9 +490,7 @@ class TestPluginSerialization:
 
         assert len(config) == 2
         key_a = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
-        key_b = (
-            f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
-        )
+        key_b = f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
 
         assert key_a in config
         assert key_b in config
@@ -496,9 +500,7 @@ class TestPluginSerialization:
     def test_deserialize_multiple_plugins(self) -> None:
         """Multiple plugins can be deserialized together."""
         key_a = f"{SerializableTestPlugin.__module__}.{SerializableTestPlugin.__qualname__}"
-        key_b = (
-            f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
-        )
+        key_b = f"{AnotherSerializablePlugin.__module__}.{AnotherSerializablePlugin.__qualname__}"
 
         config = {
             key_a: {"threshold": 0.3, "name": "multi1"},
@@ -509,9 +511,7 @@ class TestPluginSerialization:
 
         # Find both plugins
         plugin_a = [p for p in manager.get_plugins() if isinstance(p, SerializableTestPlugin)]
-        plugin_b = [
-            p for p in manager.get_plugins() if isinstance(p, AnotherSerializablePlugin)
-        ]
+        plugin_b = [p for p in manager.get_plugins() if isinstance(p, AnotherSerializablePlugin)]
 
         assert len(plugin_a) == 1
         assert len(plugin_b) == 1
@@ -520,4 +520,3 @@ class TestPluginSerialization:
         assert plugin_a[0].name == "multi1"
         assert plugin_b[0].multiplier == 10
         assert plugin_b[0].enabled is True
-

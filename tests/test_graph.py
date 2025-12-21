@@ -120,7 +120,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="add_task",
             description="Addition",
-            backend=None,
+            backend_name=None,
             func=add,
             kwargs={
                 "x": ParamInput.from_value(1),
@@ -130,7 +130,7 @@ class TestGraphNodes:
 
         assert node.kind == "task"
         assert node.name == "add_task"
-        assert len(node.inputs()) == 2
+        assert len(node.kwargs) == 2
 
     def test_task_node_dependencies_with_refs(self) -> None:
         """TaskNode.dependencies() extracts refs from parameters."""
@@ -143,7 +143,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="process",
             description=None,
-            backend=None,
+            backend_name=None,
             func=process,
             kwargs={"x": ParamInput.from_ref(dep_id)},
         )
@@ -162,7 +162,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="process",
             description=None,
-            backend=None,
+            backend_name=None,
             func=process,
             kwargs={"x": ParamInput.from_value(10)},
         )
@@ -180,7 +180,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="process_many",
             description=None,
-            backend=None,
+            backend_name=None,
             func=process,
             mode="extend",
             fixed_kwargs={},
@@ -200,7 +200,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="process_many",
             description=None,
-            backend=None,
+            backend_name=None,
             func=process,
             mode="zip",
             fixed_kwargs={},
@@ -221,7 +221,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="add_offset",
             description=None,
-            backend=None,
+            backend_name=None,
             func=add,
             mode="extend",
             fixed_kwargs={"offset": ParamInput.from_ref(dep_id)},
@@ -242,7 +242,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="add_offset",
             description=None,
-            backend=None,
+            backend_name=None,
             func=add,
             mode="extend",
             fixed_kwargs={"offset": ParamInput.from_value(10)},
@@ -262,17 +262,18 @@ class TestGraphNodes:
             id=uuid4(),
             name="add_offset",
             description=None,
-            backend=None,
+            backend_name=None,
             func=add,
             mode="extend",
             fixed_kwargs={"offset": ParamInput.from_value(10)},
             mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
         )
 
-        inputs = node.inputs()
-        assert len(inputs) == 2
-        assert ("offset", ParamInput.from_value(10)) in inputs
-        assert ("x", ParamInput.from_sequence([1, 2, 3])) in inputs
+        # Check kwargs are stored correctly
+        assert len(node.fixed_kwargs) == 1
+        assert len(node.mapped_kwargs) == 1
+        assert "offset" in node.fixed_kwargs
+        assert "x" in node.mapped_kwargs
 
     def test_map_task_node_zip_mode_length_mismatch(self) -> None:
         """MapTaskNode submission fails with mismatched sequence lengths in zip mode."""
@@ -284,7 +285,7 @@ class TestGraphNodes:
             id=uuid4(),
             name="add_pairs",
             description=None,
-            backend=None,
+            backend_name=None,
             func=add,
             mode="zip",
             fixed_kwargs={},
@@ -294,19 +295,14 @@ class TestGraphNodes:
             },
         )
 
-        # This error happens during submit, not initialization
-        from daglite.backends.local import SequentialBackend
-        from daglite.engine import _resolve_inputs
-
-        backend = SequentialBackend()
-        resolved_inputs = _resolve_inputs(node, {})
+        resolved_inputs = node.resolve_inputs({})
         with pytest.raises(
             ParameterError, match="Map task .* with `\\.zip\\(\\)` requires all sequences"
         ):
-            node.submit(backend, resolved_inputs)
+            node.build_iteration_calls(resolved_inputs)
 
     def test_map_task_node_invalid_mode(self) -> None:
-        """MapTaskNode submission fails with invalid mode."""
+        """MapTaskNode build_iteration_calls fails with invalid mode."""
 
         def process(x: int) -> int:  # pragma: no cover
             return x * 2
@@ -315,18 +311,16 @@ class TestGraphNodes:
             id=uuid4(),
             name="process_many",
             description=None,
-            backend=None,
+            backend_name=None,
             func=process,
             mode="invalid",  # Invalid mode
             fixed_kwargs={},
             mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
         )
 
-        from daglite.backends.local import SequentialBackend
-
-        backend = SequentialBackend()
+        resolved_inputs = node.resolve_inputs({})
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
-            node.submit(backend, {})
+            node.build_iteration_calls(resolved_inputs)
 
 
 class TestBuildGraph:
@@ -535,7 +529,7 @@ class TestBuildGraph:
                     id=self._id,
                     name="test",
                     description=None,
-                    backend=None,
+                    backend_name=None,
                     func=lambda: None,  # pragma: no cover
                     kwargs={},
                 )
@@ -572,7 +566,7 @@ class TestBuildGraph:
                     id=self._id,
                     name="self_ref",
                     description=None,
-                    backend=None,
+                    backend_name=None,
                     func=lambda: None,  # pragma: no cover
                     kwargs={},
                 )

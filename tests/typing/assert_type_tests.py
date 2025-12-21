@@ -117,9 +117,9 @@ def test_task_basic_operations() -> None:
     assert_type(combined, TaskFuture[int])
 
     # with_options works on tasks and fixed tasks
-    with_options = score.with_options(backend="threading").bind(x=1, y=2)
+    with_options = score.with_options(backend_name="threading").bind(x=1, y=2)
     assert_type(with_options, TaskFuture[int])
-    fixed_with_options = score.fix(y=10).with_options(backend="threading").bind(x=5)
+    fixed_with_options = score.fix(y=10).with_options(backend_name="threading").bind(x=5)
     assert_type(fixed_with_options, TaskFuture[int])
 
 
@@ -275,16 +275,16 @@ def test_async_task_types() -> None:
     """Async tasks return TaskFuture[Coroutine[...]] - the honest type."""
     # Simple async task
     result = async_fetch_data.bind(url="example.com")
-    assert_type(result, TaskFuture[Coroutine[Any, Any, dict[str, str]]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(result, TaskFuture[Coroutine[Any, Any, dict[str, str]]])  # pyright: ignore # ty: ignore
 
     # Async task with dependencies
     prep = prepare.bind(n=5)
     doubled = async_double.bind(x=prep)
-    assert_type(doubled, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(doubled, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore # ty: ignore
 
     # Async task with map operations
     values = async_double.product(x=[1, 2, 3])
-    assert_type(values, MapTaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(values, MapTaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore # ty: ignore
 
     # Mixed sync/async composition
     async_result = async_double.bind(x=10)
@@ -292,14 +292,14 @@ def test_async_task_types() -> None:
     assert_type(sync_result, TaskFuture[int])
     sync_first = prepare.bind(n=5)
     async_after = async_double.bind(x=sync_first)
-    assert_type(async_after, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(async_after, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore # ty: ignore
 
     # evaluate() unwraps coroutines
     from daglite import evaluate
 
     result_future = async_double.bind(x=5)
     evaluated = evaluate(result_future)
-    assert_type(evaluated, int)  # pyright: ignore[reportAssertTypeFailure,reportUnusedCoroutine]
+    assert_type(evaluated, int)  # pyright: ignore # ty: ignore
 
 
 # -- Sync generator/iterator materialization --
@@ -362,13 +362,13 @@ def test_async_generator_types() -> None:
 
     # Async generators are wrapped in Coroutine
     async_gen_result = async_generate_numbers.bind(n=5)
-    assert_type(async_gen_result, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(async_gen_result, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore # ty: ignore
     async_iter_result = async_generate_range.bind(n=5)
-    assert_type(async_iter_result, TaskFuture[Coroutine[Any, Any, AsyncIterator[str]]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(async_iter_result, TaskFuture[Coroutine[Any, Any, AsyncIterator[str]]])  # pyright: ignore # ty: ignore
 
     # Async generators work in map operations
     ranges = async_generate_numbers.product(n=[3, 4, 5])
-    assert_type(ranges, MapTaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(ranges, MapTaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore # ty: ignore
 
     # Mixed sync and async generators
     @task
@@ -379,4 +379,4 @@ def test_async_generator_types() -> None:
     sync_gen = sync_generate.bind(n=3)
     assert_type(sync_gen, TaskFuture[Generator[int, None, None]])
     async_gen = async_generate_numbers.bind(n=3)
-    assert_type(async_gen, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
+    assert_type(async_gen, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore # ty: ignore

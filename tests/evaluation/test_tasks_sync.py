@@ -952,7 +952,7 @@ class TestGeneratorMaterialization:
         """Async generators work with ThreadBackend in sync evaluation."""
         from collections.abc import AsyncGenerator
 
-        @task(backend="threading")
+        @task(backend_name="threading")
         async def async_generate(n: int) -> AsyncGenerator[int, None]:
             async def _gen():
                 for i in range(n):
