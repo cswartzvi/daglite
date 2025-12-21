@@ -143,10 +143,7 @@ def run(
 
     # Apply settings globally if provided
     if settings_dict:
-        from daglite.backends.local import _reset_global_pools
-
         set_global_settings(DagliteSettings(**settings_dict))
-        _reset_global_pools()
 
     # Call the pipeline to get the GraphBuilder
     try:
@@ -167,10 +164,10 @@ def run(
     try:
         if use_async:
             # Use async execution with sibling parallelism
-            result = asyncio.run(evaluate_async(graph, default_backend=backend))
+            result = asyncio.run(evaluate_async(graph))
         else:
             # Sync sequential execution
-            result = evaluate(graph, default_backend=backend)
+            result = evaluate(graph)
         click.echo("\nPipeline completed successfully!")
         click.echo(f"Result: {result}")
     except Exception as e:
