@@ -270,6 +270,7 @@ async def _run_async_impl(
     reporter: Any,
 ) -> Any:
     """Helper to run a node asynchronously with context setup."""
+    import inspect
 
     plugin_manager.hook.before_node_execute(
         key=key,
@@ -280,7 +281,12 @@ async def _run_async_impl(
 
     start_time = time.time()
     try:
-        result = await func(**resolved_inputs)
+        # Handle both async and sync functions
+        if inspect.iscoroutinefunction(func):
+            result = await func(**resolved_inputs)
+        else:
+            result = func(**resolved_inputs)
+
         duration = time.time() - start_time
 
         plugin_manager.hook.after_node_execute(
