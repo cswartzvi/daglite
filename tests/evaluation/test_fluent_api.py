@@ -96,8 +96,8 @@ class TestTaskFutureThen:
 class TestMapOperations:
     """Tests for .then() fluent API."""
 
-    def test_map_with_kwargs(self) -> None:
-        """Fluent .map() accepts inline kwargs."""
+    def test_mapped_then_with_kwargs(self) -> None:
+        """Fluent .then() accepts inline kwargs."""
 
         @task
         def scale(x: int, factor: int) -> int:
@@ -110,8 +110,8 @@ class TestMapOperations:
         result = evaluate(identity.product(x=[1, 2, 3]).then(scale, factor=2))
         assert result == [2, 4, 6]  # Each element * 2
 
-    def test_map_chain_with_kwargs(self) -> None:
-        """Fluent .map() chains with inline kwargs."""
+    def test_mapped_then_chain_with_kwargs(self) -> None:
+        """Fluent .then() chains with inline kwargs."""
 
         @task
         def identity(x: int) -> int:
