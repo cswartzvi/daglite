@@ -11,8 +11,6 @@ integration tests, see tests_evaluation.py.
 
 import pytest
 
-from daglite.backends.local import SequentialBackend
-from daglite.backends.local import ThreadBackend
 from daglite.exceptions import ParameterError
 from daglite.tasks import FixedParamTask
 from daglite.tasks import Task

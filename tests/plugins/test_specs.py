@@ -44,10 +44,6 @@ class TestHooksBasic:
 
     def test_hook_receives_correct_parameters(self) -> None:
         """Hooks receive correct parameters during execution."""
-        from uuid import UUID
-
-        from daglite.backends.base import Backend
-        from daglite.graph.base import BaseGraphNode
 
         class ParameterCapture:
             def __init__(self):

@@ -51,7 +51,7 @@ class AnotherSerializablePlugin:
 
     @hooks.hook_impl
     def after_node_execute(
-        self, key, metadata, inputs, result, duration, reporter = None
+        self, key, metadata, inputs, result, duration, reporter=None
     ):  # pragma: no cover
         pass
 
