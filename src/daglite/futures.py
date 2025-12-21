@@ -129,12 +129,15 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Fan out this future as input to another task by creating a Cartesian product.
 
-        This creates a Cartesian product of this future's result (treated as a sequence)
-        with other provided sequences, calling the next task once for each combination.
+        The current future's result is used as a fixed (scalar) argument to `next_task`,
+        while a Cartesian product is formed over the provided mapped parameter sequences
+        in `mapped_kwargs`. The next task is called once for each combination of the
+        mapped parameters, with the same future value passed to every call.
 
         Args:
             next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
-                with ONE unbound parameter, this parameter will receive the current future's value.
+                with ONE unbound parameter; this unbound parameter will receive the current
+                future's value for every combination of mapped parameters.
             **mapped_kwargs: Additional parameters to map over (sequences). Each sequence element
                 will be combined with elements from other sequences in a Cartesian product.
 
@@ -201,13 +204,15 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Fan out this future as input to another task by zipping with other sequences.
 
-        Sequences are zipped element-wise (similar to Python's `zip()` function), calling
-        the next task once for each aligned set of elements. All sequences must have the
-        same length.
+        The current future's result is used as a fixed (scalar) argument to `next_task`,
+        while elements from the provided mapped parameter sequences in `mapped_kwargs`
+        are paired by their index. The next task is called once for each index, with the
+        same future value passed to every call.
 
         Args:
             next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
-                with ONE unbound parameter, this parameter will receive the current future's value.
+                with ONE unbound parameter; this unbound parameter will receive the current
+                future's value for every paired set of mapped parameters.
             **mapped_kwargs: Additional equal-length sequences to zip with. Elements at the
                 same index across sequences are combined in each call.
 
