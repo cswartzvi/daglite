@@ -249,6 +249,9 @@ class TestInvalidTaskAndTaskFutureUsage:
             """Simple division function."""
             return x / y
 
+        with pytest.raises(ParameterError, match="Non-iterable parameters"):
+            divide.zip(x=10, y=5)
+
     def test_then_product_with_invalid_params(self) -> None:
         """then_product() fails when given parameters that don't exist."""
 
