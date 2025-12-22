@@ -954,3 +954,46 @@ class TestGeneratorMaterialization:
             result = asyncio.run(run_async())
 
         assert result == 20  # 0+2+4+6+8
+
+
+def test_cycle_detection_raises_error() -> None:
+    """Evaluation raises ExecutionError when a cycle is detected in the graph."""
+    from uuid import uuid4
+
+    from daglite.engine import ExecutionState
+    from daglite.exceptions import ExecutionError
+    from daglite.graph.base import ParamInput
+    from daglite.graph.nodes import TaskNode
+
+    # Manually create a cyclic graph (can't do this with normal API)
+    # Node A depends on Node B, Node B depends on Node A
+    node_a_id = uuid4()
+    node_b_id = uuid4()
+
+    def dummy(x: int) -> int:
+        return x
+
+    # Create nodes with circular dependencies
+    nodes = {
+        node_a_id: TaskNode(
+            id=node_a_id,
+            name="node_a",
+            description=None,
+            backend_name=None,
+            func=dummy,
+            kwargs={"x": ParamInput(kind="ref", value=None, ref=node_b_id)},
+        ),
+        node_b_id: TaskNode(
+            id=node_b_id,
+            name="node_b",
+            description=None,
+            backend_name=None,
+            func=dummy,
+            kwargs={"x": ParamInput(kind="ref", value=None, ref=node_a_id)},
+        ),
+    }
+
+    state = ExecutionState.from_nodes(nodes)  # type: ignore
+
+    with pytest.raises(ExecutionError, match="Cycle detected"):
+        state.check_complete()
