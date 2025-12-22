@@ -1,3 +1,9 @@
+"""
+Tests for graph construction and nodes in daglite.graph.
+
+Note that tests focus on initialization and core functionality, not evaluation.
+"""
+
 from functools import cached_property
 from uuid import uuid4
 
@@ -14,11 +20,7 @@ from daglite.tasks import task
 
 
 class TestParamInput:
-    """
-    Test ParamInput creation and resolution.
-
-    NOTE: Tests focus on initialization and core functionality, not evaluation.
-    """
+    """Test ParamInput creation and resolution."""
 
     def test_from_value(self) -> None:
         """ParamInput.from_value creates a value-type input."""
@@ -104,11 +106,7 @@ class TestParamInput:
 
 
 class TestGraphNodes:
-    """
-    Test graph node initialization and properties.
-
-    NOTE: Tests focus on structure, not execution/submission.
-    """
+    """Test graph node initialization and properties."""
 
     def test_task_node_properties(self) -> None:
         """TaskNode initializes with correct properties and kind."""
