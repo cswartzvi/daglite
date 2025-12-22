@@ -675,10 +675,16 @@ class TestAsyncTasksWithEvaluate:
 
 
 class TestGeneratorMaterialization:
-    """Tests that generators are automatically materialized to lists with evaluate()."""
+    """
+    Tests that generators are automatically materialized to lists.
 
-    def test_generator_is_materialized_sync(self) -> None:
-        """Generators returned from tasks are materialized to lists in sync execution."""
+    Tests marked with @pytest.mark.parametrize run for both evaluate() and evaluate_async()
+    to ensure consistent behavior across evaluation modes. Other tests are sync-only.
+    """
+
+    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
+    def test_generator_is_materialized(self, evaluation_mode: str) -> None:
+        """Generators returned from tasks are materialized to lists."""
         from typing import Iterator
 
         @task
@@ -686,7 +692,15 @@ class TestGeneratorMaterialization:
             for i in range(n):
                 yield i * 2
 
-        result = evaluate(generate_numbers.bind(n=5))
+        async def run_async():
+            from daglite.engine import evaluate_async
+            return await evaluate_async(generate_numbers.bind(n=5))
+
+        if evaluation_mode == "sync":
+            result = evaluate(generate_numbers.bind(n=5))
+        else:
+            result = asyncio.run(run_async())
+
         assert result == [0, 2, 4, 6, 8]
         assert isinstance(result, list)
 
@@ -719,7 +733,8 @@ class TestGeneratorMaterialization:
         result = evaluate(result_future)
         assert result == (10, 5)  # sum([0,1,2,3,4]) = 10, len = 5
 
-    def test_generator_in_map_operation(self) -> None:
+    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
+    def test_generator_in_map_operation(self, evaluation_mode: str) -> None:
         """Generators in map operations are materialized."""
         from typing import Iterator
 
@@ -736,7 +751,15 @@ class TestGeneratorMaterialization:
         ranges = generate_range.product(n=[3, 4, 5])
         totals = ranges.then(sum_values)
 
-        result = evaluate(totals)
+        async def run_async():
+            from daglite.engine import evaluate_async
+            return await evaluate_async(totals)
+
+        if evaluation_mode == "sync":
+            result = evaluate(totals)
+        else:
+            result = asyncio.run(run_async())
+
         # [0,1,2] -> 3, [0,1,2,3] -> 6, [0,1,2,3,4] -> 10
         assert result == [3, 6, 10]
 
@@ -816,8 +839,9 @@ class TestGeneratorMaterialization:
         assert len(iter_result) == 4
         assert len(gen_result) == 4
 
-    def test_async_generator_materialization_sync_evaluation(self) -> None:
-        """Async generators returned from async tasks are materialized in sync evaluation."""
+    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
+    def test_async_generator_materialization(self, evaluation_mode: str) -> None:
+        """Async generators returned from async tasks are materialized."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -835,11 +859,21 @@ class TestGeneratorMaterialization:
 
         nums = async_generate_numbers.bind(n=5)
         total = sum_values.bind(values=nums)
-        result = evaluate(total)
+
+        async def run_async():
+            from daglite.engine import evaluate_async
+            return await evaluate_async(total)
+
+        if evaluation_mode == "sync":
+            result = evaluate(total)
+        else:
+            result = asyncio.run(run_async())
+
         assert result == 10  # 0 + 1 + 2 + 3 + 4
 
-    def test_async_generator_map_materialization_sync_evaluation(self) -> None:
-        """Map tasks that return async generators are materialized properly in sync evaluation."""
+    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
+    def test_async_generator_map_materialization(self, evaluation_mode: str) -> None:
+        """Map tasks that return async generators are materialized properly."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -858,11 +892,21 @@ class TestGeneratorMaterialization:
         # Create a map task where each result is an async generator
         ranges = async_get_range.product(n=[3, 4, 5])
         total = sum_all_ranges.bind(ranges=ranges)
-        result = evaluate(total)
+
+        async def run_async():
+            from daglite.engine import evaluate_async
+            return await evaluate_async(total)
+
+        if evaluation_mode == "sync":
+            result = evaluate(total)
+        else:
+            result = asyncio.run(run_async())
+
         assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
-    def test_async_generator_with_thread_backend_sync_evaluation(self) -> None:
-        """Async generators work with ThreadBackend in sync evaluation."""
+    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
+    def test_async_generator_with_thread_backend(self, evaluation_mode: str) -> None:
+        """Async generators work with ThreadBackend."""
         from collections.abc import AsyncGenerator
 
         @task(backend_name="threading")
@@ -880,5 +924,14 @@ class TestGeneratorMaterialization:
 
         nums = async_generate.bind(n=5)
         total = sum_values.bind(values=nums)
-        result = evaluate(total)
+
+        async def run_async():
+            from daglite.engine import evaluate_async
+            return await evaluate_async(total)
+
+        if evaluation_mode == "sync":
+            result = evaluate(total)
+        else:
+            result = asyncio.run(run_async())
+
         assert result == 20  # 0+2+4+6+8
