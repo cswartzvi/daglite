@@ -1,13 +1,7 @@
 """
 Unit tests for plugin manager functionality.
 
-These tests verify the plugin manager's registration, serialization, and
-utility functions WITHOUT using evaluate() or evaluate_async(). They focus on:
-
-- Plugin registration and validation
-- Entry point loading
-- Plugin serialization/deserialization
-- Plugin manager state management
+These tests verify the plugin manager's registration, serialization, and utility functions.
 
 For integration tests with actual execution, see tests/evaluation/test_plugins.py.
 """
@@ -25,6 +19,17 @@ from tests.examples.plugins import AnotherSerializablePlugin
 from tests.examples.plugins import CounterPlugin
 from tests.examples.plugins import NonSerializablePlugin
 from tests.examples.plugins import SerializablePlugin
+
+
+class TestPluginSystem:
+    """Test basic plugin system functionality."""
+
+    def test_hooks_initialize_on_import(self) -> None:
+        """Hook manager is initialized when daglite is imported."""
+        hook_manager = _get_global_plugin_manager()
+
+        assert hook_manager is not None
+        assert hook_manager.project_name == "daglite"
 
 
 class TestRegisterHooksEntryPoints:
