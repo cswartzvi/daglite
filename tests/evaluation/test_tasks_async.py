@@ -313,3 +313,249 @@ class TestAsyncTasksWithEvaluateAsync:
 
         result = asyncio.run(run())
         assert result == 42
+
+
+class TestMappedOperationsWithEvaluateAsync:
+    """Tests product/zip operations with async tasks and evaluate_async()."""
+
+    def test_product_empty_sequence(self) -> None:
+        """Product evaluation succeeds with empty sequences."""
+
+        @task
+        async def double(x: int) -> int:
+            await asyncio.sleep(0.001)
+            return x * 2  # pragma: no cover
+
+        doubled_seq = double.product(x=[])
+
+        async def run():
+            return await evaluate_async(doubled_seq)
+
+        result = asyncio.run(run())
+        assert result == []
+
+    def test_zip_empty_sequence(self) -> None:
+        """Zip evaluation succeeds with empty sequences."""
+
+        @task
+        async def add(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x + y  # pragma: no cover
+
+        added_seq = add.zip(x=[], y=[])
+
+        async def run():
+            return await evaluate_async(added_seq)
+
+        result = asyncio.run(run())
+        assert result == []
+
+    def test_product_with_future_input(self) -> None:
+        """Product evaluation succeeds with TaskFuture as input."""
+
+        @task
+        async def generate() -> list[int]:
+            await asyncio.sleep(0.001)
+            return [1, 2, 3]
+
+        @task
+        async def square(x: int) -> int:
+            await asyncio.sleep(0.001)
+            return x**2
+
+        future = generate.bind()
+        seq = square.product(x=future)
+
+        async def run():
+            return await evaluate_async(seq)
+
+        result = asyncio.run(run())
+        assert result == [1, 4, 9]
+
+    def test_zip_with_future_input(self) -> None:
+        """Zip evaluation succeeds with TaskFuture as input."""
+
+        @task
+        async def generate() -> list[int]:
+            await asyncio.sleep(0.001)
+            return [5, 10, 15]
+
+        @task
+        async def multiply(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x * y
+
+        future = generate.bind()
+        seq = multiply.zip(x=future, y=[2, 3, 4])
+
+        async def run():
+            return await evaluate_async(seq)
+
+        result = asyncio.run(run())
+        assert result == [10, 30, 60]
+
+    def test_product_multiple_parameters(self) -> None:
+        """Product creates Cartesian product of multiple parameter sequences."""
+
+        @task
+        async def add(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x + y
+
+        added_seq = add.product(x=[1, 2, 3], y=[10, 20, 30])
+
+        async def run():
+            return await evaluate_async(added_seq)
+
+        result = asyncio.run(run())
+        assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]
+
+    def test_product_with_nested_tasks(self) -> None:
+        """Product with nested TaskFuture creates Cartesian product."""
+
+        @task
+        async def add(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x + y
+
+        @task
+        async def multiply(z: int, factor: int) -> int:
+            await asyncio.sleep(0.001)
+            return z * factor
+
+        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        multiplied_seq = multiply.product(z=added_seq, factor=[2, 3])
+
+        async def run():
+            return await evaluate_async(multiplied_seq)
+
+        result = asyncio.run(run())
+        assert result == [22, 33, 42, 63, 24, 36, 44, 66]
+
+    def test_zip_pairwise_combination(self) -> None:
+        """Zip creates pairwise combinations."""
+
+        @task
+        async def add(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x + y
+
+        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+
+        async def run():
+            return await evaluate_async(added_seq)
+
+        result = asyncio.run(run())
+        assert result == [11, 22, 33]
+
+    def test_product_with_map_and_join(self) -> None:
+        """Product with map and join (fan-out, transform, fan-in)."""
+
+        @task
+        async def add(x: int, y: int) -> int:
+            await asyncio.sleep(0.001)
+            return x + y
+
+        @task
+        async def triple(z: int) -> int:
+            await asyncio.sleep(0.001)
+            return z * 3
+
+        @task
+        async def max_value(values: list[int]) -> int:
+            await asyncio.sleep(0.001)
+            return max(values)
+
+        result_future = (
+            add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+            .then(triple)  # [33, 63, 36, 66]
+            .join(max_value)
+        )
+
+        async def run():
+            return await evaluate_async(result_future)
+
+        result = asyncio.run(run())
+        assert result == 66
+
+
+class TestGeneratorMaterializationWithEvaluateAsync:
+    """Tests async generator materialization with evaluate_async()."""
+
+    def test_async_generator_is_materialized(self) -> None:
+        """Async generators returned from tasks are materialized to lists."""
+        from typing import AsyncIterator
+
+        @task
+        async def generate_numbers(n: int) -> AsyncIterator[int]:
+            for i in range(n):
+                await asyncio.sleep(0.001)
+                yield i * 2
+
+        async def run():
+            return await evaluate_async(generate_numbers.bind(n=5))
+
+        result = asyncio.run(run())
+        assert result == [0, 2, 4, 6, 8]
+        assert isinstance(result, list)
+
+    def test_async_generator_reusable_by_multiple_consumers(self) -> None:
+        """Materialized async generators can be consumed by multiple downstream tasks."""
+        from typing import AsyncIterator
+
+        @task
+        async def generate_numbers(n: int) -> AsyncIterator[int]:
+            for i in range(n):
+                await asyncio.sleep(0.001)
+                yield i
+
+        @task
+        async def sum_values(values: list[int]) -> int:
+            await asyncio.sleep(0.001)
+            return sum(values)
+
+        @task
+        async def count_values(values: list[int]) -> int:
+            await asyncio.sleep(0.001)
+            return len(values)
+
+        @task
+        async def combine(total: int, count: int) -> tuple[int, int]:
+            await asyncio.sleep(0.001)
+            return (total, count)
+
+        numbers = generate_numbers.bind(n=5)
+        total = sum_values.bind(values=numbers)
+        count = count_values.bind(values=numbers)
+        result_future = combine.bind(total=total, count=count)
+
+        async def run():
+            return await evaluate_async(result_future)
+
+        result = asyncio.run(run())
+        assert result == (10, 5)  # sum([0,1,2,3,4]) = 10, len = 5
+
+    def test_async_generator_in_map_operation(self) -> None:
+        """Async generators in map operations are materialized."""
+        from typing import AsyncIterator
+
+        @task
+        async def generate_range(n: int) -> AsyncIterator[int]:
+            for i in range(n):
+                await asyncio.sleep(0.001)
+                yield i
+
+        @task
+        async def square(values: list[int]) -> int:
+            await asyncio.sleep(0.001)
+            return sum(v**2 for v in values)
+
+        generated = generate_range.product(n=[2, 3, 4])
+        squared = generated.then(square)
+
+        async def run():
+            return await evaluate_async(squared)
+
+        result = asyncio.run(run())
+        # [0,1] -> 1, [0,1,2] -> 5, [0,1,2,3] -> 14
+        assert result == [1, 5, 14]
