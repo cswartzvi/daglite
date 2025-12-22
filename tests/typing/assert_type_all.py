@@ -3,18 +3,15 @@
 # NOTE: These tests do not run any actual computations; they only verify that the types of task
 # bindings and compositions are as expected.
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from typing_extensions import assert_type
-
-if TYPE_CHECKING:
-    from collections.abc import Coroutine
 
 from daglite import evaluate
 from daglite import pipeline
 from daglite import task
-from daglite.tasks import MapTaskFuture
-from daglite.tasks import TaskFuture
+from daglite.futures import MapTaskFuture
+from daglite.futures import TaskFuture
 
 # -- Helper tasks for type tests --
 
@@ -242,22 +239,18 @@ def test_pipeline_decorator() -> None:
 
 
 def test_async_task_basic() -> None:
-    """Async tasks return TaskFuture[Coroutine[...]]."""
-    result = async_add.bind(x=5, y=10)
-    assert_type(result, TaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+    """Async tasks return TaskFuture[Coroutine[...]].."""
+    # See type checker specific assertions in separate files
 
 
 def test_async_task_with_product() -> None:
     """Async tasks work with product()."""
-    result = async_add.product(x=[1, 2, 3], y=[10, 20, 30])
-    assert_type(result, MapTaskFuture[Coroutine[Any, Any, int]])  # pyright: ignore[reportAssertTypeFailure]
+    # See type checker specific assertions in separate files
 
 
-def test_async_task_evaluation() -> None:
-    """evaluate() unwraps coroutines from async tasks."""
-    future = async_add.bind(x=5, y=10)
-    result = evaluate(future)
-    assert_type(result, int)  # pyright: ignore[reportAssertTypeFailure,reportUnusedCoroutine]
+async def test_async_task_evaluation() -> None:
+    """evaluate_async() unwraps coroutines."""
+    # See assert_type_tests_mypy.py and assert_type_tests_pyright.py for type assertions
 
 
 def test_mixed_sync_async() -> None:
@@ -288,15 +281,4 @@ def test_sync_generator_types() -> None:
 
 def test_async_generator_types() -> None:
     """Async generators wrapped in Coroutine."""
-    from collections.abc import AsyncGenerator
-
-    @task
-    async def async_generate(n: int) -> AsyncGenerator[int, None]:
-        async def _gen():
-            for i in range(n):
-                yield i
-
-        return _gen()
-
-    future = async_generate.bind(n=5)
-    assert_type(future, TaskFuture[Coroutine[Any, Any, AsyncGenerator[int, None]]])  # pyright: ignore[reportAssertTypeFailure]
+    # See assert_type_tests_mypy.py and assert_type_tests_pyright.py for type assertions
