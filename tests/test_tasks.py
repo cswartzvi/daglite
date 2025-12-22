@@ -5,8 +5,18 @@ These tests focus on validating the behavior of the @task decorator, Task,
 and TaskFuture classes when defining tasks and binding parameters. They ensure
 that invalid usages raise appropriate exceptions.
 
-Tests in this file should **not** focus on evaluation. Evaluation are handled in
-integration tests, see tests_evaluation.py.
+Tests in this file should **not** focus on evaluation. Evaluation tests are in
+tests/evaluation/.
+
+Organization:
+- TestTaskValidDefinitions: Valid task creation and configuration
+- TestTaskDecorator: Decorator usage errors
+- TestParameterValidation: bind() and fix() parameter errors
+- TestProductOperationErrors: product() and then_product() errors
+- TestZipOperationErrors: zip() and then_zip() errors
+- TestFluentAPIErrors: then(), map(), join() errors
+- TestFixedParamTaskErrors: Errors with FixedParamTask operations
+- TestBaseTaskFuture: Core TaskFuture behavior
 """
 
 import pytest
@@ -48,7 +58,6 @@ class TestTaskValidDefinitions:
 
     def test_async_task_is_async_attribute(self) -> None:
         """Task.is_async correctly identifies async functions."""
-        from daglite import task
 
         @task
         def sync_func(x: int) -> int:  # pragma: no cover
@@ -83,8 +92,6 @@ class TestTaskValidDefinitions:
             """Simple multiplication function."""
             return x * y
 
-        from daglite.tasks import FixedParamTask
-
         fixed_task: FixedParamTask = multiply.fix(y=10)
 
         assert isinstance(fixed_task, FixedParamTask)
@@ -109,8 +116,8 @@ class TestTaskValidDefinitions:
         assert task_with_options.func(2, 3) == 8
 
 
-class TestInvalidTaskAndTaskFutureUsage:
-    """Test for invalid usage of Task and TaskFuture methods."""
+class TestTaskDecorator:
+    """Test @task decorator usage errors."""
 
     def test_task_decorator_with_non_callable(self) -> None:
         """Decorator rejects non-callable objects."""
@@ -121,12 +128,15 @@ class TestInvalidTaskAndTaskFutureUsage:
             class NotCallable:
                 pass
 
+
+class TestParameterValidation:
+    """Test parameter validation for bind() and fix() operations."""
+
     def test_task_bind_with_invalid_params(self) -> None:
         """Binding fails when given parameters that don't exist."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
-            """Simple subtraction function."""
             return x - y
 
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
@@ -137,7 +147,6 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         @task
         def power(base: int, exponent: int) -> int:  # pragma: no cover
-            """Simple power function."""
             return base**exponent
 
         with pytest.raises(ParameterError, match="Missing parameters for task"):
@@ -148,7 +157,6 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
-            """Simple multiplication function."""
             return x * y
 
         fixed = multiply.fix(x=4)
@@ -156,60 +164,35 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             fixed.bind(x=5, y=10)
 
-    def test_task_then_with_invalid_params(self) -> None:
-        """Chaining fails when given parameters that don't exist."""
+    def test_fixed_task_with_invalid_params(self) -> None:
+        """Fixing fails when given parameters that don't exist."""
 
         @task
-        def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
-            return data + 1
-
-        @task
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y
-
-        prepared = prepare.bind(data=10)
-        added = add.fix(x=5)
+        def divide(x: int, y: int) -> float:  # pragma: no cover
+            return x / y
 
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
-            prepared.then(added, z=5)
+            divide.fix(z=5)
 
-    def test_task_then_with_multiple_ubound_params(self) -> None:
-        """Chaining with partially bound tasks fails when given invalid parameters."""
 
-        @task
-        def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
-            return data + 1
-
-        @task
-        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y + z
-
-        prepared = prepare.bind(data=10)
-
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
-            prepared.then(add)
+class TestProductOperationErrors:
+    """Test error handling for product() and then_product() operations."""
 
     def test_task_product_with_non_iterable_params(self) -> None:
-        """Cartesian product operations require iterable parameters."""
+        """product() requires iterable parameters."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
             add.product(x=20, y=5)
 
     def test_task_product_with_overlapping_params(self) -> None:
-        """Cartesian product fails when attempting to rebind fixed parameters."""
+        """product() fails when attempting to rebind fixed parameters."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
-            """Simple multiplication function."""
             return x * y
 
         fixed = multiply.fix(x=3)
@@ -218,39 +201,26 @@ class TestInvalidTaskAndTaskFutureUsage:
             fixed.product(y=[1, 2, 3], x=[4, 5, 6])
 
     def test_task_product_invalid_params(self) -> None:
-        """Cartesian product fails when given parameters that don't exist."""
+        """product() fails when given parameters that don't exist."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
-            """Simple subtraction function."""
             return x - y
 
         with pytest.raises(ParameterError, match="Invalid parameters"):
             subtract.product(z=[10, 2, 3])
 
     def test_task_product_missing_params(self) -> None:
-        """Cartesian product fails when required parameters are omitted."""
+        """product() fails when required parameters are omitted."""
 
         @task
         def power(base: int, exponent: int) -> int:  # pragma: no cover
-            """Simple power function."""
             return base**exponent
 
         fixed = power.fix(base=2)
 
         with pytest.raises(ParameterError, match="Missing parameters"):
             fixed.product()
-
-    def test_task_zip_with_non_iterable_params(self) -> None:
-        """Pairwise operations require iterable parameters."""
-
-        @task
-        def divide(x: int, y: int) -> float:  # pragma: no cover
-            """Simple division function."""
-            return x / y
-
-        with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            divide.zip(x=10, y=5)
 
     def test_then_product_with_invalid_params(self) -> None:
         """then_product() fails when given parameters that don't exist."""
@@ -295,6 +265,78 @@ class TestInvalidTaskAndTaskFutureUsage:
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             start.bind().then_product(fixed, y=[1, 2, 3])
+
+    def test_then_product_with_no_mapped_params(self) -> None:
+        """then_product() fails when no mapped parameters are provided."""
+
+        @task
+        def start() -> int:
+            return 5
+
+        @task
+        def identity(x: int) -> int:  # pragma: no cover
+            return x
+
+        with pytest.raises(ParameterError, match="At least one mapped parameter required"):
+            start.bind().then_product(identity)
+
+
+class TestZipOperationErrors:
+    """Test error handling for zip() and then_zip() operations."""
+
+    def test_task_zip_with_non_iterable_params(self) -> None:
+        """zip() requires iterable parameters."""
+
+        @task
+        def divide(x: int, y: int) -> float:  # pragma: no cover
+            return x / y
+
+        with pytest.raises(ParameterError, match="Non-iterable parameters"):
+            divide.zip(x=10, y=5)
+
+    def test_task_zip_with_overlapping_params(self) -> None:
+        """zip() fails when attempting to rebind fixed parameters."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        fixed = add.fix(y=2)
+
+        with pytest.raises(ParameterError, match="Overlapping parameters"):
+            fixed.zip(y=[3, 4, 5], x=[1, 2, 3])
+
+    def test_task_zip_invalid_params(self) -> None:
+        """zip() fails when given parameters that don't exist."""
+
+        @task
+        def multiply(x: int, y: int) -> int:  # pragma: no cover
+            return x * y
+
+        with pytest.raises(ParameterError, match="Invalid parameters"):
+            multiply.zip(z=[10, 2, 3])
+
+    def test_task_zip_missing_params(self) -> None:
+        """zip() fails when required parameters are omitted."""
+
+        @task
+        def subtract(x: int, y: int) -> int:  # pragma: no cover
+            return x - y
+
+        fixed = subtract.fix(x=10)
+
+        with pytest.raises(ParameterError, match="Missing parameters"):
+            fixed.zip()
+
+    def test_task_zip_with_mismatched_lengths(self) -> None:
+        """zip() requires all iterable parameters to have the same length."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        with pytest.raises(ParameterError, match="Mixed lengths for task 'add'"):
+            add.zip(x=[1, 2, 3], y=[4, 5])
 
     def test_then_zip_with_invalid_params(self) -> None:
         """then_zip() fails when given parameters that don't exist."""
@@ -354,20 +396,6 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             start.bind().then_zip(fixed, y=[1, 2, 3])
 
-    def test_then_product_with_no_mapped_params(self) -> None:
-        """then_product() fails when no mapped parameters are provided."""
-
-        @task
-        def start() -> int:
-            return 5
-
-        @task
-        def identity(x: int) -> int:  # pragma: no cover
-            return x
-
-        with pytest.raises(ParameterError, match="At least one mapped parameter required"):
-            start.bind().then_product(identity)
-
     def test_then_zip_with_no_mapped_params(self) -> None:
         """then_zip() fails when no mapped parameters are provided."""
 
@@ -382,60 +410,48 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="At least one mapped parameter required"):
             start.bind().then_zip(identity)
 
-    def test_task_zip_with_overlapping_params(self) -> None:
-        """Pairwise operations fail when attempting to rebind fixed parameters."""
 
-        @task
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y
+class TestFluentAPIErrors:
+    """Test error handling for fluent API methods: then(), map(), join()."""
 
-        fixed = add.fix(y=2)
-
-        with pytest.raises(ParameterError, match="Overlapping parameters"):
-            fixed.zip(y=[3, 4, 5], x=[1, 2, 3])
-
-    def test_task_zip_invalid_params(self) -> None:
-        """Pairwise operations fail when given parameters that don't exist."""
-
-        @task
-        def multiply(x: int, y: int) -> int:  # pragma: no cover
-            """Simple multiplication function."""
-            return x * y
-
-        with pytest.raises(ParameterError, match="Invalid parameters"):
-            multiply.zip(z=[10, 2, 3])
-
-    def test_task_zip_missing_params(self) -> None:
-        """Pairwise operations fail when required parameters are omitted."""
-
-        @task
-        def subtract(x: int, y: int) -> int:  # pragma: no cover
-            """Simple subtraction function."""
-            return x - y
-
-        fixed = subtract.fix(x=10)
-
-        with pytest.raises(ParameterError, match="Missing parameters"):
-            fixed.zip()
-
-    def test_task_zip_with_mismatched_lengths(self) -> None:
-        """Pairwise operations require all iterable parameters to have the same length."""
-
-        @task
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
-            return x + y
-
-        with pytest.raises(ParameterError, match="Mixed lengths for task 'add'"):
-            add.zip(x=[1, 2, 3], y=[4, 5])
-
-    def test_task_map_with_invalid_signature(self) -> None:
-        """Mapping over results requires a single-parameter function."""
+    def test_task_then_with_invalid_params(self) -> None:
+        """then() fails when given parameters that don't exist."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
+            return data + 1
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        prepared = prepare.bind(data=10)
+        added = add.fix(x=5)
+
+        with pytest.raises(ParameterError, match="Invalid parameters for task"):
+            prepared.then(added, z=5)
+
+    def test_task_then_with_multiple_unbound_params(self) -> None:
+        """then() requires target task to have exactly one unbound parameter."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
+            return data + 1
+
+        @task
+        def add(x: int, y: int, z: int) -> int:  # pragma: no cover
+            return x + y + z
+
+        prepared = prepare.bind(data=10)
+
+        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+            prepared.then(add)
+
+    def test_task_map_with_invalid_signature(self) -> None:
+        """map() requires a single-parameter function."""
+
+        @task
+        def prepare(data: int) -> int:  # pragma: no cover
             return data + 1
 
         @task
@@ -447,11 +463,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(mapping)
 
     def test_task_map_with_kwargs(self) -> None:
-        """Mapping with inline kwargs works correctly."""
+        """map() with inline kwargs works correctly."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -464,11 +479,10 @@ class TestInvalidTaskAndTaskFutureUsage:
         assert scaled is not None
 
     def test_task_map_with_kwargs_multiple_unbound(self) -> None:
-        """Mapping with kwargs fails when multiple parameters remain unbound."""
+        """map() with kwargs fails when multiple parameters remain unbound."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -480,11 +494,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(add, z=5)
 
     def test_task_map_with_overlapping_kwargs(self) -> None:
-        """Mapping with overlapping kwargs fails."""
+        """map() with overlapping kwargs fails."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -497,11 +510,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(fixed_scale, factor=20)
 
     def test_task_join_with_kwargs(self) -> None:
-        """Reducing with inline kwargs works correctly."""
+        """join() with inline kwargs works correctly."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -514,11 +526,10 @@ class TestInvalidTaskAndTaskFutureUsage:
         assert total is not None
 
     def test_task_join_with_invalid_signature(self) -> None:
-        """Reducing results requires a single-parameter function."""
+        """join() requires a single-parameter function."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -535,11 +546,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             mapped.join(joining)
 
     def test_task_join_with_kwargs_multiple_unbound(self) -> None:
-        """Reducing with kwargs fails when multiple parameters remain unbound."""
+        """join() with kwargs fails when multiple parameters remain unbound."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -551,11 +561,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.join(reduce_three, z=5)
 
     def test_task_join_with_overlapping_kwargs(self) -> None:
-        """Reducing with overlapping kwargs fails."""
+        """join() with overlapping kwargs fails."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -567,28 +576,19 @@ class TestInvalidTaskAndTaskFutureUsage:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             prepared.join(fixed_sum, weight=2.5)
 
-    def test_fixed_task_with_invalid_params(self) -> None:
-        """Fixing fails when given parameters that don't exist."""
 
-        @task
-        def divide(x: int, y: int) -> float:  # pragma: no cover
-            """Simple division function."""
-            return x / y
+class TestFixedParamTaskErrors:
+    """Test error handling for FixedParamTask operations."""
 
-        with pytest.raises(ParameterError, match="Invalid parameters for task"):
-            divide.fix(z=5)
-
-    def test_fixed_task_then_with_multiple_ubound_params(self) -> None:
-        """Chaining with partially bound tasks fails when given invalid parameters."""
+    def test_fixed_task_then_with_multiple_unbound_params(self) -> None:
+        """then() with FixedParamTask fails when multiple parameters remain unbound."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
         def add(x: int, y: int, z: int) -> int:  # pragma: no cover
-            """Simple addition function."""
             return x + y + z
 
         prepared = prepare.bind(data=10)
@@ -598,16 +598,14 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(fixed_add)
 
     def test_fixed_task_then_with_no_unbound_params(self) -> None:
-        """Chaining with fully bound tasks fails when there are no unbound parameters."""
+        """then() with fully bound FixedParamTask fails."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
             return x + y
 
         prepared = prepare.bind(data=10)
@@ -617,16 +615,14 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(added)
 
     def test_fixed_task_then_with_overlapping_params(self) -> None:
-        """Chaining with partially bound tasks fails when given overlapping parameters."""
+        """then() with FixedParamTask fails when given overlapping parameters."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
-            """Simple addition function."""
             return x + y
 
         prepared = prepare.bind(data=10)
@@ -636,11 +632,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(fixed, y=20)
 
     def test_fixed_task_map_with_invalid_signature(self) -> None:
-        """Mapping with partially bound tasks requires exactly one unbound parameter."""
+        """map() with partially bound FixedParamTask requires exactly one unbound parameter."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
@@ -653,11 +648,10 @@ class TestInvalidTaskAndTaskFutureUsage:
             prepared.then(fixed_mapping)
 
     def test_fixed_task_join_with_invalid_signature(self) -> None:
-        """Reducing with partially bound tasks requires exactly one unbound parameter."""
+        """join() with partially bound FixedParamTask requires exactly one unbound parameter."""
 
         @task
         def prepare(data: int) -> int:  # pragma: no cover
-            """Simple prepare function."""
             return data + 1
 
         @task
