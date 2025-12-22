@@ -133,7 +133,7 @@ class EventProcessor:
         logger.debug("Stopping EventProcessor...")
         self._running = False
         self._thread.join(timeout=2.0)
-        if self._thread.is_alive():
+        if self._thread.is_alive():  # pragma: no cover
             logger.warning("EventProcessor thread did not stop cleanly")
         self._thread = None
 
