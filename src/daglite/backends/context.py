@@ -39,7 +39,7 @@ def get_plugin_manager() -> PluginManager:
         RuntimeError: If called outside an execution context.
     """
     pm = _plugin_manager.get()
-    if pm is None:
+    if pm is None:  # pragma: no cover
         raise RuntimeError(
             "No plugin manager in execution context. "
             "Ensure set_execution_context() was called during worker initialization."

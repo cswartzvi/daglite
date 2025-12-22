@@ -115,7 +115,9 @@ class ProcessBackend(Backend):
         settings = get_global_settings()
         max_workers = settings.max_parallel_processes
         mp_context: BaseContext
-        if os.name == "nt" or sys.platform == "darwin":
+
+        # NOTE: Coverage only runs on Linux CI runners (skipping Windows/macOS)
+        if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             mp_context = get_context("spawn")
         else:

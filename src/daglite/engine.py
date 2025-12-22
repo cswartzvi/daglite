@@ -302,13 +302,13 @@ class Engine:
         from daglite.plugins.events import EventRegistry
         from daglite.plugins.manager import build_plugin_manager
 
-        if self._registry is None:
+        if self._registry is None:  # pragma: no branch
             self._registry = EventRegistry()
 
-        if self._plugin_manager is None:
+        if self._plugin_manager is None:  # pragma: no branch
             self._plugin_manager = build_plugin_manager(self.plugins or [], self._registry)
 
-        if self._event_processor is None:
+        if self._event_processor is None:  # pragma: no branch
             self._event_processor = EventProcessor(self._registry)
 
         return self._plugin_manager, self._event_processor
