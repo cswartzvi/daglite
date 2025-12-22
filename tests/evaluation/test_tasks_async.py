@@ -12,8 +12,8 @@ from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
 
-class TestAsyncExecution:
-    """Tests async evaluation with evaluate_async()."""
+class TestSyncTasksWithEvaluateAsync:
+    """Tests evaluate_async() with regular (sync) task functions."""
 
     def test_single_task_async(self) -> None:
         """Async evaluation succeeds for single task."""
@@ -227,7 +227,7 @@ class TestAsyncExecution:
 
 
 class TestAsyncTasksWithEvaluateAsync:
-    """Tests for async tasks evaluated with evaluate_async()."""
+    """Tests evaluate_async() with async task functions (async def)."""
 
     def test_async_task_async_evaluation(self) -> None:
         """Async tasks can be evaluated asynchronously."""
