@@ -21,14 +21,16 @@ Organization:
 
 import pytest
 
+from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
+from daglite.futures import TaskFuture
 from daglite.tasks import FixedParamTask
 from daglite.tasks import Task
 from daglite.tasks import task
 
 
-class TestTaskValidDefinitions:
-    """Test the @task decorator with valid task definitions."""
+class TestTaskDecorator:
+    """Test the @task decorator definition and metadata handling."""
 
     def test_task_decorator_with_defaults(self) -> None:
         """Decorating a function without parameters uses sensible defaults."""
@@ -114,10 +116,6 @@ class TestTaskValidDefinitions:
         assert task_with_options.name == "power_task"
         assert task_with_options.description == "Power calculation task"
         assert task_with_options.func(2, 3) == 8
-
-
-class TestTaskDecorator:
-    """Test @task decorator usage errors."""
 
     def test_task_decorator_with_non_callable(self) -> None:
         """Decorator rejects non-callable objects."""
@@ -704,3 +702,53 @@ class TestBaseTaskFuture:
 
         with pytest.raises(TypeError, match="cannot be used in boolean context."):
             bool(future)
+
+
+class TestSplitMethod:
+    """Tests for TaskFuture.split() method construction."""
+
+    def test_split_method_with_annotations(self) -> None:
+        """TaskFuture.split() method should work with type annotations."""
+
+        @task
+        def make_pair() -> tuple[int, str]:
+            return (1, "a")
+
+        futures = make_pair.bind().split()
+
+        assert len(futures) == 2
+        assert all(isinstance(f, TaskFuture) for f in futures)
+
+    def test_split_method_with_size_parameter(self) -> None:
+        """TaskFuture.split() method should accept explicit size."""
+
+        @task
+        def make_triple():
+            return (1, 2, 3)
+
+        futures = make_triple.bind().split(size=3)
+
+        assert len(futures) == 3
+        assert all(isinstance(f, TaskFuture) for f in futures)
+
+    def test_split_method_raises_without_size(self) -> None:
+        """TaskFuture.split() method should raise when size cannot be inferred."""
+
+        @task
+        def make_untyped():
+            return (1, 2, 3)
+
+        with pytest.raises(DagliteError, match="Cannot infer tuple size"):
+            make_untyped.bind().split()
+
+    def test_split_method_with_large_tuple(self) -> None:
+        """TaskFuture.split() should handle larger tuples."""
+
+        @task
+        def make_five() -> tuple[int, int, int, int, int]:
+            return (1, 2, 3, 4, 5)
+
+        futures = make_five.bind().split()
+
+        assert len(futures) == 5
+        assert all(isinstance(f, TaskFuture) for f in futures)
