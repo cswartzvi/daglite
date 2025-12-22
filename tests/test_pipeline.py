@@ -1,4 +1,8 @@
-"""Tests for pipeline functionality."""
+"""
+Unit tests for pipeline declaration and loading.
+
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+"""
 
 from __future__ import annotations
 
