@@ -1,4 +1,4 @@
-"""Asynchronous evaluation tests using evaluate_async()."""
+"""Integration tests for async task evaluation with evaluate_async()."""
 
 import asyncio
 import threading

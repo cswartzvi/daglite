@@ -1,4 +1,4 @@
-"""Tests for fluent API (.then(), .map(), .join() with kwargs)."""
+"""Integration tests for the fluent API methods on futures."""
 
 import pytest
 
@@ -673,10 +673,10 @@ class TestSplitOperations:
         assert evaluate(f3) is True and evaluate(m3) is True
 
 
-class TestThenProductAndZip:
-    """Tests for TaskFuture.then_product() and TaskFuture.then_zip() fan-out operations."""
+class TestThenProductOperations:
+    """Tests for TaskFuture.then_product() method."""
 
-    def test_then_product_basic(self) -> None:
+    def test_basic(self) -> None:
         """then_product() creates Cartesian product fan-out."""
 
         @task
@@ -691,7 +691,7 @@ class TestThenProductAndZip:
         result = evaluate(prepare.bind(n=5).then_product(combine, y=[10, 20, 30]))
         assert result == [20, 30, 40]  # 10 + [10, 20, 30]
 
-    def test_then_product_multiple_params(self) -> None:
+    def test_with_multiple_params(self) -> None:
         """then_product() handles multiple mapped parameters via Cartesian product."""
 
         @task
@@ -706,7 +706,7 @@ class TestThenProductAndZip:
         result = evaluate(start.bind().then_product(multiply, y=[2, 3], z=[10, 20]))
         assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
 
-    def test_then_product_with_fixed_param(self) -> None:
+    def test_with_fixed_param(self) -> None:
         """then_product() works with pre-fixed tasks."""
 
         @task
@@ -721,7 +721,11 @@ class TestThenProductAndZip:
         result = evaluate(prepare.bind(n=3).then_product(fixed_compute, y=[1, 2, 3]))
         assert result == [109, 110, 111]  # 8 + [1, 2, 3] + 100
 
-    def test_then_zip_basic(self) -> None:
+
+class TestThenZipOperations:
+    """Tests for TaskFuture.then_zip() method."""
+
+    def test_basic(self) -> None:
         """then_zip() creates element-wise fan-out."""
 
         @task
@@ -736,7 +740,7 @@ class TestThenProductAndZip:
         result = evaluate(scalar.bind().then_zip(multiply, y=[10, 20, 30]))
         assert result == [120, 240, 360]  # 12 * [10, 20, 30]
 
-    def test_then_zip_multiple_params(self) -> None:
+    def test_with_multiple_params(self) -> None:
         """then_zip() handles multiple mapped parameters via zip."""
 
         @task
@@ -751,7 +755,7 @@ class TestThenProductAndZip:
         result = evaluate(start.bind().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
         assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
 
-    def test_then_zip_with_fixed_param(self) -> None:
+    def test_with_fixed_param(self) -> None:
         """then_zip() works with pre-fixed tasks."""
 
         @task
@@ -766,7 +770,7 @@ class TestThenProductAndZip:
         result = evaluate(prepare.bind().then_zip(fixed_combine, y=[1, 2, 3]))
         assert result == [106, 107, 108]  # 5 + [1, 2, 3] + 100
 
-    def test_scalar_broadcasting_in_product(self) -> None:
+    def test_broadcasting_in_product(self) -> None:
         """Scalar TaskFuture results act as fixed constants in product mode."""
 
         @task

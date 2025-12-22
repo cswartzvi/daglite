@@ -1,4 +1,4 @@
-"""Tests for pipeline evaluation with the @pipeline decorator."""
+"""Integration tests for pipeline evaluation with the @pipeline decorator."""
 
 import asyncio
 

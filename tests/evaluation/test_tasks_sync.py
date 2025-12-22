@@ -1,4 +1,4 @@
-"""Tests for task evaluation using evaluate() with both sync and async tasks."""
+"""Integration test for task evaluation using evaluate() with both sync and async tasks."""
 
 import asyncio
 
