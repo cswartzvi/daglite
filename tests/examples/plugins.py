@@ -91,52 +91,62 @@ class ParameterCapturePlugin:
     @hook_impl
     def before_graph_execute(self, root_id, node_count, is_async):
         """Capture graph start parameters."""
-        self.graph_starts.append({
-            "root_id": root_id,
-            "node_count": node_count,
-            "is_async": is_async,
-        })
+        self.graph_starts.append(
+            {
+                "root_id": root_id,
+                "node_count": node_count,
+                "is_async": is_async,
+            }
+        )
 
     @hook_impl
     def after_graph_execute(self, root_id, result, duration, is_async):
         """Capture graph end parameters."""
-        self.graph_ends.append({
-            "root_id": root_id,
-            "result": result,
-            "duration": duration,
-            "is_async": is_async,
-        })
+        self.graph_ends.append(
+            {
+                "root_id": root_id,
+                "result": result,
+                "duration": duration,
+                "is_async": is_async,
+            }
+        )
 
     @hook_impl
     def before_node_execute(self, key, metadata, inputs):
         """Capture node execution parameters."""
-        self.node_executions.append({
-            "key": key,
-            "metadata": metadata,
-            "inputs": inputs,
-        })
+        self.node_executions.append(
+            {
+                "key": key,
+                "metadata": metadata,
+                "inputs": inputs,
+            }
+        )
 
     @hook_impl
     def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
         """Capture node result parameters."""
-        self.node_results.append({
-            "key": key,
-            "metadata": metadata,
-            "inputs": inputs,
-            "result": result,
-            "duration": duration,
-        })
+        self.node_results.append(
+            {
+                "key": key,
+                "metadata": metadata,
+                "inputs": inputs,
+                "result": result,
+                "duration": duration,
+            }
+        )
 
     @hook_impl
     def on_node_error(self, key, metadata, inputs, error, duration, reporter=None):
         """Capture node error parameters."""
-        self.node_errors.append({
-            "key": key,
-            "metadata": metadata,
-            "inputs": inputs,
-            "error": error,
-            "duration": duration,
-        })
+        self.node_errors.append(
+            {
+                "key": key,
+                "metadata": metadata,
+                "inputs": inputs,
+                "error": error,
+                "duration": duration,
+            }
+        )
 
 
 class OrderTrackingPlugin:

@@ -218,6 +218,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds with TaskFuture as input."""
 
         if mode == "product":
+
             @task
             def generate() -> list[int]:
                 return [1, 2, 3]
@@ -230,6 +231,7 @@ class TestMappedTaskOperations:
             seq = square.product(x=future)
             expected = [1, 4, 9]
         else:  # zip
+
             @task
             def generate() -> list[int]:
                 return [5, 10, 15]
@@ -249,6 +251,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds with some fixed parameters."""
 
         if mode == "product":
+
             @task
             def power(base: int, exponent: int) -> int:
                 return base**exponent
@@ -257,11 +260,12 @@ class TestMappedTaskOperations:
             seq = fixed.product(base=[1, 2, 3, 4])
             expected = [1, 4, 9, 16]
         else:  # zip
+
             @task
             def multiply(x: int, factor: int) -> int:
                 return x * factor
 
-            fixed = multiply.fix(factor=10)
+            fixed = multiply.fix(factor=10)  # type: ignore
             seq = fixed.zip(x=[1, 2, 3])
             expected = [10, 20, 30]
 
@@ -272,6 +276,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds with fixed TaskFuture parameters."""
 
         if mode == "product":
+
             @task
             def get_exponent() -> int:
                 return 3
@@ -285,6 +290,7 @@ class TestMappedTaskOperations:
             seq = fixed.product(base=[2, 3, 4])
             expected = [8, 27, 64]
         else:  # zip
+
             @task
             def get_factor() -> int:
                 return 4
@@ -294,7 +300,7 @@ class TestMappedTaskOperations:
                 return x * factor
 
             future = get_factor.bind()
-            fixed = multiply.fix(factor=future)
+            fixed = multiply.fix(factor=future)  # type: ignore
             seq = fixed.zip(x=[2, 3, 4])
             expected = [8, 12, 16]
 
@@ -305,6 +311,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds when chaining with .then() for mapping."""
 
         if mode == "product":
+
             @task
             def double(x: int) -> int:
                 return x * 2
@@ -316,6 +323,7 @@ class TestMappedTaskOperations:
             seq = double.product(x=[1, 2, 3]).then(triple)
             expected = [6, 12, 18]
         else:  # zip
+
             @task
             def add(x: int, y: int) -> int:
                 return x + y
@@ -334,6 +342,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds when chaining with .join() for reduction."""
 
         if mode == "product":
+
             @task
             def square(x: int) -> int:
                 return x**2
@@ -345,6 +354,7 @@ class TestMappedTaskOperations:
             seq = square.product(x=[1, 2, 3, 4]).join(sum_all)
             expected = 30  # 1 + 4 + 9 + 16
         else:  # zip
+
             @task
             def add(x: int, y: int) -> int:
                 return x + y
@@ -363,19 +373,21 @@ class TestMappedTaskOperations:
         """Evaluation succeeds with .then() using kwargs."""
 
         if mode == "product":
+
             @task
             def double(x: int) -> int:
                 return x * 2
 
             @task
-            def add(x: int, offset: int) -> int:
+            def add(x: int, offset: int) -> int:  # pyright: ignore
                 return x + offset
 
             seq = double.product(x=[1, 2, 3]).then(add, offset=10)
             expected = [12, 14, 16]
         else:  # zip
+
             @task
-            def add(x: int, y: int) -> int:
+            def add(x: int, y: int) -> int:  # pyright: ignore
                 return x + y
 
             @task
@@ -392,6 +404,7 @@ class TestMappedTaskOperations:
         """Evaluation succeeds with .join() using kwargs."""
 
         if mode == "product":
+
             @task
             def square(x: int) -> int:
                 return x**2
@@ -403,6 +416,7 @@ class TestMappedTaskOperations:
             seq = square.product(x=[1, 2, 3, 4]).join(sum_with_bonus, bonus=5)
             expected = 35
         else:  # zip
+
             @task
             def add(x: int, y: int) -> int:
                 return x + y
@@ -694,6 +708,7 @@ class TestGeneratorMaterialization:
 
         async def run_async():
             from daglite.engine import evaluate_async
+
             return await evaluate_async(generate_numbers.bind(n=5))
 
         if evaluation_mode == "sync":
@@ -753,6 +768,7 @@ class TestGeneratorMaterialization:
 
         async def run_async():
             from daglite.engine import evaluate_async
+
             return await evaluate_async(totals)
 
         if evaluation_mode == "sync":
@@ -862,6 +878,7 @@ class TestGeneratorMaterialization:
 
         async def run_async():
             from daglite.engine import evaluate_async
+
             return await evaluate_async(total)
 
         if evaluation_mode == "sync":
@@ -895,6 +912,7 @@ class TestGeneratorMaterialization:
 
         async def run_async():
             from daglite.engine import evaluate_async
+
             return await evaluate_async(total)
 
         if evaluation_mode == "sync":
@@ -927,6 +945,7 @@ class TestGeneratorMaterialization:
 
         async def run_async():
             from daglite.engine import evaluate_async
+
             return await evaluate_async(total)
 
         if evaluation_mode == "sync":

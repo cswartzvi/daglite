@@ -211,10 +211,7 @@ class TestHookParameters:
         def sum_all(vals: list[int]) -> int:
             return sum(vals)
 
-        result = evaluate(
-            process.product(x=[1, 2, 3]).join(sum_all),
-            plugins=[capture]
-        )
+        result = evaluate(process.product(x=[1, 2, 3]).join(sum_all), plugins=[capture])
         assert result == 12
 
         # Map task calls hook for each iteration (3) + join task (1) = 4 total
