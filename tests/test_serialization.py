@@ -1,4 +1,8 @@
-"""Tests for serialization registry and hash strategies."""
+"""
+Unit tests for serialization registry and hash strategies.
+
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+"""
 
 import pickle
 from dataclasses import dataclass
