@@ -12,6 +12,7 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from dataclasses import dataclass
 from dataclasses import field
+from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
 
@@ -43,6 +44,14 @@ T = TypeVar("T")
 
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload  # some type checkers need this overload for compatibility
+async def evaluate(
+    expr: TaskFuture[CoroutineType[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
+
+
 @overload
 def evaluate(
     expr: TaskFuture[Coroutine[Any, Any, T]],
@@ -139,6 +148,14 @@ def evaluate(
 
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload  # some type checkers need this overload for compatibility
+async def evaluate_async(
+    expr: TaskFuture[CoroutineType[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
+
+
 @overload
 async def evaluate_async(
     expr: TaskFuture[Coroutine[Any, Any, T]],
