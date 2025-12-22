@@ -2,6 +2,8 @@
 
 import asyncio
 
+import pytest
+
 from daglite import evaluate
 from daglite import task
 
@@ -166,60 +168,261 @@ class TestSinglePathExecution:
         assert result_chain == 2 * (2**chain_depth)
 
 
-class TestProductEvaluation:
-    """Tests engine evaluation of mapped tasks using extend."""
+@pytest.mark.parametrize("mode", ["product", "zip"])
+class TestMappedTaskOperations:
+    """
+    Tests for mapped task operations (product and zip).
 
-    def test_product_with_empty_sequence(self) -> None:
-        """Evaluation succeeds for product with empty sequence."""
+    This class tests common patterns shared between product() and zip() operations
+    using parametrization to reduce duplication. Operation-specific behaviors are
+    tested in separate classes below.
+    """
+
+    def test_empty_sequence(self, mode: str) -> None:
+        """Evaluation succeeds with empty sequences."""
 
         @task
         def double(x: int) -> int:
             return x * 2  # pragma: no cover
 
-        doubled_seq = double.product(x=[])
+        operation = double.product if mode == "product" else double.zip
+        doubled_seq = operation(x=[])
         result = evaluate(doubled_seq)
         assert result == []
 
-    def test_product_single_parameter(self) -> None:
-        """Evaluation succeeds for single parameter task with extend (fan-out) behavior."""
+    def test_single_parameter(self, mode: str) -> None:
+        """Evaluation succeeds for single parameter tasks."""
 
         @task
         def double(x: int) -> int:
             return x * 2
 
-        multiplied_seq = double.product(x=[1, 2, 3])
-        result = evaluate(multiplied_seq)
+        operation = double.product if mode == "product" else double.zip
+        doubled_seq = operation(x=[1, 2, 3])
+        result = evaluate(doubled_seq)
         assert result == [2, 4, 6]
 
-    def test_product_with_single_element(self) -> None:
-        """Evaluation succeeds for product with single element sequence."""
+    def test_single_element(self, mode: str) -> None:
+        """Evaluation succeeds with single element sequences."""
 
         @task
         def triple(x: int) -> int:
             return x * 3
 
-        tripled_seq = triple.product(x=[5])
+        operation = triple.product if mode == "product" else triple.zip
+        tripled_seq = operation(x=[5])
         result = evaluate(tripled_seq)
         assert result == [15]
 
-    def test_product_with_future_input(self) -> None:
-        """Evaluation succeeds for product with TaskFuture as input."""
+    def test_with_future_input(self, mode: str) -> None:
+        """Evaluation succeeds with TaskFuture as input."""
 
-        @task
-        def generate_range() -> list[int]:
-            return [1, 2, 3]
+        if mode == "product":
+            @task
+            def generate() -> list[int]:
+                return [1, 2, 3]
 
-        @task
-        def square(x: int) -> int:
-            return x**2
+            @task
+            def square(x: int) -> int:
+                return x**2
 
-        range_future = generate_range.bind()
-        squared_seq = square.product(x=range_future)
-        result = evaluate(squared_seq)
-        assert result == [1, 4, 9]
+            future = generate.bind()
+            seq = square.product(x=future)
+            expected = [1, 4, 9]
+        else:  # zip
+            @task
+            def generate() -> list[int]:
+                return [5, 10, 15]
+
+            @task
+            def multiply(x: int, y: int) -> int:
+                return x * y
+
+            future = generate.bind()
+            seq = multiply.zip(x=future, y=[2, 3, 4])
+            expected = [10, 30, 60]
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_fixed_parameters(self, mode: str) -> None:
+        """Evaluation succeeds with some fixed parameters."""
+
+        if mode == "product":
+            @task
+            def power(base: int, exponent: int) -> int:
+                return base**exponent
+
+            fixed = power.fix(exponent=2)
+            seq = fixed.product(base=[1, 2, 3, 4])
+            expected = [1, 4, 9, 16]
+        else:  # zip
+            @task
+            def multiply(x: int, factor: int) -> int:
+                return x * factor
+
+            fixed = multiply.fix(factor=10)
+            seq = fixed.zip(x=[1, 2, 3])
+            expected = [10, 20, 30]
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_fixed_future_parameters(self, mode: str) -> None:
+        """Evaluation succeeds with fixed TaskFuture parameters."""
+
+        if mode == "product":
+            @task
+            def get_exponent() -> int:
+                return 3
+
+            @task
+            def power(base: int, exponent: int) -> int:
+                return base**exponent
+
+            future = get_exponent.bind()
+            fixed = power.fix(exponent=future)
+            seq = fixed.product(base=[2, 3, 4])
+            expected = [8, 27, 64]
+        else:  # zip
+            @task
+            def get_factor() -> int:
+                return 4
+
+            @task
+            def multiply(x: int, factor: int) -> int:
+                return x * factor
+
+            future = get_factor.bind()
+            fixed = multiply.fix(factor=future)
+            seq = fixed.zip(x=[2, 3, 4])
+            expected = [8, 12, 16]
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_map(self, mode: str) -> None:
+        """Evaluation succeeds when chaining with .then() for mapping."""
+
+        if mode == "product":
+            @task
+            def double(x: int) -> int:
+                return x * 2
+
+            @task
+            def triple(x: int) -> int:
+                return x * 3
+
+            seq = double.product(x=[1, 2, 3]).then(triple)
+            expected = [6, 12, 18]
+        else:  # zip
+            @task
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            @task
+            def square(z: int) -> int:
+                return z**2
+
+            seq = add.zip(x=[1, 2, 3], y=[10, 20, 30]).then(square)
+            expected = [121, 484, 1089]
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_join(self, mode: str) -> None:
+        """Evaluation succeeds when chaining with .join() for reduction."""
+
+        if mode == "product":
+            @task
+            def square(x: int) -> int:
+                return x**2
+
+            @task
+            def sum_all(values: list[int]) -> int:
+                return sum(values)
+
+            seq = square.product(x=[1, 2, 3, 4]).join(sum_all)
+            expected = 30  # 1 + 4 + 9 + 16
+        else:  # zip
+            @task
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            @task
+            def sum_all(values: list[int]) -> int:
+                return sum(values)
+
+            seq = add.zip(x=[1, 2, 3], y=[10, 20, 30]).join(sum_all)
+            expected = 66  # 11 + 22 + 33
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_map_kwargs(self, mode: str) -> None:
+        """Evaluation succeeds with .then() using kwargs."""
+
+        if mode == "product":
+            @task
+            def double(x: int) -> int:
+                return x * 2
+
+            @task
+            def add(x: int, offset: int) -> int:
+                return x + offset
+
+            seq = double.product(x=[1, 2, 3]).then(add, offset=10)
+            expected = [12, 14, 16]
+        else:  # zip
+            @task
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            @task
+            def multiply(x: int, factor: int) -> int:
+                return x * factor
+
+            seq = add.zip(x=[1, 2, 3], y=[10, 20, 30]).then(multiply, factor=2)
+            expected = [22, 44, 66]
+
+        result = evaluate(seq)
+        assert result == expected
+
+    def test_with_join_kwargs(self, mode: str) -> None:
+        """Evaluation succeeds with .join() using kwargs."""
+
+        if mode == "product":
+            @task
+            def square(x: int) -> int:
+                return x**2
+
+            @task
+            def sum_with_bonus(values: list[int], bonus: int) -> int:
+                return sum(values) + bonus
+
+            seq = square.product(x=[1, 2, 3, 4]).join(sum_with_bonus, bonus=5)
+            expected = 35
+        else:  # zip
+            @task
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            @task
+            def weighted_sum(values: list[int], weight: int) -> int:
+                return sum(values) * weight
+
+            seq = add.zip(x=[1, 2, 3], y=[10, 20, 30]).join(weighted_sum, weight=3)
+            expected = 198
+
+        result = evaluate(seq)
+        assert result == expected
+
+
+class TestProductSpecificBehavior:
+    """Tests for product()-specific behavior (Cartesian product semantics)."""
 
     def test_product_multiple_parameters(self) -> None:
-        """Evaluation succeeds for multiple parameter task with extend (fan-out) behavior."""
+        """Product creates Cartesian product of multiple parameter sequences."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -227,105 +430,28 @@ class TestProductEvaluation:
 
         added_seq = add.product(x=[1, 2, 3], y=[10, 20, 30])
         result = evaluate(added_seq)
-        assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]  # Cartesian product
+        # Cartesian product: all combinations
+        assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]
 
-    def test_product_with_fixed_parameters(self) -> None:
-        """Evaluation succeeds for product tasks with some fixed parameters."""
-
-        @task
-        def power(base: int, exponent: int) -> int:
-            return base**exponent
-
-        fixed_power = power.fix(exponent=2)
-        powered_seq = fixed_power.product(base=[1, 2, 3, 4])
-        result = evaluate(powered_seq)
-        assert result == [1, 4, 9, 16]  # Squares of 1, 2, 3, 4
-
-    def test_product_with_fixed_future_parameters(self) -> None:
-        """Evaluation succeeds for product tasks with fixed TaskFuture parameters."""
-
-        @task
-        def get_exponent() -> int:
-            return 3
-
-        @task
-        def power(base: int, exponent: int) -> int:
-            return base**exponent
-
-        exponent_future = get_exponent.bind()
-        fixed_power = power.fix(exponent=exponent_future)
-        powered_seq = fixed_power.product(base=[2, 3, 4])
-        result = evaluate(powered_seq)
-        assert result == [8, 27, 64]  # Cubes of 2, 3, 4
-
-    def test_product_with_map(self) -> None:
-        """Evaluation succeeds for product tasks with mapping behavior."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def triple(x: int) -> int:
-            return x * 3
-
-        doubled = double.product(x=[1, 2, 3])
-        tripled = doubled.then(triple)
-        result = evaluate(tripled)
-        assert result == [6, 12, 18]  # = [2*3, 4*3, 6*3]
-
-    def test_product_with_join(self) -> None:
-        """Evaluation succeeds for product followed by join (fan-out then fan-in)."""
-
-        @task
-        def square(x: int) -> int:
-            return x**2
-
-        @task
-        def sum_all(values: list[int]) -> int:
-            return sum(values)
-
-        squared_seq = square.product(x=[1, 2, 3, 4])
-        total = squared_seq.join(sum_all)
-        result = evaluate(total)
-        assert result == 30  # 1 + 4 + 9 + 16
-
-    def test_product_with_fixed_map(self) -> None:
-        """Evaluation succeeds for product tasks with both fixed parameters and mapping."""
+    def test_product_with_nested_tasks(self) -> None:
+        """Product with nested TaskFuture creates Cartesian product."""
 
         @task
         def add(x: int, y: int) -> int:
             return x + y
 
         @task
-        def square(z: int) -> int:
-            return z**2
+        def multiply(z: int, factor: int) -> int:
+            return z * factor
 
-        fixed_add = add.fix(y=5)
-        added_seq = fixed_add.product(x=[1, 2, 3])
-        squared_seq = added_seq.then(square)
-        result = evaluate(squared_seq)
-        assert result == [36, 49, 64]  # = [(1+5)^2, (2+5)^2, (3+5)^2]
+        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+        multiplied_seq = multiply.product(z=added_seq, factor=[2, 3])
+        result = evaluate(multiplied_seq)
+        # Cartesian product of results
+        assert result == [22, 33, 42, 63, 24, 36, 44, 66]
 
-    def test_product_with_fixed_join(self) -> None:
-        """Evaluation succeeds for product followed by join with fixed parameters."""
-
-        @task
-        def multiply(x: int, y: int) -> int:
-            return x * y
-
-        @task
-        def multiply_total(values: list[int], factor: int) -> int:
-            return sum(values) * factor
-
-        fixed_multiply_total = multiply_total.fix(factor=3)
-        multiplied_seq = multiply.product(x=[1, 2, 3], y=[10, 20, 30])
-        total = multiplied_seq.join(fixed_multiply_total)
-        result = evaluate(total)
-        assert result == 1080  # (10 + 20 + 30 + 20 + 40 + 60 + 30 + 60 + 90) * 3
-
-    def test_product_with_fixed_map_and_join(self) -> None:
-        """Evaluation succeeds for product with map then join (fan-out, transform, fan-in)."""
+    def test_product_with_complex_chain(self) -> None:
+        """Product with fixed map and join (fan-out, transform, fan-in)."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -339,14 +465,31 @@ class TestProductEvaluation:
         def max_value(values: list[int]) -> int:
             return max(values)
 
-        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
-        tripled_seq = added_seq.then(triple)  # [33, 63, 36, 66]
-        maximum = tripled_seq.join(max_value)
-        result = evaluate(maximum)
+        result = evaluate(
+            add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+            .then(triple)  # [33, 63, 36, 66]
+            .join(max_value)
+        )
         assert result == 66
 
-    def test_product_with_nested_tasks(self) -> None:
-        """Evaluation succeeds for nested extend tasks."""
+
+class TestZipSpecificBehavior:
+    """Tests for zip()-specific behavior (element-wise alignment semantics)."""
+
+    def test_zip_multiple_parameters(self) -> None:
+        """Zip aligns multiple parameter sequences element-wise."""
+
+        @task
+        def sum_three(x: int, y: int, z: int) -> int:
+            return x + y + z
+
+        summed_seq = sum_three.zip(x=[1, 2], y=[10, 20], z=[100, 200])
+        result = evaluate(summed_seq)
+        # Element-wise alignment
+        assert result == [111, 222]  # (1+10+100), (2+20+200)
+
+    def test_zip_with_nested_tasks(self) -> None:
+        """Zip with nested TaskFuture maintains element-wise alignment."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -356,200 +499,14 @@ class TestProductEvaluation:
         def multiply(z: int, factor: int) -> int:
             return z * factor
 
-        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
-        multiplied_seq = multiply.product(z=added_seq, factor=[2, 3])  # Cartesian product
+        added_seq = add.zip(x=[1, 2], y=[10, 20])  # [11, 22]
+        multiplied_seq = multiply.zip(z=added_seq, factor=[2, 3])
         result = evaluate(multiplied_seq)
-        assert result == [22, 33, 42, 63, 24, 36, 44, 66]
+        # Element-wise: (11*2), (22*3)
+        assert result == [22, 66]
 
-    def test_product_with_map_kwargs(self) -> None:
-        """Evaluation succeeds for product with .map() using kwargs."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        @task
-        def add(x: int, offset: int) -> int:
-            return x + offset
-
-        result = evaluate(double.product(x=[1, 2, 3]).then(add, offset=10))
-        assert result == [12, 14, 16]  # [2, 4, 6] -> add 10 -> [12, 14, 16]
-
-    def test_product_with_join_kwargs(self) -> None:
-        """Evaluation succeeds for product with .join() using kwargs."""
-
-        @task
-        def square(x: int) -> int:
-            return x**2
-
-        @task
-        def sum_with_bonus(values: list[int], bonus: int) -> int:
-            return sum(values) + bonus
-
-        result = evaluate(square.product(x=[1, 2, 3, 4]).join(sum_with_bonus, bonus=5))
-        assert result == 35  # (1 + 4 + 9 + 16) + 5
-
-
-class TestZipEvaluation:
-    """Tests engine evaluation of mapped tasks using zip."""
-
-    def test_zip_with_empty_sequence(self) -> None:
-        """Evaluation succeeds for zip with empty sequence."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y  # pragma: no cover
-
-        added_seq = add.zip(x=[], y=[])
-        result = evaluate(added_seq)
-        assert result == []
-
-    def test_zip_with_single_parameter(self) -> None:
-        """Evaluation succeeds for single parameter task with zip (aligned sequences)."""
-
-        @task
-        def double(x: int) -> int:
-            return x * 2
-
-        doubled_seq = double.zip(x=[1, 2, 3])
-        result = evaluate(doubled_seq)
-        assert result == [2, 4, 6]
-
-    def test_zip_with_single_element(self) -> None:
-        """Evaluation succeeds for zip with single element sequences."""
-
-        @task
-        def triple(x: int) -> int:
-            return x * 3
-
-        tripled_seq = triple.zip(x=[5])
-        result = evaluate(tripled_seq)
-        assert result == [15]
-
-    def test_zip_with_future_input(self) -> None:
-        """Evaluation succeeds for zip with TaskFuture as input."""
-
-        @task
-        def generate_values() -> list[int]:
-            return [5, 10, 15]
-
-        @task
-        def multiply(x: int, y: int) -> int:
-            return x * y
-
-        values_future = generate_values.bind()
-        multiplied_seq = multiply.zip(x=values_future, y=[2, 3, 4])
-        result = evaluate(multiplied_seq)
-        assert result == [10, 30, 60]  # (5*2), (10*3), (15*4)
-
-    def test_task_zip_with_multiple_parameters(self) -> None:
-        """Evaluation succeeds for zip with three aligned sequences."""
-
-        @task
-        def sum_three(x: int, y: int, z: int) -> int:
-            return x + y + z
-
-        summed_seq = sum_three.zip(x=[1, 2], y=[10, 20], z=[100, 200])
-        result = evaluate(summed_seq)
-        assert result == [111, 222]  # (1+10+100), (2+20+200)
-
-    def test_zip_with_fixed_parameters(self) -> None:
-        """Evaluation succeeds for zip tasks with some fixed parameters."""
-
-        @task
-        def multiply(x: int, factor: int) -> int:
-            return x * factor
-
-        fixed_multiply = multiply.fix(factor=10)
-        multiplied_seq = fixed_multiply.zip(x=[1, 2, 3])
-        result = evaluate(multiplied_seq)
-        assert result == [10, 20, 30]
-
-    def test_zip_with_fixed_future_parameters(self) -> None:
-        """Evaluation succeeds for zip tasks with fixed TaskFuture parameters."""
-
-        @task
-        def get_factor() -> int:
-            return 4
-
-        @task
-        def multiply(x: int, factor: int) -> int:
-            return x * factor
-
-        factor_future = get_factor.bind()
-        fixed_multiply = multiply.fix(factor=factor_future)
-        multiplied_seq = fixed_multiply.zip(x=[2, 3, 4])
-        result = evaluate(multiplied_seq)
-        assert result == [8, 12, 16]  # (2*4), (3*4), (4*4)
-
-    def test_zip_with_map(self) -> None:
-        """Evaluation succeeds for zip tasks with mapping behavior."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def square(z: int) -> int:
-            return z**2
-
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        squared_seq = added_seq.then(square)
-        result = evaluate(squared_seq)
-        assert result == [121, 484, 1089]  # = [11^2, 22^2, 33^2]
-
-    def test_zip_with_join(self) -> None:
-        """Evaluation succeeds for zip followed by join (fan-out then fan-in)."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def sum_all(values: list[int]) -> int:
-            return sum(values)
-
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        total = added_seq.join(sum_all)
-        result = evaluate(total)
-        assert result == 66  # 11 + 22 + 33
-
-    def test_zip_with_fixed_map(self) -> None:
-        """Evaluation succeeds for zip tasks with both fixed parameters and mapping."""
-
-        @task
-        def multiply(x: int, factor: int) -> int:
-            return x * factor
-
-        @task
-        def double(z: int) -> int:
-            return z * 2
-
-        fixed_multiply = multiply.fix(factor=3)
-        multiplied_seq = fixed_multiply.zip(x=[2, 4, 6])
-        doubled_seq = multiplied_seq.then(double)
-        result = evaluate(doubled_seq)
-        assert result == [12, 24, 36]  # = [(2*3)*2, (4*3)*2, (6*3)*2]
-
-    def test_zip_with_fixed_join(self) -> None:
-        """Evaluation succeeds for zip followed by join with fixed parameters."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def multiply_total(values: list[int], factor: int) -> int:
-            return sum(values) * factor
-
-        fixed_multiply_total = multiply_total.fix(factor=2)
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        total = added_seq.join(fixed_multiply_total)
-        result = evaluate(total)
-        assert result == 132  # (11 + 22 + 33) * 2
-
-    def test_zip_with_fix_map_and_join(self) -> None:
-        """Evaluation succeeds for zip with fixed map then join (fan-out, transform, fan-in)."""
+    def test_zip_with_complex_chain(self) -> None:
+        """Zip with fixed map and join (fan-out, transform, fan-in)."""
 
         @task
         def add(x: int, y: int) -> int:
@@ -563,56 +520,12 @@ class TestZipEvaluation:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        fixed_increment = increment.fix(increment_by=5)
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
-        incremented_seq = added_seq.then(fixed_increment)  # [16, 27, 38]
-        total = incremented_seq.join(sum_all)
-        result = evaluate(total)
-        assert result == 81  # 16 + 27 + 38
-
-    def test_zip_with_nested_tasks(self) -> None:
-        """Evaluation succeeds for nested zip tasks."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def multiply(z: int, factor: int) -> int:
-            return z * factor
-
-        added_seq = add.zip(x=[1, 2], y=[10, 20])  # [11, 22]
-        multiplied_seq = multiply.zip(z=added_seq, factor=[2, 3])  # [22, 66]
-        result = evaluate(multiplied_seq)
-        assert result == [22, 66]  # (11*2), (22*3)
-
-    def test_zip_with_map_kwargs(self) -> None:
-        """Evaluation succeeds for zip with .map() using kwargs."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def multiply(x: int, factor: int) -> int:
-            return x * factor
-
-        result = evaluate(add.zip(x=[1, 2, 3], y=[10, 20, 30]).then(multiply, factor=2))
-        assert result == [22, 44, 66]  # [11, 22, 33] -> multiply by 2
-
-    def test_zip_with_join_kwargs(self) -> None:
-        """Evaluation succeeds for zip with .join() using kwargs."""
-
-        @task
-        def add(x: int, y: int) -> int:
-            return x + y
-
-        @task
-        def weighted_sum(values: list[int], weight: int) -> int:
-            return sum(values) * weight
-
-        result = evaluate(add.zip(x=[1, 2, 3], y=[10, 20, 30]).join(weighted_sum, weight=3))
-        assert result == 198  # (11 + 22 + 33) * 3
+        result = evaluate(
+            add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
+            .then(increment.fix(increment_by=5))  # [16, 27, 38]
+            .join(sum_all)
+        )
+        assert result == 81
 
 
 class TestComplexPathEvaluation:
