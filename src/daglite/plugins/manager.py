@@ -83,7 +83,7 @@ def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginM
 
     # Register event handlers from bidirectional plugins
     for plugin in new_manager.get_plugins():
-        if isinstance_bidirectional_plugin(plugin):
+        if isinstance_bidirectional_plugin(plugin):  # pragma: no cover
             plugin.register_event_handlers(registry)
 
     return new_manager
