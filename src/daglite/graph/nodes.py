@@ -42,7 +42,8 @@ class TaskNode(BaseGraphNode):
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
         inputs = {}
         for name, param in self.kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):
+            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
+                # Defensive: TaskNode kwargs are always "value" or "ref", never sequence types
                 inputs[name] = param.resolve_sequence(completed_nodes)
             else:
                 inputs[name] = param.resolve(completed_nodes)
@@ -104,7 +105,8 @@ class MapTaskNode(BaseMapGraphNode):
 
         # Resolve fixed kwargs
         for name, param in self.fixed_kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):
+            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
+                # Defensive: fixed_kwargs are always "value" or "ref", never sequence types
                 inputs[name] = param.resolve_sequence(completed_nodes)
             else:
                 inputs[name] = param.resolve(completed_nodes)
@@ -113,7 +115,8 @@ class MapTaskNode(BaseMapGraphNode):
         for name, param in self.mapped_kwargs.items():
             if param.kind in ("sequence", "sequence_ref"):
                 inputs[name] = param.resolve_sequence(completed_nodes)
-            else:
+            else:  # pragma: no cover
+                # Defensive: mapped_kwargs are always "sequence" or "sequence_ref", never value/ref
                 inputs[name] = param.resolve(completed_nodes)
 
         return inputs

@@ -63,7 +63,7 @@ class Backend(abc.ABC):
         self._stop()
         delattr(self, "_plugin_manager")
         delattr(self, "_event_processor")
-        if hasattr(self, "_reporter"):
+        if hasattr(self, "_reporter"):  # pragma: no branch
             del self._reporter
 
     def _stop(self) -> None:

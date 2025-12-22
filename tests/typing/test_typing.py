@@ -16,12 +16,23 @@ import pytest
 )
 def test_assert_types(checker: str, subcommand: str) -> None:
     """Tests results of the type checkers directly using `assert_type` calls."""
-    file = (Path(__file__).parent / "assert_type_tests.py").as_posix()
+    # Common tests for all type checkers
+    common_file = (Path(__file__).parent / "assert_type_all.py").as_posix()
 
-    command = [checker]
-    if subcommand:
-        command.append(subcommand)
-    command.append(file)
+    # Checker-specific tests (if they exist)
+    checker_file = Path(__file__).parent / f"assert_type_{checker}.py"
 
-    result = subprocess.run(command, capture_output=True, text=True)
-    assert result.returncode == 0
+    files = [common_file]
+    if checker_file.exists():
+        files.append(checker_file.as_posix())
+
+    for file in files:
+        command = [checker]
+        if subcommand:
+            command.append(subcommand)
+        command.append(file)
+
+        result = subprocess.run(command, capture_output=True, text=True)
+        assert result.returncode == 0, (
+            f"Type checker {checker} failed on {file}:\n{result.stdout}\n{result.stderr}"
+        )

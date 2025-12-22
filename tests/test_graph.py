@@ -1,3 +1,9 @@
+"""
+Unit Tests for graph construction and nodes in daglite.graph.
+
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+"""
+
 from functools import cached_property
 from uuid import uuid4
 
@@ -14,11 +20,7 @@ from daglite.tasks import task
 
 
 class TestParamInput:
-    """
-    Test ParamInput creation and resolution.
-
-    NOTE: Tests focus on initialization and core functionality, not evaluation.
-    """
+    """Test ParamInput creation and resolution."""
 
     def test_from_value(self) -> None:
         """ParamInput.from_value creates a value-type input."""
@@ -103,14 +105,10 @@ class TestParamInput:
             param.resolve_sequence(values)
 
 
-class TestGraphNodes:
-    """
-    Test graph node initialization and properties.
+class TestTaskNodes:
+    """Test TaskNode initialization and properties."""
 
-    NOTE: Tests focus on structure, not execution/submission.
-    """
-
-    def test_task_node_properties(self) -> None:
+    def test_properties(self) -> None:
         """TaskNode initializes with correct properties and kind."""
 
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -132,7 +130,7 @@ class TestGraphNodes:
         assert node.name == "add_task"
         assert len(node.kwargs) == 2
 
-    def test_task_node_dependencies_with_refs(self) -> None:
+    def test_dependencies_with_refs(self) -> None:
         """TaskNode.dependencies() extracts refs from parameters."""
         dep_id = uuid4()
 
@@ -152,7 +150,7 @@ class TestGraphNodes:
         assert len(deps) == 1
         assert dep_id in deps
 
-    def test_task_node_dependencies_without_refs(self) -> None:
+    def test_dependencies_without_refs(self) -> None:
         """TaskNode.dependencies() returns empty set for value-only params."""
 
         def process(x: int) -> int:  # pragma: no cover
@@ -170,7 +168,11 @@ class TestGraphNodes:
         deps = node.dependencies()
         assert len(deps) == 0
 
-    def test_map_task_node_extend_mode(self) -> None:
+
+class TestMapTaskNodes:
+    """Test MapTaskNode initialization and properties."""
+
+    def test_extend_mode(self) -> None:
         """MapTaskNode initializes with extend mode."""
 
         def process(x: int) -> int:  # pragma: no cover
@@ -190,7 +192,7 @@ class TestGraphNodes:
         assert node.kind == "map"
         assert node.mode == "extend"
 
-    def test_map_task_node_zip_mode(self) -> None:
+    def test_zip_mode(self) -> None:
         """MapTaskNode initializes with zip mode."""
 
         def process(x: int) -> int:  # pragma: no cover
@@ -210,7 +212,7 @@ class TestGraphNodes:
         assert node.kind == "map"
         assert node.mode == "zip"
 
-    def test_map_task_node_dependencies_from_fixed(self) -> None:
+    def test_dependencies_from_fixed(self) -> None:
         """MapTaskNode.dependencies() extracts refs from fixed kwargs."""
         dep_id = uuid4()
 
@@ -231,7 +233,7 @@ class TestGraphNodes:
         deps = node.dependencies()
         assert dep_id in deps
 
-    def test_map_task_node_dependencies_from_mapped(self) -> None:
+    def test_dependencies_from_mapped(self) -> None:
         """MapTaskNode.dependencies() extracts refs from mapped kwargs."""
         dep_id = uuid4()
 
@@ -252,7 +254,7 @@ class TestGraphNodes:
         deps = node.dependencies()
         assert dep_id in deps
 
-    def test_map_task_node_inputs(self) -> None:
+    def test_inputs(self) -> None:
         """MapTaskNode.inputs() returns both fixed and mapped kwargs."""
 
         def add(x: int, offset: int) -> int:  # pragma: no cover
@@ -275,7 +277,7 @@ class TestGraphNodes:
         assert "offset" in node.fixed_kwargs
         assert "x" in node.mapped_kwargs
 
-    def test_map_task_node_zip_mode_length_mismatch(self) -> None:
+    def test_zip_mode_length_mismatch(self) -> None:
         """MapTaskNode submission fails with mismatched sequence lengths in zip mode."""
 
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -301,7 +303,7 @@ class TestGraphNodes:
         ):
             node.build_iteration_calls(resolved_inputs)
 
-    def test_map_task_node_invalid_mode(self) -> None:
+    def test_invalid_mode(self) -> None:
         """MapTaskNode build_iteration_calls fails with invalid mode."""
 
         def process(x: int) -> int:  # pragma: no cover
@@ -330,7 +332,7 @@ class TestBuildGraph:
     NOTE: Tests focus on graph construction, not evaluation.
     """
 
-    def test_build_graph_single_node(self) -> None:
+    def test_single_node(self) -> None:
         """build_graph handles single node graph."""
 
         @task
@@ -343,7 +345,7 @@ class TestBuildGraph:
         assert len(graph) == 1
         assert bound.id in graph
 
-    def test_build_graph_linear_chain(self) -> None:
+    def test_linear_chain(self) -> None:
         """build_graph handles linear dependency chain."""
 
         @task
@@ -369,7 +371,7 @@ class TestBuildGraph:
         assert s2.id in graph
         assert s3.id in graph
 
-    def test_build_graph_dag_with_multiple_deps(self) -> None:
+    def test_dag_with_multiple_deps(self) -> None:
         """build_graph handles DAG with multiple dependencies."""
 
         @task
@@ -397,7 +399,7 @@ class TestBuildGraph:
         assert s1.id in deps
         assert s2.id in deps
 
-    def test_build_graph_diamond_dependency(self) -> None:
+    def test_diamond_dependency(self) -> None:
         """build_graph handles diamond-shaped dependencies."""
 
         @task
@@ -426,7 +428,7 @@ class TestBuildGraph:
         assert len(graph) == 4
         assert all(node_id in graph for node_id in [root.id, b1.id, b2.id, final.id])
 
-    def test_build_graph_shared_dependency(self) -> None:
+    def test_shared_dependency(self) -> None:
         """build_graph handles shared dependencies correctly (skips already processed nodes)."""
 
         @task
@@ -460,7 +462,7 @@ class TestBuildGraph:
         assert u2.id in graph
         assert result.id in graph
 
-    def test_build_graph_skips_already_processed_nodes(self) -> None:
+    def test_skips_already_processed_nodes(self) -> None:
         """build_graph skips nodes already in the graph (covers early exit)."""
 
         @task
@@ -505,7 +507,7 @@ class TestBuildGraph:
         assert sum(1 for nid in graph if nid == l1.id) == 1
         assert sum(1 for nid in graph if nid == l2.id) == 1
 
-    def test_build_graph_detects_circular_dependency(self) -> None:
+    def test_detects_circular_dependency(self) -> None:
         """build_graph detects circular dependencies."""
         from uuid import UUID
 
@@ -544,7 +546,7 @@ class TestBuildGraph:
         with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
             build_graph(builder_a)  # pyright: ignore
 
-    def test_build_graph_detects_self_reference(self) -> None:
+    def test_detects_self_reference(self) -> None:
         """build_graph detects nodes that reference themselves."""
 
         # Create a builder that references itself

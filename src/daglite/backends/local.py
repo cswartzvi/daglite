@@ -115,7 +115,9 @@ class ProcessBackend(Backend):
         settings = get_global_settings()
         max_workers = settings.max_parallel_processes
         mp_context: BaseContext
-        if os.name == "nt" or sys.platform == "darwin":
+
+        # NOTE: Coverage only runs on Linux CI runners (skipping Windows/macOS)
+        if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             mp_context = get_context("spawn")
         else:
@@ -157,7 +159,7 @@ def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: A
     return asyncio.run(func(inputs, **kwargs))
 
 
-def _process_initializer(serialized_plugin_manager: dict, queue) -> None:
+def _process_initializer(serialized_plugin_manager: dict, queue) -> None:  # pragma: no cover
     """Initializer for process pool workers to set execution context."""
     plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
     reporter = ProcessReporter(queue)

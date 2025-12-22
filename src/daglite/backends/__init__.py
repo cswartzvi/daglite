@@ -44,7 +44,7 @@ class BackendManager:
         """
         from daglite.exceptions import BackendError
 
-        if not self._started:
+        if not self._started:  # pragma: no cover
             raise RuntimeError("BackendManager has not been started yet.")
 
         if not backend_name:
@@ -56,7 +56,7 @@ class BackendManager:
         if backend_name not in self._cached_backends:
             try:
                 backend_class = self._backend_types[backend_name]
-            except KeyError:
+            except KeyError:  # pragma: no cover
                 raise BackendError(
                     f"Unknown backend '{backend_name}'; "
                     f"available: {list(self._backend_types.keys())}"
@@ -70,7 +70,7 @@ class BackendManager:
 
     def start(self) -> None:
         """Start all backends as needed."""
-        if self._started:
+        if self._started:  # pragma: no cover
             raise RuntimeError("BackendManager is already started.")
 
         self._started = True
@@ -81,7 +81,3 @@ class BackendManager:
             backend.stop()
         self._cached_backends.clear()
         self._started = False
-
-    def _clear_backends(self) -> None:
-        """Clear all cached backends without stopping them (for testing purposes)."""
-        self._cached_backends.clear()

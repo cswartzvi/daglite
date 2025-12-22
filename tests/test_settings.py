@@ -1,4 +1,8 @@
-"""Tests for daglite settings configuration."""
+"""
+Unit tests for daglite settings configuration.
+
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+"""
 
 from daglite.settings import DagliteSettings
 from daglite.settings import get_global_settings
