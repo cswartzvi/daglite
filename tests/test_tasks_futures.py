@@ -1,22 +1,11 @@
 """
-Tests for task and task future definitions and parameter handling.
+Unit tests for task and task future definitions and parameter handling.
 
-These tests focus on validating the behavior of the @task decorator, Task,
-and TaskFuture classes when defining tasks and binding parameters. They ensure
-that invalid usages raise appropriate exceptions.
+These tests focus on validating the behavior of the @task decorator, Task, and TaskFuture classes
+when defining tasks and binding parameters. They ensure that invalid usages raise appropriate
+exceptions.
 
-Tests in this file should **not** focus on evaluation. Evaluation tests are in
-tests/evaluation/.
-
-Organization:
-- TestTaskValidDefinitions: Valid task creation and configuration
-- TestTaskDecorator: Decorator usage errors
-- TestParameterValidation: bind() and fix() parameter errors
-- TestProductOperationErrors: product() and then_product() errors
-- TestZipOperationErrors: zip() and then_zip() errors
-- TestFluentAPIErrors: then(), map(), join() errors
-- TestFixedParamTaskErrors: Errors with FixedParamTask operations
-- TestBaseTaskFuture: Core TaskFuture behavior
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
 """
 
 import pytest
@@ -29,7 +18,7 @@ from daglite.tasks import Task
 from daglite.tasks import task
 
 
-class TestTaskDecorator:
+class TestTaskDefinition:
     """Test the @task decorator definition and metadata handling."""
 
     def test_task_decorator_with_defaults(self) -> None:
