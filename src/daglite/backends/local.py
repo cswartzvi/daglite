@@ -159,7 +159,7 @@ def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: A
     return asyncio.run(func(inputs, **kwargs))
 
 
-def _process_initializer(serialized_plugin_manager: dict, queue) -> None:
+def _process_initializer(serialized_plugin_manager: dict, queue) -> None:  # pragma: no cover
     """Initializer for process pool workers to set execution context."""
     plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
     reporter = ProcessReporter(queue)

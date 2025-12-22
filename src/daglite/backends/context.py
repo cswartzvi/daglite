@@ -57,7 +57,7 @@ def get_reporter() -> EventReporter | None:
     return _event_reporter.get()
 
 
-def reset_execution_context(
+def reset_execution_context(  # pragma: no cover
     pm_token: Token[PluginManager | None],
     reporter_token: Token[EventReporter | None],
 ) -> None:
@@ -75,7 +75,7 @@ def reset_execution_context(
     _event_reporter.reset(reporter_token)
 
 
-def clear_execution_context() -> None:
+def clear_execution_context() -> None:  # pragma: no cover
     """
     Clear execution context.
 
