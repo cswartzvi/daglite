@@ -2,17 +2,13 @@
 Unit tests for event reporters.
 
 These tests verify reporter implementations without requiring full evaluation.
-They focus on:
-- Reporter initialization
-- Event reporting mechanics
-- Error handling
-- Resource cleanup
 
-For integration tests with actual backends, see tests/evaluation/test_backends.py.
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
 """
 
 from multiprocessing import Queue as MultiprocessingQueue
 from queue import Queue
+from typing import Any
 from unittest.mock import Mock
 
 import pytest
@@ -123,7 +119,7 @@ class TestProcessReporter:
 
     def test_initialization(self) -> None:
         """ProcessReporter can be initialized with a multiprocessing queue."""
-        queue = MultiprocessingQueue()
+        queue: MultiprocessingQueue[Any] = MultiprocessingQueue()
         reporter = ProcessReporter(queue)
         assert reporter.queue is queue
         queue.close()
@@ -165,7 +161,7 @@ class TestProcessReporter:
 
     def test_close_closes_queue(self) -> None:
         """close() closes the underlying multiprocessing queue."""
-        queue = MultiprocessingQueue()
+        queue: MultiprocessingQueue[Any] = MultiprocessingQueue()
         reporter = ProcessReporter(queue)
 
         reporter.close()
@@ -176,7 +172,7 @@ class TestProcessReporter:
 
     def test_queue_property(self) -> None:
         """queue property returns the underlying multiprocessing queue."""
-        queue = MultiprocessingQueue()
+        queue: MultiprocessingQueue[Any] = MultiprocessingQueue()
         reporter = ProcessReporter(queue)
         assert reporter.queue is queue
         queue.close()
