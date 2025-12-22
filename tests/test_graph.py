@@ -1,7 +1,7 @@
 """
-Tests for graph construction and nodes in daglite.graph.
+Unit Tests for graph construction and nodes in daglite.graph.
 
-Note that tests focus on initialization and core functionality, not evaluation.
+Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
 """
 
 from functools import cached_property
