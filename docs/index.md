@@ -42,7 +42,7 @@ def save(items: list, path: str) -> None:
 
 # Build the DAG (lazy - doesn't execute yet)
 result = (
-    fetch_data.bind(url="https://api.example.com/data")
+    fetch_data(url="https://api.example.com/data")
     .then(transform, multiplier=10)
     .then(save, path="output.json")
 )
@@ -94,7 +94,7 @@ Chain operations naturally with method chaining:
 
 ```python
 result = (
-    fetch.bind(url="https://example.com")
+    fetch(url="https://example.com")
     .then(parse, format="json")
     .then(validate, strict=True)
     .then(save, path="output.json")
@@ -131,7 +131,7 @@ Works seamlessly with type checkers:
 def process(data: pd.DataFrame) -> dict[str, float]:
     return {"mean": data["value"].mean()}
 
-result = process.bind(data=df)
+result = process(data=df)
 reveal_type(result)  # TaskFuture[dict[str, float]]
 ```
 

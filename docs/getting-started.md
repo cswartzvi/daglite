@@ -61,9 +61,9 @@ def sum_values(numbers: list[int]) -> int:
     return sum(numbers)
 
 # Step 2: Build the DAG
-data = load_data.bind(path="numbers.txt")
-squared = square_all.bind(numbers=data)
-total = sum_values.bind(numbers=squared)
+data = load_data(path="numbers.txt")
+squared = square_all(numbers=data)
+total = sum_values(numbers=squared)
 
 # Step 3: Execute
 result = evaluate(total)
@@ -73,11 +73,11 @@ print(f"Sum of squares: {result}")
 ### What's Happening?
 
 1. **`@task`** - Decorates functions to make them composable
-2. **`.bind()`** - Creates a "future" representing the task's eventual result
+2. **Calling tasks** - Creates a "future" representing the task's eventual result
 3. **`evaluate()`** - Executes the DAG and returns the final result
 
 !!! tip "Lazy Evaluation"
-    Notice that `.bind()` doesn't execute anything - it just builds the DAG.
+    Calling a task doesn't execute it - it just builds the DAG.
     Execution only happens when you call `evaluate()`.
 
 ---
@@ -88,7 +88,7 @@ The same DAG can be written more concisely using method chaining:
 
 ```python
 result = evaluate(
-    load_data.bind(path="numbers.txt")
+    load_data(path="numbers.txt")
     .then(square_all)
     .then(sum_values)
 )
@@ -211,7 +211,7 @@ def to_string(x: int) -> str:
 
 # Type checker knows the result is str
 result: str = evaluate(
-    get_number.bind()
+    get_number()
     .then(double)
     .then(to_string)
 )
@@ -221,7 +221,7 @@ Your IDE will provide autocomplete and catch type errors:
 
 ```python
 # ❌ Type error - expects int, got str
-evaluate(double.bind(x="hello"))
+evaluate(double(x="hello"))
 ```
 
 ---
@@ -252,7 +252,7 @@ result = evaluate(
 Now that you understand the basics:
 
 - **[Learn more about tasks](user-guide/tasks.md)** - Task decorators, options, and patterns
-- **[Explore composition patterns](user-guide/composition.md)** - `.bind()`, `.product()`, `.zip()`, `.fix()`
+- **[Explore composition patterns](user-guide/composition.md)** - Calling tasks, `()`, `.product()`, `.zip()`, `.partial()`
 - **[Master the fluent API](user-guide/fluent-api.md)** - `.then()`, `.map()`, `.join()`
 - **[See real examples](examples.md)** - ETL pipelines, ML workflows, and more
 
@@ -264,7 +264,7 @@ Now that you understand the basics:
 
 ```python
 result = (
-    fetch.bind(url=url)
+    fetch(url=url)
     .then(parse, format="json")
     .then(validate, strict=True)
     .then(save, path="output.json")
