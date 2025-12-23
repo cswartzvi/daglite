@@ -559,3 +559,48 @@ class TestGeneratorMaterializationWithEvaluateAsync:
         result = asyncio.run(run())
         # [0,1] -> 1, [0,1,2] -> 5, [0,1,2,3] -> 14
         assert result == [1, 5, 14]
+
+
+class TestConcurrentSiblingTaskExecution:
+    """Tests for concurrent execution of sibling tasks without timing assertions."""
+
+    def test_sync_tasks_with_threading_backend_in_async_context(self) -> None:
+        """Sync tasks with threading backend execute concurrently in async evaluation."""
+        thread_ids: set[int] = set()
+        lock = threading.Lock()
+
+        @task(backend_name="threading")
+        def track_thread(value: int) -> int:
+            """Track which thread executes this task."""
+            with lock:
+                thread_ids.add(threading.get_ident())
+
+            return value
+
+        @task
+        def sum_values(a: int, b: int, c: int) -> int:
+            return a + b + c
+
+        # Create sibling tasks that should run in different threads
+        t1 = track_thread(value=10)
+        t2 = track_thread(value=20)
+        t3 = track_thread(value=30)
+        total = sum_values(a=t1, b=t2, c=t3)
+
+        async def run():
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+
+        # Verify results
+        assert result == 60
+
+        # Verify multiple threads were used (proves concurrent execution).
+        # Note: This assumes the threading backend's executor uses a pool with
+        # multiple threads. It may fail on single-core systems or if the thread
+        # pool size is 1.
+        assert len(thread_ids) > 1, (
+            "Threading backend should execute sibling tasks in parallel using "
+            "multiple threads. This may fail on single-core systems or if the "
+            f"thread pool size is 1 (observed {len(thread_ids)} thread(s))."
+        )
