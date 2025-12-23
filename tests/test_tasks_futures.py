@@ -238,7 +238,7 @@ class TestProductOperationErrors:
             start().then_product(combine, y=10)
 
     def test_then_product_with_overlapping_params(self) -> None:
-        """then_product() fails when trying to re-bind fixed parameters."""
+        """then_product() fails when trying to re-bind partially-applied parameters."""
 
         @task
         def start() -> int:
@@ -368,7 +368,7 @@ class TestZipOperationErrors:
             start().then_zip(compute, y=[1, 2, 3], z=[10, 20])
 
     def test_then_zip_with_overlapping_params(self) -> None:
-        """then_zip() fails when trying to re-bind fixed parameters."""
+        """then_zip() fails when trying to re-bind partially-applied parameters."""
 
         @task
         def start() -> int:

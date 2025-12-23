@@ -307,15 +307,17 @@ class Task(BaseTask[P, R]):
         users to create tasks with a mix of scalar and mapped parameters.
 
         Args:
-            **kwargs: Keyword arguments to be fixed for this task. Can include literal, variables,
+            **kwargs: Keyword arguments to be fixed for this task. Can include literals, variables,
             or even `TaskFuture` objects.
 
         Returns:
             A `PartialTask` with the specified parameters fixed.
 
         Examples:
+            >>> @task
             >>> def score(x: int, y: int, z: int) -> float:
             ...     return (x + y) / z
+            >>>
             >>> seed = 42
             >>> base = score.partial(y=seed, z=0.5)
             >>> branch1 = base(x=lazy_x)  # TaskFuture[int]
