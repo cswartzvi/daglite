@@ -186,7 +186,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
 
         Args:
             **kwargs: Keyword arguments matching the task function's parameters. Must include
-                all required parameters. Values can be  or TaskFutures.
+                all required parameters. Can include `TaskFuture` objects.
 
         Returns:
             A `TaskFuture` representing the execution of this task with the provided parameters.
