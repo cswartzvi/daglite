@@ -2,10 +2,10 @@
 
 *This page is under construction. You can add detailed documentation about:*
 
-- `.bind()` - Basic task binding
+- Calling tasks directly with `task(**kwargs)` - Natural call syntax
 - `.product()` - Cartesian product for parameter sweeps
 - `.zip()` - Pairwise operations on sequences
-- `.fix()` - Partial parameter application
+- `.partial()` - Partial parameter application
 - Combining patterns
 
 ## Coming Soon

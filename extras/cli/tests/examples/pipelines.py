@@ -37,8 +37,8 @@ def math_pipeline(x: int, y: int, factor: int = 2):
     Returns:
         TaskFuture[int]: The result of (x + y) * factor.
     """
-    sum_result = add.bind(x=x, y=y)
-    return multiply.bind(x=sum_result, factor=factor)
+    sum_result = add(x=x, y=y)
+    return multiply(x=sum_result, factor=factor)
 
 
 @pipeline
@@ -58,16 +58,16 @@ def untyped_pipeline(x, y):  # noqa: ANN001
     """
     # Note: Since x and y are untyped strings from CLI, we need to handle them
     # This is intentionally problematic to demonstrate the issue
-    return add.bind(x=int(x) if isinstance(x, str) else x, y=int(y) if isinstance(y, str) else y)
+    return add(x=int(x) if isinstance(x, str) else x, y=int(y) if isinstance(y, str) else y)
 
 
 @pipeline
 def failing_pipeline(x: int):
     """A pipeline that will fail during execution."""
-    return failing_task.bind(x=x)
+    return failing_task(x=x)
 
 
 @pipeline
 def empty_pipeline():
     """A pipeline with no parameters for testing output branches."""
-    return add.bind(x=1, y=2)
+    return add(x=1, y=2)

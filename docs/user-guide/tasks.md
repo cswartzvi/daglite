@@ -69,38 +69,38 @@ def scale(x: float, factor: float = 1.0) -> float:
     return x * factor
 
 # Use default
-result = scale.bind(x=5.0)  # factor=1.0
+result = scale(x=5.0)  # factor=1.0
 
 # Override default
-result = scale.bind(x=5.0, factor=2.0)  # factor=2.0
+result = scale(x=5.0, factor=2.0)  # factor=2.0
 ```
 
 ---
 
 ## Task Futures
 
-When you `.bind()` a task, you get a `TaskFuture` - a lazy representation of the task's future result:
+When you `()` a task, you get a `TaskFuture` - a lazy representation of the task's future result:
 
 ```python
 @task
 def compute() -> int:
     return 42
 
-future = compute.bind()  # Returns TaskFuture[int]
+future = compute()  # Returns TaskFuture[int]
 print(type(future))      # <class 'daglite.futures.TaskFuture'>
 
 result = evaluate(future)  # Executes and returns 42
 ```
 
 !!! warning "Futures are lazy"
-    Calling `.bind()` does **not** execute the task. It only builds the DAG.
+    Calling the task does **not** execute it. It only builds the DAG.
     Execution happens when you call `evaluate()`.
 
 ---
 
-## Partial Application with `.fix()`
+## Partial Application with `.partial()`
 
-Fix some parameters while leaving others unbound:
+Fix some parameters while leaving others unbound, creating a reusable task template:
 
 ```python
 @task
@@ -108,14 +108,25 @@ def power(base: int, exponent: int) -> int:
     return base ** exponent
 
 # Create a "square" function
-square = power.fix(exponent=2)
+square = power.partial(exponent=2)
 
 # Use it in different contexts
-result1 = square.bind(base=5)           # 25
+result1 = square(base=5)                # 25
 result2 = square.product(base=[1,2,3])  # [1, 4, 9]
+result3 = square(base=7)                # 49
 ```
 
-This is useful for creating reusable task templates.
+This pattern is especially useful for creating reusable task templates:
+
+```python
+# Create a scorer with partially-applied parameters
+scorer = score.partial(threshold=0.5, metric="accuracy")
+
+# Reuse with different models
+future1 = scorer(model=model_a)
+future2 = scorer(model=model_b)
+future3 = scorer(model=model_c)
+```
 
 ---
 
@@ -137,9 +148,9 @@ def double(x: int) -> int:
     return x * 2
 
 # Connect tasks
-fetched = fetch.bind()
-extracted = extract.bind(data=fetched)  # depends on fetched
-doubled = double.bind(x=extracted)      # depends on extracted
+fetched = fetch()
+extracted = extract(data=fetched)  # depends on fetched
+doubled = double(x=extracted)      # depends on extracted
 
 result = evaluate(doubled)  # 84
 ```
@@ -278,7 +289,7 @@ def test_add():
     assert add.func(2, 3) == 5
 
     # Or evaluate the task
-    result = evaluate(add.bind(x=2, y=3))
+    result = evaluate(add(x=2, y=3))
     assert result == 5
 ```
 
@@ -286,6 +297,6 @@ def test_add():
 
 ## Next Steps
 
-- **[Learn about composition patterns](composition.md)** - `.bind()`, `.product()`, `.zip()`
+- **[Learn about composition patterns](composition.md)** - `()`, `.product()`, `.zip()`
 - **[Explore the fluent API](fluent-api.md)** - `.then()`, `.map()`, `.join()`
 - **[See real examples](../examples.md)** - ETL pipelines and more

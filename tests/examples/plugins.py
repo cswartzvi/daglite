@@ -27,7 +27,7 @@ class CounterPlugin:
 
     Usage:
         counter = CounterPlugin()
-        result = evaluate(task.bind(...), plugins=[counter])
+        result = evaluate(task(...), plugins=[counter])
         assert counter.before_node_count == 1
     """
 
@@ -75,7 +75,7 @@ class ParameterCapturePlugin:
 
     Usage:
         capture = ParameterCapturePlugin()
-        result = evaluate(task.bind(...), plugins=[capture])
+        result = evaluate(task(...), plugins=[capture])
         assert capture.graph_starts[0]["node_count"] == 1
         assert capture.node_executions[0]["inputs"] == {"x": 2, "y": 3}
     """
@@ -158,7 +158,7 @@ class OrderTrackingPlugin:
 
     Usage:
         tracker = OrderTrackingPlugin()
-        result = evaluate(task.bind(...), plugins=[tracker])
+        result = evaluate(task(...), plugins=[tracker])
         assert tracker.call_order == [
             "before_graph",
             "before_node",
@@ -206,7 +206,7 @@ class ErrorRaisingPlugin:
 
     Usage:
         error_plugin = ErrorRaisingPlugin(raise_in="before_node")
-        result = evaluate(task.bind(...), plugins=[error_plugin])
+        result = evaluate(task(...), plugins=[error_plugin])
         # Should handle error gracefully
     """
 

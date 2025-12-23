@@ -96,7 +96,7 @@ class TestBackendIntegration:
     def test_single_task_execution(self, backend: str, x: int, y: int, expected: int) -> None:
         """Different backends execute single tasks correctly."""
         task_with_backend = add.with_options(backend_name=backend)
-        result = evaluate(task_with_backend.bind(x=x, y=y))
+        result = evaluate(task_with_backend(x=x, y=y))
         assert result == expected
 
     @pytest.mark.parametrize("backend", ["sequential", "threading", "processes"])
@@ -113,9 +113,9 @@ class TestBackendIntegration:
         process = square.with_options(backend_name="processes")
         sum_task = sum_values.with_options(backend_name="sequential")
 
-        data = fetch.bind()
+        data = fetch()
         processed = process.zip(x=data)
-        total = sum_task.bind(values=processed)
+        total = sum_task(values=processed)
 
         result = evaluate(total)
         assert result == 55  # 1+4+9+16+25
@@ -125,8 +125,8 @@ class TestBackendIntegration:
         gen = generate_range.with_options(backend_name="processes")
         sum_task = sum_values.with_options(backend_name="processes")
 
-        nums = gen.bind(n=10)
-        total = sum_task.bind(values=nums)
+        nums = gen(n=10)
+        total = sum_task(values=nums)
 
         result = evaluate(total)
         assert result == 45  # 0+1+2+...+9
@@ -137,7 +137,7 @@ class TestBackendIntegration:
         dict1 = {"a": 1, "b": 2}
         dict2 = {"c": 3, "d": 4}
 
-        result = evaluate(task_with_backend.bind(d1=dict1, d2=dict2))
+        result = evaluate(task_with_backend(d1=dict1, d2=dict2))
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
 
     def test_threading_backend_with_io_bound_tasks(self) -> None:
@@ -166,7 +166,7 @@ class TestBackendWithPipelines:
         @pipeline
         def compute_pipeline(nums: list[int]):
             squared = square_proc.zip(x=nums)
-            return sum_values.bind(values=squared)
+            return sum_values(values=squared)
 
         result = evaluate(compute_pipeline(nums=[1, 2, 3, 4]))
         assert result == 30  # 1+4+9+16
@@ -181,16 +181,16 @@ class TestBackendErrorHandling:
         task_with_backend = failing_task.with_options(backend_name=backend)
 
         # Should succeed
-        result = evaluate(task_with_backend.bind(x=5))
+        result = evaluate(task_with_backend(x=5))
         assert result == 10
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="negative value not allowed"):
-            evaluate(task_with_backend.bind(x=-5))
+            evaluate(task_with_backend(x=-5))
 
         # Should raise ZeroDivisionError
         with pytest.raises(ZeroDivisionError, match="cannot divide by zero"):
-            evaluate(task_with_backend.bind(x=0))
+            evaluate(task_with_backend(x=0))
 
 
 class TestBackendPickleRequirements:
@@ -199,7 +199,7 @@ class TestBackendPickleRequirements:
     def test_task_with_nested_function(self) -> None:
         """Tasks defined at module level can contain nested helper functions."""
         task_with_backend = nested_computation.with_options(backend_name="processes")
-        result = evaluate(task_with_backend.bind(x=5))
+        result = evaluate(task_with_backend(x=5))
         assert result == 20  # (5*2) + (5*2)
 
     def test_task_with_lambda_function(self) -> None:
@@ -209,11 +209,11 @@ class TestBackendPickleRequirements:
         lambda_task = task(lambda x: x * 3, name="triple")  # type: ignore
 
         # Should work with sequential backend
-        result = evaluate(lambda_task.with_options(backend_name="sequential").bind(x=7))
+        result = evaluate(lambda_task.with_options(backend_name="sequential")(x=7))
         assert result == 21
 
         # Should work with threading backend
-        result = evaluate(lambda_task.with_options(backend_name="threading").bind(x=8))
+        result = evaluate(lambda_task.with_options(backend_name="threading")(x=8))
         assert result == 24
 
     def test_task_with_callable_object(self) -> None:
@@ -231,9 +231,9 @@ class TestBackendPickleRequirements:
         mult_task = task(multiplier, name="multiplier")  # type: ignore
 
         # Should work with sequential backend (no pickling needed)
-        result = evaluate(mult_task.with_options(backend_name="sequential").bind(x=4))
+        result = evaluate(mult_task.with_options(backend_name="sequential")(x=4))
         assert result == 20
 
         # Should work with threading backend (pickle not strictly required)
-        result = evaluate(mult_task.with_options(backend_name="threading").bind(x=6))
+        result = evaluate(mult_task.with_options(backend_name="threading")(x=6))
         assert result == 30
