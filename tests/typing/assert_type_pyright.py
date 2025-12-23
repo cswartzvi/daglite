@@ -23,7 +23,7 @@ async def async_add(x: int, y: int) -> int:
 
 def test_async_task_basic() -> None:
     """Async tasks return TaskFuture[CoroutineType[...]]."""
-    result = async_add.bind(x=5, y=10)
+    result = async_add(x=5, y=10)
     assert_type(result, TaskFuture[CoroutineType[Any, Any, int]])
 
 
@@ -35,7 +35,7 @@ def test_async_task_with_product() -> None:
 
 async def test_async_task_evaluation() -> None:
     """evaluate() unwraps coroutines from async tasks."""
-    future = async_add.bind(x=5, y=10)
+    future = async_add(x=5, y=10)
     result = await evaluate_async(future)
     assert_type(result, int)
 
@@ -54,5 +54,5 @@ def test_async_generator_types() -> None:
 
         return _gen()
 
-    future = async_generate.bind(n=5)
+    future = async_generate(n=5)
     assert_type(future, TaskFuture[CoroutineType[Any, Any, AsyncGenerator[int, None]]])

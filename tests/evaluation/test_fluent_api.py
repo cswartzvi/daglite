@@ -25,7 +25,7 @@ class TestTaskFutureThen:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(fetch.bind(source="hello").then(double).then(add, y=10))
+        result = evaluate(fetch(source="hello").then(double).then(add, y=10))
         assert result == 20  # len("hello")*2 + 10 = 5*2 + 10 = 20
 
     def test_then_with_multiple_kwargs(self) -> None:
@@ -39,7 +39,7 @@ class TestTaskFutureThen:
         def compute(x: int, factor: int, offset: int) -> int:
             return x * factor + offset
 
-        result = evaluate(start.bind().then(compute, factor=3, offset=7))
+        result = evaluate(start().then(compute, factor=3, offset=7))
         assert result == 22  # 5*3 + 7
 
     def test_then_with_fixed_task(self) -> None:
@@ -53,8 +53,8 @@ class TestTaskFutureThen:
         def scale(x: int, factor: int, offset: int) -> int:
             return x * factor + offset
 
-        fixed_scale = scale.fix(offset=5)
-        result = evaluate(start.bind().then(fixed_scale, factor=2))
+        fixed_scale = scale.partial(offset=5)
+        result = evaluate(start().then(fixed_scale, factor=2))
         assert result == 25  # 10*2 + 5
 
     def test_then_basic_chain(self) -> None:
@@ -72,7 +72,7 @@ class TestTaskFutureThen:
         def to_string(x: int) -> str:
             return f"Result: {x}"
 
-        result = double.bind(x=5).then(add_ten).then(to_string)
+        result = double(x=5).then(add_ten).then(to_string)
         assert evaluate(result) == "Result: 20"
 
     def test_then_return_type_preservation(self) -> None:
@@ -86,7 +86,7 @@ class TestTaskFutureThen:
         def to_string(x: int) -> str:
             return f"Result: {x}"
 
-        result = double.bind(x=5).then(to_string)
+        result = double(x=5).then(to_string)
         from daglite.tasks import TaskFuture
 
         assert isinstance(result, TaskFuture)
@@ -203,7 +203,7 @@ class TestComplexPipelines:
         # add 10: [12,14,16,18,13,16,19,22]
         # sum = 130, * 2 = 260
         result = evaluate(
-            scale.product(x=fetch_range.bind(count=4), factor=[2, 3])
+            scale.product(x=fetch_range(count=4), factor=[2, 3])
             .then(add_values, offset=10)
             .join(compute_total, multiplier=2)
         )
@@ -228,7 +228,7 @@ class TestComplexPipelines:
         # [1,2,3] zip [2,3,4] -> [2, 6, 12] -> add 10 -> [12, 16, 22] -> sum*2 -> 100
         result = evaluate(
             scale.zip(x=[1, 2, 3], factor=[2, 3, 4])
-            .then(add.fix(offset=10))
+            .then(add.partial(offset=10))
             .join(sum_with_multiplier, multiplier=2)
         )
         assert result == 100  # (12 + 16 + 22) * 2
@@ -263,7 +263,7 @@ class TestComplexPipelines:
         # start(5) -> 10 -> increment(amount=3) -> 13 -> transform_list -> [13, 14, 15]
         # -> product/scale(factor=[2,3]) -> [26,28,30,39,42,45] -> add 10 -> [36,38,40,49,52,55]
         # -> sum + 100 -> 370
-        list_future = start.bind(x=5).then(increment, amount=3).then(transform_list)
+        list_future = start(x=5).then(increment, amount=3).then(transform_list)
         result = evaluate(
             scale.product(x=list_future, factor=[2, 3])
             .then(add_offset, offset=10)
@@ -299,8 +299,8 @@ class TestComplexPipelines:
 
         # fetch [1,2,3], fetch [10,10,10] -> zip multiply -> [10, 20, 30]
         # -> add_offset(5) -> [15, 25, 35] -> product -> 13125
-        base = fetch_base.bind(count=3)
-        multipliers = fetch_multipliers.bind(count=3)
+        base = fetch_base(count=3)
+        multipliers = fetch_multipliers(count=3)
 
         result = evaluate(
             multiply.zip(x=base, factor=multipliers).then(add_offset, offset=5).join(product)
@@ -326,7 +326,7 @@ class TestComplexPipelines:
         def to_string(x: int) -> str:
             return f"Result: {x}"
 
-        pair = make_pair.bind(x=10)
+        pair = make_pair(x=10)
         first, second = pair.split()
 
         # Chain from each split element
@@ -351,7 +351,7 @@ class TestErrorCases:
         def no_params() -> int:
             return 42
 
-        value = double.bind(x=5)
+        value = double(x=5)
 
         with pytest.raises(Exception, match="no unbound parameters"):
             value.then(no_params)
@@ -367,7 +367,7 @@ class TestErrorCases:
         def two_params(x: int, y: int) -> int:
             return x + y
 
-        value = double.bind(x=5)
+        value = double(x=5)
 
         with pytest.raises(Exception, match="exactly one"):
             value.then(two_params)
@@ -383,8 +383,8 @@ class TestErrorCases:
         def scale(x: int, factor: int) -> int:
             return x * factor
 
-        value = double.bind(x=5)
-        fixed_scale = scale.fix(factor=3)
+        value = double(x=5)
+        fixed_scale = scale.partial(factor=3)
         result = value.then(fixed_scale)
 
         assert evaluate(result) == 30
@@ -400,7 +400,7 @@ class TestSplitOperations:
         def make_pair() -> tuple[int, str]:
             return (42, "hello")
 
-        result = make_pair.bind()
+        result = make_pair()
         first, second = result.split()
 
         assert evaluate(first) == 42
@@ -413,7 +413,7 @@ class TestSplitOperations:
         def make_triple() -> tuple[int, str, float]:
             return (1, "a", 2.5)
 
-        result = make_triple.bind()
+        result = make_triple()
         a, b, c = result.split()
 
         assert evaluate(a) == 1
@@ -427,7 +427,7 @@ class TestSplitOperations:
         def make_single() -> tuple[str]:
             return ("only",)
 
-        result = make_single.bind()
+        result = make_single()
         (only,) = result.split()
 
         assert evaluate(only) == "only"
@@ -439,7 +439,7 @@ class TestSplitOperations:
         def make_five() -> tuple[int, int, int, int, int]:
             return (1, 2, 3, 4, 5)
 
-        result = make_five.bind()
+        result = make_five()
         a, b, c, d, e = result.split()
 
         assert evaluate(a) == 1
@@ -455,7 +455,7 @@ class TestSplitOperations:
         def make_mixed() -> tuple[int, str, bool, list[int]]:
             return (42, "test", True, [1, 2, 3])
 
-        result = make_mixed.bind()
+        result = make_mixed()
         num, text, flag, items = result.split()
 
         assert evaluate(num) == 42
@@ -470,7 +470,7 @@ class TestSplitOperations:
         def make_pair():
             return (1, 2)
 
-        result = make_pair.bind()
+        result = make_pair()
         first, second = result.split(size=2)
 
         assert evaluate(first) == 1
@@ -483,7 +483,7 @@ class TestSplitOperations:
         def make_triple():
             return (10, 20, 30)
 
-        result = make_triple.bind()
+        result = make_triple()
         a, b, c = result.split(size=3)
 
         assert evaluate(a) == 10
@@ -497,7 +497,7 @@ class TestSplitOperations:
         def make_pair() -> tuple[int, int]:
             return (1, 2)
 
-        result = make_pair.bind()
+        result = make_pair()
         # Use size=2 explicitly even though annotation says 2
         first, second = result.split(size=2)
 
@@ -519,11 +519,11 @@ class TestSplitOperations:
         def triple(x: int) -> int:
             return x * 3
 
-        result = make_pair.bind()
+        result = make_pair()
         first, second = result.split()
 
-        doubled = double.bind(x=first)
-        tripled = triple.bind(x=second)
+        doubled = double(x=first)
+        tripled = triple(x=second)
 
         assert evaluate(doubled) == 6
         assert evaluate(tripled) == 15
@@ -539,9 +539,9 @@ class TestSplitOperations:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = make_pair.bind()
+        result = make_pair()
         first, second = result.split()
-        combined = add.bind(x=first, y=second)
+        combined = add(x=first, y=second)
 
         assert evaluate(combined) == 30
 
@@ -556,9 +556,9 @@ class TestSplitOperations:
         def sum_three(a: int, b: int, c: int) -> int:
             return a + b + c
 
-        result = make_triple.bind()
+        result = make_triple()
         a, b, c = result.split()
-        total = sum_three.bind(a=a, b=b, c=c)
+        total = sum_three(a=a, b=b, c=c)
 
         assert evaluate(total) == 6
 
@@ -573,8 +573,8 @@ class TestSplitOperations:
         def make_pair(n: int) -> tuple[int, int]:
             return (n, n + 1)
 
-        computed = compute.bind(x=5)
-        pair = make_pair.bind(n=computed)
+        computed = compute(x=5)
+        pair = make_pair(n=computed)
         first, second = pair.split()
 
         assert evaluate(first) == 10
@@ -587,7 +587,7 @@ class TestSplitOperations:
         def make_untyped():
             return (1, 2)
 
-        result = make_untyped.bind()
+        result = make_untyped()
 
         with pytest.raises(DagliteError, match="Cannot infer tuple size"):
             result.split()
@@ -599,7 +599,7 @@ class TestSplitOperations:
         def make_variadic() -> tuple[int, ...]:
             return (1, 2, 3)
 
-        result = make_variadic.bind()
+        result = make_variadic()
 
         with pytest.raises(DagliteError, match="Cannot infer tuple size"):
             result.split()
@@ -613,7 +613,7 @@ class TestSplitOperations:
             execution_count["count"] += 1
             return (1, 2)
 
-        result = make_pair_with_side_effect.bind()
+        result = make_pair_with_side_effect()
         first, second = result.split()
 
         # Evaluate both - upstream should only execute once
@@ -631,7 +631,7 @@ class TestSplitOperations:
         def make_mixed() -> tuple[int, str, bool]:
             return (42, "hello", True)
 
-        result = make_mixed.bind()
+        result = make_mixed()
         num, text, flag = result.split()
 
         # These should pass type checking
@@ -651,8 +651,8 @@ class TestSplitOperations:
             return x * 2
 
         # Fluent chaining: bind -> split -> bind
-        x, y = compute.bind().split()
-        result = double.bind(x=x)
+        x, y = compute().split()
+        result = double(x=x)
 
         assert evaluate(result) == 20
 
@@ -664,8 +664,8 @@ class TestSplitOperations:
             return (42, "test", True)
 
         # Create two independent split operations
-        f1, f2, f3 = make_data.bind().split()
-        m1, m2, m3 = make_data.bind().split()
+        f1, f2, f3 = make_data().split()
+        m1, m2, m3 = make_data().split()
 
         # Both should produce same results
         assert evaluate(f1) == evaluate(m1) == 42
@@ -688,7 +688,7 @@ class TestThenProductOperations:
             return x + y
 
         # Scalar result fans out with y=[10, 20, 30]
-        result = evaluate(prepare.bind(n=5).then_product(combine, y=[10, 20, 30]))
+        result = evaluate(prepare(n=5).then_product(combine, y=[10, 20, 30]))
         assert result == [20, 30, 40]  # 10 + [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
@@ -703,7 +703,7 @@ class TestThenProductOperations:
             return x * y * z
 
         # x=1 fans out with y=[2, 3] and z=[10, 20]
-        result = evaluate(start.bind().then_product(multiply, y=[2, 3], z=[10, 20]))
+        result = evaluate(start().then_product(multiply, y=[2, 3], z=[10, 20]))
         assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
 
     def test_with_fixed_param(self) -> None:
@@ -717,8 +717,8 @@ class TestThenProductOperations:
         def compute(x: int, y: int, z: int) -> int:
             return x + y + z
 
-        fixed_compute = compute.fix(z=100)
-        result = evaluate(prepare.bind(n=3).then_product(fixed_compute, y=[1, 2, 3]))
+        fixed_compute = compute.partial(z=100)
+        result = evaluate(prepare(n=3).then_product(fixed_compute, y=[1, 2, 3]))
         assert result == [109, 110, 111]  # 8 + [1, 2, 3] + 100
 
 
@@ -737,7 +737,7 @@ class TestThenZipOperations:
             return x * y
 
         # Scalar 12 paired element-wise with y=[10, 20, 30]
-        result = evaluate(scalar.bind().then_zip(multiply, y=[10, 20, 30]))
+        result = evaluate(scalar().then_zip(multiply, y=[10, 20, 30]))
         assert result == [120, 240, 360]  # 12 * [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
@@ -752,7 +752,7 @@ class TestThenZipOperations:
             return x + y + z
 
         # x=2 zipped with y=[10, 20, 30] and z=[1, 2, 3]
-        result = evaluate(start.bind().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
+        result = evaluate(start().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
         assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
 
     def test_with_fixed_param(self) -> None:
@@ -766,8 +766,8 @@ class TestThenZipOperations:
         def combine(x: int, y: int, offset: int) -> int:
             return x + y + offset
 
-        fixed_combine = combine.fix(offset=100)
-        result = evaluate(prepare.bind().then_zip(fixed_combine, y=[1, 2, 3]))
+        fixed_combine = combine.partial(offset=100)
+        result = evaluate(prepare().then_zip(fixed_combine, y=[1, 2, 3]))
         assert result == [106, 107, 108]  # 5 + [1, 2, 3] + 100
 
     def test_broadcasting_in_product(self) -> None:
@@ -782,5 +782,5 @@ class TestThenZipOperations:
             return x + y
 
         # prepare result is scalar, used as constant across all iterations
-        result = evaluate(prepare.product(n=[1, 2, 3]).then(combine.fix(y=10)))
+        result = evaluate(prepare.product(n=[1, 2, 3]).then(combine.partial(y=10)))
         assert result == [12, 14, 16]  # [2, 4, 6] + 10

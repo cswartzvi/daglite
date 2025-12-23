@@ -64,51 +64,51 @@ async def async_add(x: int, y: int) -> int:
     return x + y
 
 
-# -- Core API: bind() --
+# -- Core API: __call__() --
 
 
 def test_bind_basic() -> None:
     """Test basic task binding with scalar parameters."""
-    result = add.bind(x=1, y=2)
+    result = add(x=1, y=2)
     assert_type(result, TaskFuture[int])
 
 
 def test_bind_with_dependencies() -> None:
     """Test binding with TaskFuture dependencies."""
-    dep = double.bind(x=5)
-    result = add.bind(x=dep, y=10)
+    dep = double(x=5)
+    result = add(x=dep, y=10)
     assert_type(result, TaskFuture[int])
 
 
 def test_bind_return_types() -> None:
     """Test that bind() preserves various return types."""
-    int_result = add.bind(x=1, y=2)
+    int_result = add(x=1, y=2)
     assert_type(int_result, TaskFuture[int])
 
-    str_result = to_string.bind(x=5)
+    str_result = to_string(x=5)
     assert_type(str_result, TaskFuture[str])
 
-    dict_result = get_dict.bind()
+    dict_result = get_dict()
     assert_type(dict_result, TaskFuture[dict[str, Any]])
 
-    optional_result = maybe_none.bind(x=5)
+    optional_result = maybe_none(x=5)
     assert_type(optional_result, TaskFuture[int | None])
 
 
-# -- Core API: fix() --
+# -- Core API: partial() --
 
 
-def test_fix_partial_binding() -> None:
-    """Test fix() for partial parameter binding."""
-    fixed = add.fix(y=10)
-    result = fixed.bind(x=5)
+def test_partial_binding() -> None:
+    """Test partial() for partial parameter binding."""
+    partial_add = add.partial(y=10)
+    result = partial_add(x=5)
     assert_type(result, TaskFuture[int])
 
 
-def test_fix_with_options() -> None:
-    """Test that fix() and with_options() work together."""
-    fixed_with_opts = add.fix(y=10).with_options(backend_name="threading").bind(x=5)
-    assert_type(fixed_with_opts, TaskFuture[int])
+def test_partial_with_options() -> None:
+    """Test that partial() and with_options() work together."""
+    partial_with_opts = add.partial(y=10).with_options(backend_name="threading")(x=5)
+    assert_type(partial_with_opts, TaskFuture[int])
 
 
 # -- Fan-out API: product() and zip() --
@@ -135,9 +135,9 @@ def test_product_vs_zip_semantics() -> None:
     assert_type(pairwise, MapTaskFuture[int])
 
 
-def test_product_with_fixed() -> None:
+def test_product_with_partial() -> None:
     """Test product() with partially fixed parameters."""
-    result = add.fix(y=10).product(x=[1, 2, 3])
+    result = add.partial(y=10).product(x=[1, 2, 3])
     assert_type(result, MapTaskFuture[int])
 
 
@@ -186,7 +186,7 @@ def test_join_with_type_change() -> None:
 
 def test_join_after_then_chain() -> None:
     """Test join() after chained then() operations."""
-    result = double.product(x=[1, 2, 3]).then(double).then(add.fix(y=10)).join(sum_list)
+    result = double.product(x=[1, 2, 3]).then(double).then(add.partial(y=10)).join(sum_list)
     assert_type(result, TaskFuture[int])
 
 
@@ -195,28 +195,28 @@ def test_join_after_then_chain() -> None:
 
 def test_then_product_basic() -> None:
     """Test then_product() on TaskFuture."""
-    prep = double.bind(x=5)
+    prep = double(x=5)
     result = prep.then_product(add, y=[10, 20, 30])
     assert_type(result, MapTaskFuture[int])
 
 
 def test_then_product_chaining() -> None:
     """Test then_product() with then() and join()."""
-    prep = double.bind(x=5)
+    prep = double(x=5)
     chained = prep.then_product(add, y=[10, 20]).then(double).join(sum_list)
     assert_type(chained, TaskFuture[int])
 
 
 def test_then_zip_basic() -> None:
     """Test then_zip() on TaskFuture."""
-    prep = double.bind(x=5)
+    prep = double(x=5)
     result = prep.then_zip(add, y=[10, 20, 30])
     assert_type(result, MapTaskFuture[int])
 
 
 def test_then_zip_chaining() -> None:
     """Test then_zip() with then() and join()."""
-    prep = double.bind(x=5)
+    prep = double(x=5)
     chained = prep.then_zip(add, y=[10, 20]).then(to_string).join(join_strings)
     assert_type(chained, TaskFuture[str])
 
@@ -229,7 +229,7 @@ def test_pipeline_decorator() -> None:
 
     @pipeline
     def compute(x: int, y: int) -> TaskFuture[int]:
-        return add.bind(x=x, y=y)
+        return add(x=x, y=y)
 
     result = compute(5, 10)
     assert_type(result, TaskFuture[int])
@@ -255,8 +255,8 @@ async def test_async_task_evaluation() -> None:
 
 def test_mixed_sync_async() -> None:
     """Sync tasks can depend on async task results."""
-    async_result = async_add.bind(x=5, y=10)
-    sync_result = double.bind(x=async_result)
+    async_result = async_add(x=5, y=10)
+    sync_result = double(x=async_result)
     assert_type(sync_result, TaskFuture[int])
 
 
@@ -272,7 +272,7 @@ def test_sync_generator_types() -> None:
         for i in range(n):
             yield i
 
-    future = generate.bind(n=5)
+    future = generate(n=5)
     assert_type(future, TaskFuture[Generator[int, None, None]])
 
     result = evaluate(future)

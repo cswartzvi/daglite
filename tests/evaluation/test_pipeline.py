@@ -20,7 +20,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def simple_pipeline(x: int, y: int):
-            return add.bind(x=x, y=y)
+            return add(x=x, y=y)
 
         graph = simple_pipeline(5, 10)
         result = evaluate(graph)
@@ -39,8 +39,8 @@ class TestPipelineEvaluation:
 
         @pipeline
         def chained_pipeline(x: int, y: int, factor: int):
-            sum_result = add.bind(x=x, y=y)
-            return multiply.bind(x=sum_result, factor=factor)
+            sum_result = add(x=x, y=y)
+            return multiply(x=sum_result, factor=factor)
 
         graph = chained_pipeline(5, 10, 3)
         result = evaluate(graph)
@@ -90,7 +90,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def pipeline_with_defaults(x: int, factor: int = 2):
-            return multiply.bind(x=x, factor=factor)
+            return multiply(x=x, factor=factor)
 
         # Use default
         graph1 = pipeline_with_defaults(10)
@@ -116,10 +116,10 @@ class TestPipelineEvaluation:
         @pipeline
         def async_pipeline(a: int, b: int, c: int):
             # Create parallel branches
-            sum_result = add.bind(x=a, y=b)
-            prod_result = multiply.bind(x=b, y=c)
+            sum_result = add(x=a, y=b)
+            prod_result = multiply(x=b, y=c)
             # Merge
-            return add.bind(x=sum_result, y=prod_result)
+            return add(x=sum_result, y=prod_result)
 
         graph = async_pipeline(1, 2, 3)
 

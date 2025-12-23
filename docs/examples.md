@@ -27,7 +27,7 @@ def load(df: pd.DataFrame, destination: str) -> None:
 
 # Build and execute pipeline
 evaluate(
-    extract.bind(source="data.csv")
+    extract(source="data.csv")
     .then(transform, columns=["id", "name", "value"])
     .then(load, destination="output.parquet")
 )

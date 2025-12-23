@@ -35,7 +35,7 @@ class TestPipeline:
 
         @pipeline
         def simple_pipeline(x: int, y: int):  # pragma: no cover
-            return add.bind(x=x, y=y)
+            return add(x=x, y=y)
 
         assert isinstance(simple_pipeline, Pipeline)
         assert simple_pipeline.name == "simple_pipeline"
@@ -47,7 +47,7 @@ class TestPipeline:
         @pipeline
         def documented_pipeline(x: int):  # pragma: no cover
             """This is a documented pipeline."""
-            return add.bind(x=x, y=10)
+            return add(x=x, y=10)
 
         assert documented_pipeline.description == "This is a documented pipeline."
 
@@ -56,7 +56,7 @@ class TestPipeline:
 
         @pipeline(name="custom_name")
         def my_pipeline(x: int):  # pragma: no cover
-            return add.bind(x=x, y=5)
+            return add(x=x, y=5)
 
         assert my_pipeline.name == "custom_name"
 
@@ -65,7 +65,7 @@ class TestPipeline:
 
         @pipeline(description="Custom description")
         def my_pipeline(x: int):  # pragma: no cover
-            return add.bind(x=x, y=5)
+            return add(x=x, y=5)
 
         assert my_pipeline.description == "Custom description"
 

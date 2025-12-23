@@ -62,9 +62,9 @@ def save(items: list, path: str) -> None:
         f.write("\n".join(items))
 
 # Build the DAG
-fetched = fetch_data.bind(url="https://api.example.com")
-processed = process.bind(data=fetched)
-saved = save.bind(items=processed, path="output.txt")
+fetched = fetch_data(url="https://api.example.com")
+processed = process(data=fetched)
+saved = save(items=processed, path="output.txt")
 
 # Execute the DAG
 evaluate(saved)
@@ -95,7 +95,7 @@ def transform(data: dict, format: str) -> str:
 
 # Fluent style - chain operations naturally
 result = evaluate(
-    fetch.bind(url="https://example.com")
+    fetch(url="https://example.com")
     .then(parse, selector=".content")
     .then(transform, format="json")
 )
@@ -156,7 +156,7 @@ def train(model: Model, data: pd.DataFrame) -> Model:
 
 # Build pipeline
 model = (
-    load_config.bind(path="config.json")
+    load_config(path="config.json")
     .then(init_model)
     .then(train, data=training_data)
 )
@@ -210,7 +210,7 @@ def find_pairs(corr: pd.DataFrame, threshold: float) -> list[tuple]:
 
 # Build analytics pipeline
 result = evaluate(
-    fetch_prices.bind(symbols=["AAPL", "GOOGL", "MSFT"])
+    fetch_prices(symbols=["AAPL", "GOOGL", "MSFT"])
     .then(calculate_returns, window=20)
     .then(compute_correlation)
     .then(find_pairs, threshold=0.8)
@@ -280,7 +280,7 @@ Tasks don't execute immediately - they return futures:
 
 ```python
 # Create a future (lazy evaluation)
-future = process_data.bind(input="hello", param=5)
+future = process_data(input="hello", param=5)
 
 # Execute when ready
 result = evaluate(future)  # Returns {"result": "hellohellohellohellohello"}
@@ -290,7 +290,7 @@ result = evaluate(future)  # Returns {"result": "hellohellohellohellohello"}
 
 | Pattern | Method | Use Case |
 |---------|--------|----------|
-| Sequential | `.bind()` + `.then()` | Chain dependent operations |
+| Sequential | `()` + `.then()` | Chain dependent operations |
 | Cartesian | `.product()` | Parameter sweeps, all combinations |
 | Pairwise | `.zip()` | Element-wise operations |
 | Transform | `.map()` | Apply function to each element |
@@ -320,10 +320,10 @@ def cpu_bound_task(data: np.ndarray) -> np.ndarray:
 
 ```python
 # Partially apply parameters
-normalize = scale.fix(factor=100, offset=10)
+normalize = scale.partial(factor=100, offset=10)
 
 # Use in different contexts
-result1 = normalize.bind(x=5)           # Single value
+result1 = normalize(x=5)           # Single value
 result2 = normalize.product(x=[1,2,3])  # Multiple values
 ```
 
@@ -335,9 +335,9 @@ from daglite import pipeline
 @pipeline
 def ml_pipeline(model_path: str, data_path: str, epochs: int = 10):
     """Train a machine learning model."""
-    data = load_data.bind(path=data_path)
-    model = train_model.bind(data=data, epochs=epochs)
-    return save_model.bind(model=model, path=model_path)
+    data = load_data(path=data_path)
+    model = train_model(data=data, epochs=epochs)
+    return save_model(model=model, path=model_path)
 ```
 
 Run from command line:

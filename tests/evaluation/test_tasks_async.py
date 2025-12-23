@@ -24,7 +24,7 @@ class TestSyncTasksWithEvaluateAsync:
             return x + y
 
         async def run():
-            return await evaluate_async(add.bind(x=10, y=20))
+            return await evaluate_async(add(x=10, y=20))
 
         result = asyncio.run(run())
         assert result == 30
@@ -44,9 +44,9 @@ class TestSyncTasksWithEvaluateAsync:
         def subtract(value: int, decrement: int) -> int:
             return value - decrement
 
-        added = add.bind(x=3, y=7)  # 10
-        multiplied = multiply.bind(z=added, factor=4)  # 40
-        subtracted = subtract.bind(value=multiplied, decrement=15)  # 25
+        added = add(x=3, y=7)  # 10
+        multiplied = multiply(z=added, factor=4)  # 40
+        subtracted = subtract(value=multiplied, decrement=15)  # 25
 
         async def run():
             return await evaluate_async(subtracted)
@@ -74,9 +74,9 @@ class TestSyncTasksWithEvaluateAsync:
         def combine(a: int, b: int) -> int:
             return a + b
 
-        left_future: TaskFuture[int] = left.bind()
-        right_future: TaskFuture[int] = right.bind()
-        combined = combine.bind(a=left_future, b=right_future)
+        left_future: TaskFuture[int] = left()
+        right_future: TaskFuture[int] = right()
+        combined = combine(a=left_future, b=right_future)
 
         async def run():
             return await evaluate_async(combined)
@@ -135,7 +135,7 @@ class TestSyncTasksWithEvaluateAsync:
         def divide(x: int, y: int) -> float:
             return x / y
 
-        divided = divide.bind(x=10, y=0)
+        divided = divide(x=10, y=0)
 
         async def run():
             return await evaluate_async(divided)
@@ -155,9 +155,9 @@ class TestSyncTasksWithEvaluateAsync:
             return x * y
 
         # Diamond pattern: two paths that merge
-        a = add.bind(x=1, y=2)  # 3
-        b = multiply.bind(x=2, y=3)  # 6
-        c = add.bind(x=a, y=b)  # 9
+        a = add(x=1, y=2)  # 3
+        b = multiply(x=2, y=3)  # 6
+        c = add(x=a, y=b)  # 9
 
         async def run():
             return await evaluate_async(c)
@@ -238,7 +238,7 @@ class TestAsyncTasksWithEvaluateAsync:
             return x * factor
 
         async def run():
-            return await evaluate_async(async_multiply.bind(x=7, factor=3))
+            return await evaluate_async(async_multiply(x=7, factor=3))
 
         result = asyncio.run(run())
         assert result == 21
@@ -258,15 +258,15 @@ class TestAsyncTasksWithEvaluateAsync:
             return duration
 
         # Create three tasks that should run in parallel
-        t1 = slow_task.bind(duration=0.1)
-        t2 = slow_task.bind(duration=0.1)
-        t3 = slow_task.bind(duration=0.1)
+        t1 = slow_task(duration=0.1)
+        t2 = slow_task(duration=0.1)
+        t3 = slow_task(duration=0.1)
 
         @task
         def combine(a: float, b: float, c: float) -> float:
             return a + b + c
 
-        combined = combine.bind(a=t1, b=t2, c=t3)
+        combined = combine(a=t1, b=t2, c=t3)
 
         async def run():
             start = time.time()
@@ -288,7 +288,7 @@ class TestAsyncTasksWithEvaluateAsync:
             await asyncio.sleep(0.001)
             raise ValueError("Async task failed!")
 
-        future = failing_task.bind(x=10)
+        future = failing_task(x=10)
 
         async def run():
             return await evaluate_async(future)
@@ -308,7 +308,7 @@ class TestAsyncTasksWithEvaluateAsync:
             return x * 2
 
         async def run():
-            result_future = async_compute.bind(x=21)
+            result_future = async_compute(x=21)
             return await evaluate_async(result_future)
 
         result = asyncio.run(run())
@@ -363,7 +363,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x**2
 
-        future = generate.bind()
+        future = generate()
         seq = square.product(x=future)
 
         async def run():
@@ -385,7 +385,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x * y
 
-        future = generate.bind()
+        future = generate()
         seq = multiply.zip(x=future, y=[2, 3, 4])
 
         async def run():
@@ -493,7 +493,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
                 yield i * 2
 
         async def run():
-            return await evaluate_async(generate_numbers.bind(n=5))
+            return await evaluate_async(generate_numbers(n=5))
 
         result = asyncio.run(run())
         assert result == [0, 2, 4, 6, 8]
@@ -524,10 +524,10 @@ class TestGeneratorMaterializationWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return (total, count)
 
-        numbers = generate_numbers.bind(n=5)
-        total = sum_values.bind(values=numbers)
-        count = count_values.bind(values=numbers)
-        result_future = combine.bind(total=total, count=count)
+        numbers = generate_numbers(n=5)
+        total = sum_values(values=numbers)
+        count = count_values(values=numbers)
+        result_future = combine(total=total, count=count)
 
         async def run():
             return await evaluate_async(result_future)
