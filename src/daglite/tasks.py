@@ -174,16 +174,33 @@ class BaseTask(abc.ABC, Generic[P, R]):
         )
 
     @abc.abstractmethod
-    def bind(self, **kwargs: Any | TaskFuture[Any]) -> "TaskFuture[R]":
+    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> "TaskFuture[R]":
         """
-        Creates a `TaskFuture` future by binding values to the parameters of this task.
+        Creates a task future by binding values to the parameters of this task.
 
-        This is the primary way to connect a task with inputs and dependencies. Parameters can
-        be concrete values or other TaskFutures, enabling composition of complex DAGs.
+        This does NOT execute the task immediately; it returns a future object representing
+        evaluation results.
+
+        See `daglite.evaluate` or `daglite.evaluate_async` for more details on evaluating task
+        futures.
 
         Args:
-            **kwargs: Keyword arguments matching the task function's parameters. Values can be
-                concrete Python objects or TaskFutures from other tasks.
+            **kwargs: Keyword arguments matching the task function's parameters. Must include
+                all required parameters. Values can be  or TaskFutures.
+
+        Returns:
+            A `TaskFuture` representing the execution of this task with the provided parameters.
+
+        Examples:
+            >>> @task
+            >>> def add(x: int, y: int) -> int:
+            ...     return x + y
+            >>>
+            >>> result_future = add(x=1, y=2)
+            >>>
+            >>> daglite.evaluate(result_future)
+            3
+
         """
         raise NotImplementedError()
 
@@ -198,7 +215,25 @@ class BaseTask(abc.ABC, Generic[P, R]):
         Args:
             **kwargs: Keyword arguments where values are sequences. Each sequence element will be
                 combined with elements from other sequences in a Cartesian product. Can include
-                TaskFutures that resolve to sequences.
+                `TaskFuture` objects that resolve to sequences.
+
+        Returns:
+            A `MapTaskFuture` representing the fan-out execution of this task.
+
+        Examples:
+            >>> @task
+            >>> def combine(x: int, y: int) -> int:
+            ...     return x + y
+
+            All sequences provided:
+            >>> future = combine.product(x=[1, 2], y=[10, 20])
+            >>> result = daglite.evaluate(future)
+            [11, 21, 12, 22]
+
+            Fixed scalar parameter with single sequence:
+            >>> future = combine.partial(y=10).product(x=[1, 2, 3])
+            >>> result = daglite.evaluate(future)
+            [11, 12, 13]
         """
         raise NotImplementedError()
 
@@ -212,8 +247,26 @@ class BaseTask(abc.ABC, Generic[P, R]):
 
         Args:
             **kwargs: Keyword arguments where values are equal-length sequences. Elements at the
-                same index across sequences are combined in each call. Can include TaskFutures that
-                resolve to sequences.
+                same index across sequences are combined in each call. Can include `TaskFuture`
+                objects that resolve to sequences.
+
+        Returns:
+            A `MapTaskFuture` representing the fan-out execution of this task.
+
+        Examples:
+            >>> @task
+            >>> def combine(x: int, y: int) -> int:
+            ...     return x + y
+
+            All sequences provided:
+            >>> future = combine.zip(x=[1, 2, 3], y=[10, 20, 30])
+            >>> result = daglite.evaluate(future)
+            [11, 22, 33]
+
+            Fixed scalar parameter with single sequence:
+            >>> future = combine.partial(y=10).zip(x=[1, 2, 3])
+            >>> result = daglite.evaluate(future)
+            [11, 12, 13]
         """
         raise NotImplementedError()
 
@@ -237,32 +290,39 @@ class Task(BaseTask[P, R]):
         if inspect.iscoroutinefunction(self.func):
             object.__setattr__(self, "is_async", True)
 
-    # NOTE: We should not define `__call__` in order to avoid confusing type checkers. We want
-    # them to view this object as a `Task[P, R]` and not as a `Callable[P, R]` (which some type
-    # checkers would do if we defined `__call__`).
-
     @cached_property
     @override
     def signature(self) -> Signature:
         return inspect.signature(self.func)
 
-    def fix(self, **kwargs: Any) -> "FixedParamTask[P, R]":
+    @override
+    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
+        return self.partial()(**kwargs)
+
+    def partial(self, **kwargs: Any) -> "PartialTask[P, R]":
         """
-        Fix some parameters of this task, returning a `FixedParamTask`.
+        Partially apply some parameters of this task, returning a "partial" task.
+
+        This creates a reusable task template with some parameters already fixed. It also allows
+        users to create tasks with a mix of scalar and mapped parameters.
 
         Args:
-            **kwargs: Keyword arguments to be fixed for this task. Can be a combination of concrete
-                values and TaskFutures.
+            **kwargs: Keyword arguments to be fixed for this task. Can include literal, variables,
+            or even `TaskFuture` objects.
+
+        Returns:
+            A `PartialTask` with the specified parameters fixed.
 
         Examples:
-            >>> def score(x: int, y: int) -> float: ...
-            >>>
-            >>> base = score.fix(y=seed)
-            >>> branch1 = base.bind(x=lazy_x)  # TaskFuture[int]
+            >>> def score(x: int, y: int, z: int) -> float:
+            ...     return (x + y) / z
+            >>> seed = 42
+            >>> base = score.partial(y=seed, z=0.5)
+            >>> branch1 = base(x=lazy_x)  # TaskFuture[int]
             >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
         """
         check_invalid_params(self, kwargs)
-        return FixedParamTask(
+        return PartialTask(
             name=self.name,
             description=self.description,
             task=self,
@@ -271,34 +331,32 @@ class Task(BaseTask[P, R]):
         )
 
     @override
-    def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
-        # NOTE: All validation is done in FixedParamTask.bind()
-        return self.fix().bind(**kwargs)
-
-    @override
     def product(self, **kwargs: Any) -> MapTaskFuture[R]:
-        # NOTE: All validation is done in FixedParamTask.product()
-        return self.fix().product(**kwargs)
+        # Create a PartialTask with no fixed params, then call product
+        return self.partial().product(**kwargs)
 
     @override
     def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
-        # NOTE: All validation is done in FixedParamTask.zip()
-        return self.fix().zip(**kwargs)
+        # Create a PartialTask with no fixed params, then call zip
+        return self.partial().zip(**kwargs)
 
 
 @dataclass(frozen=True)
-class FixedParamTask(BaseTask[P, R]):
+class PartialTask(BaseTask[P, R]):
     """
-    A task with one or more parameters fixed to specific values.
+    A task with one or more parameters partially applied to specific values.
 
-    Users should **not** directly instantiate this class, use the `Task.fix(..)` instead.
+    This creates a reusable task template that can be called multiple times with
+    different values for the remaining parameters. Similar to `functools.partial`.
+
+    Users should **not** directly instantiate this class, use `Task.partial()` instead.
     """
 
     task: Task[Any, R]
     """The underlying task to be called."""
 
     fixed_kwargs: Mapping[str, Any]
-    """The parameters already bound in this FixedParamTask; can contain other TaskFutures."""
+    """The parameters already bound in this PartialTask; can contain other TaskFutures."""
 
     @cached_property
     @override
@@ -306,7 +364,7 @@ class FixedParamTask(BaseTask[P, R]):
         return self.task.signature
 
     @override
-    def bind(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
+    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
         merged = {**self.fixed_kwargs, **kwargs}
 
         check_invalid_params(self, merged)
@@ -399,12 +457,12 @@ def check_missing_params(task: BaseTask, kwargs: dict) -> None:
         raise ParameterError(f"Missing parameters for task '{task.name}': {missing_params}")
 
 
-def check_overlap_params(task: FixedParamTask, kwargs: dict) -> None:
+def check_overlap_params(task: PartialTask, kwargs: dict) -> None:
     """
     Checks that no provided parameters overlap with already fixed parameters.
 
     Args:
-        task: `FixedParamTask` whose parameters are being validated.
+        task: `PartialTask` whose parameters are being validated.
         kwargs: Provided arguments to validate.
 
     Raises:
@@ -414,7 +472,7 @@ def check_overlap_params(task: FixedParamTask, kwargs: dict) -> None:
     if overlap_params := sorted(fixed & kwargs.keys()):
         raise ParameterError(
             f"Overlapping parameters for task '{task.name}', specified parameters "
-            f"were previously bound in `.fix()`: {overlap_params}"
+            f"were previously bound in `.partial()`: {overlap_params}"
         )
 
 
@@ -438,7 +496,7 @@ def check_invalid_map_params(task: BaseTask, kwargs: dict) -> None:
         raise ParameterError(
             f"Non-iterable parameters for task '{task.name}', "
             f"all parameters must be Iterable or TaskFuture[Iterable] "
-            f"(use `.fix()` to set scalar parameters): {non_sequences}"
+            f"(use `.partial()` to set scalar parameters): {non_sequences}"
         )
 
 
@@ -463,6 +521,6 @@ def get_unbound_param(task: BaseTask, kwargs: dict) -> str:
         raise ParameterError(
             f"Task '{task.name}' must have exactly one "
             f"unbound parameter for upstream value, found {len(unbound)}: {unbound} "
-            f"(use `.fix()` to set scalar parameters): {unbound[1:]}"
+            f"(use `.partial()` to set scalar parameters): {unbound[1:]}"
         )
     return unbound[0]

@@ -42,7 +42,7 @@ class TestPerExecutionHooks:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add.bind(x=2, y=3), plugins=[counter])
+        result = evaluate(add(x=2, y=3), plugins=[counter])
 
         assert result == 5
         assert counter.before_node_count == 1
@@ -60,12 +60,12 @@ class TestPerExecutionHooks:
             return x + y
 
         # First execution with counter1
-        result1 = evaluate(add.bind(x=2, y=3), plugins=[counter1])
+        result1 = evaluate(add(x=2, y=3), plugins=[counter1])
         assert result1 == 5
         assert counter1.before_node_count == 1
 
         # Second execution with counter2 (counter1 should be unchanged)
-        result2 = evaluate(add.bind(x=5, y=7), plugins=[counter2])
+        result2 = evaluate(add(x=5, y=7), plugins=[counter2])
         assert result2 == 12
         assert counter1.before_node_count == 1  # Still 1
         assert counter2.before_node_count == 1
@@ -83,13 +83,13 @@ class TestPerExecutionHooks:
             return x + y
 
         # Execute with local plugin - both should be called
-        result = evaluate(add.bind(x=2, y=3), plugins=[local_counter])
+        result = evaluate(add(x=2, y=3), plugins=[local_counter])
         assert result == 5
         assert global_counter.before_node_count == 1
         assert local_counter.before_node_count == 1
 
         # Execute without local plugin - only global should be called
-        result2 = evaluate(add.bind(x=5, y=7))
+        result2 = evaluate(add(x=5, y=7))
         assert result2 == 12
         assert global_counter.before_node_count == 2  # Incremented
         assert local_counter.before_node_count == 1  # Unchanged
@@ -107,7 +107,7 @@ class TestPerExecutionHooks:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add.bind(x=2, y=3), plugins=[counter1, counter2])
+        result = evaluate(add(x=2, y=3), plugins=[counter1, counter2])
 
         assert result == 5
         assert counter1.before_node_count == 1
@@ -122,7 +122,7 @@ class TestPerExecutionHooks:
             return x + y
 
         async def run():
-            return await evaluate_async(add.bind(x=2, y=3), plugins=[counter])
+            return await evaluate_async(add(x=2, y=3), plugins=[counter])
 
         result = asyncio.run(run())
 
@@ -139,7 +139,7 @@ class TestPerExecutionHooks:
             raise ValueError("Test error")
 
         with pytest.raises(ValueError, match="Test error"):
-            evaluate(failing_task.bind(), plugins=[counter])
+            evaluate(failing_task(), plugins=[counter])
 
         # Hook should have been called before the error
         assert counter.before_node_count == 1
@@ -162,7 +162,7 @@ class TestPerExecutionHooks:
         with pytest.raises(
             TypeError, match="daglite expects plugins to be registered as instances"
         ):
-            evaluate(add.bind(x=2, y=3), plugins=[MyHook])  # Missing ()
+            evaluate(add(x=2, y=3), plugins=[MyHook])  # Missing ()
 
 
 class TestHookParameters:
@@ -176,7 +176,7 @@ class TestHookParameters:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add.bind(x=2, y=3), plugins=[capture])
+        result = evaluate(add(x=2, y=3), plugins=[capture])
         assert result == 5
 
         # Verify graph-level hooks
@@ -254,7 +254,7 @@ class TestGlobalPluginRegistration:
         def simple() -> int:
             return 42
 
-        result = evaluate(simple.bind())
+        result = evaluate(simple())
 
         assert result == 42
         assert custom_hook.called

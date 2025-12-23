@@ -18,10 +18,10 @@ from daglite.graph.nodes import TaskNode
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
 if TYPE_CHECKING:
-    from daglite.tasks import FixedParamTask
+    from daglite.tasks import PartialTask
     from daglite.tasks import Task
 else:
-    FixedParamTask = object
+    PartialTask = object
     Task = object
 
 P = ParamSpec("P")
@@ -80,14 +80,14 @@ class TaskFuture(BaseTaskFuture[R]):
 
     def then(
         self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
+        next_task: Task[Any, T] | PartialTask[Any, T],
         **kwargs: Any,
     ) -> "TaskFuture[T]":
         """
         Chain this future as input to another task during evaluation.
 
         Args:
-            next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+            next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter.
             **kwargs: Additional parameters to pass to the next task.
 
@@ -104,13 +104,13 @@ class TaskFuture(BaseTaskFuture[R]):
             >>>     return x + y
             >>>
             >>> # NOTE: 'x' is unbound and will receive the value from 'prepare' during evaluation.
-            >>> future = prepare.bind(n=5).then(add, y=10)
+            >>> future = prepare(n=5).then(add, y=10)
         """
-        from daglite.tasks import FixedParamTask
+        from daglite.tasks import PartialTask
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
 
-        if isinstance(next_task, FixedParamTask):
+        if isinstance(next_task, PartialTask):
             check_overlap_params(next_task, kwargs)
             all_fixed = {**next_task.fixed_kwargs, **kwargs}
             actual_task = next_task.task
@@ -119,11 +119,11 @@ class TaskFuture(BaseTaskFuture[R]):
             actual_task = next_task
 
         unbound_param = get_unbound_param(actual_task, all_fixed)
-        return actual_task.bind(**{unbound_param: self}, **all_fixed)
+        return actual_task(**{unbound_param: self}, **all_fixed)
 
     def then_product(
         self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
+        next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
     ) -> MapTaskFuture[T]:
         """
@@ -135,7 +135,7 @@ class TaskFuture(BaseTaskFuture[R]):
         mapped parameters, with the same future value passed to every call.
 
         Args:
-            next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+            next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter; this unbound parameter will receive the current
                 future's value for every combination of mapped parameters.
             **mapped_kwargs: Additional parameters to map over (sequences). Each sequence element
@@ -154,18 +154,18 @@ class TaskFuture(BaseTaskFuture[R]):
             >>>     return x + y
             >>>
             >>> # Prepare single value, then fan out with y in Cartesian product
-            >>> future = prepare.bind(n=5).then_product(combine, y=[10, 20, 30])
+            >>> future = prepare(n=5).then_product(combine, y=[10, 20, 30])
             >>> evaluate(future)
             [20, 30, 40]  # 10 combined with [10, 20, 30]
         """
         from daglite.exceptions import ParameterError
-        from daglite.tasks import FixedParamTask
+        from daglite.tasks import PartialTask
         from daglite.tasks import check_invalid_map_params
         from daglite.tasks import check_invalid_params
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
 
-        if isinstance(next_task, FixedParamTask):
+        if isinstance(next_task, PartialTask):
             check_overlap_params(next_task, mapped_kwargs)
             all_fixed = next_task.fixed_kwargs
             actual_task = next_task.task
@@ -198,7 +198,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
     def then_zip(
         self,
-        next_task: Task[Any, T] | FixedParamTask[Any, T],
+        next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
     ) -> MapTaskFuture[T]:
         """
@@ -210,7 +210,7 @@ class TaskFuture(BaseTaskFuture[R]):
         same future value passed to every call.
 
         Args:
-            next_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+            next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter; this unbound parameter will receive the current
                 future's value for every paired set of mapped parameters.
             **mapped_kwargs: Additional equal-length sequences to zip with. Elements at the
@@ -229,18 +229,18 @@ class TaskFuture(BaseTaskFuture[R]):
             >>>     return x + y
             >>>
             >>> # Prepare single value, then zip with y
-            >>> future = prepare.bind(n=5).then_zip(combine, y=[10, 20, 30])
+            >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30])
             >>> evaluate(future)
             [20, 30, 40]  # 10 zipped with [10, 20, 30]
         """
         from daglite.exceptions import ParameterError
-        from daglite.tasks import FixedParamTask
+        from daglite.tasks import PartialTask
         from daglite.tasks import check_invalid_map_params
         from daglite.tasks import check_invalid_params
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
 
-        if isinstance(next_task, FixedParamTask):
+        if isinstance(next_task, PartialTask):
             check_overlap_params(next_task, mapped_kwargs)
             all_fixed = next_task.fixed_kwargs
             actual_task = next_task.task
@@ -355,22 +355,22 @@ class TaskFuture(BaseTaskFuture[R]):
             >>> def make_pair() -> tuple[int, str]:
             ...     return (42, "hello")
 
-            >>> num, text = make_pair.bind().split()
+            >>> num, text = make_pair().split()
 
             With explicit size:
             >>> @task
             >>> def make_triple():
             ...     return (1, 2, 3)
 
-            >>> a, b, c = make_triple.bind().split(size=3)
+            >>> a, b, c = make_triple().split(size=3)
 
             Chaining after split:
             >>> @task
             >>> def get_coords() -> tuple[int, int]:
             ...     return (10, 20)
 
-            >>> x, y = get_coords.bind().split()
-            >>> result = process.bind(x=x, y=y)
+            >>> x, y = get_coords().split()
+            >>> result = process(x=x, y=y)
         """
         from daglite.exceptions import DagliteError
         from daglite.tasks import task
@@ -388,7 +388,7 @@ class TaskFuture(BaseTaskFuture[R]):
             return tup[index]
 
         # Bind the accessor task for each index
-        return tuple(_get_index.bind(tup=self, index=i) for i in range(final_size))
+        return tuple(_get_index(tup=self, index=i) for i in range(final_size))
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
@@ -453,7 +453,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     def then(
-        self, mapped_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
+        self, mapped_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
     ) -> MapTaskFuture[T]:
         """
         Chain this mapped future as input to another mapped task during evaluation.
@@ -462,7 +462,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
         continuing the chain.
 
         Args:
-            mapped_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+            mapped_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter.
             **kwargs: Additional fixed parameters to pass to the mapped task.
 
@@ -480,7 +480,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             ...     return a + b
             >>>
             >>> # Create a mapped future generating numbers 0 to 4
-            >>> numbers_future = generate_numbers.bind(n=[0, 1, 2, 3, 4])
+            >>> numbers_future = generate_numbers(n=[0, 1, 2, 3, 4])
             >>>
             >>> # Chain to square each generated number and then sum the squares
             >>> squared_future = numbers_future.then(square).join(sum_values)
@@ -493,11 +493,11 @@ class MapTaskFuture(BaseTaskFuture[R]):
             A `MapTaskFuture` representing the result of applying the mapped task to this
             future's sequence of values.
         """
-        from daglite.tasks import FixedParamTask
+        from daglite.tasks import PartialTask
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
 
-        if isinstance(mapped_task, FixedParamTask):
+        if isinstance(mapped_task, PartialTask):
             check_overlap_params(mapped_task, kwargs)
             all_fixed = {**mapped_task.fixed_kwargs, **kwargs}
             actual_task = mapped_task.task
@@ -519,28 +519,28 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     @overload
     def join(
-        self, reducer_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
+        self, reducer_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
     ) -> "TaskFuture[T]": ...
 
     def join(
-        self, reducer_task: Task[Any, T] | FixedParamTask[Any, T], **kwargs: Any
+        self, reducer_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
     ) -> TaskFuture[T]:
         """
         Reduce this sequence to a single value by applying a reducer task.
 
         Args:
-            reducer_task: Either a `Task` that accepts exactly ONE parameter, or a `FixedParamTask`
+            reducer_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter.
             **kwargs: Additional parameters to pass to the reducer task.
 
         Returns:
             A TaskFuture representing the reduced single value.
         """
-        from daglite.tasks import FixedParamTask
+        from daglite.tasks import PartialTask
         from daglite.tasks import check_overlap_params
         from daglite.tasks import get_unbound_param
 
-        if isinstance(reducer_task, FixedParamTask):
+        if isinstance(reducer_task, PartialTask):
             check_overlap_params(reducer_task, kwargs)
             all_fixed = {**reducer_task.fixed_kwargs, **kwargs}
             actual_task = reducer_task.task

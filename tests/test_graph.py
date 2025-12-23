@@ -339,7 +339,7 @@ class TestBuildGraph:
         def simple() -> int:  # pragma: no cover
             return 42
 
-        bound = simple.bind()
+        bound = simple()
         graph = build_graph(bound)
 
         assert len(graph) == 1
@@ -360,9 +360,9 @@ class TestBuildGraph:
         def step3(x: int) -> int:  # pragma: no cover
             return x + 5
 
-        s1 = step1.bind()
-        s2 = step2.bind(x=s1)
-        s3 = step3.bind(x=s2)
+        s1 = step1()
+        s2 = step2(x=s1)
+        s3 = step3(x=s2)
 
         graph = build_graph(s3)
 
@@ -386,9 +386,9 @@ class TestBuildGraph:
         def combine(a: int, b: int) -> int:  # pragma: no cover
             return a + b
 
-        s1 = source1.bind()
-        s2 = source2.bind()
-        result = combine.bind(a=s1, b=s2)
+        s1 = source1()
+        s2 = source2()
+        result = combine(a=s1, b=s2)
 
         graph = build_graph(result)
 
@@ -418,10 +418,10 @@ class TestBuildGraph:
         def merge(a: int, b: int) -> int:  # pragma: no cover
             return a + b
 
-        root = start.bind()
-        b1 = branch1.bind(x=root)
-        b2 = branch2.bind(x=root)
-        final = merge.bind(a=b1, b=b2)
+        root = start()
+        b1 = branch1(x=root)
+        b2 = branch2(x=root)
+        final = merge(a=b1, b=b2)
 
         graph = build_graph(final)
 
@@ -448,10 +448,10 @@ class TestBuildGraph:
             return a + b
 
         # Both use1 and use2 depend on shared
-        s = shared.bind()
-        u1 = use1.bind(x=s)
-        u2 = use2.bind(x=s)
-        result = combine.bind(a=u1, b=u2)
+        s = shared()
+        u1 = use1(x=s)
+        u2 = use2(x=s)
+        result = combine(a=u1, b=u2)
 
         graph = build_graph(result)
 
@@ -493,11 +493,11 @@ class TestBuildGraph:
         # leaf1 leaf2 leaf1 leaf2
         #
         # Both middle1 and middle2 depend on leaf1 and leaf2
-        l1 = leaf1.bind()
-        l2 = leaf2.bind()
-        m1 = middle1.bind(a=l1, b=l2)
-        m2 = middle2.bind(a=l1, b=l2)
-        r = root.bind(x=m1, y=m2)
+        l1 = leaf1()
+        l2 = leaf2()
+        m1 = middle1(a=l1, b=l2)
+        m2 = middle2(a=l1, b=l2)
+        r = root(x=m1, y=m2)
 
         graph = build_graph(r)
 

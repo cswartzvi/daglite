@@ -18,7 +18,7 @@ class TestSinglePathExecution:
         def dummy() -> None:
             return
 
-        dummies = dummy.bind()
+        dummies = dummy()
         result = evaluate(dummies)
         assert result is None
 
@@ -29,7 +29,7 @@ class TestSinglePathExecution:
         def prepare() -> int:
             return 5
 
-        prepared = prepare.bind()
+        prepared = prepare()
         result = evaluate(prepared)
         assert result == 5
 
@@ -40,7 +40,7 @@ class TestSinglePathExecution:
         def multiply(x: int, y: int) -> int:
             return x * y
 
-        multiplied = multiply.bind(x=4, y=6)
+        multiplied = multiply(x=4, y=6)
         result = evaluate(multiplied)
         assert result == 24
 
@@ -55,8 +55,8 @@ class TestSinglePathExecution:
         def square(z: int) -> int:
             return z**2
 
-        prepared = prepare.bind()
-        squared = square.bind(z=prepared)
+        prepared = prepare()
+        squared = square(z=prepared)
         result = evaluate(squared)
         assert result == 25  # = 5 ** 2
 
@@ -75,35 +75,35 @@ class TestSinglePathExecution:
         def subtract(value: int, decrement: int) -> int:
             return value - decrement
 
-        added = add.bind(x=3, y=7)  # 10
-        multiplied1 = multiply.bind(z=added, factor=4)
-        multiplied2 = multiply.bind(z=multiplied1, factor=2)  # 80
-        multiplied3 = multiply.bind(z=multiplied2, factor=3)  # 240
-        multiplied4 = multiply.bind(z=multiplied3, factor=1)  # 240
-        subtracted = subtract.bind(value=multiplied4, decrement=40)  # 200
+        added = add(x=3, y=7)  # 10
+        multiplied1 = multiply(z=added, factor=4)
+        multiplied2 = multiply(z=multiplied1, factor=2)  # 80
+        multiplied3 = multiply(z=multiplied2, factor=3)  # 240
+        multiplied4 = multiply(z=multiplied3, factor=1)  # 240
+        subtracted = subtract(value=multiplied4, decrement=40)  # 200
         result = evaluate(subtracted)
         assert result == 200
 
-    def test_fixed_task_evaluation_without_params(self) -> None:
+    def test_partial_task_evaluation_without_params(self) -> None:
         """Evaluation succeeds for tasks with fixed parameters."""
 
         @task
         def power(base: int, exponent: int) -> int:
             return base**exponent
 
-        powered = power.fix(exponent=3).bind(base=2)
+        powered = power.partial(exponent=3)(base=2)
         result = evaluate(powered)
         assert result == 8  # = 2 ** 3
 
-    def test_fixed_task_evaluation_with_params(self) -> None:
+    def test_partial_task_evaluation_with_params(self) -> None:
         """Evaluation succeeds for tasks with some fixed and some provided parameters."""
 
         @task
         def compute_area(length: float, width: float) -> float:
             return length * width
 
-        area_task = compute_area.fix(width=5.0)
-        area = area_task.bind(length=10.0)
+        area_task = compute_area.partial(width=5.0)
+        area = area_task(length=10.0)
         result = evaluate(area)
         assert result == 50.0  # = 10.0 * 5.0
 
@@ -118,10 +118,10 @@ class TestSinglePathExecution:
         def multiply(z: int, factor: int) -> int:
             return z * factor
 
-        fixed_multiply = multiply.fix(factor=10)
+        fixed_multiply = multiply.partial(factor=10)
 
-        added = add.bind(x=2, y=3)  # 5
-        multiplied = fixed_multiply.bind(z=added)  # 50
+        added = add(x=2, y=3)  # 5
+        multiplied = fixed_multiply(z=added)  # 50
         result = evaluate(multiplied)
         assert result == 50
 
@@ -140,12 +140,12 @@ class TestSinglePathExecution:
         def subtract(value: int, decrement: int) -> int:
             return value - decrement
 
-        fixed_multiply = multiply.fix(factor=3)
-        fixed_subtract = subtract.fix(decrement=4)
+        fixed_multiply = multiply.partial(factor=3)
+        fixed_subtract = subtract.partial(decrement=4)
 
-        added = add.bind(x=7, y=8)  # 15
-        multiplied = fixed_multiply.bind(z=added)  # 45
-        subtracted = fixed_subtract.bind(value=multiplied)  # 41
+        added = add(x=7, y=8)  # 15
+        multiplied = fixed_multiply(z=added)  # 45
+        subtracted = fixed_subtract(value=multiplied)  # 41
         result = evaluate(subtracted)
         assert result == 41
 
@@ -158,9 +158,9 @@ class TestSinglePathExecution:
 
         # Start with 2, multiply by 2 repeatedly
         chain_depth = 2000
-        current = multiply.bind(x=2, factor=2)
+        current = multiply(x=2, factor=2)
         for i in range(chain_depth - 1):
-            current = multiply.bind(x=current, factor=2)
+            current = multiply(x=current, factor=2)
 
         # Evaluate all three independently
         result_chain = evaluate(current)
@@ -227,7 +227,7 @@ class TestMappedTaskOperations:
             def square(x: int) -> int:
                 return x**2
 
-            future = generate.bind()
+            future = generate()
             seq = square.product(x=future)
             expected = [1, 4, 9]
         else:  # zip
@@ -240,7 +240,7 @@ class TestMappedTaskOperations:
             def multiply(x: int, y: int) -> int:
                 return x * y
 
-            future = generate.bind()
+            future = generate()
             seq = multiply.zip(x=future, y=[2, 3, 4])
             expected = [10, 30, 60]
 
@@ -256,7 +256,7 @@ class TestMappedTaskOperations:
             def power(base: int, exponent: int) -> int:
                 return base**exponent
 
-            fixed = power.fix(exponent=2)
+            fixed = power.partial(exponent=2)
             seq = fixed.product(base=[1, 2, 3, 4])
             expected = [1, 4, 9, 16]
         else:  # zip
@@ -265,7 +265,7 @@ class TestMappedTaskOperations:
             def multiply(x: int, factor: int) -> int:
                 return x * factor
 
-            fixed = multiply.fix(factor=10)  # type: ignore
+            fixed = multiply.partial(factor=10)  # type: ignore
             seq = fixed.zip(x=[1, 2, 3])
             expected = [10, 20, 30]
 
@@ -285,8 +285,8 @@ class TestMappedTaskOperations:
             def power(base: int, exponent: int) -> int:
                 return base**exponent
 
-            future = get_exponent.bind()
-            fixed = power.fix(exponent=future)
+            future = get_exponent()
+            fixed = power.partial(exponent=future)
             seq = fixed.product(base=[2, 3, 4])
             expected = [8, 27, 64]
         else:  # zip
@@ -299,8 +299,8 @@ class TestMappedTaskOperations:
             def multiply(x: int, factor: int) -> int:
                 return x * factor
 
-            future = get_factor.bind()
-            fixed = multiply.fix(factor=future)  # type: ignore
+            future = get_factor()
+            fixed = multiply.partial(factor=future)  # type: ignore
             seq = fixed.zip(x=[2, 3, 4])
             expected = [8, 12, 16]
 
@@ -536,7 +536,7 @@ class TestZipSpecificBehavior:
 
         result = evaluate(
             add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
-            .then(increment.fix(increment_by=5))  # [16, 27, 38]
+            .then(increment.partial(increment_by=5))  # [16, 27, 38]
             .join(sum_all)
         )
         assert result == 81
@@ -575,7 +575,7 @@ class TestAsyncTasksWithEvaluate:
             await asyncio.sleep(0.001)  # Simulate async work
             return x + y
 
-        result = evaluate(async_add.bind(x=5, y=10))
+        result = evaluate(async_add(x=5, y=10))
         assert result == 15
 
     def test_async_task_with_dependencies(self) -> None:
@@ -595,9 +595,9 @@ class TestAsyncTasksWithEvaluate:
             return x * 3
 
         # Chain: sync -> async -> sync
-        start = sync_start.bind(n=5)  # 10
-        processed = async_process.bind(x=start)  # 20
-        finished = sync_finish.bind(x=processed)  # 60
+        start = sync_start(n=5)  # 10
+        processed = async_process(x=start)  # 20
+        finished = sync_finish(x=processed)  # 60
 
         result = evaluate(finished)
         assert result == 60
@@ -659,7 +659,7 @@ class TestAsyncTasksWithEvaluate:
             return x * x
 
         # Chain: async -> sync -> async
-        result = evaluate(async_double.bind(x=5).then(add_ten).then(async_square))
+        result = evaluate(async_double(x=5).then(add_ten).then(async_square))
         assert result == 400  # (5*2 + 10)^2 = 20^2 = 400
 
     def test_mixed_sync_async_complex_graph(self) -> None:
@@ -679,10 +679,10 @@ class TestAsyncTasksWithEvaluate:
             return a + b + c
 
         # Diamond pattern with mixed sync/async
-        start = sync_task.bind(x=10)  # 11
-        left = async_double.bind(x=start)  # 22
-        right = sync_task.bind(x=start)  # 12
-        result_future = combine.bind(a=start, b=left, c=right)
+        start = sync_task(x=10)  # 11
+        left = async_double(x=start)  # 22
+        right = sync_task(x=start)  # 12
+        result_future = combine(a=start, b=left, c=right)
 
         result = evaluate(result_future)
         assert result == 45  # 11 + 22 + 12
@@ -709,10 +709,10 @@ class TestGeneratorMaterialization:
         async def run_async():
             from daglite.engine import evaluate_async
 
-            return await evaluate_async(generate_numbers.bind(n=5))
+            return await evaluate_async(generate_numbers(n=5))
 
         if evaluation_mode == "sync":
-            result = evaluate(generate_numbers.bind(n=5))
+            result = evaluate(generate_numbers(n=5))
         else:
             result = asyncio.run(run_async())
 
@@ -740,10 +740,10 @@ class TestGeneratorMaterialization:
         def combine(total: int, count: int) -> tuple[int, int]:
             return (total, count)
 
-        numbers = generate_numbers.bind(n=5)
-        total = sum_values.bind(values=numbers)
-        count = count_values.bind(values=numbers)
-        result_future = combine.bind(total=total, count=count)
+        numbers = generate_numbers(n=5)
+        total = sum_values(values=numbers)
+        count = count_values(values=numbers)
+        result_future = combine(total=total, count=count)
 
         result = evaluate(result_future)
         assert result == (10, 5)  # sum([0,1,2,3,4]) = 10, len = 5
@@ -790,11 +790,11 @@ class TestGeneratorMaterialization:
         def return_tuple(n: int) -> tuple[int, ...]:
             return tuple(i * 2 for i in range(n))
 
-        list_result = evaluate(return_list.bind(n=3))
+        list_result = evaluate(return_list(n=3))
         assert list_result == [0, 2, 4]
         assert isinstance(list_result, list)
 
-        tuple_result = evaluate(return_tuple.bind(n=3))
+        tuple_result = evaluate(return_tuple(n=3))
         assert tuple_result == (0, 2, 4)
         assert isinstance(tuple_result, tuple)
 
@@ -805,7 +805,7 @@ class TestGeneratorMaterialization:
         def return_string() -> str:
             return "hello"
 
-        result = evaluate(return_string.bind())
+        result = evaluate(return_string())
         assert result == "hello"
         assert isinstance(result, str)
 
@@ -822,7 +822,7 @@ class TestGeneratorMaterialization:
         def double_all(values: list[int]) -> list[int]:
             return [v * 2 for v in values]
 
-        result = evaluate(generate_numbers.bind(n=4).then(double_all))
+        result = evaluate(generate_numbers(n=4).then(double_all))
         assert result == [0, 2, 4, 6]
 
     def test_generator_type_inference(self) -> None:
@@ -840,8 +840,8 @@ class TestGeneratorMaterialization:
                 yield str(i)
 
         # Type checker should infer list[int] and list[str]
-        iter_result = evaluate(return_iterator.bind(n=3))
-        gen_result = evaluate(return_generator.bind(n=3))
+        iter_result = evaluate(return_iterator(n=3))
+        gen_result = evaluate(return_generator(n=3))
 
         # These should work at runtime (list operations)
         assert isinstance(iter_result, list)
@@ -873,8 +873,8 @@ class TestGeneratorMaterialization:
         def sum_values(values: list[int]) -> int:
             return sum(values)
 
-        nums = async_generate_numbers.bind(n=5)
-        total = sum_values.bind(values=nums)
+        nums = async_generate_numbers(n=5)
+        total = sum_values(values=nums)
 
         async def run_async():
             from daglite.engine import evaluate_async
@@ -908,7 +908,7 @@ class TestGeneratorMaterialization:
 
         # Create a map task where each result is an async generator
         ranges = async_get_range.product(n=[3, 4, 5])
-        total = sum_all_ranges.bind(ranges=ranges)
+        total = sum_all_ranges(ranges=ranges)
 
         async def run_async():
             from daglite.engine import evaluate_async
@@ -940,8 +940,8 @@ class TestGeneratorMaterialization:
         def sum_values(values: list[int]) -> int:
             return sum(values)
 
-        nums = async_generate.bind(n=5)
-        total = sum_values.bind(values=nums)
+        nums = async_generate(n=5)
+        total = sum_values(values=nums)
 
         async def run_async():
             from daglite.engine import evaluate_async
