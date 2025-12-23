@@ -583,13 +583,12 @@ class TestConcurrentSiblingTaskExecution:
             return a + b + c
 
         # Create sibling tasks that should run in different threads
-        t1 = track_thread.bind(value=10)
-        t2 = track_thread.bind(value=20)
-        t3 = track_thread.bind(value=30)
-        total = sum_values.bind(a=t1, b=t2, c=t3)
+        t1 = track_thread(value=10)
+        t2 = track_thread(value=20)
+        t3 = track_thread(value=30)
+        total = sum_values(a=t1, b=t2, c=t3)
 
         async def run():
-            thread_ids.clear()
             return await evaluate_async(total)
 
         result = asyncio.run(run())
@@ -598,6 +597,6 @@ class TestConcurrentSiblingTaskExecution:
         assert result == 60
 
         # Verify multiple threads were used (proves concurrent execution)
-        assert (
-            len(thread_ids) > 1
-        ), f"Expected multiple threads, but only {len(thread_ids)} thread(s) used"
+        assert len(thread_ids) > 1, (
+            f"Expected multiple threads, but only {len(thread_ids)} thread(s) used"
+        )
