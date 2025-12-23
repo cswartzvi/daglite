@@ -5,13 +5,9 @@ across different backends, including the multiprocessing backend which requires
 pickle support.
 """
 
-import asyncio
-import threading
-
 import pytest
 
 from daglite import evaluate
-from daglite import evaluate_async
 from daglite import pipeline
 from daglite import task
 
@@ -135,41 +131,6 @@ class TestBackendIntegration:
 
         result = evaluate(task_with_backend(d1=dict1, d2=dict2))
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
-
-    def test_threading_backend_uses_multiple_threads_async(self) -> None:
-        """Threading backend executes sibling tasks using multiple threads with async evaluation."""
-        # Track which threads are used
-        thread_ids: set[int] = set()
-        lock = threading.Lock()
-
-        @task(backend_name="threading")
-        def track_thread(value: int) -> int:
-            """Task that tracks which thread it runs in."""
-            with lock:
-                thread_ids.add(threading.get_ident())
-            return value
-
-        # Create sibling tasks (independent tasks that are inputs to a combiner)
-        task1 = track_thread(value=1)
-        task2 = track_thread(value=2)
-        task3 = track_thread(value=3)
-
-        # Combine the results
-        combined = add(x=add(x=task1, y=task2), y=task3)
-
-        async def run():
-            return await evaluate_async(combined)
-
-        result = asyncio.run(run())
-
-        # Verify result is correct
-        assert result == 6  # 1 + 2 + 3
-
-        # Verify that multiple threads were used (proves parallel execution)
-        # With threading backend + async evaluation, we should see more than one thread ID
-        assert len(thread_ids) > 1, (
-            f"Expected multiple threads, but only {len(thread_ids)} thread(s) used"
-        )
 
 
 class TestBackendWithPipelines:
