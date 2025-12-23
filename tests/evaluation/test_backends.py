@@ -5,14 +5,22 @@ across different backends, including the multiprocessing backend which requires
 pickle support.
 """
 
+import asyncio
+import threading
+
 import pytest
 
 from daglite import evaluate
+from daglite import evaluate_async
 from daglite import pipeline
 from daglite import task
 
 # Module-level tasks for processes backend pickle compatibility
 # Tasks MUST be defined at module level to be picklable by multiprocessing
+
+# Shared state for tracking thread usage in threading backend tests
+_thread_ids: set[int] = set()
+_thread_lock = threading.Lock()
 
 
 @task
@@ -48,6 +56,14 @@ def generate_range(n: int) -> list[int]:
 @task
 def merge_dicts(d1: dict, d2: dict) -> dict:
     return {**d1, **d2}
+
+
+@task
+def track_thread_id(value: int) -> int:
+    """Task that tracks which thread it runs in."""
+    with _thread_lock:
+        _thread_ids.add(threading.get_ident())
+    return value
 
 
 @task
@@ -131,6 +147,35 @@ class TestBackendIntegration:
 
         result = evaluate(task_with_backend.bind(d1=dict1, d2=dict2))
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
+
+    def test_threading_backend_uses_multiple_threads_async(self) -> None:
+        """Threading backend executes sibling tasks using multiple threads with async evaluation."""
+        # Reset thread tracking
+        _thread_ids.clear()
+
+        task_with_backend = track_thread_id.with_options(backend_name="threading")
+
+        # Create sibling tasks (independent tasks that are inputs to a combiner)
+        task1 = task_with_backend.bind(value=1)
+        task2 = task_with_backend.bind(value=2)
+        task3 = task_with_backend.bind(value=3)
+
+        # Combine the results
+        combined = add.bind(x=add.bind(x=task1, y=task2), y=task3)
+
+        async def run():
+            return await evaluate_async(combined)
+
+        result = asyncio.run(run())
+
+        # Verify result is correct
+        assert result == 6  # 1 + 2 + 3
+
+        # Verify that multiple threads were used (proves parallel execution)
+        # With threading backend + async evaluation, we should see more than one thread ID
+        assert (
+            len(_thread_ids) > 1
+        ), f"Expected multiple threads, but only {len(_thread_ids)} thread(s) used"
 
 
 class TestBackendWithPipelines:

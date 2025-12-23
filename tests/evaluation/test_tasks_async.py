@@ -559,3 +559,45 @@ class TestGeneratorMaterializationWithEvaluateAsync:
         result = asyncio.run(run())
         # [0,1] -> 1, [0,1,2] -> 5, [0,1,2,3] -> 14
         assert result == [1, 5, 14]
+
+
+class TestConcurrentSiblingTaskExecution:
+    """Tests for concurrent execution of sibling tasks without timing assertions."""
+
+    def test_sync_tasks_with_threading_backend_in_async_context(self) -> None:
+        """Sync tasks with threading backend execute concurrently in async evaluation."""
+        thread_ids: set[int] = set()
+        lock = threading.Lock()
+
+        @task(backend_name="threading")
+        def track_thread(value: int) -> int:
+            """Track which thread executes this task."""
+            with lock:
+                thread_ids.add(threading.get_ident())
+            # Do some work to increase chance of thread overlap
+            _ = sum(i * i for i in range(1000))
+            return value
+
+        @task
+        def sum_values(a: int, b: int, c: int) -> int:
+            return a + b + c
+
+        # Create sibling tasks that should run in different threads
+        t1 = track_thread.bind(value=10)
+        t2 = track_thread.bind(value=20)
+        t3 = track_thread.bind(value=30)
+        total = sum_values.bind(a=t1, b=t2, c=t3)
+
+        async def run():
+            thread_ids.clear()
+            return await evaluate_async(total)
+
+        result = asyncio.run(run())
+
+        # Verify results
+        assert result == 60
+
+        # Verify multiple threads were used (proves concurrent execution)
+        assert (
+            len(thread_ids) > 1
+        ), f"Expected multiple threads, but only {len(thread_ids)} thread(s) used"
