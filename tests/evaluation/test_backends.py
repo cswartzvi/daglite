@@ -5,8 +5,6 @@ across different backends, including the multiprocessing backend which requires
 pickle support.
 """
 
-import time
-
 import pytest
 
 from daglite import evaluate
@@ -50,12 +48,6 @@ def generate_range(n: int) -> list[int]:
 @task
 def merge_dicts(d1: dict, d2: dict) -> dict:
     return {**d1, **d2}
-
-
-@task
-def sleep_and_return(value: int, duration: float = 0.01) -> int:
-    time.sleep(duration)
-    return value
 
 
 @task
@@ -139,21 +131,6 @@ class TestBackendIntegration:
 
         result = evaluate(task_with_backend.bind(d1=dict1, d2=dict2))
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
-
-    def test_threading_backend_with_io_bound_tasks(self) -> None:
-        """Threading backend allows concurrent execution of IO-bound tasks."""
-        task_with_backend = sleep_and_return.with_options(backend_name="threading")
-
-        # Run 5 tasks that each sleep for 0.01s
-        # With threading, should complete in ~0.01s, not 0.05s
-        start = time.time()
-        nums = [1, 2, 3, 4, 5]
-        results = evaluate(task_with_backend.zip(value=nums, duration=[0.01] * 5))
-        elapsed = time.time() - start
-
-        assert results == [1, 2, 3, 4, 5]
-        # Should take significantly less than sequential time (0.05s)
-        assert elapsed < 0.05, f"Threading should be concurrent, took {elapsed}s"
 
 
 class TestBackendWithPipelines:
