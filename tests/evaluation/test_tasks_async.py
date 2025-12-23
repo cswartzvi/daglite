@@ -574,8 +574,7 @@ class TestConcurrentSiblingTaskExecution:
             """Track which thread executes this task."""
             with lock:
                 thread_ids.add(threading.get_ident())
-            # Do some work to increase chance of thread overlap
-            _ = sum(i * i for i in range(1000))
+
             return value
 
         @task
@@ -596,7 +595,12 @@ class TestConcurrentSiblingTaskExecution:
         # Verify results
         assert result == 60
 
-        # Verify multiple threads were used (proves concurrent execution)
+        # Verify multiple threads were used (proves concurrent execution).
+        # Note: This assumes the threading backend's executor uses a pool with
+        # multiple threads. It may fail on single-core systems or if the thread
+        # pool size is 1.
         assert len(thread_ids) > 1, (
-            f"Expected multiple threads, but only {len(thread_ids)} thread(s) used"
+            "Threading backend should execute sibling tasks in parallel using "
+            "multiple threads. This may fail on single-core systems or if the "
+            f"thread pool size is 1 (observed {len(thread_ids)} thread(s))."
         )
