@@ -80,6 +80,26 @@ omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
 
+# --- tool.mypy ---  # currently only used in CI for type checking
+
+[tool.mypy]
+namespace_packages = true
+explicit_package_bases = true
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+ignore_missing_imports = true
+strict = false
+show_error_codes = true
+warn_unreachable = true
+warn_no_return = true
+warn_unused_ignores = true
+mypy_path = "src:extras/cli/src:extras/serialization/src" # Add new plugins here
+
+# --- tool.pyrefly ---  # currently only used in CI for type checking
+
+[tool.pyrefly.errors]
+invalid-param-spec = false
+
 # --- tool.pyright ---
 
 [tool.pyright]
@@ -175,6 +195,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "daglite" = ["py.typed"]
+
+# --- tool.ty ---  # currently only used in CI for type checking
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 # --- tool.uv ---
 
