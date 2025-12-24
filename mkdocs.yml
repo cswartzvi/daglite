@@ -92,7 +92,23 @@ nav:
       - Fluent API: user-guide/fluent-api.md
       - Evaluation: user-guide/evaluation.md
       - Pipelines & CLI: user-guide/pipelines.md
-  - Examples: examples.md
+  - Plugins:
+      - Overview: plugins/index.md
+      - CLI: plugins/cli.md
+      - Serialization: plugins/serialization.md
+      - Creating Plugins: plugins/creating.md
+  - Examples:
+      - Overview: examples/index.md
+      - ETL Pipeline: examples/etl-pipeline.md
+      - ML Workflow: examples/ml-workflow.md
+      - Data Processing: examples/data-processing.md
+  - API Reference:
+      - Overview: api-reference/index.md
+      - Tasks: api-reference/tasks.md
+      - Futures: api-reference/futures.md
+      - Engine: api-reference/engine.md
+      - Pipelines: api-reference/pipelines.md
+      - Settings: api-reference/settings.md
 
 extra_javascript:
   - javascripts/mathjax.js
