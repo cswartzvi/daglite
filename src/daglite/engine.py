@@ -427,7 +427,7 @@ class Engine:
 
         future_or_futures = backend.submit_node(node, resolved_inputs)
         if isinstance(future_or_futures, list):
-            result = [f.result() for f in future_or_futures]  # ty: ignore
+            result = [f.result() for f in future_or_futures]
         else:
             result = future_or_futures.result()
 
