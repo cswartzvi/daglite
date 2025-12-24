@@ -17,7 +17,7 @@ dependencies = [
     "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
-[project.optional-dependencies]  # Add new plugins here
+[project.optional-dependencies] # Add new plugins here
 cli = ["daglite-cli"]
 serialization = ["daglite-serialization"]
 
@@ -29,12 +29,13 @@ dev = [
     "nox",
     "pandas-stubs",
     "poethepoet",
+    "pyrefly",
     "pre-commit",
     "pre-commit-uv>=4.2.0",
     "ruff",
     "ty",
 ]
-test = ["pytest", "pytest-cov", "pytest-mock", "pyrefly", "pyright>=1.1.407"]
+test = ["pytest", "pytest-cov", "pytest-mock", "pyright>=1.1.407"]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
@@ -65,25 +66,14 @@ exclude_also = [
 fail_under = 0
 
 [tool.coverage.run]
-source_pkgs = ["daglite", "daglite_cli", "daglite_serialization"]     # Add new plugins here
+source_pkgs = [
+    "daglite",
+    "daglite_cli",
+    "daglite_serialization",
+] # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
-
-# --- tool.setuptools ---
-
-[tool.mypy]
-namespace_packages = true
-explicit_package_bases = true
-disallow_untyped_defs = false
-disallow_untyped_calls = false
-ignore_missing_imports = true
-strict = false
-show_error_codes = true
-warn_unreachable = true
-warn_no_return = true
-warn_unused_ignores = true
-mypy_path = "src:extras/cli/src:extras/serialization/src" # Add new plugins here
 
 # --- tool.pyright ---
 
@@ -180,11 +170,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "daglite" = ["py.typed"]
-
-# --- tool.ty ---
-
-[tool.ty.rules]
-unused-ignore-comment = "error"
 
 # --- tool.uv ---
 

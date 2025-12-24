@@ -20,21 +20,7 @@ repos:
       - id: ruff-format
   - repo: local
     hooks:
-      - id: mypy (via uv)
-        name: mypy (via uv)
-        entry: uv run --no-sync mypy
-        language: system
-        types: [python]
-        pass_filenames: true
-        exclude: ^tests/typing/assert_type_(?!(mypy|all)\.py$).*\.py$
-      - id: mypy (via uv)
-        name: ty (via uv)
-        entry: uv run --no-sync ty check
-        language: system
-        types: [python]
-        pass_filenames: true
-        exclude: ^tests/typing/assert_type_(?!(ty|all)\.py$).*\.py$
-      - id: pyright (via uv)
+      - id: pyright (via uv
         name: pyright (via uv)
         entry: uv run --no-sync pyright
         language: system
