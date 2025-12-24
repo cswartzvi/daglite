@@ -25,17 +25,22 @@ serialization = ["daglite-serialization"]
 dev = [
     "daglite-cli",
     "daglite-serialization[all]",
-    "mypy",
     "nox",
     "pandas-stubs",
     "poethepoet",
-    "pyrefly",
     "pre-commit",
     "pre-commit-uv>=4.2.0",
     "ruff",
+]
+test = [
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pyrefly",
+    "pyright>=1.1.407",
     "ty",
 ]
-test = ["pytest", "pytest-cov", "pytest-mock", "pyright>=1.1.407"]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
