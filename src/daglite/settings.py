@@ -30,6 +30,18 @@ class DagliteSettings:
     Defaults to the number of CPU cores available.
     """
 
+    enable_plugin_tracing: bool = field(
+        default_factory=lambda: _env_get_bool("DAGLITE_TRACE_HOOKS", False)
+    )
+    """
+    Enable detailed tracing of plugin hook calls.
+
+    When enabled, all plugin hook invocations are logged at DEBUG level, showing hook names,
+    arguments, and return values. Useful for debugging plugin behavior but can be verbose.
+
+    Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
+    """
+
 
 def get_global_settings() -> DagliteSettings:
     """
@@ -65,3 +77,11 @@ def set_global_settings(settings: DagliteSettings) -> None:
     with _SETTINGS_LOCK:
         global _GLOBAL_DAGLITE_SETTINGS
         _GLOBAL_DAGLITE_SETTINGS = settings
+
+
+def _env_get_bool(var_name: str, default: bool = False) -> bool:
+    """Helper to read a boolean environment variable."""
+    value = os.getenv(var_name)
+    if value is None:
+        return default
+    return value.lower() in ("1", "true", "yes")
