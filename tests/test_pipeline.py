@@ -72,7 +72,7 @@ class TestPipeline:
     def test_pipeline_decorator_rejects_non_callable(self):
         """Test that pipeline decorator rejects non-callable objects."""
         with pytest.raises(TypeError, match="can only be applied to callable functions"):
-            pipeline(42)  # pyright: ignore
+            pipeline(42)  # pyright: ignore  # ty: ignore
 
     def test_pipeline_decorator_rejects_class(self):
         """Test that pipeline decorator rejects classes."""

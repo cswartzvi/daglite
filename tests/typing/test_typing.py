@@ -11,7 +11,7 @@ import pytest
         ("pyright", None),
         ("mypy", None),
         ("pyrefly", "check"),
-        # ("ty", "check"),  # Uncomment when ty is more stable
+        ("ty", "check"),
     ],
 )
 def test_assert_types(checker: str, subcommand: str) -> None:

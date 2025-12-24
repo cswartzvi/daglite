@@ -32,6 +32,7 @@ dev = [
     "pre-commit",
     "pre-commit-uv>=4.2.0",
     "ruff",
+    "ty",
 ]
 test = ["pytest", "pytest-cov", "pytest-mock", "pyrefly", "pyright>=1.1.407"]
 docs = [
@@ -179,6 +180,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "daglite" = ["py.typed"]
+
+# --- tool.ty ---
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 # --- tool.uv ---
 
