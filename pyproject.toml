@@ -17,7 +17,7 @@ dependencies = [
     "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
-[project.optional-dependencies]  # Add new plugins here
+[project.optional-dependencies] # Add new plugins here
 cli = ["daglite-cli"]
 serialization = ["daglite-serialization"]
 
@@ -25,7 +25,6 @@ serialization = ["daglite-serialization"]
 dev = [
     "daglite-cli",
     "daglite-serialization[all]",
-    "mypy",
     "nox",
     "pandas-stubs",
     "poethepoet",
@@ -33,7 +32,15 @@ dev = [
     "pre-commit-uv>=4.2.0",
     "ruff",
 ]
-test = ["pytest", "pytest-cov", "pytest-mock", "pyrefly", "pyright>=1.1.407"]
+test = [
+    "mypy",
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "pyrefly",
+    "pyright>=1.1.407",
+    "ty",
+]
 docs = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.0",
@@ -64,12 +71,16 @@ exclude_also = [
 fail_under = 0
 
 [tool.coverage.run]
-source_pkgs = ["daglite", "daglite_cli", "daglite_serialization"]     # Add new plugins here
+source_pkgs = [
+    "daglite",
+    "daglite_cli",
+    "daglite_serialization",
+] # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
 
-# --- tool.setuptools ---
+# --- tool.mypy ---  # currently only used in CI for type checking
 
 [tool.mypy]
 namespace_packages = true
@@ -83,6 +94,11 @@ warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
 mypy_path = "src:extras/cli/src:extras/serialization/src" # Add new plugins here
+
+# --- tool.pyrefly ---  # currently only used in CI for type checking
+
+[tool.pyrefly.errors]
+invalid-param-spec = false
 
 # --- tool.pyright ---
 
@@ -179,6 +195,11 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "daglite" = ["py.typed"]
+
+# --- tool.ty ---  # currently only used in CI for type checking
+
+[tool.ty.rules]
+unused-ignore-comment = "error"
 
 # --- tool.uv ---
 

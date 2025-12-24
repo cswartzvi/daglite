@@ -308,7 +308,7 @@ class Task(BaseTask[P, R]):
 
         Args:
             **kwargs: Keyword arguments to be fixed for this task. Can include literals, variables,
-            or even `TaskFuture` objects.
+                or even `TaskFuture` objects.
 
         Returns:
             A `PartialTask` with the specified parameters fixed.
