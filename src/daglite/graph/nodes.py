@@ -167,7 +167,7 @@ class MapTaskNode(BaseMapGraphNode):
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
-        node_key = f"{self.name}-{kwargs['iteration_index']}"
+        node_key = f"{self.name}[{kwargs['iteration_index']}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
         return _run_sync_impl(
@@ -180,7 +180,7 @@ class MapTaskNode(BaseMapGraphNode):
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
-        node_key = f"{self.name}-{kwargs['iteration_index']}"
+        node_key = f"{self.name}[{kwargs['iteration_index']}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
         return await _run_async_impl(
