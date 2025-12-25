@@ -109,7 +109,6 @@ class TestSettingsEnvironmentVariables:
         # Use a unique name unlikely to be set
         assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=False) is False
         assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=True) is True
-        """set_global_settings stores and retrieves custom settings."""
 
         custom_settings = DagliteSettings(
             max_backend_threads=16,
