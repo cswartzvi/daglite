@@ -48,6 +48,67 @@ class TestGlobalSettings:
         assert isinstance(settings, DagliteSettings)
 
     def test_set_and_get_global_settings(self) -> None:
+        """set_global_settings persists settings that can be retrieved."""
+        custom = DagliteSettings(max_backend_threads=42, enable_plugin_tracing=True)
+        set_global_settings(custom)
+        retrieved = get_global_settings()
+        assert retrieved.max_backend_threads == 42
+        assert retrieved.enable_plugin_tracing is True
+
+        # Clean up
+        set_global_settings(DagliteSettings())
+
+    def test_settings_enable_plugin_tracing(self) -> None:
+        """Test enable_plugin_tracing setting."""
+        settings = DagliteSettings(enable_plugin_tracing=True)
+        assert settings.enable_plugin_tracing is True
+
+        settings = DagliteSettings(enable_plugin_tracing=False)
+        assert settings.enable_plugin_tracing is False
+
+
+class TestSettingsEnvironmentVariables:
+    """Test settings from environment variables."""
+
+    def test_env_get_bool_true_values(self, monkeypatch) -> None:
+        """Test _env_get_bool with various true values."""
+        from daglite.settings import _env_get_bool
+
+        monkeypatch.setenv("TEST_VAR", "1")
+        assert _env_get_bool("TEST_VAR") is True
+
+        monkeypatch.setenv("TEST_VAR", "true")
+        assert _env_get_bool("TEST_VAR") is True
+
+        monkeypatch.setenv("TEST_VAR", "TRUE")
+        assert _env_get_bool("TEST_VAR") is True
+
+        monkeypatch.setenv("TEST_VAR", "yes")
+        assert _env_get_bool("TEST_VAR") is True
+
+        monkeypatch.setenv("TEST_VAR", "YES")
+        assert _env_get_bool("TEST_VAR") is True
+
+    def test_env_get_bool_false_values(self, monkeypatch) -> None:
+        """Test _env_get_bool with false values."""
+        from daglite.settings import _env_get_bool
+
+        monkeypatch.setenv("TEST_VAR", "0")
+        assert _env_get_bool("TEST_VAR") is False
+
+        monkeypatch.setenv("TEST_VAR", "false")
+        assert _env_get_bool("TEST_VAR") is False
+
+        monkeypatch.setenv("TEST_VAR", "no")
+        assert _env_get_bool("TEST_VAR") is False
+
+    def test_env_get_bool_default(self) -> None:
+        """Test _env_get_bool returns default when not set."""
+        from daglite.settings import _env_get_bool
+
+        # Use a unique name unlikely to be set
+        assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=False) is False
+        assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=True) is True
         """set_global_settings stores and retrieves custom settings."""
 
         custom_settings = DagliteSettings(
