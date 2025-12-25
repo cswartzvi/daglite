@@ -28,7 +28,6 @@ from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
 DEFAULT_LOGGER_NAME = "daglite.tasks"
-DEFAULT_LOGGER_FORMAT = "%(asctime)s - %(levelname)s - Task Node %(daglite_task_name)s %(message)s"
 
 
 class ReporterHandler(logging.Handler):
@@ -89,7 +88,7 @@ class ReporterHandler(logging.Handler):
                 ]:
                     extra[key] = value
 
-            if extra:
+            if extra:  # pragma: no branch
                 payload["extra"] = extra
 
             self._reporter.report(LOGGER_EVENT, payload)
@@ -217,8 +216,8 @@ class LoggingPlugin(BidirectionalPlugin):
 
         # Emit to all handlers EXCEPT ReporterHandler
         for handler in base_logger.handlers:
-            if not isinstance(handler, ReporterHandler):
-                handler.handle(record)  # pragma: no cover
+            if not isinstance(handler, ReporterHandler):  # pragma: no cover
+                handler.handle(record)
 
 
 def get_logger(name: str | None = None) -> logging.LoggerAdapter:
