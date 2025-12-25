@@ -28,7 +28,7 @@ from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
 DEFAULT_LOGGER_NAME = "daglite.tasks"
-DEFAULT_LOGGER_FORMAT = "%(asctime)s - Node: %(daglite_task_name)s - %(levelname)s - %(message)s"
+DEFAULT_LOGGER_FORMAT = "%(asctime)s - %(levelname)s - Task Node %(daglite_task_name)s %(message)s"
 
 
 class ReporterHandler(logging.Handler):
@@ -67,46 +67,31 @@ class ReporterHandler(logging.Handler):
                 "message": record.getMessage(),
             }
 
-            # Add exception info if present
             if record.exc_info:
                 import traceback
 
                 payload["exc_info"] = "".join(traceback.format_exception(*record.exc_info))
 
-            # Add extra context from LogRecord
+            # Add all LogRecord attributes to payload (skip only internal fields)
+            # This allows users to use standard format strings like %(filename)s:%(lineno)d
             extra = {}
             for key, value in record.__dict__.items():
-                # Skip standard LogRecord attributes
                 if key not in [
-                    "name",
-                    "msg",
-                    "args",
-                    "created",
-                    "filename",
-                    "funcName",
-                    "levelname",
-                    "levelno",
-                    "lineno",
-                    "module",
-                    "msecs",
-                    "message",
-                    "pathname",
-                    "process",
-                    "processName",
-                    "relativeCreated",
-                    "thread",
-                    "threadName",
-                    "taskName",  # Thread task name (asyncio)
-                    "exc_info",
-                    "exc_text",
-                    "stack_info",
+                    "name",  # Sent separately
+                    "msg",  # Internal - we send formatted message
+                    "args",  # Internal - we send formatted message
+                    "levelname",  # Sent separately as 'level'
+                    "levelno",  # Internal int - levelname is the string version
+                    "message",  # Sent separately
+                    "exc_info",  # Handled separately
+                    "exc_text",  # Internal formatting cache
+                    "stack_info",  # Handled via exc_info
                 ]:
                     extra[key] = value
 
             if extra:
                 payload["extra"] = extra
 
-            # Send via reporter
             self._reporter.report(LOGGER_EVENT, payload)
         except Exception:
             self.handleError(record)
@@ -158,22 +143,30 @@ class LoggingPlugin(BidirectionalPlugin):
     Worker side - Logs are sent via EventReporter
     Coordinator side - Logs are received and dispatched to Python's logging system
 
+    The plugin transparently routes logs across process/thread boundaries. Configure
+    logging output using standard Python logging configuration (logging.basicConfig).
+    Task context fields (daglite_task_name, daglite_node_key, daglite_task_id) are
+    automatically available in format strings.
+
     Args:
-        level: Minimum log level to handle on coordinator side.
-        format: Log format string for coordinator-side formatting. If None, uses a default
-            format with task name and timestamp. Use `%(daglite_task_name)s`,
-            `%(daglite_node_key)s`, and `%(daglite_task_id)s` to include task context in output.
+        level: Minimum log level to handle on coordinator side (default: WARNING).
 
     Examples:
         >>> from daglite.plugins.default import LoggingPlugin
+        >>> import logging
+        >>>
+        >>> # Configure logging format to include task context
+        >>> logging.basicConfig(
+        ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
+        ... )
+        >>>
+        >>> # Add plugin to pipeline
         >>> plugin = LoggingPlugin(level=logging.INFO)
         >>> pipeline = Pipeline(plugins=[plugin])
     """
 
-    def __init__(self, level: int = logging.WARNING, format: str | None = None):
+    def __init__(self, level: int = logging.WARNING):
         self._level = level
-        self._format = format or DEFAULT_LOGGER_FORMAT
-        self._formatter = logging.Formatter(self._format, defaults={"daglite_task_name": "unknown"})
 
     def register_event_handlers(self, registry: EventRegistry) -> None:
         """
@@ -200,10 +193,8 @@ class LoggingPlugin(BidirectionalPlugin):
         exc_info_str = event.get("exc_info")
         extra = event.get("extra", {})
 
-        # Check level against plugin's configured minimum level
-        log_level = getattr(logging, level, logging.INFO)
-
         # Filter based on the plugin's configured minimum level
+        log_level = getattr(logging, level, logging.INFO)
         if log_level < self._level:
             return
 
@@ -211,17 +202,13 @@ class LoggingPlugin(BidirectionalPlugin):
         if exc_info_str:
             message = f"{message}\n{exc_info_str}"
 
-        # Create a LogRecord directly and emit to the base logger's handlers
-        # We bypass the normal logging path to avoid triggering ReporterHandler
-        # which would create an infinite loop (log -> reporter -> log -> ...)
+        # Emit record to composer-side logger (excluding ReporterHandler to avoid loops)
         base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME)
-
-        # Create record manually
         record = base_logger.makeRecord(
             name=base_logger.name,
             level=log_level,
-            fn="",
-            lno=0,
+            fn=extra.get("filename", ""),
+            lno=extra.get("lineno", 0),
             msg=message,
             args=(),
             exc_info=None,
@@ -238,12 +225,11 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     """
     Get a logger instance that works across process/thread boundaries.
 
-    This is the main entry point for user code. It returns a standard python
-    `logging.LoggerAdapter` that automatically:
+    This is the main entry point for user code into the daglite logging. It returns a standard
+    Python `logging.LoggerAdapter` that automatically:
     - Uses the reporter system when available for cross-process logging
     - Injects task context (task_id, task_name) into all log records
     - Falls back to standard logging when no reporter is available
-
 
     Args:
         name: Logger name for code organization. If None, uses "daglite.tasks". Typically use
@@ -257,7 +243,6 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     Examples:
         >>> from daglite.plugins.default import get_logger
-        >>>
 
         Simple usage - automatic task context in logs
         >>> @task
