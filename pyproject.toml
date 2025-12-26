@@ -79,8 +79,6 @@ source_pkgs = [
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
 sigterm = true
-concurrency = ["multiprocessing"]
-parallel = true
 
 # --- tool.mypy ---  # currently only used in CI for type checking
 
