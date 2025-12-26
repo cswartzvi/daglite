@@ -253,7 +253,7 @@ class TestCentralizedLoggingPlugin:
 
         with caplog.at_level(logging.INFO):
             result = evaluate(
-                task_with_multiple_get_logger.with_options(backend_name="threads")(x=42),
+                task_with_multiple_get_logger.with_options(backend_name="processes")(x=42),
                 plugins=[plugin],
             )
             assert result == 42

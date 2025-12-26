@@ -11,6 +11,16 @@ logger = logging.getLogger(__name__)
 class EventReporter(Protocol):
     """Protocol for worker → coordinator communication."""
 
+    @property
+    def is_remote(self) -> bool:
+        """
+        Indicates whether this reporter sends events across process/machine boundaries.
+
+        Returns:
+            True for cross-process/distributed reporters, False for same-process reporters.
+        """
+        ...
+
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """
         Send event from worker to coordinator.
@@ -40,6 +50,11 @@ class DirectReporter:
         """
         self._callback = callback
         self._lock = threading.Lock()
+
+    @property
+    def is_remote(self) -> bool:
+        """DirectReporter is same-process, not remote."""
+        return False
 
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event via direct callback (thread-safe)."""
@@ -72,6 +87,11 @@ class ProcessReporter:
     def queue(self) -> MultiprocessingQueue:
         """Get the underlying multiprocessing queue."""
         return self._queue
+
+    @property
+    def is_remote(self) -> bool:
+        """ProcessReporter is cross-process, therefore remote."""
+        return True
 
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event via queue."""
