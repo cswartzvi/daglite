@@ -4,7 +4,7 @@ import logging
 
 from daglite import evaluate
 from daglite import task
-from daglite.plugins import LoggingPlugin
+from daglite.plugins import CentralizedLoggingPlugin
 from daglite.plugins import get_logger
 
 
@@ -46,12 +46,12 @@ def logging_task_with_exception(x: int) -> int:
     return x
 
 
-class TestLoggingPlugin:
-    """Test suite for LoggingPlugin."""
+class TestCentralizedLoggingPlugin:
+    """Test suite for CentralizedLoggingPlugin."""
 
     def test_logging_with_sequential_backend(self, caplog):
         """Test logging works with sequential backend (fallback mode)."""
-        plugin = LoggingPlugin(level=logging.INFO)
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
             result = evaluate(logging_task(x=42, message="Test message"), plugins=[plugin])
@@ -62,7 +62,7 @@ class TestLoggingPlugin:
 
     def test_different_log_levels(self, caplog):
         """Test different log levels are handled correctly."""
-        plugin = LoggingPlugin(level=logging.DEBUG)
+        plugin = CentralizedLoggingPlugin(level=logging.DEBUG)
 
         with caplog.at_level(logging.DEBUG):
             result = evaluate(logging_task_with_levels(x=42), plugins=[plugin])
@@ -76,7 +76,7 @@ class TestLoggingPlugin:
 
     def test_log_level_filtering(self, caplog):
         """Test that log level filtering works at the plugin level."""
-        plugin = LoggingPlugin(level=logging.WARNING)
+        plugin = CentralizedLoggingPlugin(level=logging.WARNING)
 
         with caplog.at_level(logging.WARNING):  # Only capture WARNING and above
             result = evaluate(logging_task_with_levels(x=42), plugins=[plugin])
@@ -90,7 +90,7 @@ class TestLoggingPlugin:
 
     def test_exception_logging(self, caplog):
         """Test that exception logging includes traceback."""
-        plugin = LoggingPlugin(level=logging.ERROR)
+        plugin = CentralizedLoggingPlugin(level=logging.ERROR)
 
         with caplog.at_level(logging.ERROR):
             result = evaluate(logging_task_with_exception(x=42), plugins=[plugin])
@@ -103,7 +103,7 @@ class TestLoggingPlugin:
 
     def test_multiple_tasks_logging(self, caplog):
         """Test logging from multiple tasks."""
-        plugin = LoggingPlugin(level=logging.INFO)
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
             for i in range(5):
@@ -132,7 +132,7 @@ class TestLoggingPlugin:
 
     def test_contextual_logging_auto_name(self, caplog):
         """Test that get_logger() without name uses daglite.tasks logger."""
-        plugin = LoggingPlugin(level=logging.INFO)
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
             result = evaluate(contextual_logging_task(x=42), plugins=[plugin])
@@ -144,7 +144,7 @@ class TestLoggingPlugin:
 
     def test_contextual_logging_includes_task_metadata(self, caplog):
         """Test that logs include task context in the logger name."""
-        plugin = LoggingPlugin(level=logging.INFO)
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
             # Use sequential backend for simpler testing
@@ -159,13 +159,13 @@ class TestLoggingPlugin:
         """Test that ReporterHandler.emit handles errors gracefully."""
         from unittest.mock import Mock
 
-        from daglite.plugins.default.logging import ReporterHandler
+        from daglite.plugins.default.logging import _ReporterHandler
 
         # Create a mock reporter that raises an error
         mock_reporter = Mock()
         mock_reporter.report.side_effect = RuntimeError("Simulated reporter error")
 
-        handler = ReporterHandler(mock_reporter)
+        handler = _ReporterHandler(mock_reporter)
 
         # Create a log record
         logger = logging.getLogger("test")
@@ -188,7 +188,7 @@ class TestLoggingPlugin:
 
     def test_get_logger_without_reporter(self):
         """Test that get_logger doesn't add ReporterHandler twice to same logger."""
-        from daglite.plugins.default.logging import ReporterHandler
+        from daglite.plugins.default.logging import _ReporterHandler
         from daglite.plugins.default.logging import get_logger
 
         # Get logger with a unique name
@@ -200,12 +200,12 @@ class TestLoggingPlugin:
 
         # Should only have at most one ReporterHandler (not duplicated)
         base_logger = logger1.logger
-        reporter_handlers = [h for h in base_logger.handlers if isinstance(h, ReporterHandler)]
+        reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
         assert len(reporter_handlers) <= 1  # 0 or 1, but not 2+
 
     def test_logging_plugin_handles_no_handlers(self):
-        """Test LoggingPlugin._handle_log_event when logger has no handlers."""
-        plugin = LoggingPlugin(level=logging.INFO)
+        """Test CentralizedLoggingPlugin._handle_log_event when logger has no handlers."""
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         # Create a logger with no handlers
         test_logger = logging.getLogger("test.no.handlers")
