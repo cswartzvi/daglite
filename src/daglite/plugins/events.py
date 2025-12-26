@@ -125,7 +125,7 @@ class EventProcessor:
         """
         self._registry.dispatch(event)
 
-    def flush(self, timeout: float = 0.5) -> None:
+    def flush(self, timeout: float = 2.0) -> None:
         """
         Drain all pending events from sources.
 
