@@ -142,18 +142,28 @@ class TestCentralizedLoggingPlugin:
         assert "daglite.tasks" in caplog.text
         assert "Processing 42" in caplog.text
 
-    def test_contextual_logging_includes_task_metadata(self, caplog):
-        """Test that logs include task context in the logger name."""
+    def test_task_metadata_fields_in_log_records(self, caplog):
+        """Test that daglite_task_name, daglite_task_id, daglite_node_key are in LogRecords."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
-            # Use sequential backend for simpler testing
             result = evaluate(contextual_logging_task(x=99), plugins=[plugin])
             assert result == 198
 
-        # Check that log appeared with daglite.tasks logger name
-        assert "Processing 99" in caplog.text
-        assert "daglite.tasks" in caplog.text
+        # Verify task metadata fields are present in the log record
+        assert len(caplog.records) > 0
+        record = caplog.records[0]
+
+        # Check all three daglite_* fields exist
+        assert hasattr(record, "daglite_task_name")
+        assert hasattr(record, "daglite_task_id")
+        assert hasattr(record, "daglite_node_key")
+
+        # Verify values are sensible
+        assert record.daglite_task_name == "contextual_logging_task"
+        assert record.daglite_node_key == "contextual_logging_task"
+        assert isinstance(record.daglite_task_id, str)
+        assert len(record.daglite_task_id) > 0  # UUID should be non-empty
 
     def test_reporter_handler_error_handling(self, caplog):
         """Test that ReporterHandler.emit handles errors gracefully."""
