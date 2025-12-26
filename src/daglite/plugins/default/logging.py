@@ -207,10 +207,11 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
             if field in all_extra:
                 setattr(record, field, all_extra[field])
 
-        # Emit to all handlers EXCEPT ReporterHandler
-        for handler in base_logger.handlers:
-            if not isinstance(handler, _ReporterHandler):  # pragma: no cover
-                handler.handle(record)
+        # Mark record to prevent re-emission by ReporterHandler (avoid infinite loops)
+        setattr(record, "_daglite_already_forwarded", True)
+
+        # Use normal logging flow (includes propagation to parent loggers)
+        base_logger.handle(record)
 
 
 class _ReporterHandler(logging.Handler):
@@ -241,6 +242,10 @@ class _ReporterHandler(logging.Handler):
         Args:
             record: Log record to emit
         """
+        # Skip records that were already forwarded (re-emitted by coordinator)
+        if getattr(record, "_daglite_already_forwarded", False):
+            return
+
         try:
             # Build log event payload
             payload: dict[str, Any] = {
