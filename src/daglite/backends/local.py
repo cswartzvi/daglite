@@ -99,46 +99,47 @@ class ProcessBackend(Backend):
 
     _executor: ProcessPoolExecutor
     _reporter_id: UUID
+    _mp_context: Any  # BaseContext, but we can't import it at class level
 
     @override
     def _get_reporter(self) -> ProcessReporter:
         from multiprocessing import Queue
-
-        queue: Queue[Any] = Queue()
-        return ProcessReporter(queue)
-
-    @override
-    def _start(self) -> None:
         from multiprocessing import get_context
-        from multiprocessing.context import BaseContext
 
-        settings = get_global_settings()
-        max_workers = settings.max_parallel_processes
-        mp_context: BaseContext
-
-        # NOTE: Coverage only runs on Linux CI runners (skipping Windows/macOS)
+        # NOTE: Coverage only runs on Linux CI runners
         if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
-            mp_context = get_context("spawn")
+            self._mp_context = get_context("spawn")
         elif (
             sys.version_info >= (3, 13)
             and sys.version_info < (3, 14)
             and not getattr(sys, "_is_gil_enabled", lambda: True)()
         ):  # pragma: no cover
-            # Use 'spawn' for Python 3.13t (free-threaded builds with GIL disabled).
-            # Fork is incompatible with free-threading in 3.13t, causing hangs.
-            # Python 3.14 defaults to 'forkserver', so this workaround is only needed for 3.13t.
-            mp_context = get_context("spawn")
+            # Use 'spawn' for Python 3.13t (free-threaded builds with GIL disabled). Fork is
+            # incompatible with free-threading in 3.13t, causing hangs. Python 3.14 defaults to
+            # 'forkserver', so this workaround is only needed for 3.13t.
+            self._mp_context = get_context("spawn")
         else:
             # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
-            mp_context = get_context("fork")
+            self._mp_context = get_context("fork")
 
+        # NOTE: We need to defer Queue creation until we know the context
+        queue: Queue[Any] = self._mp_context.Queue()
+        return ProcessReporter(queue)
+
+    @override
+    def _start(self) -> None:
+        settings = get_global_settings()
+        max_workers = settings.max_parallel_processes
+
+        # Use the mp_context that was already determined in _get_reporter
+        # Use the mp_context that was already determined in _get_reporter
         assert isinstance(self._reporter, ProcessReporter)
         self._reporter_id = self._event_processor.add_source(self._reporter.queue)
         serialized_pm = serialize_plugin_manager(self._plugin_manager)
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
-            mp_context=mp_context,
+            mp_context=self._mp_context,
             initializer=_process_initializer,
             initargs=(serialized_pm, self._reporter.queue),
         )
