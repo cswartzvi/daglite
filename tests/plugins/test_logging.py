@@ -196,22 +196,14 @@ class TestCentralizedLoggingPlugin:
         # Verify reporter was called (and raised)
         assert mock_reporter.report.called
 
-    def test_get_logger_without_reporter(self):
-        """Test that get_logger doesn't add ReporterHandler twice to same logger."""
-        from daglite.plugins.default.logging import _ReporterHandler
-        from daglite.plugins.default.logging import get_logger
-
-        # Get logger with a unique name
-        logger1 = get_logger("test.unique.name.123")
-        logger2 = get_logger("test.unique.name.123")
+    def test_get_logger_same_name_returns_same_logger(self):
+        """Test that get_logger with the same name returns the same underlying logger."""
+        # Get logger with a unique name (may or may not have reporter in context)
+        logger1 = get_logger("test.unique.name.456")
+        logger2 = get_logger("test.unique.name.456")
 
         # Should be the same underlying logger
         assert logger1.logger is logger2.logger
-
-        # Should only have at most one ReporterHandler (not duplicated)
-        base_logger = logger1.logger
-        reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
-        assert len(reporter_handlers) <= 1  # 0 or 1, but not 2+
 
     def test_logging_plugin_handles_no_handlers(self):
         """Test CentralizedLoggingPlugin._handle_log_event when logger has no handlers."""
@@ -230,3 +222,41 @@ class TestCentralizedLoggingPlugin:
 
         # Should not raise even with no handlers
         plugin._handle_log_event(event)
+
+    def test_get_logger_no_duplicate_handlers(self, caplog):
+        """Test that multiple get_logger calls for same name don't duplicate handlers."""
+        from daglite.plugins.default.logging import _ReporterHandler
+
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+
+        # Create a task that calls get_logger multiple times
+        @task
+        def task_with_multiple_get_logger(x: int) -> int:
+            logger1 = get_logger("test.dedupe.unique")
+            logger2 = get_logger("test.dedupe.unique")
+            logger3 = get_logger("test.dedupe.unique")
+
+            # All should share the same underlying logger
+            assert logger1.logger is logger2.logger is logger3.logger
+
+            # Check handler count
+            base_logger = logger1.logger
+            reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
+            # Should have exactly 1 handler, not 3
+            assert len(reporter_handlers) == 1
+
+            # Verify all three adapters share the exact same handler instance
+            assert all(h is reporter_handlers[0] for h in reporter_handlers)
+
+            logger1.info(f"Test {x}")
+            return x
+
+        with caplog.at_level(logging.INFO):
+            result = evaluate(
+                task_with_multiple_get_logger.with_options(backend_name="threads")(x=42),
+                plugins=[plugin],
+            )
+            assert result == 42
+
+        # Verify the log was captured
+        assert "Test 42" in caplog.text
