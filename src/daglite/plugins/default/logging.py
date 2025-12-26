@@ -180,7 +180,7 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
 
         extra = {k: v for k, v in all_extra.items() if k not in standard_fields}
 
-        # Emit record to composer-side logger (excluding ReporterHandler to avoid loops)
+        # Emit record to coordinator-side logger (excluding ReporterHandler to avoid loops)
         base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME)
         record = base_logger.makeRecord(
             name=base_logger.name,
