@@ -14,7 +14,6 @@ class NodeSpec:
     @hook_spec
     def before_node_execute(
         self,
-        key: str,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         reporter: EventReporter | None = None,
@@ -23,7 +22,6 @@ class NodeSpec:
         Called before a node begins execution.
 
         Args:
-            key: Unique key for the node.
             metadata: Metadata for the node to be executed.
             inputs: Resolved inputs for the node execution.
             reporter: Optional event reporter for this execution context.
@@ -32,7 +30,6 @@ class NodeSpec:
     @hook_spec
     def after_node_execute(
         self,
-        key: str,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         result: Any,
@@ -43,7 +40,6 @@ class NodeSpec:
         Called after a node completes execution successfully.
 
         Args:
-            key: Unique key for the node.
             metadata: Metadata for the executed node.
             inputs: Resolved inputs for the node execution.
             result: Result produced by the node execution.
@@ -54,7 +50,6 @@ class NodeSpec:
     @hook_spec
     def on_node_error(
         self,
-        key: str,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         error: Exception,
@@ -65,7 +60,6 @@ class NodeSpec:
         Called when a node execution fails.
 
         Args:
-            key: Unique key for the node.
             metadata: Metadata for the executed node.
             inputs: Resolved inputs for the node execution.
             error: The exception that was raised.

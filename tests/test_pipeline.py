@@ -10,6 +10,7 @@ import pytest
 
 from daglite import pipeline
 from daglite import task
+from daglite.futures import TaskFuture
 from daglite.pipelines import Pipeline
 from daglite.pipelines import load_pipeline
 
@@ -112,3 +113,87 @@ class TestLoadPipeline:
         pipeline_obj = load_pipeline("tests.examples.pipelines.math_pipeline")
         assert isinstance(pipeline_obj, Pipeline)
         assert pipeline_obj.name == "math_pipeline"
+
+
+class TestPipelineSignature:
+    """Tests for Pipeline signature and type inspection methods."""
+
+    def test_pipeline_signature(self):
+        """Test that pipeline.signature returns correct signature."""
+        from typing import get_type_hints
+
+        @pipeline
+        def typed_pipeline(x: int, y: str) -> TaskFuture[int]:  # pragma: no cover
+            return add(x=x, y=5)  # type: ignore
+
+        sig = typed_pipeline.signature
+        assert "x" in sig.parameters
+        assert "y" in sig.parameters
+
+        # Get actual type hints (resolves forward references)
+        hints = get_type_hints(typed_pipeline.func)
+        assert hints["x"] == int  # noqa: E721
+        assert hints["y"] == str  # noqa: E721
+
+    def test_get_typed_params_all_typed(self):
+        """Test get_typed_params with fully typed parameters."""
+
+        @pipeline
+        def typed_pipeline(x: int, y: str, z: float) -> TaskFuture[int]:  # pragma: no cover
+            return add(x=x, y=5)  # type: ignore
+
+        typed_params = typed_pipeline.get_typed_params()
+        # With __future__ annotations, these are strings or type objects depending on Python version
+        assert "x" in typed_params
+        assert "y" in typed_params
+        assert "z" in typed_params
+        assert all(v is not None for v in typed_params.values())
+
+    def test_get_typed_params_partially_typed(self):
+        """Test get_typed_params with partially typed parameters."""
+
+        @pipeline
+        def partial_pipeline(x: int, y, z: str):  # pragma: no cover
+            return add(x=x, y=5)
+
+        typed_params = partial_pipeline.get_typed_params()
+        assert typed_params["x"] is not None  # Has annotation
+        assert typed_params["y"] is None  # No annotation
+        assert typed_params["z"] is not None  # Has annotation
+
+    def test_get_typed_params_no_types(self):
+        """Test get_typed_params with no type annotations."""
+
+        @pipeline
+        def untyped_pipeline(x, y):  # pragma: no cover
+            return add(x=x, y=y)
+
+        typed_params = untyped_pipeline.get_typed_params()
+        assert typed_params == {"x": None, "y": None}
+
+    def test_has_typed_params_all_typed(self):
+        """Test has_typed_params returns True when all params typed."""
+
+        @pipeline
+        def typed_pipeline(x: int, y: str) -> TaskFuture[int]:  # pragma: no cover
+            return add(x=x, y=5)
+
+        assert typed_pipeline.has_typed_params() is True
+
+    def test_has_typed_params_partially_typed(self):
+        """Test has_typed_params returns False when some params untyped."""
+
+        @pipeline
+        def partial_pipeline(x: int, y) -> TaskFuture[int]:  # pragma: no cover
+            return add(x=x, y=5)
+
+        assert partial_pipeline.has_typed_params() is False
+
+    def test_has_typed_params_no_types(self):
+        """Test has_typed_params returns False when no params typed."""
+
+        @pipeline
+        def untyped_pipeline(x, y):  # pragma: no cover
+            return add(x=x, y=y)
+
+        assert untyped_pipeline.has_typed_params() is False

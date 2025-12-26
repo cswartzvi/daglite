@@ -159,14 +159,19 @@ def _get_global_plugin_manager() -> PluginManager:
 def _create_plugin_manager() -> PluginManager:
     """Create a new PluginManager instance and register daglite's hook specs."""
     manager = PluginManager(HOOK_NAMESPACE)
-    manager.trace.root.setwriter(
-        logger.debug if logger.getEffectiveLevel() == logging.DEBUG else None
-    )
-    manager.enable_tracing()
     manager.add_hookspecs(NodeSpec)
     from .hooks.specs import GraphSpec
 
     manager.add_hookspecs(GraphSpec)
+
+    # Enable plugin hook tracing if configured
+    from daglite.settings import get_global_settings
+
+    settings = get_global_settings()
+    if settings.enable_plugin_tracing:
+        manager.trace.root.setwriter(logger.debug)
+        manager.enable_tracing()
+
     return manager
 
 

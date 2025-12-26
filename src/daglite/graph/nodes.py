@@ -51,22 +51,24 @@ class TaskNode(BaseGraphNode):
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        metadata = self.to_metadata()
+        from dataclasses import replace
+
+        metadata = replace(self.to_metadata(), key=self.name)
 
         return _run_sync_impl(
             func=self.func,
-            key=self.name,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
         )
 
     @override
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        metadata = self.to_metadata()
+        from dataclasses import replace
+
+        metadata = replace(self.to_metadata(), key=self.name)
 
         return await _run_async_impl(
             func=self.func,
-            key=self.name,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
         )
@@ -163,24 +165,26 @@ class MapTaskNode(BaseMapGraphNode):
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        metadata = self.to_metadata()
-        node_key = f"{self.name}-{kwargs['iteration_index']}"
+        from dataclasses import replace
+
+        node_key = f"{self.name}[{kwargs['iteration_index']}]"
+        metadata = replace(self.to_metadata(), key=node_key)
 
         return _run_sync_impl(
             func=self.func,
-            key=node_key,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
         )
 
     @override
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        metadata = self.to_metadata()
-        node_key = f"{self.name}-{kwargs['iteration_index']}"
+        from dataclasses import replace
+
+        node_key = f"{self.name}[{kwargs['iteration_index']}]"
+        metadata = replace(self.to_metadata(), key=node_key)
 
         return await _run_async_impl(
             func=self.func,
-            key=node_key,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
         )
@@ -191,20 +195,20 @@ class MapTaskNode(BaseMapGraphNode):
 
 def _run_sync_impl(
     func: Callable[..., Any],
-    key: str,
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
 ) -> Any:
     """Helper to run a node synchronously with context setup."""
     from daglite.backends.context import get_plugin_manager
     from daglite.backends.context import get_reporter
+    from daglite.backends.context import reset_current_task
+    from daglite.backends.context import set_current_task
 
-    # Get context from the executing thread
+    task_token = set_current_task(metadata)
     plugin_manager = get_plugin_manager()
     reporter = get_reporter()
 
     plugin_manager.hook.before_node_execute(
-        key=key,
         metadata=metadata,
         inputs=resolved_inputs,
         reporter=reporter,
@@ -216,7 +220,6 @@ def _run_sync_impl(
         duration = time.time() - start_time
 
         plugin_manager.hook.after_node_execute(
-            key=key,
             metadata=metadata,
             inputs=resolved_inputs,
             result=result,
@@ -230,7 +233,6 @@ def _run_sync_impl(
         duration = time.time() - start_time
 
         plugin_manager.hook.on_node_error(
-            key=key,
             metadata=metadata,
             inputs=resolved_inputs,
             error=error,
@@ -239,10 +241,12 @@ def _run_sync_impl(
         )
         raise
 
+    finally:
+        reset_current_task(task_token)
+
 
 async def _run_async_impl(
     func: Callable[..., Any],
-    key: str,
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
 ) -> Any:
@@ -251,13 +255,14 @@ async def _run_async_impl(
 
     from daglite.backends.context import get_plugin_manager
     from daglite.backends.context import get_reporter
+    from daglite.backends.context import reset_current_task
+    from daglite.backends.context import set_current_task
 
-    # Get context from the executing thread (important for thread pool execution)
+    task_token = set_current_task(metadata)
     plugin_manager = get_plugin_manager()
     reporter = get_reporter()
 
     plugin_manager.hook.before_node_execute(
-        key=key,
         metadata=metadata,
         inputs=resolved_inputs,
         reporter=reporter,
@@ -274,7 +279,6 @@ async def _run_async_impl(
         duration = time.time() - start_time
 
         plugin_manager.hook.after_node_execute(
-            key=key,
             metadata=metadata,
             inputs=resolved_inputs,
             result=result,
@@ -288,7 +292,6 @@ async def _run_async_impl(
         duration = time.time() - start_time
 
         plugin_manager.hook.on_node_error(
-            key=key,
             metadata=metadata,
             inputs=resolved_inputs,
             error=error,
@@ -296,3 +299,6 @@ async def _run_async_impl(
             reporter=reporter,
         )
         raise
+
+    finally:
+        reset_current_task(task_token)

@@ -96,6 +96,27 @@ class TestHookManagerFunctions:
         # Cleanup
         hook_manager.unregister(counter)
 
+    def test_create_plugin_manager_with_tracing_enabled(self) -> None:
+        """Test plugin manager creation with tracing enabled."""
+        from daglite.settings import DagliteSettings
+        from daglite.settings import set_global_settings
+
+        # Enable tracing in global settings
+        settings = DagliteSettings(enable_plugin_tracing=True)
+        set_global_settings(settings)
+
+        # Create new manager
+        manager = _create_plugin_manager()
+
+        # Verify tracing is enabled (manager should have trace enabled)
+        # Note: We can't directly test if tracing is working without side effects,
+        # but we can verify the manager was created successfully
+        assert manager is not None
+        assert manager.project_name == "daglite"
+
+        # Clean up
+        set_global_settings(DagliteSettings())
+
 
 class TestPluginSerialization:
     """Test plugin manager serialization and deserialization."""
