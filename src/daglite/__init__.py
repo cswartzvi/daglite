@@ -19,7 +19,7 @@ Basic Usage:
     >>>
     >>> @task
     >>> def add(x: int, y: int) -> int:
-    >>>     return x + y
+    ...     return x + y
     >>>
     >>> result = evaluate(add(x=1, y=2))
     >>> print(result)  # 3
@@ -30,12 +30,12 @@ Async Usage:
     >>>
     >>> @task
     >>> def slow_io(x: int) -> int:
-    >>>     # I/O-bound work
-    >>>     return x * 2
+    ...     # I/O-bound work
+    ...     return x * 2
     >>>
     >>> async def main():
-    >>>     result = await evaluate_async(slow_io.product(x=[1, 2, 3]))
-    >>>     print(result)  # [2, 4, 6]
+    ...     result = await evaluate_async(slow_io.product(x=[1, 2, 3]))
+    ...     print(result)  # [2, 4, 6]
     >>>
     >>> asyncio.run(main())
 
