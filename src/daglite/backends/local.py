@@ -24,7 +24,6 @@ from daglite.plugins.manager import serialize_plugin_manager
 from daglite.plugins.reporters import DirectReporter
 from daglite.plugins.reporters import EventReporter
 from daglite.plugins.reporters import ProcessReporter
-from daglite.plugins.reporters import ThreadReporter
 from daglite.settings import get_global_settings
 
 
@@ -58,22 +57,17 @@ class ThreadBackend(Backend):
     """Executes in thread pool, returns pending futures."""
 
     _executor: ThreadPoolExecutor
-    _reporter_id: UUID
 
     @override
-    def _get_reporter(self) -> ThreadReporter:
-        from queue import Queue
-
-        queue: Queue[Any] = Queue()
-        return ThreadReporter(queue)
+    def _get_reporter(self) -> DirectReporter:
+        # Threads run in same process - use DirectReporter with dispatcher
+        return DirectReporter(self._event_processor.dispatch)
 
     @override
     def _start(self) -> None:
         settings = get_global_settings()
         max_workers = settings.max_backend_threads
 
-        assert isinstance(self._reporter, ThreadReporter)
-        self._reporter_id = self._event_processor.add_source(self._reporter.queue)
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             initializer=_thread_initializer,
@@ -83,7 +77,6 @@ class ThreadBackend(Backend):
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
-        self._event_processor.remove_source(self._reporter_id)
 
     @override
     def _submit_impl(

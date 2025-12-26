@@ -7,7 +7,6 @@ Tests in this file should NOT focus on evaluation. Evaluation tests are in tests
 """
 
 from multiprocessing import Queue as MultiprocessingQueue
-from queue import Queue
 from typing import Any
 from unittest.mock import Mock
 
@@ -15,7 +14,6 @@ import pytest
 
 from daglite.plugins.reporters import DirectReporter
 from daglite.plugins.reporters import ProcessReporter
-from daglite.plugins.reporters import ThreadReporter
 
 
 class TestDirectReporter:
@@ -60,58 +58,25 @@ class TestDirectReporter:
         assert "Error reporting event test_event" in caplog.text
         assert "Callback error" in caplog.text
 
+    def test_thread_safety(self) -> None:
+        """DirectReporter is thread-safe for concurrent calls."""
+        import threading
 
-class TestThreadReporter:
-    """Test ThreadReporter for thread-safe queue-based event reporting."""
+        callback = Mock()
+        reporter = DirectReporter(callback)
 
-    def test_initialization(self) -> None:
-        """ThreadReporter can be initialized with a queue."""
-        queue: Queue = Queue()
-        reporter = ThreadReporter(queue)
-        assert reporter.queue is queue
+        # Call report from multiple threads
+        threads = []
+        for i in range(10):
+            thread = threading.Thread(target=reporter.report, args=(f"event_{i}", {"value": i}))
+            threads.append(thread)
+            thread.start()
 
-    def test_report_puts_event_in_queue(self) -> None:
-        """report() sends event via queue."""
-        queue: Queue = Queue()
-        reporter = ThreadReporter(queue)
+        for thread in threads:
+            thread.join()
 
-        reporter.report("test_event", {"key": "value"})
-
-        event = queue.get_nowait()
-        assert event == {"type": "test_event", "key": "value"}
-
-    def test_report_multiple_events(self) -> None:
-        """report() can send multiple events."""
-        queue: Queue = Queue()
-        reporter = ThreadReporter(queue)
-
-        reporter.report("event1", {"data": 1})
-        reporter.report("event2", {"data": 2})
-
-        event1 = queue.get_nowait()
-        event2 = queue.get_nowait()
-
-        assert event1 == {"type": "event1", "data": 1}
-        assert event2 == {"type": "event2", "data": 2}
-
-    def test_report_handles_queue_exception(self, caplog) -> None:
-        """report() handles exceptions when putting to queue."""
-        queue = Mock(spec=Queue)
-        queue.put.side_effect = RuntimeError("Queue error")
-        reporter = ThreadReporter(queue)
-
-        # Should not raise, but log the error
-        reporter.report("test_event", {"key": "value"})
-
-        # Verify error was logged
-        assert "Error reporting event test_event" in caplog.text
-        assert "Queue error" in caplog.text
-
-    def test_queue_property(self) -> None:
-        """queue property returns the underlying queue."""
-        queue: Queue = Queue()
-        reporter = ThreadReporter(queue)
-        assert reporter.queue is queue
+        # All events should have been reported
+        assert callback.call_count == 10
 
 
 class TestProcessReporter:
