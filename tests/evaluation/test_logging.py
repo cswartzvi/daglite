@@ -121,6 +121,14 @@ def double(x: int) -> int:
     return x * 2
 
 
+@task
+def contextual_logging_task(x: int) -> int:
+    """Task that uses contextual logging (no name argument)."""
+    logger = get_logger()  # Should auto-derive name from task context
+    logger.info(f"Processing {x}")
+    return x * 2
+
+
 class TestCentralizedLoggingIntegration:
     """Integration tests for centralized logging with different backends."""
 
@@ -268,3 +276,129 @@ class TestCentralizedLoggingWithPipelines:
         # All double operations should be logged
         for i in range(1, 6):
             assert f"Doubling {i}" in caplog.text
+
+
+class TestCentralizedLoggingDirectReporter:
+    """Test centralized logging with backends using DirectReporter (sequential, threads)."""
+
+    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
+    def test_logging_with_direct_reporter_backends(self, backend_name, caplog):
+        """Test logging works with sequential and threads backends (DirectReporter)."""
+        from daglite import task
+
+        @task
+        def logging_task(x: int, message: str) -> int:
+            """Task that logs a message."""
+            logger = get_logger(__name__)
+            logger.info(message)
+            return x
+
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+
+        # Use sequential backend when backend_name is "sequential" (default behavior)
+        if backend_name == "sequential":
+            task_with_backend = logging_task
+        else:
+            task_with_backend = logging_task.with_options(backend_name=backend_name)
+
+        with caplog.at_level(logging.INFO):
+            result = evaluate(task_with_backend(x=42, message="Test message"), plugins=[plugin])
+            assert result == 42
+
+        # Check that log was captured
+        assert "Test message" in caplog.text
+
+    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
+    def test_contextual_logging_auto_name(self, backend_name, caplog):
+        """Test that get_logger() without name uses daglite.tasks logger."""
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+
+        # Use sequential backend when backend_name is "sequential" (default behavior)
+        if backend_name == "sequential":
+            task_with_backend = contextual_logging_task
+        else:
+            task_with_backend = contextual_logging_task.with_options(backend_name=backend_name)
+
+        with caplog.at_level(logging.INFO):
+            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            assert result == 84  # 42 * 2
+
+        # Logger should use daglite.tasks (not task-specific name)
+        assert "daglite.tasks" in caplog.text
+        assert "Processing 42" in caplog.text
+
+    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
+    def test_different_log_levels(self, backend_name, caplog):
+        """Test different log levels are handled correctly."""
+        from daglite import task
+
+        @task
+        def logging_task_with_levels(x: int) -> int:
+            """Task that logs at different levels."""
+            logger = get_logger(__name__)
+            logger.debug(f"Debug: {x}")
+            logger.info(f"Info: {x}")
+            logger.warning(f"Warning: {x}")
+            logger.error(f"Error: {x}")
+            return x
+
+        plugin = CentralizedLoggingPlugin(level=logging.DEBUG)
+
+        # Use sequential backend when backend_name is "sequential" (default behavior)
+        if backend_name == "sequential":
+            task_with_backend = logging_task_with_levels
+        else:
+            task_with_backend = logging_task_with_levels.with_options(backend_name=backend_name)
+
+        with caplog.at_level(logging.DEBUG):
+            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            assert result == 42
+
+        # All levels should be present
+        assert "Debug: 42" in caplog.text
+        assert "Info: 42" in caplog.text
+        assert "Warning: 42" in caplog.text
+        assert "Error: 42" in caplog.text
+
+
+class TestCentralizedLoggingProcessBackend:
+    """Test centralized logging specific behaviors with process backend."""
+
+    def test_get_logger_no_duplicate_handlers(self, caplog):
+        """Test that multiple get_logger calls for same name don't duplicate handlers."""
+        from daglite import task
+        from daglite.plugins.default.logging import _ReporterHandler
+
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+
+        # Create a task that calls get_logger multiple times
+        @task
+        def task_with_multiple_get_logger(x: int) -> int:
+            logger1 = get_logger("test.dedupe.unique")
+            logger2 = get_logger("test.dedupe.unique")
+            logger3 = get_logger("test.dedupe.unique")
+
+            # All should share the same underlying logger
+            assert logger1.logger is logger2.logger is logger3.logger
+
+            # Check handler count
+            base_logger = logger1.logger
+            reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
+            # Should have exactly 1 handler, not 3
+            assert len(reporter_handlers) == 1
+
+            # Verify all three adapters share the exact same handler instance
+            assert all(h is reporter_handlers[0] for h in reporter_handlers)
+
+            logger1.info(f"Test {x}")
+            return x
+
+        with caplog.at_level(logging.INFO):
+            result = evaluate(
+                task_with_multiple_get_logger.with_options(backend_name="processes")(x=42),
+                plugins=[plugin],
+            )
+            assert result == 42
+
+        # Verify the log was captured
+        assert "Test 42" in caplog.text

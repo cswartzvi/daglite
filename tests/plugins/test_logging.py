@@ -1,126 +1,349 @@
-"""Tests for the logging plugin."""
+"""Unit tests for logging plugin.
+
+This module contains pure unit tests that do not use evaluate().
+Integration tests that use evaluate() are in tests/evaluation/test_logging.py.
+"""
 
 import logging
+from multiprocessing import Queue as MultiprocessingQueue
+from unittest.mock import Mock
+from unittest.mock import patch
 
-from daglite import evaluate
-from daglite import task
-from daglite.plugins import CentralizedLoggingPlugin
-from daglite.plugins import get_logger
-
-
-@task
-def logging_task(x: int, message: str) -> int:
-    """Task that logs a message."""
-    logger = get_logger(__name__)
-    logger.info(message)
-    return x
-
-
-@task
-def contextual_logging_task(x: int) -> int:
-    """Task that uses contextual logging (no name argument)."""
-    logger = get_logger()  # Should auto-derive name from task context
-    logger.info(f"Processing {x}")
-    return x * 2
+from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME
+from daglite.plugins.default.logging import LOGGER_EVENT
+from daglite.plugins.default.logging import CentralizedLoggingPlugin
+from daglite.plugins.default.logging import _ReporterHandler
+from daglite.plugins.default.logging import _TaskLoggerAdapter
+from daglite.plugins.default.logging import get_logger
+from daglite.plugins.reporters import DirectReporter
+from daglite.plugins.reporters import ProcessReporter
 
 
-@task
-def logging_task_with_levels(x: int) -> int:
-    """Task that logs at different levels."""
-    logger = get_logger(__name__)
-    logger.debug(f"Debug: {x}")
-    logger.info(f"Info: {x}")
-    logger.warning(f"Warning: {x}")
-    logger.error(f"Error: {x}")
-    return x
+class TestGetLoggerUnit:
+    """Unit tests for get_logger function."""
+
+    def test_get_logger_default_name(self):
+        """Test get_logger with default name."""
+        logger = get_logger()
+        assert isinstance(logger, logging.LoggerAdapter)
+        assert logger.logger.name == DEFAULT_LOGGER_NAME
+
+    def test_get_logger_custom_name(self):
+        """Test get_logger with custom name."""
+        logger = get_logger("custom.logger")
+        assert isinstance(logger, logging.LoggerAdapter)
+        assert logger.logger.name == "custom.logger"
+
+    def test_get_logger_no_reporter(self):
+        """Test get_logger when no reporter is available."""
+        with patch("daglite.plugins.default.logging.get_reporter", return_value=None):
+            logger = get_logger("test.no.reporter")
+            base_logger = logger.logger
+
+            # Should not have ReporterHandler
+            from daglite.plugins.default.logging import _ReporterHandler
+
+            assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
+
+    def test_get_logger_with_non_remote_reporter(self):
+        """Test get_logger with DirectReporter (non-remote)."""
+        mock_reporter = Mock()
+        mock_reporter.is_remote = False
+
+        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+            logger = get_logger("test.direct.reporter")
+            base_logger = logger.logger
+
+            # Should NOT have ReporterHandler (DirectReporter uses normal logging)
+            assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
+
+    def test_get_logger_with_remote_reporter(self):
+        """Test get_logger with ProcessReporter (remote)."""
+        mock_reporter = Mock()
+        mock_reporter.is_remote = True
+
+        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+            logger = get_logger("test.process.reporter")
+            base_logger = logger.logger
+
+            # Should have ReporterHandler
+            assert any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
+            # Should set level to DEBUG
+            assert base_logger.level == logging.DEBUG
+            # Should disable propagation
+            assert base_logger.propagate is False
+
+    def test_get_logger_with_remote_reporter_already_debug(self):
+        """Test get_logger doesn't change level if already DEBUG or lower."""
+        mock_reporter = Mock()
+        mock_reporter.is_remote = True
+
+        # Pre-configure logger to DEBUG
+        test_logger = logging.getLogger("test.already.debug")
+        test_logger.setLevel(logging.DEBUG)
+        original_level = test_logger.level
+
+        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+            logger = get_logger("test.already.debug")
+            base_logger = logger.logger
+
+            # Should not change level since it's already DEBUG
+            assert base_logger.level == original_level
+
+    def test_get_logger_no_duplicate_handlers(self):
+        """Test that calling get_logger twice doesn't add duplicate handlers."""
+        mock_reporter = Mock()
+        mock_reporter.is_remote = True
+
+        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+            logger1 = get_logger("test.dedupe")
+            _ = get_logger("test.dedupe")
+
+            base_logger = logger1.logger
+            reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
+
+            # Should only have ONE handler, not two
+            assert len(reporter_handlers) == 1
 
 
-@task
-def logging_task_with_exception(x: int) -> int:
-    """Task that logs an exception."""
-    logger = get_logger(__name__)
-    try:
-        raise ValueError(f"Test error for {x}")
-    except ValueError:
-        logger.exception("Caught an exception")
-    return x
+class TestTaskLoggerAdapter:
+    """Unit tests for _TaskLoggerAdapter."""
+
+    def test_process_without_task_context(self):
+        """Test process method when no task is executing."""
+        base_logger = logging.getLogger("test.adapter")
+        adapter = _TaskLoggerAdapter(base_logger, {})
+
+        with patch("daglite.backends.context.get_current_task", return_value=None):
+            msg, kwargs = adapter.process("test message", {})
+
+            assert msg == "test message"
+            assert "extra" in kwargs
+            assert "daglite_task_id" not in kwargs["extra"]
+
+    def test_process_with_task_context(self):
+        """Test process method when task is executing."""
+        from uuid import uuid4
+
+        from daglite.graph.base import GraphMetadata
+
+        base_logger = logging.getLogger("test.adapter")
+        adapter = _TaskLoggerAdapter(base_logger, {})
+
+        # Mock task metadata
+        task_metadata = GraphMetadata(
+            id=uuid4(),
+            name="test_task",
+            description="Test",
+            backend_name="processes",
+            key="test_task[0]",
+        )
+
+        with patch("daglite.backends.context.get_current_task", return_value=task_metadata):
+            msg, kwargs = adapter.process("test message", {})
+
+            assert msg == "test message"
+            assert "extra" in kwargs
+            assert kwargs["extra"]["daglite_task_name"] == "test_task"
+            assert kwargs["extra"]["daglite_node_key"] == "test_task[0]"
+            assert "daglite_task_id" in kwargs["extra"]
 
 
-class TestCentralizedLoggingPlugin:
-    """Test suite for CentralizedLoggingPlugin."""
+class TestReporterHandler:
+    """Unit tests for _ReporterHandler."""
 
-    def test_logging_with_sequential_backend(self, caplog):
-        """Test logging works with sequential backend (fallback mode)."""
+    def test_emit_basic_log(self):
+        """Test emitting a basic log record."""
+        mock_reporter = Mock()
+        handler = _ReporterHandler(mock_reporter)
+
+        logger = logging.getLogger("test.emit")
+        record = logger.makeRecord(
+            name="test.emit",
+            level=logging.INFO,
+            fn="test.py",
+            lno=42,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        handler.emit(record)
+
+        # Verify reporter.report was called
+        assert mock_reporter.report.called
+        call_args = mock_reporter.report.call_args
+        assert call_args[0][0] == LOGGER_EVENT
+        payload = call_args[0][1]
+        assert payload["name"] == "test.emit"
+        assert payload["level"] == "INFO"
+        assert payload["message"] == "Test message"
+
+    def test_emit_skips_already_forwarded(self):
+        """Test that emit skips records already forwarded."""
+        mock_reporter = Mock()
+        handler = _ReporterHandler(mock_reporter)
+
+        logger = logging.getLogger("test.skip")
+        record = logger.makeRecord(
+            name="test.skip",
+            level=logging.INFO,
+            fn="test.py",
+            lno=42,
+            msg="Test message",
+            args=(),
+            exc_info=None,
+        )
+
+        # Mark as already forwarded
+        record._daglite_already_forwarded = True
+
+        handler.emit(record)
+
+        # Should NOT have called reporter
+        assert not mock_reporter.report.called
+
+    def test_emit_with_exception(self):
+        """Test emitting a log record with exception info."""
+        import sys
+
+        mock_reporter = Mock()
+        handler = _ReporterHandler(mock_reporter)
+
+        logger = logging.getLogger("test.exception")
+
+        try:
+            raise ValueError("Test error")
+        except ValueError:
+            exc_info = sys.exc_info()
+            record = logger.makeRecord(
+                name="test.exception",
+                level=logging.ERROR,
+                fn="test.py",
+                lno=42,
+                msg="Error occurred",
+                args=(),
+                exc_info=exc_info,
+            )
+
+        handler.emit(record)
+
+        call_args = mock_reporter.report.call_args
+        payload = call_args[0][1]
+        assert "exc_info" in payload
+        assert "ValueError" in payload["exc_info"]
+        assert "Test error" in payload["exc_info"]
+
+
+class TestCentralizedLoggingPluginUnit:
+    """Unit tests for CentralizedLoggingPlugin."""
+
+    def test_plugin_initialization(self):
+        """Test plugin initializes with correct level."""
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+        assert plugin._level == logging.INFO
+
+        plugin_default = CentralizedLoggingPlugin()
+        assert plugin_default._level == logging.WARNING
+
+    def test_handle_log_event_basic(self, caplog):
+        """Test handling a basic log event."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
+        event = {
+            "name": "test.logger",
+            "level": "INFO",
+            "message": "Test message from worker",
+            "extra": {},
+        }
+
         with caplog.at_level(logging.INFO):
-            result = evaluate(logging_task(x=42, message="Test message"), plugins=[plugin])
-            assert result == 42
+            plugin._handle_log_event(event)
 
-        # Check that log was captured
-        assert "Test message" in caplog.text
+        assert "Test message from worker" in caplog.text
 
-    def test_different_log_levels(self, caplog):
-        """Test different log levels are handled correctly."""
-        plugin = CentralizedLoggingPlugin(level=logging.DEBUG)
-
-        with caplog.at_level(logging.DEBUG):
-            result = evaluate(logging_task_with_levels(x=42), plugins=[plugin])
-            assert result == 42
-
-        # All levels should be present
-        assert "Debug: 42" in caplog.text
-        assert "Info: 42" in caplog.text
-        assert "Warning: 42" in caplog.text
-        assert "Error: 42" in caplog.text
-
-    def test_log_level_filtering(self, caplog):
-        """Test that log level filtering works at the plugin level."""
+    def test_handle_log_event_level_filtering(self, caplog):
+        """Test that plugin filters events below minimum level."""
         plugin = CentralizedLoggingPlugin(level=logging.WARNING)
 
-        with caplog.at_level(logging.WARNING):  # Only capture WARNING and above
-            result = evaluate(logging_task_with_levels(x=42), plugins=[plugin])
-            assert result == 42
+        # INFO event should be filtered
+        info_event = {
+            "name": "test.logger",
+            "level": "INFO",
+            "message": "Info message",
+            "extra": {},
+        }
 
-        # Only WARNING and ERROR should be present (DEBUG/INFO filtered by caplog level)
-        assert "Debug: 42" not in caplog.text
-        assert "Info: 42" not in caplog.text
-        assert "Warning: 42" in caplog.text
-        assert "Error: 42" in caplog.text
+        with caplog.at_level(logging.DEBUG):
+            plugin._handle_log_event(info_event)
 
-    def test_exception_logging(self, caplog):
-        """Test that exception logging includes traceback."""
+        assert "Info message" not in caplog.text
+
+        # WARNING event should pass
+        warning_event = {
+            "name": "test.logger",
+            "level": "WARNING",
+            "message": "Warning message",
+            "extra": {},
+        }
+
+        with caplog.at_level(logging.DEBUG):
+            plugin._handle_log_event(warning_event)
+
+        assert "Warning message" in caplog.text
+
+    def test_handle_log_event_with_exception(self, caplog):
+        """Test handling log event with exception info."""
         plugin = CentralizedLoggingPlugin(level=logging.ERROR)
 
+        event = {
+            "name": "test.logger",
+            "level": "ERROR",
+            "message": "Error occurred",
+            "exc_info": "Traceback (most recent call last):\n  ValueError: Test error",
+            "extra": {},
+        }
+
         with caplog.at_level(logging.ERROR):
-            result = evaluate(logging_task_with_exception(x=42), plugins=[plugin])
-            assert result == 42
+            plugin._handle_log_event(event)
 
-        # Exception message should be in logs
-        assert "Caught an exception" in caplog.text
-        assert "ValueError" in caplog.text
-        assert "Test error for 42" in caplog.text
+        assert "Error occurred" in caplog.text
+        assert "ValueError: Test error" in caplog.text
 
-    def test_multiple_tasks_logging(self, caplog):
-        """Test logging from multiple tasks."""
+    def test_handle_log_event_with_extra_fields(self, caplog):
+        """Test handling log event with extra fields."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        with caplog.at_level(logging.INFO):
-            for i in range(5):
-                result = evaluate(logging_task(x=i, message=f"Message {i}"), plugins=[plugin])
-                assert result == i
+        event = {
+            "name": "test.logger",
+            "level": "INFO",
+            "message": "Test message",
+            "extra": {
+                "filename": "worker.py",
+                "lineno": 123,
+                "daglite_task_name": "test_task",
+                "daglite_node_key": "test_task[0]",
+            },
+        }
 
-        for i in range(5):
-            assert f"Message {i}" in caplog.text
+        with caplog.at_level(logging.INFO):
+            plugin._handle_log_event(event)
+
+        # Verify extra fields are preserved in record
+        assert len(caplog.records) > 0
+        record = caplog.records[-1]
+        assert record.filename == "worker.py"
+        assert record.lineno == 123
+        assert record.daglite_task_name == "test_task"
+        assert record.daglite_node_key == "test_task[0]"
 
     def test_get_logger_returns_logger_adapter(self):
         """Test that get_logger returns a LoggerAdapter instance."""
         logger = get_logger(__name__)
-
         assert isinstance(logger, logging.LoggerAdapter)
 
     def test_logger_uses_standard_logging_when_no_reporter(self):
-        """Test that logger uses standard logging when no reporter."""
+        """Test that logger uses standard logging when no reporter is available."""
         # When no reporter is available, ReporterHandler won't be added
         # and logs go through standard logging
         logger = get_logger(__name__)
@@ -130,46 +353,35 @@ class TestCentralizedLoggingPlugin:
         logger.warning("Warning message")
         logger.error("Error message")
 
-    def test_contextual_logging_auto_name(self, caplog):
-        """Test that get_logger() without name uses daglite.tasks logger."""
+    def test_get_logger_same_name_returns_same_logger(self):
+        """Test that get_logger with the same name returns the same underlying logger."""
+        logger1 = get_logger("test.unique.name.456")
+        logger2 = get_logger("test.unique.name.456")
+
+        # Should be the same underlying logger
+        assert logger1.logger is logger2.logger
+
+    def test_logging_plugin_handles_no_handlers(self):
+        """Test CentralizedLoggingPlugin._handle_log_event when logger has no handlers."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        with caplog.at_level(logging.INFO):
-            result = evaluate(contextual_logging_task(x=42), plugins=[plugin])
-            assert result == 84  # 42 * 2
+        # Create a logger with no handlers
+        test_logger = logging.getLogger("test.no.handlers")
+        test_logger.handlers.clear()
 
-        # Logger should use daglite.tasks (not task-specific name)
-        assert "daglite.tasks" in caplog.text
-        assert "Processing 42" in caplog.text
+        # Create event
+        event = {
+            "name": "test.no.handlers",
+            "level": "INFO",
+            "message": "Test message",
+        }
 
-    def test_task_metadata_fields_in_log_records(self, caplog):
-        """Test that daglite_task_name, daglite_task_id, daglite_node_key are in LogRecords."""
-        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+        # Should not raise even with no handlers
+        plugin._handle_log_event(event)
 
-        with caplog.at_level(logging.INFO):
-            result = evaluate(contextual_logging_task(x=99), plugins=[plugin])
-            assert result == 198
-
-        # Verify task metadata fields are present in the log record
-        assert len(caplog.records) > 0
-        record = caplog.records[0]
-
-        # Check all three daglite_* fields exist
-        assert hasattr(record, "daglite_task_name")
-        assert hasattr(record, "daglite_task_id")
-        assert hasattr(record, "daglite_node_key")
-
-        # Verify values are sensible
-        assert record.daglite_task_name == "contextual_logging_task"
-        assert record.daglite_node_key == "contextual_logging_task"
-        assert isinstance(record.daglite_task_id, str)
-        assert len(record.daglite_task_id) > 0  # UUID should be non-empty
-
-    def test_reporter_handler_error_handling(self, caplog):
+    def test_reporter_handler_error_handling(self):
         """Test that ReporterHandler.emit handles errors gracefully."""
         from unittest.mock import Mock
-
-        from daglite.plugins.default.logging import _ReporterHandler
 
         # Create a mock reporter that raises an error
         mock_reporter = Mock()
@@ -196,67 +408,112 @@ class TestCentralizedLoggingPlugin:
         # Verify reporter was called (and raised)
         assert mock_reporter.report.called
 
-    def test_get_logger_same_name_returns_same_logger(self):
-        """Test that get_logger with the same name returns the same underlying logger."""
-        # Get logger with a unique name (may or may not have reporter in context)
-        logger1 = get_logger("test.unique.name.456")
-        logger2 = get_logger("test.unique.name.456")
 
-        # Should be the same underlying logger
-        assert logger1.logger is logger2.logger
+class TestReporterImplementations:
+    """Unit tests for reporter implementations."""
 
-    def test_logging_plugin_handles_no_handlers(self):
-        """Test CentralizedLoggingPlugin._handle_log_event when logger has no handlers."""
-        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+    def test_direct_reporter_report(self):
+        """Test DirectReporter.report calls callback."""
+        callback = Mock()
+        reporter = DirectReporter(callback)
 
-        # Create a logger with no handlers
-        test_logger = logging.getLogger("test.no.handlers")
-        test_logger.handlers.clear()
+        # Verify is_remote is False
+        assert reporter.is_remote is False
 
-        # Create event
-        event = {
-            "name": "test.no.handlers",
-            "level": "INFO",
-            "message": "Test message",
-        }
+        # Report an event
+        reporter.report("test_event", {"key": "value"})
 
-        # Should not raise even with no handlers
-        plugin._handle_log_event(event)
+        # Verify callback was called with correct event
+        callback.assert_called_once()
+        event = callback.call_args[0][0]
+        assert event["type"] == "test_event"
+        assert event["key"] == "value"
 
-    def test_get_logger_no_duplicate_handlers(self, caplog):
-        """Test that multiple get_logger calls for same name don't duplicate handlers."""
-        from daglite.plugins.default.logging import _ReporterHandler
+    def test_direct_reporter_thread_safety(self):
+        """Test DirectReporter is thread-safe."""
+        import threading
 
-        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+        callback = Mock()
+        reporter = DirectReporter(callback)
+        results = []
 
-        # Create a task that calls get_logger multiple times
-        @task
-        def task_with_multiple_get_logger(x: int) -> int:
-            logger1 = get_logger("test.dedupe.unique")
-            logger2 = get_logger("test.dedupe.unique")
-            logger3 = get_logger("test.dedupe.unique")
+        def report_event(i):
+            reporter.report(f"event_{i}", {"value": i})
+            results.append(i)
 
-            # All should share the same underlying logger
-            assert logger1.logger is logger2.logger is logger3.logger
+        # Create multiple threads
+        threads = [threading.Thread(target=report_event, args=(i,)) for i in range(10)]
 
-            # Check handler count
-            base_logger = logger1.logger
-            reporter_handlers = [h for h in base_logger.handlers if isinstance(h, _ReporterHandler)]
-            # Should have exactly 1 handler, not 3
-            assert len(reporter_handlers) == 1
+        # Start all threads
+        for t in threads:
+            t.start()
 
-            # Verify all three adapters share the exact same handler instance
-            assert all(h is reporter_handlers[0] for h in reporter_handlers)
+        # Wait for completion
+        for t in threads:
+            t.join()
 
-            logger1.info(f"Test {x}")
-            return x
+        # Verify all events were reported
+        assert len(results) == 10
+        assert callback.call_count == 10
 
-        with caplog.at_level(logging.INFO):
-            result = evaluate(
-                task_with_multiple_get_logger.with_options(backend_name="processes")(x=42),
-                plugins=[plugin],
-            )
-            assert result == 42
+    def test_direct_reporter_error_handling(self):
+        """Test DirectReporter handles callback errors gracefully."""
+        callback = Mock(side_effect=RuntimeError("Callback error"))
+        reporter = DirectReporter(callback)
 
-        # Verify the log was captured
-        assert "Test 42" in caplog.text
+        # Should not raise, should log error instead
+        reporter.report("test_event", {"key": "value"})
+
+        # Callback was called despite error
+        assert callback.called
+
+    def test_process_reporter_report(self):
+        """Test ProcessReporter.report puts event on queue."""
+        queue = MultiprocessingQueue()
+        reporter = ProcessReporter(queue)
+
+        # Verify is_remote is True
+        assert reporter.is_remote is True
+
+        # Report an event
+        reporter.report("test_event", {"key": "value"})
+
+        # Verify event was put on queue
+        event = queue.get(timeout=1)
+        assert event["type"] == "test_event"
+        assert event["key"] == "value"
+
+        queue.close()
+
+    def test_process_reporter_queue_property(self):
+        """Test ProcessReporter.queue property."""
+        queue = MultiprocessingQueue()
+        reporter = ProcessReporter(queue)
+
+        assert reporter.queue is queue
+
+        queue.close()
+
+    def test_process_reporter_close(self):
+        """Test ProcessReporter.close() closes the queue."""
+        queue = MultiprocessingQueue()
+        reporter = ProcessReporter(queue)
+
+        # Close should not raise
+        reporter.close()
+
+        # Queue should be closed (subsequent operations will fail)
+        # Note: We can't easily test this without causing errors
+
+    def test_process_reporter_error_handling(self):
+        """Test ProcessReporter handles queue errors gracefully."""
+        queue = Mock()
+        queue.put.side_effect = RuntimeError("Queue error")
+
+        reporter = ProcessReporter(queue)
+
+        # Should not raise, should log error instead
+        reporter.report("test_event", {"key": "value"})
+
+        # put was called despite error
+        assert queue.put.called
