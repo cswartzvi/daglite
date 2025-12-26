@@ -86,6 +86,9 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
             handler = _ReporterHandler(reporter)
             base_logger.addHandler(handler)
+            # IMPORTANT: We must set logger level to DEBUG here to avoid filtering logs
+            # before they reach the handler. Actual filtering happens on the coordinator side.
+            base_logger.setLevel(logging.DEBUG)
 
     return _TaskLoggerAdapter(base_logger, {})
 
