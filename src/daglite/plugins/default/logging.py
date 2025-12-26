@@ -84,19 +84,22 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     base_logger = logging.getLogger(name)
 
-    # Add ReporterHandler if reporter available and not already added
+    # Add ReporterHandler only for remote reporters
     reporter = get_reporter()
-    if reporter:  # pragma: no branch
+    if reporter and reporter.is_remote:  # pragma: no branch
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
                 handler = _ReporterHandler(reporter)
                 base_logger.addHandler(handler)
-                # IMPORTANT: Set logger to DEBUG to prevent filtering before handler.
-                # On Windows/spawn, loggers inherit WARNING from root which would filter INFO logs.
-                # Only override if current effective level would filter logs (> DEBUG).
-                # Actual filtering happens on coordinator side via CentralizedLoggingPlugin level.
+
+                # Set logger to DEBUG to prevent filtering before handler. Actual filtering happens
+                # on coordinator side via CentralizedLoggingPlugin level.
                 if base_logger.getEffectiveLevel() > logging.DEBUG:  # pragma: no branch
                     base_logger.setLevel(logging.DEBUG)
+
+                # Disable propagation to prevent duplicate logging from inherited handlers.
+                # Worker processes send logs ONLY via ReporterHandler; coordinator re-emits.
+                base_logger.propagate = False
 
     return _TaskLoggerAdapter(base_logger, {})
 
@@ -221,8 +224,15 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
         # Mark record to prevent re-emission by ReporterHandler (avoid infinite loops)
         setattr(record, "_daglite_already_forwarded", True)
 
-        # Use normal logging flow (includes propagation to parent loggers)
-        base_logger.handle(record)
+        # Temporarily restore propagation for coordinator re-emission
+        # (worker processes may have disabled it to prevent duplicates)
+        original_propagate = base_logger.propagate
+        base_logger.propagate = True
+        try:
+            # Use normal logging flow (includes propagation to parent loggers)
+            base_logger.handle(record)
+        finally:
+            base_logger.propagate = original_propagate
 
 
 class _ReporterHandler(logging.Handler):

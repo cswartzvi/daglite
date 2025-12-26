@@ -1,8 +1,8 @@
 """Event reporter implementations for different backend types."""
 
 import logging
+import threading
 from multiprocessing import Queue as MultiprocessingQueue
-from queue import Queue
 from typing import Any, Callable, Protocol
 
 logger = logging.getLogger(__name__)
@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 
 class EventReporter(Protocol):
     """Protocol for worker → coordinator communication."""
+
+    @property
+    def is_remote(self) -> bool:
+        """
+        Indicates whether this reporter sends events across process/machine boundaries.
+
+        Returns:
+            True for cross-process/distributed reporters, False for same-process reporters.
+        """
+        ...
 
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """
@@ -24,10 +34,11 @@ class EventReporter(Protocol):
 
 class DirectReporter:
     """
-    Direct function call reporter for ThreadPoolBackend.
+    Direct function call reporter for sequential and threaded execution.
 
     No serialization needed since everything runs in the same process.
-    Events are dispatched immediately via callback.
+    Events are dispatched immediately via callback. Thread-safe for use
+    in ThreadPoolExecutor.
     """
 
     def __init__(self, callback: Callable[[dict[str, Any]], None]):
@@ -38,42 +49,19 @@ class DirectReporter:
             callback: Function to call with events (typically EventProcessor.dispatch)
         """
         self._callback = callback
-
-    def report(self, event_type: str, data: dict[str, Any]) -> None:
-        """Send event via direct callback."""
-        event = {"type": event_type, **data}
-        try:
-            self._callback(event)
-        except Exception as e:
-            logger.exception(f"Error reporting event {event_type}: {e}")
-
-
-class ThreadReporter:
-    """
-    Thread-based reporter for ThreadBackend.
-
-    Uses a thread-safe queue to send events from worker threads to coordinator.
-    """
-
-    def __init__(self, queue: Queue[Any]):
-        """
-        Initialize reporter with queue.
-
-        Args:
-            queue: Thread-safe queue for sending events
-        """
-        self._queue = queue
+        self._lock = threading.Lock()
 
     @property
-    def queue(self) -> Queue[Any]:
-        """Get the underlying queue."""
-        return self._queue
+    def is_remote(self) -> bool:
+        """DirectReporter is same-process, not remote."""
+        return False
 
     def report(self, event_type: str, data: dict[str, Any]) -> None:
-        """Send event via queue."""
+        """Send event via direct callback (thread-safe)."""
         event = {"type": event_type, **data}
         try:
-            self._queue.put(event)
+            with self._lock:
+                self._callback(event)
         except Exception as e:
             logger.exception(f"Error reporting event {event_type}: {e}")
 
@@ -99,6 +87,11 @@ class ProcessReporter:
     def queue(self) -> MultiprocessingQueue:
         """Get the underlying multiprocessing queue."""
         return self._queue
+
+    @property
+    def is_remote(self) -> bool:
+        """ProcessReporter is cross-process, therefore remote."""
+        return True
 
     def report(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event via queue."""
