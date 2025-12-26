@@ -2,16 +2,11 @@
 
 from contextvars import ContextVar
 from contextvars import Token
-from typing import TYPE_CHECKING
 
 from pluggy import PluginManager
 
+from daglite.graph.base import GraphMetadata
 from daglite.plugins.reporters import EventReporter
-
-if TYPE_CHECKING:
-    from daglite.graph.base import GraphMetadata
-else:
-    GraphMetadata = object
 
 # Context variables for worker execution environment
 _plugin_manager: ContextVar[PluginManager | None] = ContextVar("plugin_manager", default=None)
