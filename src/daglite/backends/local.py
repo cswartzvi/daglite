@@ -120,6 +120,13 @@ class ProcessBackend(Backend):
         if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             mp_context = get_context("spawn")
+        elif (
+            sys.version_info >= (3, 13)
+            and sys.version_info < (3, 14)
+            and not getattr(sys, "_is_gil_enabled", True)
+        ):  # pragma: no cover
+            # Use 'spawn' for Python 3.13t specifically - fork is broken in this version
+            mp_context = get_context("spawn")
         else:
             # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
             mp_context = get_context("fork")
