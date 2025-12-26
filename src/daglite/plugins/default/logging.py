@@ -86,9 +86,12 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
             handler = _ReporterHandler(reporter)
             base_logger.addHandler(handler)
-            # IMPORTANT: We must set logger level to DEBUG here to avoid filtering logs
-            # before they reach the handler. Actual filtering happens on the coordinator side.
-            base_logger.setLevel(logging.DEBUG)
+            # IMPORTANT: Set logger to DEBUG to prevent filtering before handler.
+            # On Windows/spawn, loggers inherit WARNING from root which would filter INFO logs.
+            # Only override if current effective level would filter logs (> DEBUG).
+            # Actual filtering happens on coordinator side via CentralizedLoggingPlugin level.
+            if base_logger.getEffectiveLevel() > logging.DEBUG:
+                base_logger.setLevel(logging.DEBUG)
 
     return _TaskLoggerAdapter(base_logger, {})
 
