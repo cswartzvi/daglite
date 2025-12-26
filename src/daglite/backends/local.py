@@ -123,9 +123,11 @@ class ProcessBackend(Backend):
         elif (
             sys.version_info >= (3, 13)
             and sys.version_info < (3, 14)
-            and not getattr(sys, "_is_gil_enabled", True)
+            and not getattr(sys, "_is_gil_enabled", lambda: True)()
         ):  # pragma: no cover
-            # Use 'spawn' for Python 3.13t specifically - fork is broken in this version
+            # Use 'spawn' for Python 3.13t (free-threaded builds with GIL disabled).
+            # Fork is incompatible with free-threading in 3.13t, causing hangs.
+            # Python 3.14 defaults to 'forkserver', so this workaround is only needed for 3.13t.
             mp_context = get_context("spawn")
         else:
             # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
