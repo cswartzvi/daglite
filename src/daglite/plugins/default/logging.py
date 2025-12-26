@@ -95,7 +95,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
                 # On Windows/spawn, loggers inherit WARNING from root which would filter INFO logs.
                 # Only override if current effective level would filter logs (> DEBUG).
                 # Actual filtering happens on coordinator side via CentralizedLoggingPlugin level.
-                if base_logger.getEffectiveLevel() > logging.DEBUG:
+                if base_logger.getEffectiveLevel() > logging.DEBUG:  # pragma: no branch
                     base_logger.setLevel(logging.DEBUG)
 
     return _TaskLoggerAdapter(base_logger, {})
