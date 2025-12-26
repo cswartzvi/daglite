@@ -50,17 +50,17 @@ class CounterPlugin:
         self.after_graph_count += 1
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Count before_node_execute invocations."""
         self.before_node_count += 1
 
     @hook_impl
-    def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
         """Count after_node_execute invocations."""
         self.after_node_count += 1
 
     @hook_impl
-    def on_node_error(self, key, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
         """Count on_node_error invocations."""
         self.on_error_count += 1
 
@@ -112,22 +112,22 @@ class ParameterCapturePlugin:
         )
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Capture node execution parameters."""
         self.node_executions.append(
             {
-                "key": key,
+                "key": metadata.key,
                 "metadata": metadata,
                 "inputs": inputs,
             }
         )
 
     @hook_impl
-    def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
         """Capture node result parameters."""
         self.node_results.append(
             {
-                "key": key,
+                "key": metadata.key,
                 "metadata": metadata,
                 "inputs": inputs,
                 "result": result,
@@ -136,11 +136,11 @@ class ParameterCapturePlugin:
         )
 
     @hook_impl
-    def on_node_error(self, key, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
         """Capture node error parameters."""
         self.node_errors.append(
             {
-                "key": key,
+                "key": metadata.key,
                 "metadata": metadata,
                 "inputs": inputs,
                 "error": error,
@@ -182,19 +182,19 @@ class OrderTrackingPlugin:
         self.call_order.append("after_graph")
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Record before_node call."""
-        self.call_order.append(f"before_node:{key}")
+        self.call_order.append(f"before_node:{metadata.key}")
 
     @hook_impl
-    def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
         """Record after_node call."""
-        self.call_order.append(f"after_node:{key}")
+        self.call_order.append(f"after_node:{metadata.key}")
 
     @hook_impl
-    def on_node_error(self, key, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
         """Record on_error call."""
-        self.call_order.append(f"on_error:{key}")
+        self.call_order.append(f"on_error:{metadata.key}")
 
 
 class ErrorRaisingPlugin:
@@ -238,19 +238,19 @@ class ErrorRaisingPlugin:
             raise RuntimeError("Test error in after_graph_execute")
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Raise error if configured."""
         if self.raise_in == "before_node":
             raise RuntimeError("Test error in before_node_execute")
 
     @hook_impl
-    def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
         """Raise error if configured."""
         if self.raise_in == "after_node":
             raise RuntimeError("Test error in after_node_execute")
 
     @hook_impl
-    def on_node_error(self, key, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
         """Raise error if configured."""
         if self.raise_in == "on_error":
             raise RuntimeError("Test error in on_node_error")
@@ -312,7 +312,7 @@ class SerializablePlugin:
         return cls(**config)
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Track hook calls (runtime state)."""
         self.call_count += 1
 
@@ -349,7 +349,7 @@ class AnotherSerializablePlugin:
         return cls(**config)
 
     @hook_impl
-    def after_node_execute(self, key, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
         """Example hook implementation."""
         pass
 
@@ -365,6 +365,6 @@ class NonSerializablePlugin:
     """
 
     @hook_impl
-    def before_node_execute(self, key, metadata, inputs):
+    def before_node_execute(self, metadata, inputs):
         """Example hook implementation."""
         pass

@@ -151,7 +151,7 @@ class TestPerExecutionHooks:
 
         class MyHook:
             @hook_impl
-            def before_node_execute(self, key, metadata, inputs):  # pragma: no cover
+            def before_node_execute(self, metadata, inputs):  # pragma: no cover
                 pass
 
         @task

@@ -12,6 +12,7 @@ import abc
 from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
@@ -65,11 +66,14 @@ class GraphMetadata:
     name: str
     """Human-readable name for the graph."""
 
-    description: str | None
+    description: str | None = field(default=None, kw_only=True)
     """Optional human-readable description for the graph."""
 
-    backend_name: str | None
+    backend_name: str | None = field(default=None, kw_only=True)
     """Default backend name for executing nodes in this graph."""
+
+    key: str | None = field(default=None, kw_only=True)
+    """Optional key identifying this specific node instance in the execution graph."""
 
     def to_metadata(self) -> "GraphMetadata":
         """Returns a metadata object for this graph node."""
@@ -78,6 +82,7 @@ class GraphMetadata:
             name=self.name,
             description=self.description,
             backend_name=self.backend_name,
+            key=self.key,
         )
 
 
