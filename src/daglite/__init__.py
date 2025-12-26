@@ -42,7 +42,7 @@ Async Usage:
 For more examples, see the repository's test files.
 """
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 from . import backends
 from . import settings
