@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Getting Started
 
 This guide will help you install Daglite and build your first DAG in just a few minutes.

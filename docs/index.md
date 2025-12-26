@@ -1,10 +1,11 @@
+---
+hide:
+  - navigation
+---
+
 # Welcome to Daglite
 
 **Lightweight, type-safe Python framework for building DAGs**
-
-[Getting Started](getting-started.md){ .md-button .md-button--primary }
-[User Guide](user-guide/tasks.md){ .md-button }
-[Examples](examples/){ .md-button }
 
 ---
 
