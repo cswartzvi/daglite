@@ -305,7 +305,7 @@ Run from command line:
 
 ```bash
 # Install CLI plugin
-pip install daglite[cli]
+uv pip install daglite[cli]
 
 # Run pipeline
 daglite run etl_pipeline.daily_etl \

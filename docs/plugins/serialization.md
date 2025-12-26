@@ -6,12 +6,12 @@ The `daglite-serialization` plugin provides fast, efficient hashing and serializ
 
 ```bash
 # Install with all supported libraries
-pip install daglite-serialization[all]
+uv pip install daglite-serialization[all]
 
 # Or install specific libraries
-pip install daglite-serialization[numpy]
-pip install daglite-serialization[pandas]
-pip install daglite-serialization[pillow]
+uv pip install daglite-serialization[numpy]
+uv pip install daglite-serialization[pandas]
+uv pip install daglite-serialization[pillow]
 ```
 
 ---

@@ -47,7 +47,7 @@ Serialization and hashing support for scientific Python libraries.
 Built-in plugins are available immediately after installing `daglite`:
 
 ```bash
-pip install daglite
+uv pip install daglite
 ```
 
 No additional installation needed!
@@ -59,19 +59,19 @@ Install extension plugins as needed:
 #### Install All Extension Plugins
 
 ```bash
-pip install daglite[cli] daglite-serialization[all]
+uv pip install daglite[cli] daglite-serialization[all]
 ```
 
 #### Install Specific Extension Plugins
 
 ```bash
 # CLI only
-pip install daglite[cli]
+uv pip install daglite[cli]
 
 # Serialization with specific libraries
-pip install daglite-serialization[numpy]
-pip install daglite-serialization[pandas]
-pip install daglite-serialization[pillow]
+uv pip install daglite-serialization[numpy]
+uv pip install daglite-serialization[pandas]
+uv pip install daglite-serialization[pillow]
 ```
 
 ---

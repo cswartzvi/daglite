@@ -21,10 +21,10 @@ A lightweight, type-safe Python framework for building and executing DAGs (Direc
 ### Installation
 
 ```bash
-pip install daglite
+uv pip install daglite
 
 # With CLI support
-pip install daglite[cli]
+uv pip install daglite[cli]
 ```
 
 ### Your First DAG
@@ -66,7 +66,7 @@ Originally designed for operations research analysts working on air-gapped, Wind
 
 ### The Core Philosophy
 
-**No infrastructure required.** Daglite runs anywhere Python runs—no databases, no containers, no cloud services, no servers. Install it with `pip`, define your tasks, and execute them. When you need more (like distributed execution or advanced serialization), plugins extend functionality without adding mandatory dependencies.
+**No infrastructure required.** Daglite runs anywhere Python runs—no databases, no containers, no cloud services, no servers. Install it with `uv pip`, define your tasks, and execute them. When you need more (like distributed execution or advanced serialization), plugins extend functionality without adding mandatory dependencies.
 
 **Explicit over implicit.** Every data dependency is visible in your code. The DAG structure is static and analyzable before execution. Type checkers catch errors before runtime. This makes workflows self-documenting and maintainable.
 
@@ -96,26 +96,19 @@ Daglite complements these excellent tools. Think of it like Flask vs Django—we
 
 ## Key Features
 
-**Type-Safe Task Composition**
-Complete type checking support with `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE catches errors before runtime.
+- **Type-Safe Task Composition** - Complete type checking support with `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE catches errors before runtime.
 
-**Fluent API**
-Chain operations naturally with `.then()`, `.map()`, `.join()`. Build complex pipelines with readable code.
+- **Fluent API** - Chain operations naturally with `.then()`, `.map()`, `.join()`. Build complex pipelines with readable code.
 
-**Lightweight Core**
-No mandatory infrastructure—runs anywhere Python runs. Optional plugins add capabilities when you need them.
+- **Lightweight Core** - No mandatory infrastructure—runs anywhere Python runs. Optional plugins add capabilities when you need them.
 
-**Async Execution**
-Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
+- **Async Execution** - Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
 
-**Composable Patterns**
-Mix and match patterns: sequential pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
+- **Composable Patterns** - Mix and match patterns: sequential pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
 
-**Testable**
-Pure functions make DAGs easy to test and debug. No mocking infrastructure or database connections.
+- **Testable** - Pure functions make DAGs easy to test and debug. No mocking infrastructure or database connections.
 
-**CLI Support**
-Define pipelines once, run them from the command line with argument parsing included.
+- **CLI Support** - Define pipelines once, run them from the command line with argument parsing included.
 
 ---
 

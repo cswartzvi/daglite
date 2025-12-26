@@ -46,7 +46,7 @@ This is the foundation everything builds on.
 
 ```python
 # Install plugin
-pip install daglite_serialization[numpy]
+uv pip install daglite_serialization[numpy]
 
 # Register handlers
 from daglite_serialization import register_all

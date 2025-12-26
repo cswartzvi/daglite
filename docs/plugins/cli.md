@@ -5,7 +5,7 @@ The `daglite-cli` plugin provides a command-line interface for running pipelines
 ## Installation
 
 ```bash
-pip install daglite[cli]
+uv pip install daglite[cli]
 ```
 
 This installs the `daglite` command-line tool.

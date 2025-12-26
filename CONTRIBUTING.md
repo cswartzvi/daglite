@@ -38,7 +38,7 @@ uv sync --all-groups
 Or with pip:
 
 ```bash
-pip install -e ".[dev,test,docs]"
+uv pip install -e ".[dev,test,docs]"
 ```
 
 3. **Install pre-commit hooks**
@@ -195,7 +195,7 @@ Documentation is in the `docs/` directory and uses [Material for MkDocs](https:/
 
 ```bash
 # Install docs dependencies
-pip install -e ".[docs]"
+uv pip install -e ".[docs]"
 
 # Serve docs locally
 mkdocs serve
