@@ -1,10 +1,22 @@
 # Plugins
 
-Daglite's plugin system allows you to extend functionality without adding mandatory dependencies to the core library. Plugins are optional packages that integrate seamlessly with Daglite's architecture.
+Daglite's plugin system allows you to extend functionality without adding mandatory dependencies to the core library.
 
-## Available Plugins
+## Plugin Types
 
-### daglite-cli
+### Built-in Plugins
+
+Plugins shipped with the core `daglite` package that require no additional installation.
+
+**Centralized Logging** - Cross-process/thread logging that works seamlessly with threading, multiprocessing, and distributed execution.
+
+[→ Learn more about built-in plugins](built-in.md)
+
+### Extension Plugins
+
+Optional packages that extend Daglite with additional capabilities.
+
+#### daglite-cli
 
 Command-line interface for running pipelines from the terminal.
 
@@ -15,7 +27,7 @@ Command-line interface for running pipelines from the terminal.
 
 [→ Learn more about daglite-cli](cli.md)
 
-### daglite-serialization
+#### daglite-serialization
 
 Serialization and hashing support for scientific Python libraries.
 
@@ -30,13 +42,27 @@ Serialization and hashing support for scientific Python libraries.
 
 ## Installation
 
-### Install All Plugins
+### Built-in Plugins
+
+Built-in plugins are available immediately after installing `daglite`:
+
+```bash
+pip install daglite
+```
+
+No additional installation needed!
+
+### Extension Plugins
+
+Install extension plugins as needed:
+
+#### Install All Extension Plugins
 
 ```bash
 pip install daglite[cli] daglite-serialization[all]
 ```
 
-### Install Specific Plugins
+#### Install Specific Extension Plugins
 
 ```bash
 # CLI only

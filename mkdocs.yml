@@ -94,6 +94,7 @@ nav:
       - Pipelines & CLI: user-guide/pipelines.md
   - Plugins:
       - Overview: plugins/index.md
+      - Built-in: plugins/built-in.md
       - CLI: plugins/cli.md
       - Serialization: plugins/serialization.md
       - Creating Plugins: plugins/creating.md
