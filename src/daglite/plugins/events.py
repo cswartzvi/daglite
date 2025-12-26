@@ -125,12 +125,46 @@ class EventProcessor:
         """
         self._registry.dispatch(event)
 
+    def flush(self, timeout: float = 0.5) -> None:
+        """
+        Drain all pending events from sources.
+
+        Continues processing events until all sources are empty or timeout is reached.
+        Useful for ensuring all events are processed before checking results in tests.
+
+        Args:
+            timeout: Maximum time to wait for queues to drain (seconds)
+        """
+        import time
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:  # pragma: no branch
+            has_events = False
+
+            # Poll all sources for remaining events
+            for source in self._sources.values():
+                event = self._get_event(source)
+                if event:
+                    self._registry.dispatch(event)
+                    has_events = True
+
+            # If no events found in any source, we're done
+            if not has_events:
+                break
+
+            # Brief sleep to avoid busy-wait
+            time.sleep(0.001)
+
     def stop(self) -> None:
         """Stop background processing and join thread."""
         if self._thread is None:
             return
 
         logger.debug("Stopping EventProcessor...")
+
+        # Drain remaining events before stopping
+        self.flush()
+
         self._running = False
         self._thread.join(timeout=2.0)
         if self._thread.is_alive():  # pragma: no cover
