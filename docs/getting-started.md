@@ -1,3 +1,8 @@
+---
+hide:
+  - navigation
+---
+
 # Getting Started
 
 This guide will help you install Daglite and build your first DAG in just a few minutes.
@@ -11,17 +16,17 @@ Daglite requires Python 3.10 or higher.
 ### Basic Installation
 
 ```bash
-pip install daglite
+uv pip install daglite
 ```
 
-This installs the core library with **zero dependencies**.
+This installs the core library with minimal dependencies.
 
 ### With CLI Support
 
 To use the `daglite` command-line tool:
 
 ```bash
-pip install daglite[cli]
+uv pip install daglite[cli]
 ```
 
 ### Development Installation

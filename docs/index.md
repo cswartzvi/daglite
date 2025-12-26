@@ -1,24 +1,38 @@
+---
+hide:
+  - navigation
+---
+
 # Welcome to Daglite
 
 **Lightweight, type-safe Python framework for building DAGs**
-
-[Getting Started](getting-started.md){ .md-button .md-button--primary }
-[User Guide](user-guide/tasks.md){ .md-button }
-[Examples](examples.md){ .md-button }
 
 ---
 
 ## What is Daglite?
 
-Daglite is a lightweight Python framework for building **Directed Acyclic Graphs (DAGs)** with explicit data flow, complete type safety, and composable operations. It provides a simple, intuitive API for defining and executing complex computational pipelines.
+Daglite is a lightweight Python framework for building **Directed Acyclic Graphs (DAGs)** with explicit data flow, complete type safety, and composable operations. It provides a simple, intuitive API for defining and executing computational pipelines—no infrastructure required.
 
-### Key Principles
+**Built for computational work in restricted environments.** Originally designed for operations research analysts working on air-gapped, Windows-only systems, Daglite solves a specific problem: building workflows that are easy to analyze, share with colleagues, and re-run—even after returning to a project months later.
 
-- **🎯 Explicit is better than implicit** - All data dependencies are clearly defined
-- **🔒 Type safety first** - Full support for mypy, pyright, and pyrefly
-- **🧩 Composition over configuration** - Build complex DAGs from simple building blocks
-- **⚡ Lazy by default** - Execution only happens when you explicitly evaluate
-- **🔍 Testable** - Pure functions make testing straightforward
+---
+
+## Core Principles
+
+**No infrastructure required**
+Daglite runs anywhere Python runs—no databases, no containers, no cloud services, no servers. When you need more capabilities, plugins extend functionality without adding mandatory dependencies.
+
+**Explicit over implicit**
+All data dependencies are clearly defined. The DAG structure is static and analyzable before execution. Type checkers catch errors before runtime.
+
+**Type-safe and modular**
+Full support for `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE provides autocomplete and catches type mismatches.
+
+**Lazy by default**
+Execution only happens when you explicitly evaluate. Build your entire pipeline, then execute it once.
+
+**Testable**
+Pure functions make testing straightforward—no mocking infrastructure or database connections.
 
 ---
 
@@ -41,52 +55,40 @@ def save(items: list, path: str) -> None:
         json.dump(items, f)
 
 # Build the DAG (lazy - doesn't execute yet)
-result = (
+result = evaluate(
     fetch_data(url="https://api.example.com/data")
     .then(transform, multiplier=10)
     .then(save, path="output.json")
 )
-
-# Execute the DAG
-evaluate(result)
 ```
 
 ---
 
-## Why Daglite?
+## When to Use Daglite
 
-### Compared to other DAG frameworks
+### Perfect for:
 
-| Feature | Daglite | Airflow | Prefect | Dask |
-|---------|---------|---------|---------|------|
-| **Dependencies** | 0 (core) | 50+ | 30+ | 20+ |
-| **Type Safety** | ✅ Full | ⚠️ Partial | ⚠️ Partial | ⚠️ Partial |
-| **Learning Curve** | Low | High | Medium | Medium |
-| **DAG Definition** | Pure Python | YAML + Python | Python | Python |
-| **Execution** | Sync/Async | Scheduled | Flows | Distributed |
-| **Best For** | ETL, Scripts | Production Scheduling | Workflows | Big Data |
+- Data transformation pipelines and ETL workflows
+- Machine learning pipelines (feature engineering, training, evaluation)
+- Computational science workflows
+- Analysts and data scientists who need reproducible workflows
+- Air-gapped or restricted environments
+- CLI tools with workflow orchestration
+- Local development and prototyping
+- Projects where simplicity and type safety matter
 
-### When to use Daglite
+### Not ideal for:
 
-✅ **Good fit:**
+- Production job scheduling with cron-like triggers → Use [Airflow](https://airflow.apache.org/), [Prefect](https://www.prefect.io/)
+- Real-time streaming data → Use Kafka, Flink
+- Distributed computing at massive scale → Use Spark, Dask
+- Multi-tenant orchestration platforms → Use [Dagster](https://dagster.io/)
 
-- Data transformation pipelines
-- ETL workflows
-- Local computation graphs
-- Type-safe data processing
-- Testing and prototyping
-- CLI tools
-
-❌ **Not ideal for:**
-
-- Production job scheduling (use Airflow)
-- Real-time streaming (use Kafka, Flink)
-- Big data processing (use Spark, Dask)
-- Multi-tenant orchestration (use Prefect, Dagster)
+Daglite complements these excellent tools by providing a lightweight alternative for local, type-safe workflows.
 
 ---
 
-## Core Features
+## Key Features
 
 ### Fluent API
 
@@ -108,11 +110,9 @@ Built-in support for fan-out/fan-in operations:
 ```python
 # Cartesian product
 results = task.product(x=[1, 2, 3], y=[10, 20])
-# Result: [11, 21, 12, 22, 13, 23]
 
 # Pairwise zip
 results = task.zip(x=[1, 2, 3], y=[10, 20, 30])
-# Result: [11, 22, 33]
 
 # Map and reduce
 total = (
@@ -143,11 +143,11 @@ Run tasks in parallel with threading or multiprocessing:
 result = evaluate(my_dag, use_async=True)
 
 # Per-task backends
-@task(backend="threading")
+@task(backend_name="threading")
 def io_task(url: str) -> bytes:
     return requests.get(url).content
 
-@task(backend="multiprocessing")
+@task(backend_name="multiprocessing")
 def cpu_task(data: np.ndarray) -> np.ndarray:
     return expensive_computation(data)
 ```
@@ -159,4 +159,6 @@ def cpu_task(data: np.ndarray) -> np.ndarray:
 - **[Getting Started](getting-started.md)** - Install Daglite and learn the basics in 5 minutes
 - **[User Guide](user-guide/tasks.md)** - In-depth guides on tasks, composition, and evaluation
 - **[CLI & Pipelines](user-guide/pipelines.md)** - Command-line interface and pipeline definitions
-- **[Examples](examples.md)** - Real-world examples and patterns
+- **[Plugins](plugins/)** - Extend Daglite with CLI, serialization, and more
+- **[Examples](examples/)** - Real-world examples and patterns
+- **[API Reference](api-reference/)** - Complete API documentation
