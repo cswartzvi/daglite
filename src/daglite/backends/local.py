@@ -147,6 +147,7 @@ class ProcessBackend(Backend):
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
+        self._event_processor.flush()  # Before removing source
         self._event_processor.remove_source(self._reporter_id)
 
         assert isinstance(self._reporter, ProcessReporter)
