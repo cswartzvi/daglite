@@ -138,6 +138,8 @@ class EventProcessor:
         import time
 
         start_time = time.time()
+        # Loop exits via break when queues drain (normal case) or timeout (pathological case
+        # where events continuously arrive). Timeout branch excluded from coverage.
         while time.time() - start_time < timeout:  # pragma: no branch
             has_events = False
 
