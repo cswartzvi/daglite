@@ -3,6 +3,7 @@
 __version__ = "0.5.1"
 
 from . import backends
+from . import futures
 from . import settings
 from .engine import evaluate
 from .engine import evaluate_async
@@ -17,6 +18,7 @@ _initialize_plugin_system()
 __all__ = [
     "backends",
     "evaluate",
+    "futures",
     "evaluate_async",
     "load_pipeline",
     "pipeline",
