@@ -49,19 +49,24 @@ def pipeline(
 
     Examples:
         >>> from daglite import pipeline, task, evaluate
+        >>> from daglite.futures import TaskFuture
         >>> @task
         ... def some_task(x: int, y: int) -> int:
         ...     return x + y
 
         Basic usage
         >>> @pipeline
-        ... def my_pipeline(x: int, y: int) -> GraphBuilder:
-        ...     return some_task.bind(x=x, y=y)
+        ... def my_pipeline(x: int, y: int) -> TaskFuture[int]:
+        ...     return some_task(x=x, y=y)
+        >>> my_pipeline(2, 3)  # doctest: +ELLIPSIS
+        TaskFuture(...)
 
         With parameters
-        ... @pipeline(name="custom_pipeline", description="Does something cool")
-        ... def my_pipeline(x: int, y: int) -> GraphBuilder:
-        ...     return some_task.bind(x=x, y=y)
+        >>> @pipeline(name="custom_pipeline", description="Does something cool")
+        ... def my_pipeline(x: int, y: int) -> TaskFuture[int]:
+        ...     return some_task(x=x, y=y)
+        >>> my_pipeline(5, 7)  # doctest: +ELLIPSIS
+        TaskFuture(...)
     """
 
     def decorator(fn: Callable[P, R]) -> Pipeline[P, R]:
