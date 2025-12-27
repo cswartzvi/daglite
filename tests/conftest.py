@@ -5,7 +5,7 @@ import pytest
 
 def pytest_configure(config: pytest.Config) -> None:
     """Configure pytest settings before tests are run."""
-    pass
+    # Placeholder for future global pytest configuration.
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
