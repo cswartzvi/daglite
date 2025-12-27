@@ -57,6 +57,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         automatic task context injection
 
     Examples:
+        >>> from daglite import task
         >>> from daglite.plugins.default import get_logger
 
         Simple usage - automatic task context in logs
@@ -304,7 +305,7 @@ class _ReporterHandler(logging.Handler):
                 payload["extra"] = extra
 
             self._reporter.report(LOGGER_EVENT, payload)
-        except Exception:
+        except Exception:  # pragma: no cover
             self.handleError(record)
 
 
