@@ -23,10 +23,6 @@ def hash_numpy_array(arr: np.ndarray) -> str:
         very large arrays. For critical applications where you need to detect
         all changes, consider using full hashing:
 
-        >>> def hash_full(arr):
-        ...     return hashlib.sha256(arr.tobytes()).hexdigest()
-        >>> default_registry.register_hash_strategy(np.ndarray, hash_full)
-
     Args:
         arr: numpy ndarray
 
@@ -74,10 +70,6 @@ def register_handlers():
 
     This registers:
     - Hash strategy for np.ndarray (sample-based for performance)
-
-    Example:
-        >>> from daglite_serialization.numpy import register_handlers
-        >>> register_handlers()
     """
     # Register hash strategy
     default_registry.register_hash_strategy(
