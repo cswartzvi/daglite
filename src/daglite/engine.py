@@ -231,6 +231,7 @@ async def evaluate_async(
         The result of evaluating the root task
 
     Examples:
+        >>> import asyncio
         >>> from daglite import task, evaluate_async
         >>> @task
         ... async def my_task(x: int, y: int) -> int:
