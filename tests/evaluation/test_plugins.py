@@ -16,7 +16,7 @@ from daglite import evaluate
 from daglite import task
 from daglite.engine import evaluate_async
 from daglite.graph.base import GraphMetadata
-from daglite.plugins import hook_impl
+from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import register_plugins
 from tests.examples.plugins import CounterPlugin

@@ -15,7 +15,7 @@ For production plugin examples, see the extras/ directory.
 
 from typing import Any
 
-from daglite.plugins import hook_impl
+from daglite.plugins.hooks.markers import hook_impl
 
 
 class CounterPlugin:
