@@ -48,14 +48,19 @@ def pipeline(
         (when used as `@pipeline()`).
 
     Examples:
+        >>> from daglite import pipeline, task, evaluate
+        >>> @task
+        ... def some_task(x: int, y: int) -> int:
+        ...     return x + y
+
         Basic usage
         >>> @pipeline
-        >>> def my_pipeline(x: int, y: int) -> GraphBuilder:
+        ... def my_pipeline(x: int, y: int) -> GraphBuilder:
         ...     return some_task.bind(x=x, y=y)
 
         With parameters
-        >>> @pipeline(name="custom_pipeline", description="Does something cool")
-        >>> def my_pipeline(x: int, y: int) -> GraphBuilder:
+        ... @pipeline(name="custom_pipeline", description="Does something cool")
+        ... def my_pipeline(x: int, y: int) -> GraphBuilder:
         ...     return some_task.bind(x=x, y=y)
     """
 
@@ -120,8 +125,8 @@ class Pipeline(Generic[P, R]):
         Extract parameter names and their type annotations from the pipeline function.
 
         Returns:
-            Dictionary mapping parameter names to their type annotations.
-            If a parameter has no annotation, the value is None.
+            Dictionary mapping parameter names to their type annotations. If a parameter has no
+            annotation, the value is None.
         """
         sig = self.signature
         typed_params: dict[str, type | None] = {}

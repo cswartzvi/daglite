@@ -17,6 +17,7 @@ class BidirectionalPlugin(Protocol):
     2. Use reporter in worker-side hooks to send events back to coordinator
 
     Examples:
+    >>> from daglite.plugins.hooks.markers import hook_impl
     >>> class ProgressPlugin:
     ...     def register_event_handlers(self, registry):
     ...         registry.on("progress", self._update_progress)
@@ -25,7 +26,7 @@ class BidirectionalPlugin(Protocol):
     ...         # Coordinator-side handler
     ...         print(f"Progress: {event['percent']}%")
     ...
-    ...     @hookimpl
+    ...     @hook_impl
     ...     def after_node_execute(self, node_id, result, reporter=None):
     ...         # Worker-side hook
     ...         if reporter:

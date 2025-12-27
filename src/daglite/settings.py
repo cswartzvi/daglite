@@ -60,19 +60,12 @@ def set_global_settings(settings: DagliteSettings) -> None:
     """
     Set the global daglite settings instance (thread-safe).
 
-    Warning: If pools have already been created, you must call
-    `daglite.backends.local._reset_global_pools()` after changing settings
-    to ensure new settings take effect. Best practice is to set settings
-    once at application startup before any task execution.
-
     Args:
         settings: Settings to set as global.
 
-    Example:
-        >>> from daglite import set_global_settings, DagliteSettings
-        >>> from daglite.backends.local import _reset_global_pools
+    Examples:
+        >>> from daglite.settings import set_global_settings, DagliteSettings
         >>> set_global_settings(DagliteSettings(max_backend_threads=16))
-        >>> _reset_global_pools()  # Force pools to be recreated with new settings
     """
     with _SETTINGS_LOCK:
         global _GLOBAL_DAGLITE_SETTINGS

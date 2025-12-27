@@ -115,13 +115,10 @@ def evaluate(
     plugins: list[Any] | None = None,
 ) -> Any:
     """
-    Evaluate a task graph synchronously.
-
-    For concurrent execution of independent tasks (sibling parallelism), use
-    evaluate_async() instead.
+    Evaluate the results of a task future via synchronous execution.
 
     Args:
-        expr: The task graph to evaluate.
+        expr: Task graph object to evaluate, typically a `TaskFuture` or `MapTaskFuture`.
         plugins: Optional list of plugin implementations for this execution only.
             These are combined with any globally registered plugins.
 
@@ -129,19 +126,20 @@ def evaluate(
         The result of evaluating the root task
 
     Examples:
-        >>> # Sequential execution
-        >>> result = evaluate(my_task)
-        >>>
-        >>> # With custom backend
-        >>> result = evaluate(my_task, default_backend="threading")
-        >>>
-        >>> # With execution-specific plugins
-        >>> from daglite.plugins.examples import ProgressTracker
-        >>> result = evaluate(my_task, plugins=[ProgressTracker()])
-        >>>
-        >>> # For async execution with sibling parallelism
-        >>> import asyncio
-        >>> result = asyncio.run(evaluate_async(my_task))
+        >>> from daglite import task, evaluate
+        >>> @task
+        ... def my_task(x: int, y: int) -> int:
+        ...     return x + y
+        >>> future = my_task(x=1, y=2)
+
+        Standard evaluation
+        >>> evaluate(future)
+        3
+
+        Evaluation with plugins
+        >>> from daglite.plugins.default import CentralizedLoggingPlugin
+        >>> evaluate(future, plugins=[CentralizedLoggingPlugin()])
+        3
     """
     engine = Engine(plugins=plugins)
     return engine.evaluate(expr)
@@ -219,27 +217,35 @@ async def evaluate_async(
     plugins: list[Any] | None = None,
 ) -> Any:
     """
-    Evaluate a task graph asynchronously.
+    Evaluate the results of a task future via asynchronous execution.
 
-    This function is for use within async contexts. It always uses async execution
-    with sibling parallelism. For sync code, wrap this in asyncio.run().
+    This function is for use within async contexts. It allows for concurrent execution of sibling
+    tasks (i.e., tasks at the same level of the DAG) using asyncio.
 
     Args:
-        expr: The task graph to evaluate.
-        plugins: Optional list of plugin implementations for this execution only.
-            These are combined with any globally registered plugins.
+        expr: Task graph to evaluate, typically a `TaskFuture` or `MapTaskFuture`.
+        plugins: Optional list of plugin implementations for this execution only. These are
+            combined with any globally registered plugins.
 
     Returns:
         The result of evaluating the root task
 
     Examples:
-        >>> async def workflow():
-        ...     result = await evaluate_async(my_task)
-        ...     return result
-        >>>
-        >>> # With execution-specific plugins
-        >>> from daglite.plugins.examples import PerformanceProfiler
-        >>> result = await evaluate_async(my_task, plugins=[PerformanceProfiler()])
+        >>> from daglite import task, evaluate_async
+        >>> @task
+        ... async def my_task(x: int, y: int) -> int:
+        ...     return x + y
+        >>> future = my_task(x=1, y=2)
+
+        Standard evaluation
+        >>> asyncio.run(evaluate_async(future))
+        3
+
+        With execution-specific plugins
+        >>> import asyncio
+        >>> from daglite.plugins.default import CentralizedLoggingPlugin
+        >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
+        3
     """
     engine = Engine(plugins=plugins)
     return await engine.evaluate_async(expr)
@@ -251,35 +257,19 @@ async def evaluate_async(
 @dataclass
 class Engine:
     """
-    Engine to evaluate a GraphBuilder.
+    Engine to evaluate a `GraphBuilder` (or more commonly, a `TaskFuture`).
 
-    The Engine compiles a GraphBuilder into a GraphNode dict, then executes
-    it in topological order.
+    The Engine compiles a `GraphBuilder` into a `GraphNode` dict, then executes it in topological
+    order in either synchronous or asynchronous mode. Individual nodes are executed via backends
+    managed by a `BackendManager`.
 
-    Execution Modes:
-        - evaluate(): Sequential execution (single-threaded)
-        - evaluate_async(): Async execution with sibling parallelism
-
-    Sibling Parallelism:
-        When using evaluate_async(), independent nodes at the same level of the DAG
-        execute concurrently using asyncio. This is particularly beneficial for
-        I/O-bound tasks (network requests, file operations).
-
-        Tasks using SequentialBackend are automatically wrapped with asyncio.to_thread()
-        to avoid blocking the event loop. ThreadBackend and ProcessBackend tasks manage
-        their own parallelism.
-
-    Backend Resolution Priority:
-        1. Node-specific backend from task/task-future operations (bind, product, ...)
-        2. Default task backend from `@task` decorator
-        3. Engine's default_backend
+    When executed in asynchronous, sibling nodes (i.e., nodes at the same level of the DAG) are
+    able to execute concurrently using asyncio. Additionally, tasks use the `SequentialBackend` are
+    automatically wrapped with asyncio.to_thread() to avoid blocking the event loop.
     """
 
     plugins: list[Any] | None = None
-    """Optional list of hook implementations for this execution only."""
-
-    # cache: MutableMapping[UUID, Any] = field(default_factory=dict)
-    # """Optional cache keyed by TaskFuture UUID (not used yet, but ready)."""
+    """Optional list of plugins implementations to be used during execution."""
 
     _registry: EventRegistry | None = field(default=None, init=False, repr=False)
     _backend_manager: BackendManager | None = field(default=None, init=False, repr=False)
@@ -287,12 +277,28 @@ class Engine:
     _event_processor: EventProcessor | None = field(default=None, init=False, repr=False)
 
     def evaluate(self, root: GraphBuilder) -> Any:
-        """Evaluate the graph using sequential execution."""
+        """
+        Builds and evaluates a graph using synchronous execution.
+
+        Args:
+            root: Root `GraphBuilder` to evaluate, typically a `TaskFuture`.
+
+        Returns:
+            The result of evaluating the root node.
+        """
         nodes = build_graph(root)
         return self._run_sequential(nodes, root.id)
 
     async def evaluate_async(self, root: GraphBuilder) -> Any:
-        """Evaluate the graph using async execution with sibling parallelism."""
+        """
+        Builds and evaluates a graph using asynchronous execution.
+
+        Args:
+            root: Root `GraphBuilder` to evaluate, typically a `TaskFuture`.
+
+        Returns:
+            The result of evaluating the root node.
+        """
         nodes = build_graph(root)
         return await self._run_async(nodes, root.id)
 

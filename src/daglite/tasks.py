@@ -53,39 +53,40 @@ def task(  # noqa: D417
     Tasks are the building blocks of daglite DAGs. They wrap plain Python functions (both sync
     and async) and provide methods for composition and execution.
 
-    This is the recommended way for users to create tasks. Direct instantiation of the `Task`
-    or `FixedParamTask` classes is strongly discouraged.
+    This is the recommended way for users to create tasks. Users should **not** directly
+    instantiate the `Task` class.
 
     Args:
         name: Custom name for the task. Defaults to the function's `__name__`. For lambda functions,
             defaults to "unnamed_task".
         description: Task description. Defaults to the function's docstring.
         backend_name: Name of the backend to use for this task. If not provided, uses the default
-            engine backend.
+            global settings backend.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
 
     Examples:
-        Synchronous function:
+        >>> from daglite import task
+
+        Basic usage with synchronous function
         >>> @task
-        >>> def add(x: int, y: int) -> int:
+        ... def add(x: int, y: int) -> int:
         ...     return x + y
+        >>> add.name
+        'add'
 
-        Async function:
-        >>> @task
-        >>> async def fetch_data(url: str) -> dict:
-        ...     async with httpx.AsyncClient() as client:
-        ...         response = await client.get(url)
-        ...         return response.json()
-
-        With parameters:
-        >>> @task(name="custom_add", backend="threading")
-        >>> def add(x: int, y: int) -> int:
+        Custom parameters
+        >>> @task(name="custom_add")
+        ... def add_nums(x: int, y: int) -> int:
         ...     return x + y
+        >>> add_nums.name
+        'custom_add'
 
-        # Lambda functions
+        Lambda functions
         >>> double = task(lambda x: x * 2, name="double")
+        >>> double.name
+        'double'
     """
 
     def decorator(fn: Any) -> Any:
@@ -136,7 +137,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
     @cached_property
     @abc.abstractmethod
     def signature(self) -> Signature:
-        """Get the signature of the underlying task function."""
+        """Signature of the underlying task function."""
         raise NotImplementedError()
 
     def with_options(
@@ -179,10 +180,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
         Creates a task future by binding values to the parameters of this task.
 
         This does NOT execute the task immediately; it returns a future object representing
-        evaluation results.
-
-        See `daglite.evaluate` or `daglite.evaluate_async` for more details on evaluating task
-        futures.
+        evaluation results. See `daglite.engine.evaluate` or `daglite.engine.evaluate_async` for
+        more details on evaluating task futures.
 
         Args:
             **kwargs: Keyword arguments matching the task function's parameters. Must include
@@ -192,14 +191,27 @@ class BaseTask(abc.ABC, Generic[P, R]):
             A `TaskFuture` representing the execution of this task with the provided parameters.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def add(x: int, y: int) -> int:
+            ... def add(x: int, y: int) -> int:
             ...     return x + y
-            >>>
-            >>> result_future = add(x=1, y=2)
-            >>>
-            >>> daglite.evaluate(result_future)
+
+            Future creation
+            >>> add(x=1, y=2)  # doctest: +ELLIPSIS
+            TaskFuture(...)
+
+            Future evaluation
+            >>> evaluate(add(x=1, y=2))
             3
+
+            Connecting upstream task futures
+            >>> @task
+            ... def multiply(x: int, factor: int) -> int:
+            ...     return x * factor
+            >>> future_add = add(x=2, y=3)
+            >>> future_multiply = multiply(x=future_add, factor=10)
+            >>> evaluate(future_multiply)
+            50
 
         """
         raise NotImplementedError()
@@ -209,8 +221,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
         """
         Create a fan-out operation by applying this task over all combinations of sequences.
 
-        This creates a Cartesian product of all provided sequences, calling the task once
-        for each combination. Useful for parameter sweeps and batch operations.
+        This creates a Cartesian product of all provided sequences, calling the task once for each
+        combination. Useful for parameter sweeps and batch operations.
 
         Args:
             **kwargs: Keyword arguments where values are sequences. Each sequence element will be
@@ -221,18 +233,19 @@ class BaseTask(abc.ABC, Generic[P, R]):
             A `MapTaskFuture` representing the fan-out execution of this task.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def combine(x: int, y: int) -> int:
+            ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
             All sequences provided:
             >>> future = combine.product(x=[1, 2], y=[10, 20])
-            >>> result = daglite.evaluate(future)
+            >>> evaluate(future)
             [11, 21, 12, 22]
 
             Fixed scalar parameter with single sequence:
             >>> future = combine.partial(y=10).product(x=[1, 2, 3])
-            >>> result = daglite.evaluate(future)
+            >>> evaluate(future)
             [11, 12, 13]
         """
         raise NotImplementedError()
@@ -242,8 +255,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
         """
         Create a fan-out operation by applying this task to zipped sequences.
 
-        Sequences are zipped element-wise (similar to Python's `zip(`) function), calling
-        the task once for each aligned set of elements. All sequences must have the same length.
+        Sequences are zipped element-wise (similar to Python's `zip(`) function), calling the task
+        once for each aligned set of elements. All sequences must have the same length or an error
+        is raised.
 
         Args:
             **kwargs: Keyword arguments where values are equal-length sequences. Elements at the
@@ -254,18 +268,19 @@ class BaseTask(abc.ABC, Generic[P, R]):
             A `MapTaskFuture` representing the fan-out execution of this task.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def combine(x: int, y: int) -> int:
+            ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
             All sequences provided:
             >>> future = combine.zip(x=[1, 2, 3], y=[10, 20, 30])
-            >>> result = daglite.evaluate(future)
+            >>> evaluate(future)
             [11, 22, 33]
 
             Fixed scalar parameter with single sequence:
             >>> future = combine.partial(y=10).zip(x=[1, 2, 3])
-            >>> result = daglite.evaluate(future)
+            >>> evaluate(future)
             [11, 12, 13]
         """
         raise NotImplementedError()
@@ -299,12 +314,13 @@ class Task(BaseTask[P, R]):
     def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
         return self.partial()(**kwargs)
 
-    def partial(self, **kwargs: Any) -> "PartialTask[P, R]":
+    def partial(self, **kwargs: Any) -> PartialTask[P, R]:
         """
         Partially apply some parameters of this task, returning a "partial" task.
 
-        This creates a reusable task template with some parameters already fixed. It also allows
-        users to create tasks with a mix of scalar and mapped parameters.
+        Similar to `functools.partial`, but for daglite tasks. This creates a reusable task
+        template with some parameters already fixed. It also allows users to create tasks with a
+        mix of scalar and mapped parameters.
 
         Args:
             **kwargs: Keyword arguments to be fixed for this task. Can include literals, variables,
@@ -314,14 +330,20 @@ class Task(BaseTask[P, R]):
             A `PartialTask` with the specified parameters fixed.
 
         Examples:
+            >>> from daglite import task
             >>> @task
-            >>> def score(x: int, y: int, z: int) -> float:
+            ... def score(x: int, y: int, z: int) -> float:
             ...     return (x + y) / z
-            >>>
+
+            Create a partial task with `y` and `z` fixed
             >>> seed = 42
             >>> base = score.partial(y=seed, z=0.5)
-            >>> branch1 = base(x=lazy_x)  # TaskFuture[int]
-            >>> branch2 = base.product(x=[1, 2, 3, 4])  # MapTaskFuture[int]
+
+            Use the partial task with only the remaining parameter
+            >>> base(x=1)  # doctest: +ELLIPSIS
+            TaskFuture(...)
+            >>> base.product(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
+            MapTaskFuture(...)
         """
         check_invalid_params(self, kwargs)
         return PartialTask(
@@ -348,8 +370,8 @@ class PartialTask(BaseTask[P, R]):
     """
     A task with one or more parameters partially applied to specific values.
 
-    This creates a reusable task template that can be called multiple times with
-    different values for the remaining parameters. Similar to `functools.partial`.
+    This creates a reusable task template that can be called multiple times with different values
+    for the remaining parameters. Similar to `functools.partial`.
 
     Users should **not** directly instantiate this class, use `Task.partial()` instead.
     """

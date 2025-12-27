@@ -1,3 +1,5 @@
+"""Contains classes representing unevaluated task invocations (futures) in Daglite."""
+
 from __future__ import annotations
 
 import abc
@@ -95,16 +97,19 @@ class TaskFuture(BaseTaskFuture[R]):
             A `TaskFuture` representing the result of applying the task to this future's value.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def prepare(n: int) -> int:
-            >>>     return n * 2
-            >>>
+            ... def prepare(n: int) -> int:
+            ...     return n * 2
             >>> @task
-            >>> def add(x: int, y: int) -> int:
-            >>>     return x + y
-            >>>
-            >>> # NOTE: 'x' is unbound and will receive the value from 'prepare' during evaluation.
-            >>> future = prepare(n=5).then(add, y=10)
+            ... def add(x: int, y: int) -> int:
+            ...     return x + y
+
+            Chain task calls via ubound parameter (in this case, `x`)
+            >>> prepare(n=5).then(add, y=10)  # doctest: +ELLIPSIS
+            TaskFuture(...)
+            >>> evaluate(prepare(n=5).then(add, y=10))
+            20
         """
         from daglite.tasks import PartialTask
         from daglite.tasks import check_overlap_params
@@ -129,10 +134,10 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Fan out this future as input to another task by creating a Cartesian product.
 
-        The current future's result is used as a fixed (scalar) argument to `next_task`,
-        while a Cartesian product is formed over the provided mapped parameter sequences
-        in `mapped_kwargs`. The next task is called once for each combination of the
-        mapped parameters, with the same future value passed to every call.
+        The current future's result is used as a fixed (scalar) argument to `next_task`, while a
+        Cartesian product is formed over the provided mapped parameter sequences in `mapped_kwargs`.
+        The next task is called once for each combination of the mapped parameters, with the same
+        future value passed to every call.
 
         Args:
             next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
@@ -145,18 +150,18 @@ class TaskFuture(BaseTaskFuture[R]):
             A `MapTaskFuture` representing the result of applying the task to all combinations.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def prepare(n: int) -> int:
-            >>>     return n * 2
-            >>>
+            ... def prepare(n: int) -> int:
+            ...     return n * 2
             >>> @task
-            >>> def combine(x: int, y: int) -> int:
-            >>>     return x + y
-            >>>
-            >>> # Prepare single value, then fan out with y in Cartesian product
+            ... def combine(x: int, y: int) -> int:
+            ...     return x + y
+
+            Chain task calls via ubound parameter (`x`) and product over mapped args (`y`)
             >>> future = prepare(n=5).then_product(combine, y=[10, 20, 30])
             >>> evaluate(future)
-            [20, 30, 40]  # 10 combined with [10, 20, 30]
+            [20, 30, 40]
         """
         from daglite.exceptions import ParameterError
         from daglite.tasks import PartialTask
@@ -204,9 +209,9 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Fan out this future as input to another task by zipping with other sequences.
 
-        The current future's result is used as a fixed (scalar) argument to `next_task`,
-        while elements from the provided mapped parameter sequences in `mapped_kwargs`
-        are paired by their index. The next task is called once for each index, with the
+        The current future's result is used as a fixed (scalar) argument to `next_task`, while
+        elements from the provided mapped parameter sequences in `mapped_kwargs` are paired by
+        their index. The next task is called once for each index, with the
         same future value passed to every call.
 
         Args:
@@ -220,18 +225,18 @@ class TaskFuture(BaseTaskFuture[R]):
             A `MapTaskFuture` representing the result of applying the task to zipped elements.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def prepare(n: int) -> int:
-            >>>     return n * 2
-            >>>
+            ... def prepare(n: int) -> int:
+            ...     return n * 2
             >>> @task
-            >>> def combine(x: int, y: int) -> int:
-            >>>     return x + y
-            >>>
-            >>> # Prepare single value, then zip with y
-            >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30])
+            ... def combine(x: int, y: int, z: int) -> int:
+            ...     return x + y + z
+
+            Chain task calls via ubound parameter (`x`) and zip over mapped args (`y`)
+            >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30], z=[1, 2, 3])
             >>> evaluate(future)
-            [20, 30, 40]  # 10 zipped with [10, 20, 30]
+            [21, 32, 43]
         """
         from daglite.exceptions import ParameterError
         from daglite.tasks import PartialTask
@@ -335,9 +340,9 @@ class TaskFuture(BaseTaskFuture[R]):
         """
         Split this tuple-producing TaskFuture into individual TaskFutures for each element.
 
-        Creates independent accessor tasks for each tuple element, enabling parallel
-        processing of tuple components. Type information is preserved when the tuple
-        has explicit type annotations.
+        Creates independent accessor tasks for each tuple element, enabling parallel processing of
+        tuple components. Type information is preserved when the tuple has explicit type
+        annotations.
 
         Args:
             size: Optional explicit size. Required if type annotations don't specify tuple size.
@@ -347,30 +352,37 @@ class TaskFuture(BaseTaskFuture[R]):
 
         Raises:
             DagliteError: If size cannot be inferred from type hints and size parameter is not
-            provided.
+                provided.
 
-        Example:
-            With type annotations (size inferred):
+        Examples:
+            >>> from daglite import task, evaluate
+
+            With type annotations (size inferred)
             >>> @task
-            >>> def make_pair() -> tuple[int, str]:
+            ... def make_pair() -> tuple[int, str]:
             ...     return (42, "hello")
+            >>> make_pair().split()  # doctest: +ELLIPSIS
+            (TaskFuture(...), TaskFuture(...))
 
-            >>> num, text = make_pair().split()
-
-            With explicit size:
+            With explicit size
             >>> @task
-            >>> def make_triple():
+            ... def make_triple():
             ...     return (1, 2, 3)
+            >>> make_triple().split(size=3)  # doctest: +ELLIPSIS
+            (TaskFuture(...), TaskFuture(...), TaskFuture(...))
 
-            >>> a, b, c = make_triple().split(size=3)
-
-            Chaining after split:
+            Evaluation of split futures
             >>> @task
-            >>> def get_coords() -> tuple[int, int]:
+            ... def get_coords() -> tuple[int, int]:
             ...     return (10, 20)
-
+            >>> @task
+            ... def process(x: int, y: int) -> str:
+            ...     return f"Coordinates: ({x}, {y})"
             >>> x, y = get_coords().split()
-            >>> result = process(x=x, y=y)
+            >>> future = process(x=x, y=y)
+            >>> evaluate(future)
+            'Coordinates: (10, 20)'
+
         """
         from daglite.exceptions import DagliteError
         from daglite.tasks import task
@@ -467,27 +479,31 @@ class MapTaskFuture(BaseTaskFuture[R]):
             **kwargs: Additional fixed parameters to pass to the mapped task.
 
         Examples:
+            >>> from daglite import task, evaluate
             >>> @task
-            >>> def generate_numbers(n: int) -> int:
+            ... def generate_numbers(n: int) -> int:
             ...     return n
-            >>>
             >>> @task
-            >>> def square(x: int) -> int:
+            ... def square(x: int) -> int:
             ...     return x * x
-            >>>
             >>> @task
-            >>> def sum_values(a: int, b: int) -> int:
-            ...     return a + b
-            >>>
-            >>> # Create a mapped future generating numbers 0 to 4
-            >>> numbers_future = generate_numbers(n=[0, 1, 2, 3, 4])
-            >>>
-            >>> # Chain to square each generated number and then sum the squares
+            ... def sum_values(values: list[int]) -> int:
+            ...     return sum(values)
+
+            Create a mapped future
+            >>> numbers_future = generate_numbers.zip(n=[0, 1, 2, 3, 4])
+
+            Chain with another mapped task
             >>> squared_future = numbers_future.then(square).join(sum_values)
-            >>>
-            >>> # Evaluate the final result
+
+            Evaluate the final result
             >>> evaluate(squared_future)
-            30  # 0^2 + 1^2 + 2^2 + 3^2 + 4^2
+            30
+
+            Using the fluent API
+            >>> result = generate_numbers.zip(n=[0, 1, 2, 3, 4]).then(square).join(sum_values)
+            >>> evaluate(result)
+            30
 
         Returns:
             A `MapTaskFuture` representing the result of applying the mapped task to this
