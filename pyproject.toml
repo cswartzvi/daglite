@@ -123,19 +123,27 @@ reportUnnecessaryTypeIgnoreComments = true
 [tool.poe.tasks]
 format = "ruff format src tests"
 lint = "pre-commit run --all-files"
-test = "pytest"
-test-cov = "pytest --cov --cov-branch --cov-report=term-missing --cov-report=html"
+test = "pytest --cov --cov-branch --cov-report=term-missing --cov-report=html"
+test-docs = "pytest --doctest-glob='*.md' docs/"
 
 # --- tool.pytest ---
 
 [tool.pytest.ini_options]
-addopts = "-ra --strict-markers --strict-config --import-mode importlib"
+addopts = "-ra --strict-markers --strict-config --import-mode importlib --doctest-modules"
 pythonpath = ["."]
-testpaths = ["tests", "extras/*/tests"]
-markers = ["slow: marks tests as slow (deselect with '-m \"not slow\"')"]
+testpaths = ["tests", "extras/*/tests", "src"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "doctest: marks doctest examples in docstrings and documentation",
+]
 filterwarnings = [
     # Suppress fork() deprecation from multiprocessing when using pytest-cov
     "ignore:.*multi-threaded.*fork.*:DeprecationWarning:multiprocessing.popen_fork",
+]
+doctest_optionflags = [
+    "NORMALIZE_WHITESPACE",
+    "ELLIPSIS",
+    "IGNORE_EXCEPTION_DETAIL",
 ]
 
 # --- tool.ruff ---

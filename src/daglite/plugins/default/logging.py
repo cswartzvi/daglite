@@ -6,16 +6,16 @@ This module provides logging that works seamlessly across different execution ba
 send log records from workers back to the coordinator/main process.
 
 Example:
-    >>> from daglite.plugins.default import CentralizedLoggingPlugin, get_logger
     >>> from daglite import evaluate, task
+    >>> from daglite.plugins.default.logging import CentralizedLoggingPlugin, get_logger
     >>>
     >>> @task
-    >>> def my_task(x):
+    ... def my_task(x: int) -> int:
     ...     logger = get_logger(__name__)
     ...     logger.info(f"Processing {x}")
     ...     return x * 2
-    >>>
-    >>> evaluate(my_task(10), plugins=[CentralizedLoggingPlugin()])
+    >>> evaluate(my_task(x=10), plugins=[CentralizedLoggingPlugin()])
+    20
 """
 
 import logging
@@ -57,18 +57,19 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         automatic task context injection
 
     Examples:
+        >>> from daglite import task
         >>> from daglite.plugins.default import get_logger
 
         Simple usage - automatic task context in logs
         >>> @task
-        >>> def my_task(x):
+        ... def my_task(x):
         ...     logger = get_logger()  # Uses "daglite.tasks" logger
         ...     logger.info(f"Processing {x}")  # Output: "Node: my_task - ..."
         ...     return x * 2
 
         Module-based naming for code organization
         >>> @task
-        >>> def custom_logging(x):
+        ... def custom_logging(x):
         ...     logger = get_logger(__name__)  # Uses module name
         ...     logger.info(f"Custom log for {x}")  # Still has task_name in output
         ...     return x
@@ -108,30 +109,33 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
     """
     Plugin that enables centralized logging via the reporter system.
 
-    This plugin centralizes logs from all workers (threads, processes, or distributed machines)
-    to the coordinator. On the worker side, log records are sent to the coordinator using the
-    reporter system. On the coordinator side, log records are reconstructed and emitted through
-    the standard logging framework.
-
-    Configure logging output using standard Python logging configuration (logging.basicConfig).
-    Task context fields (daglite_task_name, daglite_node_key, daglite_task_id) are automatically
-    available in format strings.
+    This plugin centralizes logs from out-of-process or distributed workers to the coordinator. On
+    the worker side, log records are sent to the coordinator using the reporter system. On the
+    coordinator side, log records are reconstructed and emitted through the standard logging
+    framework.
 
     Args:
         level: Minimum log level to handle on coordinator side (default: WARNING).
 
     Examples:
+        >>> from daglite import evaluate, task
         >>> from daglite.plugins.default import CentralizedLoggingPlugin
         >>> import logging
-        >>>
-        >>> # Configure logging format to include task context
+        >>> @task
+        ... def my_task(x: int) -> int:
+        ...     logger = get_logger(__name__)
+        ...     logger.info(f"Processing {x}")
+        ...     return x * 2
+
+        Configure logging format to include task context
         >>> logging.basicConfig(
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
-        >>>
-        >>> # Add plugin to enable centralized logging
+
+        Add plugin to enable centralized logging
         >>> plugin = CentralizedLoggingPlugin(level=logging.INFO)
-        >>> evaluate(my_future, plugins=[plugin])
+        >>> evaluate(my_task(x=10), plugins=[plugin])
+        20
     """
 
     def __init__(self, level: int = logging.WARNING):
@@ -239,11 +243,11 @@ class _ReporterHandler(logging.Handler):
     """
     Logging handler that sends log records via EventReporter to the coordinator.
 
-    This handler integrates with Python's standard logging system to transparently
-    route log records across process/thread boundaries using the reporter system.
+    This handler integrates with Python's standard logging system to transparently route log
+    records across process/thread boundaries using the reporter system.
 
-    Note: This handler is automatically added to loggers returned by get_logger()
-    when a reporter is available in the execution context.
+    Note: This handler is automatically added to loggers returned by `get_logger()` when a reporter
+    is available in the execution context.
     """
 
     def __init__(self, reporter: EventReporter):
@@ -301,7 +305,7 @@ class _ReporterHandler(logging.Handler):
                 payload["extra"] = extra
 
             self._reporter.report(LOGGER_EVENT, payload)
-        except Exception:
+        except Exception:  # pragma: no cover
             self.handleError(record)
 
 
@@ -309,8 +313,8 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
     """
     Logger adapter that automatically injects task context into log records.
 
-    The task context is automatically derived from the current execution context
-    when available, requiring no manual setup from users.
+    The task context is automatically derived from the current execution context when available,
+    requiring no manual setup from users.
     """
 
     def process(self, msg: Any, kwargs: MutableMapping[str, Any]) -> tuple[Any, dict[str, Any]]:

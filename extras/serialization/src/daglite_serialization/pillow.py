@@ -43,10 +43,6 @@ def register_handlers():
 
     This registers:
     - Hash strategy for PIL.Image.Image (thumbnail-based)
-
-    Example:
-        >>> from daglite_serialization.pillow import register_handlers
-        >>> register_handlers()
     """
     # Register hash strategy
     default_registry.register_hash_strategy(

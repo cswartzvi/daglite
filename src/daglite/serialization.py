@@ -1,36 +1,9 @@
 """
 Type-based serialization and hashing.
 
-This module provides a central registry for type-based serialization,
-deserialization, and hashing. It's designed to support efficient caching
-and checkpointing with smart hash strategies for large objects.
-
-Key components:
-- SerializationRegistry: Main registry for types
-- SerializationHandler: Per-format handler
-- HashStrategy: Per-type hash function
-- default_registry: Global registry instance
-
-Example:
-    >>> from daglite.serialization import default_registry
-
-    Register a custom type
-    >>> default_registry.register(
-    ...     MyModel,
-    ...     lambda m: m.to_bytes(),
-    ...     lambda b: MyModel.from_bytes(b),
-    ...     format="default",
-    ...     file_extension="model",
-    ... )
-
-    Register hash strategy
-    >>> default_registry.register_hash_strategy(
-    ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
-    ... )
-
-    Use it
-    >>> data, ext = default_registry.serialize(my_model)
-    >>> hash_key = default_registry.hash_value(my_model)
+This module provides a central registry for type-based serialization, deserialization, and hashing
+of built-in and custom Python types. Adding support for external types (e.g., numpy arrays, pandas
+dataframes, PIL images, PyTorch tensors) can be done via separate `daglite-serialization` package.
 """
 
 import hashlib
@@ -89,16 +62,28 @@ class SerializationRegistry:
     """
     Central registry for type-based serialization and hashing.
 
-    This registry maps Python types to
-        1. Serialization handlers (one or more per type)
-        2. Hash strategies (one per type)
-
-    Hash strategies support recursive hashing, so collections containing
-    registered types (like dict[str, np.ndarray]) automatically work.
+    Hash strategies support recursive hashing, so collections containing registered types (like
+    dict[str, np.ndarray]) automatically work.
 
     Examples:
-        Register a custom type:
+        >>> from daglite.serialization import SerializationRegistry
         >>> registry = SerializationRegistry()
+
+        Register the custom type for serialization
+        >>> from dataclasses import dataclass
+        >>> @dataclass
+        ... class MyModel:
+        ...     def to_bytes(self) -> bytes:
+        ...         return b"model_bytes"
+        ...
+        ...     @staticmethod
+        ...     def from_bytes(b: bytes) -> "MyModel":
+        ...         return MyModel()
+        ...
+        ...     def get_version_hash(self) -> str:
+        ...         return "unique_model_hash"
+
+        Register serialization handlers for the custom type
         >>> registry.register(
         ...     MyModel,
         ...     lambda m: m.to_bytes(),
@@ -107,14 +92,17 @@ class SerializationRegistry:
         ...     file_extension="model",
         ... )
 
-        Register hash strategy:
+        Register a hash strategy for the custom type
         >>> registry.register_hash_strategy(
         ...     MyModel, lambda m: m.get_version_hash(), "Hash model version and config"
         ... )
 
-        Use it:
-        >>> data, ext = registry.serialize(my_model)
-        >>> hash_key = registry.hash_value(my_model)
+        Serialize and hash an instance of the custom type
+        >>> my_model = MyModel()
+        >>> registry.serialize(my_model)
+        (b'model_bytes', 'model')
+        >>> registry.hash_value(my_model)
+        'unique_model_hash'
     """
 
     def __init__(self) -> None:
@@ -137,22 +125,12 @@ class SerializationRegistry:
         Register a serialization handler for a type.
 
         Args:
-            type_: The Python type to register
-            serializer: Function to convert object to bytes
-            deserializer: Function to convert bytes back to object
-            format: Format identifier (default: 'default')
-            file_extension: File extension for this format (default: 'bin')
-            make_default: Whether to make this the default format for the type
-
-        Example:
-            >>> registry.register(
-            ...     pd.DataFrame,
-            ...     lambda df: df.to_parquet(),
-            ...     lambda b: pd.read_parquet(BytesIO(b)),
-            ...     format="parquet",
-            ...     file_extension="parquet",
-            ...     make_default=True,
-            ... )
+            type_: Python type to register the handler for.
+            serializer: Function to convert object to bytes.
+            deserializer: Function to convert bytes back to object.
+            format: Format identifier (e.g., 'pickle', 'csv', 'parquet'), defaults to 'default'.
+            file_extension: File extension for this format, defaults to 'bin'.
+            make_default: Whether to make this the default format for the type.
         """
         handler = SerializationHandler(
             type_=type_,
@@ -180,14 +158,9 @@ class SerializationRegistry:
         Register a hash strategy for a type.
 
         Args:
-            type_: The Python type to register
-            hasher: Function to compute hash string from object
-            description: Human-readable description of the strategy
-
-        Example:
-            >>> registry.register_hash_strategy(
-            ...     np.ndarray, hash_numpy_array, "Sample-based hash for numpy arrays"
-            ... )
+            type_: Python type to register the strategy for.
+            hasher: Function to compute hash string from object.
+            description: Human-readable description of the strategy.
         """
         strategy = HashStrategy(
             type_=type_,
@@ -205,7 +178,7 @@ class SerializationRegistry:
         Serialize an object using registered handler.
 
         Args:
-            obj: The object to serialize
+            obj: Object to serialize.
             format: Optional format specifier (uses default if None)
 
         Returns:
@@ -213,6 +186,12 @@ class SerializationRegistry:
 
         Raises:
             ValueError: If no handler is registered for the type/format
+
+        Examples:
+            >>> from daglite.serialization import SerializationRegistry
+            >>> registry = SerializationRegistry()
+            >>> registry.serialize("hello", format="text")
+            (b'hello', 'txt')
         """
         obj_type = type(obj)
 
@@ -242,8 +221,8 @@ class SerializationRegistry:
         Deserialize bytes back to an object.
 
         Args:
-            data: The serialized bytes
-            type_: The expected Python type
+            data: Serialized data as bytes.
+            type_: Expected Python type of the object.
             format: Optional format specifier (uses default if None)
 
         Returns:
@@ -251,6 +230,12 @@ class SerializationRegistry:
 
         Raises:
             ValueError: If no handler is registered for the type/format
+
+        Examples:
+            >>> from daglite.serialization import SerializationRegistry
+            >>> registry = SerializationRegistry()
+            >>> registry.deserialize(b"hello", str, format="text")
+            'hello'
         """
         # Determine format
         if format is None:
@@ -275,7 +260,7 @@ class SerializationRegistry:
         will automatically use the appropriate hash strategies for nested values.
 
         Args:
-            obj: The object to hash
+            obj: Object to be hashed.
 
         Returns:
             SHA256 hex digest string
@@ -284,9 +269,10 @@ class SerializationRegistry:
             TypeError: If no hash strategy is registered for this type.
 
         Example:
+            >>> from daglite.serialization import SerializationRegistry
+            >>> registry = SerializationRegistry()
             >>> registry.hash_value([1, 2, 3])
-            'a1b2c3d4...'  # Uses built-in list hasher
-            >>> registry.hash_value({"data": np_array})  # Recursively hashes numpy array
+            '37b739850c210ed5bf75eb0803169d39e1b8e827a692f14b598872598406536b'
         """
         obj_type = type(obj)
 

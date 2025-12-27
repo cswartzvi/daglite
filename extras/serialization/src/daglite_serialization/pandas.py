@@ -82,10 +82,6 @@ def register_handlers():
     This registers:
     - Hash strategy for pd.DataFrame (schema + sample-based)
     - Hash strategy for pd.Series (dtype + sample-based)
-
-    Example:
-        >>> from daglite_serialization.pandas import register_handlers
-        >>> register_handlers()
     """
     # Register hash strategies
     default_registry.register_hash_strategy(
