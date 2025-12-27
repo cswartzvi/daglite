@@ -8,7 +8,7 @@ def pytest_configure(config: pytest.Config) -> None:
     pass
 
 
-def pytest_collection_modifyitems(items) -> None:
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Automatically mark doctest items with the 'doctest' marker."""
     # Doctest marker addition
     for item in items:
