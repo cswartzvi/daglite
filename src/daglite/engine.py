@@ -265,8 +265,8 @@ class Engine:
     managed by a `BackendManager`.
 
     When executed in asynchronous, sibling nodes (i.e., nodes at the same level of the DAG) are
-    able to execute concurrently using asyncio. Additionally, tasks use the `SequentialBackend` are
-    automatically wrapped with asyncio.to_thread() to avoid blocking the event loop.
+    able to execute concurrently using asyncio. Additionally, tasks using the `SequentialBackend`
+    are automatically wrapped with asyncio.to_thread() to avoid blocking the event loop.
     """
 
     plugins: list[Any] | None = None

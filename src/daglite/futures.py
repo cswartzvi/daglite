@@ -105,7 +105,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ... def add(x: int, y: int) -> int:
             ...     return x + y
 
-            Chain task calls via ubound parameter (in this case, `x`)
+            Chain task calls via unbound parameter (`x`)
             >>> prepare(n=5).then(add, y=10)  # doctest: +ELLIPSIS
             TaskFuture(...)
             >>> evaluate(prepare(n=5).then(add, y=10))
@@ -158,7 +158,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
-            Chain task calls via ubound parameter (`x`) and product over mapped args (`y`)
+            Chain task calls via ubound parameter (`x`) and product over mapped arg (`y`)
             >>> future = prepare(n=5).then_product(combine, y=[10, 20, 30])
             >>> evaluate(future)
             [20, 30, 40]
@@ -233,7 +233,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ... def combine(x: int, y: int, z: int) -> int:
             ...     return x + y + z
 
-            Chain task calls via ubound parameter (`x`) and zip over mapped args (`y`)
+            Chain task calls via ubound parameter (`x`) and zip over mapped arg (`y`)
             >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30], z=[1, 2, 3])
             >>> evaluate(future)
             [21, 32, 43]

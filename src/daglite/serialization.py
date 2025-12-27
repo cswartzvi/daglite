@@ -83,7 +83,7 @@ class SerializationRegistry:
         ...     def get_version_hash(self) -> str:
         ...         return "unique_model_hash"
 
-        Register the custom type for serialization
+        Register serialization handlers for the custom type
         >>> registry.register(
         ...     MyModel,
         ...     lambda m: m.to_bytes(),
