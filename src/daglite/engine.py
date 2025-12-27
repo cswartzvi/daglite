@@ -326,7 +326,7 @@ class Engine:
         try:
             backend_manager.start()
             event_processor.start()
-            state = ExecutionState.from_nodes(nodes)
+            state = _ExecutionState.from_nodes(nodes)
             ready = state.get_ready()
 
             while ready:
@@ -367,7 +367,7 @@ class Engine:
         try:
             backend_manager.start()
             event_processor.start()
-            state = ExecutionState.from_nodes(nodes)
+            state = _ExecutionState.from_nodes(nodes)
             ready = state.get_ready()
 
             while ready:
@@ -413,7 +413,7 @@ class Engine:
             backend_manager.stop()
 
     def _execute_node_sync(
-        self, node: BaseGraphNode, state: ExecutionState, backend_manager: BackendManager
+        self, node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
     ) -> Any:
         """
         Execute a node synchronously and return its result.
@@ -435,7 +435,7 @@ class Engine:
         return result
 
     async def _execute_node_async(
-        self, node: BaseGraphNode, state: ExecutionState, backend_manager: BackendManager
+        self, node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
     ) -> Any:
         """
         Execute a node asynchronously and return its result.
@@ -465,7 +465,7 @@ class Engine:
 
 
 @dataclass
-class ExecutionState:
+class _ExecutionState:
     """
     Tracks graph topology and execution progress.
 
@@ -486,7 +486,7 @@ class ExecutionState:
     """Results of completed node executions."""
 
     @classmethod
-    def from_nodes(cls, nodes: dict[UUID, BaseGraphNode]) -> ExecutionState:
+    def from_nodes(cls, nodes: dict[UUID, BaseGraphNode]) -> _ExecutionState:
         """
         Build execution state from a graph node dictionary.
 

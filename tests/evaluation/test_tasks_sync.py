@@ -960,7 +960,7 @@ def test_cycle_detection_raises_error() -> None:
     """Evaluation raises ExecutionError when a cycle is detected in the graph."""
     from uuid import uuid4
 
-    from daglite.engine import ExecutionState
+    from daglite.engine import _ExecutionState
     from daglite.exceptions import ExecutionError
     from daglite.graph.base import ParamInput
     from daglite.graph.nodes import TaskNode
@@ -993,7 +993,7 @@ def test_cycle_detection_raises_error() -> None:
         ),
     }
 
-    state = ExecutionState.from_nodes(nodes)  # type: ignore
+    state = _ExecutionState.from_nodes(nodes)  # type: ignore
 
     with pytest.raises(ExecutionError, match="Cycle detected"):
         state.check_complete()
