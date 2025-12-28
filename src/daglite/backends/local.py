@@ -35,7 +35,7 @@ class SequentialBackend(Backend):
         return DirectReporter(self._event_processor.dispatch)
 
     @override
-    def _submit_impl(
+    def submit(
         self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> Future[Any]:
         future: Future[Any] = Future()
@@ -79,7 +79,7 @@ class ThreadBackend(Backend):
         self._executor.shutdown(wait=True)
 
     @override
-    def _submit_impl(
+    def submit(
         self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> Future[Any]:
         if inspect.iscoroutinefunction(func):
@@ -147,7 +147,7 @@ class ProcessBackend(Backend):
         self._reporter.queue.close()
 
     @override
-    def _submit_impl(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
+    def submit(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
         if inspect.iscoroutinefunction(func):
             return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
         return self._executor.submit(func, inputs, **kwargs)

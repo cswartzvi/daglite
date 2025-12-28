@@ -428,15 +428,29 @@ class Engine:
         Returns:
             The node's execution result (single value or list)
         """
+        from daglite.graph.base import BaseMapGraphNode
+
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
-        future_or_futures = backend.submit_node(node, resolved_inputs)
+        future_or_futures = None
+        if isinstance(node, BaseMapGraphNode):
+            future_or_futures = []
+            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+                kwargs = {"iteration_index": idx}
+                future = backend.submit(node.run, call, **kwargs)
+                future_or_futures.append(future)
+        else:
+            future_or_futures = backend.submit(node.run, resolved_inputs)
+
+        result = None
         if isinstance(future_or_futures, list):
             result = [f.result() for f in future_or_futures]
-        else:
+        elif future_or_futures is not None:
             result = future_or_futures.result()
+        else:  # pragma: no cover
+            raise RuntimeError("Backend returned None future for node execution.")
 
         result = _materialize_sync(result)
         return result
@@ -453,15 +467,33 @@ class Engine:
         Returns:
             The node's execution result (single value or list)
         """
+        from asyncio import wrap_future
+
+        from daglite.graph.base import BaseMapGraphNode
+
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
-        future_or_futures = await backend.submit_node_async(node, resolved_inputs)
 
+        # Determine how to submit to backend based on node type
+        future_or_futures = None
+        if isinstance(node, BaseMapGraphNode):
+            future_or_futures = []
+            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+                kwargs = {"iteration_index": idx}
+                future = wrap_future(backend.submit(node.run_async, call, **kwargs))
+                future_or_futures.append(future)
+        else:
+            future_or_futures = wrap_future(backend.submit(node.run_async, resolved_inputs))
+
+        # Determine how to await results based on future returned from submission
+        result = None
         if isinstance(future_or_futures, list):
             result = await asyncio.gather(*future_or_futures)
-        else:
+        elif future_or_futures is not None:
             result = await future_or_futures
+        else:  # pragma: no cover
+            raise RuntimeError("Backend returned None future for node execution.")
 
         result = await _materialize_async(result)
 

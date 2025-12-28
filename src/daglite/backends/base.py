@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import abc
-from asyncio import wrap_future
-from asyncio.futures import Future as AsyncioFuture
 from concurrent.futures import Future as ConcurrentFuture
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
@@ -10,7 +8,6 @@ from pluggy import PluginManager
 from typing_extensions import final
 
 if TYPE_CHECKING:
-    from daglite.graph.base import BaseGraphNode
     from daglite.plugins.events import EventProcessor
     from daglite.plugins.reporters import EventReporter
 
@@ -74,66 +71,8 @@ class Backend(abc.ABC):
         """
         pass
 
-    @final
-    def submit_node(
-        self, node: BaseGraphNode, resolved_inputs: dict[str, Any]
-    ) -> ConcurrentFuture[Any] | list[ConcurrentFuture[Any]]:
-        """
-        Execute a graph node with resolved inputs.
-
-        Args:
-            node: Graph node to execute
-            resolved_inputs: Pre-resolved parameter inputs
-
-        Returns:
-            `concurrent.futures.Future` representing the execution result, or a list of futures
-            for mapped nodes.
-        """
-        from daglite.graph.base import BaseMapGraphNode
-
-        if isinstance(node, BaseMapGraphNode):
-            futures = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
-                kwargs = {"iteration_index": idx}
-                future = self._submit_impl(node.run, call, **kwargs)
-                futures.append(future)
-            return futures
-        else:
-            return self._submit_impl(node.run, resolved_inputs)
-
-    @final
-    async def submit_node_async(
-        self, node: BaseGraphNode, resolved_inputs: dict[str, Any]
-    ) -> AsyncioFuture[Any] | list[AsyncioFuture[Any]]:
-        """
-        Execute a graph node asynchronously with resolved inputs.
-
-        Similar to execute_node but for async execution contexts. Returns the actual result value
-        after awaiting completion.
-
-        Args:
-            node: Graph node to execute
-            resolved_inputs: Pre-resolved parameter inputs
-
-        Returns:
-            `asyncio.Future` representing the execution result, or a list of futures for mapped
-            nodes.
-        """
-        from daglite.graph.base import BaseMapGraphNode
-
-        if isinstance(node, BaseMapGraphNode):
-            futures: list[AsyncioFuture[Any]] = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
-                kwargs = {"iteration_index": idx}
-                future = wrap_future(self._submit_impl(node.run_async, call, **kwargs))
-                futures.append(future)
-            return futures
-        else:
-            future = wrap_future(self._submit_impl(node.run_async, resolved_inputs))
-            return future
-
     @abc.abstractmethod
-    def _submit_impl(
+    def submit(
         self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
     ) -> ConcurrentFuture[Any]:
         """
