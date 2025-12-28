@@ -26,6 +26,7 @@ rich = ["daglite-rich"]
 dev = [
     "daglite-cli",
     "daglite-serialization[all]",
+    "daglite-rich",
     "nox",
     "pandas-stubs",
     "poethepoet",
@@ -76,6 +77,7 @@ source_pkgs = [
     "daglite",
     "daglite_cli",
     "daglite_serialization",
+    "daglite_rich",
 ] # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
@@ -94,7 +96,7 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "src:extras/cli/src:extras/serialization/src:extra/rich" # Add new plugins here
+mypy_path = "src:extras/cli/src:extras/serialization/src:extras/rich/src" # Add new plugins here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
