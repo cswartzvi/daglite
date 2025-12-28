@@ -19,7 +19,7 @@ class NodeSpec:
         reporter: EventReporter | None,
     ) -> None:
         """
-        Called before a node begins execution.
+        Called before a node begins execution on the **worker**.
 
         Args:
             metadata: Metadata for the node to be executed.
@@ -37,7 +37,7 @@ class NodeSpec:
         reporter: EventReporter | None,
     ) -> None:
         """
-        Called after a node completes execution successfully.
+        Called after a node completes execution successfully on the **worker**.
 
         Args:
             metadata: Metadata for the executed node.
@@ -45,6 +45,37 @@ class NodeSpec:
             result: Result produced by the node execution.
             duration: Time taken to execute in seconds.
             reporter: Optional event reporter for this execution context.
+        """
+
+    @hook_spec
+    def before_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+    ) -> None:
+        """
+        Called before a mapped node begins execution in the **coordinator**.
+
+        Args:
+            metadata: Metadata for the mapped node to be executed.
+            inputs_list: List of resolved inputs for each mapping.
+        """
+
+    @hook_spec
+    def after_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+        results: list[Any],
+    ) -> None:
+        """
+        Called after a mapped node completes execution successfully in the **coordinator**.
+
+        Args:
+            metadata: Metadata for the executed mapped node.
+            inputs_list: List of resolved inputs for each mapping.
+            results: List of results produced by each mapping.
+            duration: Time taken to execute all mappings in seconds.
         """
 
     @hook_spec
@@ -57,7 +88,7 @@ class NodeSpec:
         reporter: EventReporter | None,
     ) -> None:
         """
-        Called when a node execution fails.
+        Called when a node execution fails on the **worker**.
 
         Args:
             metadata: Metadata for the executed node.
@@ -69,7 +100,11 @@ class NodeSpec:
 
 
 class GraphSpec:
-    """Hook specifications for graph-level execution events."""
+    """
+    Hook specifications for graph-level execution events.
+
+    The following hooks are called in the **coordinator** process.
+    """
 
     @hook_spec
     def before_graph_execute(

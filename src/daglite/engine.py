@@ -434,19 +434,32 @@ class Engine:
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
-        future_or_futures = None
+        # Determine how to submit to backend based on node type
+        future_or_futures, calls = None, None
         if isinstance(node, BaseMapGraphNode):
             future_or_futures = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+            calls = node.build_iteration_calls(resolved_inputs)
+
+            backend.plugin_manager.hook.before_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls
+            )
+
+            for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
                 future = backend.submit(node.run, call, **kwargs)
                 future_or_futures.append(future)
         else:
             future_or_futures = backend.submit(node.run, resolved_inputs)
 
+        # Determine results based on future returned from submission
         result = None
         if isinstance(future_or_futures, list):
             result = [f.result() for f in future_or_futures]
+
+            assert calls is not None  # for type checkers
+            backend.plugin_manager.hook.after_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=resolved_inputs, results=result
+            )
         elif future_or_futures is not None:
             result = future_or_futures.result()
         else:  # pragma: no cover
@@ -477,9 +490,16 @@ class Engine:
 
         # Determine how to submit to backend based on node type
         future_or_futures = None
+        calls = None
         if isinstance(node, BaseMapGraphNode):
             future_or_futures = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+            calls = node.build_iteration_calls(resolved_inputs)
+
+            backend.plugin_manager.hook.before_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls
+            )
+
+            for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
                 future = wrap_future(backend.submit(node.run_async, call, **kwargs))
                 future_or_futures.append(future)
@@ -490,6 +510,11 @@ class Engine:
         result = None
         if isinstance(future_or_futures, list):
             result = await asyncio.gather(*future_or_futures)
+
+            assert calls is not None  # for type checkers
+            backend.plugin_manager.hook.after_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=resolved_inputs, results=result
+            )
         elif future_or_futures is not None:
             result = await future_or_futures
         else:  # pragma: no cover
