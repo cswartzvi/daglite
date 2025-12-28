@@ -1,4 +1,4 @@
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
 from rich import get_console
@@ -14,6 +14,10 @@ from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import EventRegistry
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.reporters import EventReporter
+
+if TYPE_CHECKING:
+    from rich.progress import Task as RichTask
+    from rich.progress_bar import ProgressBar as RichProgressBar
 
 
 class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
@@ -160,7 +164,7 @@ class CustomBarColumn(BarColumn):
     """BarColumn that supports per-task styling via task.fields['bar_style']."""
 
     @override
-    def render(self, task):
+    def render(self, task: RichTask) -> RichProgressBar:
         """Render the bar with optional per-task style."""
         bar_style = task.fields.get("bar_style")
         if bar_style:
