@@ -75,7 +75,6 @@ class NodeSpec:
             metadata: Metadata for the executed mapped node.
             inputs_list: List of resolved inputs for each mapping.
             results: List of results produced by each mapping.
-            duration: Time taken to execute all mappings in seconds.
         """
 
     @hook_spec
