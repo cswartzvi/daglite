@@ -77,20 +77,6 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         self._root_task_id = self._progress.add_task("Evaluating graph", total=self._total_tasks)
 
     @hook_impl
-    def before_node_execute(
-        self,
-        metadata: GraphMetadata,
-        inputs: dict[str, Any],
-        reporter: EventReporter | None,
-    ) -> None:
-        data = {"name": metadata.name, "key": metadata.key, "node_id": metadata.id}
-        if reporter:
-            reporter.report("node_start", data=data)
-        else:  # pragma: no cover
-            # Fallback if no reporter is available
-            self._handle_task_start(data)
-
-    @hook_impl
     def after_node_execute(
         self,
         metadata: GraphMetadata,
@@ -103,7 +89,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             reporter.report("node_end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
-            self._handle_task_update({"node_id": metadata.id})
+            self._handle_node_update({"node_id": metadata.id})
 
     @hook_impl
     def on_node_error(
@@ -118,7 +104,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             reporter.report("node_end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
-            self._handle_task_update({"node_id": metadata.id})
+            self._handle_node_update({"node_id": metadata.id})
 
     @hook_impl
     def before_mapped_node_execute(
@@ -158,14 +144,9 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
 
     @override
     def register_event_handlers(self, registry: EventRegistry) -> None:
-        registry.register("node_start", self._handle_task_start)
-        registry.register("node_end", self._handle_task_update)
+        registry.register("node_end", self._handle_node_update)
 
-    def _handle_task_start(self, event: dict) -> None:
-        # Main progress bar uses static description, so nothing to update here
-        pass
-
-    def _handle_task_update(self, event: dict) -> None:
+    def _handle_node_update(self, event: dict) -> None:
         # Check if this is a map iteration completion
         node_id = event.get("node_id")
         if node_id and node_id in self._id_to_task:
