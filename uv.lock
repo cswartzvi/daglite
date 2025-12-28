@@ -431,6 +431,7 @@ serialization = [
 [package.dev-dependencies]
 dev = [
     { name = "daglite-cli" },
+    { name = "daglite-rich" },
     { name = "daglite-serialization", extra = ["all"] },
     { name = "nox" },
     { name = "pandas-stubs" },
@@ -475,6 +476,7 @@ provides-extras = ["cli", "serialization", "rich"]
 [package.metadata.requires-dev]
 dev = [
     { name = "daglite-cli", editable = "extras/cli" },
+    { name = "daglite-rich", editable = "extras/rich" },
     { name = "daglite-serialization", extras = ["all"], editable = "extras/serialization" },
     { name = "nox" },
     { name = "pandas-stubs" },
