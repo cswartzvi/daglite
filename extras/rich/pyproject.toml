@@ -1,0 +1,25 @@
+# --- build system ---
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# --- project & dependencies ---
+
+[project]
+name = "daglite-rich"
+description = "Rich logging and progress bars for daglite."
+dynamic = ["version"]
+readme = "README.md"
+dependencies = ["daglite", "rich"]
+
+# --- tool.setuptools ---
+
+[tool.setuptools.dynamic.version]
+attr = "daglite_rich.__version__"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"daglite_rich" = ["py.typed"]
