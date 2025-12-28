@@ -1,5 +1,4 @@
-from dataclasses import asdict
-from typing import Any
+from typing import Any, ClassVar
 from uuid import UUID
 
 from rich import get_console
@@ -9,13 +8,14 @@ from rich.progress import TaskID
 from typing_extensions import override
 
 from daglite.graph.base import GraphMetadata
-from daglite.plugins.default.logging import BidirectionalPlugin
+from daglite.plugins.base import BidirectionalPlugin
+from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import EventRegistry
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.reporters import EventReporter
 
 
-class RichProgressPlugin(BidirectionalPlugin):
+class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     """
     Plugin that adds rich progress bars and logging to daglite tasks.
 
@@ -29,6 +29,8 @@ class RichProgressPlugin(BidirectionalPlugin):
             a default Progress instance will be created.
     """
 
+    __config_attrs__: ClassVar[list[str]] = []  # No serializable config
+
     def __init__(
         self,
         console: Console | None = None,
@@ -38,25 +40,35 @@ class RichProgressPlugin(BidirectionalPlugin):
         self._progress = progress or Progress(console=self._console, transient=False)
         self._id_to_task = {}
         self._root_task_id: TaskID | None = None
+        self._total_tasks = 0
+
+    @override
+    def to_config(self) -> dict[str, Any]:
+        return {}  # No config to serialize
+
+    @classmethod
+    @override
+    def from_config(cls, config: dict[str, Any]) -> "RichProgressPlugin":
+        return cls()  # Create new instance with defaults
 
     @hook_impl
     def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
-        """Called before a graph begins execution."""
         self._progress.start()
-        self._root_task_id = self._progress.add_task("Executing DAG...", total=node_count)
+        self._total_tasks = node_count
+        self._root_task_id = self._progress.add_task("Initializing", total=self._total_tasks)
 
     @hook_impl
     def before_node_execute(
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
-        """Called before a node begins execution."""
-        data = {"metadata": asdict(metadata)}
+        data = {"name": metadata.name, "key": metadata.key}
         if reporter:
-            reporter.report("task_start", data=data)
-        else:
+            reporter.report("node_start", data=data)
+        else:  # pragma: no cover
+            # Fallback if no reporter is available
             self._handle_task_start(data)
 
     @hook_impl
@@ -66,14 +78,13 @@ class RichProgressPlugin(BidirectionalPlugin):
         inputs: dict[str, Any],
         result: Any,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
-        """Called after a node completes execution successfully."""
-        data = {"metadata": asdict(metadata)}
         if reporter:
-            reporter.report("task_complete", data=data)
-        else:
-            self._handle_task_update(data)
+            reporter.report("node_end", data={})
+        else:  # pragma: no cover
+            # Fallback if no reporter is available
+            self._handle_task_update({})
 
     @hook_impl
     def on_node_error(
@@ -82,34 +93,34 @@ class RichProgressPlugin(BidirectionalPlugin):
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
-        """Called when a node execution fails."""
         if reporter:
-            reporter.report("task_complete", {"metadata": asdict(metadata)})
-        else:
-            pass
+            reporter.report("node_end", data={})
+        else:  # pragma: no cover
+            # Fallback if no reporter is available
+            self._handle_task_update({})
 
     @hook_impl
     def after_graph_execute(
         self, root_id: UUID, result: Any, duration: float, is_async: bool
     ) -> None:
-        """Called after a graph completes execution."""
         assert self._root_task_id is not None
         self._progress.update(
-            task_id=self._root_task_id, advance=1.0, description="Execution complete"
+            task_id=self._root_task_id,
+            completed=self._total_tasks,
+            description="Execution complete",
         )
         self._progress.refresh()
         self._progress.stop()
 
     @override
     def register_event_handlers(self, registry: EventRegistry) -> None:
-        registry.register("task_start", self._handle_task_start)
-        registry.register("task_update", self._handle_task_update)
+        registry.register("node_start", self._handle_task_start)
+        registry.register("node_end", self._handle_task_update)
 
     def _handle_task_start(self, event: dict) -> None:
-        metadata = GraphMetadata(**event["metadata"])
-        description = f"Executing: {metadata.key or metadata.name}"
+        description = f"Executing: {event['key'] or event['name']}"
         assert self._root_task_id is not None
         self._progress.update(task_id=self._root_task_id, description=description)
 
