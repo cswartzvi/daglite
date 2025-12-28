@@ -32,7 +32,7 @@ class SequentialBackend(Backend):
 
     @override
     def _get_reporter(self) -> DirectReporter:
-        return DirectReporter(self._event_processor.dispatch)
+        return DirectReporter(self.event_processor.dispatch)
 
     @override
     def submit(
@@ -42,7 +42,7 @@ class SequentialBackend(Backend):
 
         # Set execution context for immediate execution (runs in main thread)
         # Context cleanup happens when backend stops, not per-task
-        set_execution_context(self._plugin_manager, self._reporter)
+        set_execution_context(self.plugin_manager, self.reporter)
 
         try:
             result = func(inputs, **kwargs)
@@ -61,7 +61,7 @@ class ThreadBackend(Backend):
     @override
     def _get_reporter(self) -> DirectReporter:
         # Threads run in same process - use DirectReporter with dispatcher
-        return DirectReporter(self._event_processor.dispatch)
+        return DirectReporter(self.event_processor.dispatch)
 
     @override
     def _start(self) -> None:
@@ -71,7 +71,7 @@ class ThreadBackend(Backend):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             initializer=_thread_initializer,
-            initargs=(self._plugin_manager, self._reporter),
+            initargs=(self.plugin_manager, self.reporter),
         )
 
     @override
@@ -127,24 +127,24 @@ class ProcessBackend(Backend):
 
         # Use the mp_context that was already determined in _get_reporter
         # Use the mp_context that was already determined in _get_reporter
-        assert isinstance(self._reporter, ProcessReporter)
-        self._reporter_id = self._event_processor.add_source(self._reporter.queue)
-        serialized_pm = serialize_plugin_manager(self._plugin_manager)
+        assert isinstance(self.reporter, ProcessReporter)
+        self._reporter_id = self.event_processor.add_source(self.reporter.queue)
+        serialized_pm = serialize_plugin_manager(self.plugin_manager)
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
             mp_context=self._mp_context,
             initializer=_process_initializer,
-            initargs=(serialized_pm, self._reporter.queue),
+            initargs=(serialized_pm, self.reporter.queue),
         )
 
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
-        self._event_processor.flush()  # Before removing source
-        self._event_processor.remove_source(self._reporter_id)
+        self.event_processor.flush()  # Before removing source
+        self.event_processor.remove_source(self._reporter_id)
 
-        assert isinstance(self._reporter, ProcessReporter)
-        self._reporter.queue.close()
+        assert isinstance(self.reporter, ProcessReporter)
+        self.reporter.queue.close()
 
     @override
     def submit(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
