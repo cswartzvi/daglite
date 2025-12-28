@@ -16,7 +16,7 @@ class NodeSpec:
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called before a node begins execution.
@@ -34,7 +34,7 @@ class NodeSpec:
         inputs: dict[str, Any],
         result: Any,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called after a node completes execution successfully.
@@ -54,7 +54,7 @@ class NodeSpec:
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called when a node execution fails.
