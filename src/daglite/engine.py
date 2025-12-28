@@ -458,7 +458,7 @@ class Engine:
 
             assert calls is not None  # for type checkers
             backend.plugin_manager.hook.after_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=resolved_inputs, results=result
+                metadata=node.to_metadata(), inputs_list=calls, results=result
             )
         elif future_or_futures is not None:
             result = future_or_futures.result()
@@ -513,7 +513,7 @@ class Engine:
 
             assert calls is not None  # for type checkers
             backend.plugin_manager.hook.after_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=resolved_inputs, results=result
+                metadata=node.to_metadata(), inputs_list=calls, results=result
             )
         elif future_or_futures is not None:
             result = await future_or_futures
