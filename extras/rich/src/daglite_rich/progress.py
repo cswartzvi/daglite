@@ -30,7 +30,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             a default Progress instance will be created.
     """
 
-    __config_attrs__: ClassVar[list[str]] = ["secondary_style"]
+    __config_attrs__: ClassVar[list[str]] = []
 
     def __init__(
         self,
@@ -63,7 +63,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
 
     @override
     def to_config(self) -> dict[str, Any]:
-        return {"secondary_style": self.secondary_style}
+        return {}  # No configurable attributes for now
 
     @classmethod
     @override
