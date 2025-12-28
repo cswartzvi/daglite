@@ -195,6 +195,7 @@ ignore-decorators = [
     "typing.overload",
     "typing.no_type_check",
     "pydantic.field_validator",
+    "daglite.plugins.hooks.markers.hook_impl",
 ]
 
 # --- tool.setuptools ---
