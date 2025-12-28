@@ -36,7 +36,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         self,
         console: Console | None = None,
         progress: Progress | None = None,
-        secondary_style: str | None = "cyan",
+        secondary_style: str | None = "bold yellow",
     ) -> None:
         self._id_to_task = {}
         self._root_task_id: TaskID | None = None
