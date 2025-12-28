@@ -134,6 +134,7 @@ class TestTaskLoggerAdapter:
         task_metadata = GraphMetadata(
             id=uuid4(),
             name="test_task",
+            kind="task",
             description="Test",
             backend_name="processes",
             key="test_task[0]",

@@ -13,7 +13,6 @@ from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import BaseMapGraphNode
 from daglite.graph.base import GraphMetadata
-from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
 
 T_co = TypeVar("T_co", covariant=True)
@@ -28,11 +27,6 @@ class TaskNode(BaseGraphNode):
 
     kwargs: Mapping[str, ParamInput]
     """Keyword parameters for the task function."""
-
-    @property
-    @override
-    def kind(self) -> NodeKind:
-        return "task"
 
     @override
     def dependencies(self) -> set[UUID]:
