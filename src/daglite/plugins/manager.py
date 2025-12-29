@@ -13,7 +13,7 @@ from daglite.plugins.base import issubclass_serializable_plugin
 from daglite.plugins.events import EventRegistry
 
 from .hooks.markers import HOOK_NAMESPACE
-from .hooks.specs import NodeSpec
+from .hooks.specs import WorkerSideNodeSpecs
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def _get_global_plugin_manager() -> PluginManager:
 def _create_plugin_manager() -> PluginManager:
     """Create a new PluginManager instance and register daglite's hook specs."""
     manager = PluginManager(HOOK_NAMESPACE)
-    manager.add_hookspecs(NodeSpec)
+    manager.add_hookspecs(WorkerSideNodeSpecs)
     from .hooks.specs import GraphSpec
 
     manager.add_hookspecs(GraphSpec)
