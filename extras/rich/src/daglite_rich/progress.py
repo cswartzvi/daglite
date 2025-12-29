@@ -42,7 +42,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         progress: Progress | None = None,
         secondary_style: str | None = "bold yellow",
     ) -> None:
-        self._id_to_task = {}
+        self._id_to_task: dict[UUID, TaskID] = {}
         self._root_task_id: TaskID | None = None
         self._total_tasks = 0
 
