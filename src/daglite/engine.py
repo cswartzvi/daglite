@@ -15,6 +15,7 @@ from dataclasses import field
 from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
+from uuid import uuid4
 
 from pluggy import PluginManager
 
@@ -322,11 +323,12 @@ class Engine:
 
     def _run_sequential(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
+        graph_id = uuid4()
         plugin_manager, event_processor = self._setup_plugin_system()
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), is_async=False
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=False
         )
 
         start_time = time.perf_counter()
@@ -347,14 +349,14 @@ class Engine:
             duration = time.perf_counter() - start_time
 
             plugin_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=False
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=False
             )
             raise
         finally:
@@ -363,11 +365,12 @@ class Engine:
 
     async def _run_async(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Async execution with sibling parallelism."""
+        graph_id = uuid4()
         plugin_manager, event_processor = self._setup_plugin_system()
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), is_async=True
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=True
         )
 
         start_time = time.perf_counter()
@@ -405,14 +408,14 @@ class Engine:
             result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
             plugin_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=True
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=True
             )
             raise
         finally:
