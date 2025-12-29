@@ -348,6 +348,7 @@ class Engine:
             result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
 
+            event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
                 graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=False
             )
@@ -407,6 +408,8 @@ class Engine:
             state.check_complete()
             result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
+
+            event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
                 graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=True
             )
