@@ -9,7 +9,7 @@ from multiprocessing import Queue as MultiprocessingQueue
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME
+from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME_TASKS
 from daglite.plugins.default.logging import LOGGER_EVENT
 from daglite.plugins.default.logging import CentralizedLoggingPlugin
 from daglite.plugins.default.logging import _ReporterHandler
@@ -26,7 +26,7 @@ class TestGetLoggerUnit:
         """Test get_logger with default name."""
         logger = get_logger()
         assert isinstance(logger, logging.LoggerAdapter)
-        assert logger.logger.name == DEFAULT_LOGGER_NAME
+        assert logger.logger.name == DEFAULT_LOGGER_NAME_TASKS
 
     def test_get_logger_custom_name(self):
         """Test get_logger with custom name."""

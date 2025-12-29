@@ -22,13 +22,15 @@ import logging
 import threading
 from typing import Any, MutableMapping
 
+from daglite.backends.context import get_current_task
 from daglite.backends.context import get_reporter
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.events import EventRegistry
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
-DEFAULT_LOGGER_NAME = "daglite.tasks"
+DEFAULT_LOGGER_NAME = "daglite"
+DEFAULT_LOGGER_NAME_TASKS = "daglite.tasks"
 
 # Lock to prevent race conditions when adding handlers (critical for free-threaded Python)
 _logger_lock = threading.Lock()
@@ -80,6 +82,9 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
+    if get_current_task() is not None:
+        name = DEFAULT_LOGGER_NAME_TASKS  # Called within a worker task context
+
     if name is None:
         name = DEFAULT_LOGGER_NAME
 
@@ -196,7 +201,7 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
         extra = {k: v for k, v in all_extra.items() if k not in standard_fields}
 
         # Emit record to coordinator-side logger (excluding ReporterHandler to avoid loops)
-        base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME)
+        base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME_TASKS)
         record = base_logger.makeRecord(
             name=base_logger.name,
             level=log_level,
