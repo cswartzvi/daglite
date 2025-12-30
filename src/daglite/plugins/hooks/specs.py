@@ -91,6 +91,7 @@ class CoordinatorSideNodeSpecs:
         metadata: GraphMetadata,
         inputs_list: list[dict[str, Any]],
         results: list[Any],
+        duration: float,
     ) -> None:
         """
         Called after a mapped node completes execution successfully.
@@ -98,6 +99,7 @@ class CoordinatorSideNodeSpecs:
         Args:
             metadata: Metadata for the executed mapped node.
             inputs_list: List of resolved inputs for each mapping.
+            duration: Execution time in seconds for all mappings.
             results: List of results produced by each mapping.
         """
 
