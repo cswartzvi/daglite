@@ -38,12 +38,15 @@ handlers:
     markup: true
 
   file:
-    class: logging.FileHandler
+    class: logging.handlers.RotatingFileHandler
     level: DEBUG
     formatter: file_detailed
     filename: run.log
-    mode: w
+    mode: a
     encoding: utf-8
+    delay: true
+    maxBytes: 10485760  # 10 MB
+    backupCount: 3
 
 loggers:
   daglite:
