@@ -78,7 +78,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
         self._progress.start()
         self._total_tasks = node_count
-        self._root_task_id = self._progress.add_task("Evaluating graph", total=self._total_tasks)
+        self._root_task_id = self._progress.add_task("Evaluating", total=self._total_tasks)
 
     @hook_impl
     def after_node_execute(
@@ -116,7 +116,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         metadata: GraphMetadata,
         inputs_list: list[dict[str, Any]],
     ) -> None:
-        description = f"Mapping: {metadata.key or metadata.name}"
+        description = f"Mapping '{metadata.key or metadata.name}'"
         map_task_id = self._progress.add_task(
             description, total=len(inputs_list), bar_style=self.secondary_style
         )
