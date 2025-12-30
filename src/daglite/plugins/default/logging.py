@@ -319,8 +319,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         """
         super().register_event_handlers(registry)
         registry.register("logging-node-start", self._handle_node_start)
-        # registry.register("logging-node-complete", self._handle_task_complete)
-        # registry.register("logging-node-fail", self._handle_task_fail)
+        registry.register("logging-node-complete", self._handle_node_complete)
+        registry.register("logging-node-fail", self._handle_task_fail)
 
     @hook_impl
     def before_graph_execute(
@@ -386,6 +386,42 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             self._handle_node_start(data)  # Fallback if no reporter is available
 
     @hook_impl
+    def after_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {"node_id": metadata.id, "node_key": metadata.key, "duration": duration}
+        if reporter:
+            reporter.report("logging-node-complete", data=data)
+        else:  # pragma: no cover
+            self._handle_node_complete(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def on_node_error(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        error: Exception,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "duration": duration,
+        }
+        if reporter:
+            reporter.report("logging-node-fail", data=data)
+        else:  # pragma: no cover
+            self._handle_task_fail(data)  # Fallback if no reporter is available
+
+    @hook_impl
     def after_mapped_node_execute(
         self,
         metadata: GraphMetadata,
@@ -407,16 +443,29 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         else:
             self._logger.info(f"Task '{node_key}' - Starting task")
 
-    # def _handle_task_complete(self, event: dict[str, Any]) -> None:
-    #     task_name = event.get("task_name", "unknown")
-    #     logger = get_logger()
-    #     logger.info(f"Completed task: {task_name}")
+    def _handle_node_complete(self, event: dict[str, Any]) -> None:
+        node_id = event["node_id"]
+        node_key = event["node_key"]
+        duration = event.get("duration", 0)
+        if node_id in self._mapped_nodes:
+            self._logger.debug(f"Task '{node_key}' - Completed mapped iteration in {duration:.2f}s")
+        else:
+            self._logger.info(f"Task '{node_key}' - Completed in {duration:.2f}s")
 
-    # def _handle_task_fail(self, event: dict[str, Any]) -> None:
-    #     task_name = event.get("task_name", "unknown")
-    #     error_msg = event.get("error", "unknown error")
-    #     logger = get_logger()
-    #     logger.error(f"Task failed: {task_name} with error: {error_msg}")
+    def _handle_task_fail(self, event: dict[str, Any]) -> None:
+        node_id = event["node_id"]
+        node_key = event["node_key"]
+        error = event.get("error", "unknown error")
+        error_type = event.get("error_type", "Exception")
+        duration = event.get("duration", 0)
+        if node_id in self._mapped_nodes:
+            self._logger.error(
+                f"Task '{node_key}' - Mapped iteration failed after {duration:.2f}s: {error_type}: {error}"
+            )
+        else:
+            self._logger.error(
+                f"Task '{node_key}' - Failed after {duration:.2f}s: {error_type}: {error}"
+            )
 
 
 class _ReporterHandler(logging.Handler):
