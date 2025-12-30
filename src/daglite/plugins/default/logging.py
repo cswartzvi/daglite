@@ -344,7 +344,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
-        self._logger.info(f"Completed graph {graph_id} in {duration:.2f}s")
+        self._logger.info(
+            f"Completed graph {graph_id} successfully in {_format_duration(duration)}"
+        )
 
     @hook_impl
     def on_graph_error(
@@ -355,7 +357,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
-        self._logger.error(f"Graph {graph_id} failed after {duration:.2f}s with error: {error}")
+        self._logger.error(
+            f"Graph {graph_id} failed after {_format_duration(duration)} with error: {error}"
+        )
 
     @hook_impl
     def before_mapped_node_execute(
@@ -367,8 +371,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         # Coordinator-side hooks need manual task context since get_current_task() returns None.
         # This enables format strings like %(daglite_task_name)s to work in log output.
         node_key = metadata.key or metadata.name
+        backend_name = metadata.backend_name or "sequential"
         self._logger.info(
-            f"Task '{node_key}' - Starting mapped task with {len(inputs_list)} iterations",
+            f"Task '{node_key}' - Starting task with {len(inputs_list)} iterations using "
+            f"{backend_name} backend",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
@@ -379,7 +385,11 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         inputs: dict[str, Any],
         reporter: EventReporter | None,
     ) -> None:
-        data = {"node_id": metadata.id, "node_key": metadata.key}
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "backend_name": metadata.backend_name,
+        }
         if reporter:
             reporter.report("logging-node-start", data=data)
         else:  # pragma: no cover
@@ -431,26 +441,34 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         node_key = metadata.key or metadata.name
         self._logger.info(
-            f"Task '{node_key}' - Completed mapped task in {duration:.2f}s",
+            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
     def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]
+        backend_name = event.get("backend_name") or "sequential"
         if node_id in self._mapped_nodes:
-            self._logger.debug(f"Task '{node_key}' - Starting mapped iteration")
+            self._logger.debug(
+                f"Task '{node_key}' - Starting iteration using {backend_name} backend"
+            )
         else:
-            self._logger.info(f"Task '{node_key}' - Starting task")
+            self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
 
     def _handle_node_complete(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]
         duration = event.get("duration", 0)
         if node_id in self._mapped_nodes:
-            self._logger.debug(f"Task '{node_key}' - Completed mapped iteration in {duration:.2f}s")
+            self._logger.debug(
+                f"Task '{node_key}' - Completed iteration successfully in "
+                f"{_format_duration(duration)}"
+            )
         else:
-            self._logger.info(f"Task '{node_key}' - Completed in {duration:.2f}s")
+            self._logger.info(
+                f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}"
+            )
 
     def _handle_task_fail(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
@@ -460,11 +478,13 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration = event.get("duration", 0)
         if node_id in self._mapped_nodes:
             self._logger.error(
-                f"Task '{node_key}' - Mapped iteration failed after {duration:.2f}s: {error_type}: {error}"
+                f"Task '{node_key}' - Mapped iteration failed after "
+                f"{_format_duration(duration)}: {error_type}: {error}"
             )
         else:
             self._logger.error(
-                f"Task '{node_key}' - Failed after {duration:.2f}s: {error_type}: {error}"
+                f"Task '{node_key}' - Failed after {_format_duration(duration)}: "
+                f"{error_type}: {error}"
             )
 
 
@@ -589,3 +609,15 @@ def _build_task_context(task_id: UUID, task_name: str, task_key: str | None) -> 
         "daglite_task_name": task_name,
         "daglite_task_key": task_key or task_name,
     }
+
+
+def _format_duration(duration: float) -> str:
+    """Format duration in seconds to human-readable string."""
+    if duration < 1:
+        return f"{duration * 1000:.0f} ms"
+    elif duration < 60:
+        return f"{duration:.2f} s"
+    else:
+        minutes = int(duration // 60)
+        seconds = duration % 60
+        return f"{minutes} min {seconds:.2f} s"
