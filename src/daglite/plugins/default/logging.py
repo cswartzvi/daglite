@@ -330,10 +330,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_count: int,
         is_async: bool,
     ) -> None:
-        graph_mode = "async" if is_async else "sequential"
-        self._logger.info(f"Starting graph {graph_id} in {graph_mode} mode")
-        self._logger.debug(f"Graph {graph_id} computes {node_count} nodes in total")
-        self._logger.debug(f"Root node ID: {root_id}")
+        eval_type = "async evaluation" if is_async else "evaluation"
+        self._logger.info(f"Starting {eval_type} {graph_id}")
+        self._logger.debug(f"Evaluation {graph_id}: Computing {node_count} tasks total")
+        self._logger.debug(f"Evaluation {graph_id}: Root task ID is {root_id}")
 
     @hook_impl
     def after_graph_execute(
@@ -344,8 +344,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
+        eval_type = "async evaluation" if is_async else "evaluation"
         self._logger.info(
-            f"Completed graph {graph_id} successfully in {_format_duration(duration)}"
+            f"Completed {eval_type} {graph_id} successfully in {_format_duration(duration)}"
         )
 
     @hook_impl
@@ -357,8 +358,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
+        eval_type = "async evaluation" if is_async else "evaluation"
         self._logger.error(
-            f"Graph {graph_id} failed after {_format_duration(duration)} with error: {error}"
+            f"{eval_type.capitalize()} {graph_id} failed after {_format_duration(duration)} with "
+            f"error: {error}"
         )
 
     @hook_impl
