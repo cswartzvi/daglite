@@ -189,7 +189,7 @@ class TestCentralizedLoggingIntegration:
         record = caplog.records[0]
         assert hasattr(record, "daglite_task_name")
         assert hasattr(record, "daglite_task_id")
-        assert hasattr(record, "daglite_node_key")
+        assert hasattr(record, "daglite_task_key")
         assert record.daglite_task_name == "metadata_task"
 
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
@@ -230,9 +230,9 @@ class TestCentralizedLoggingIntegration:
         records = caplog.records
         assert len(records) >= 3
         for record in records:
-            assert hasattr(record, "daglite_node_key")
+            assert hasattr(record, "daglite_task_key")
             # Node keys should be like "map_worker[0]", "map_worker[1]", etc.
-            assert record.daglite_node_key.startswith("map_worker")
+            assert record.daglite_task_key.startswith("map_worker")
 
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_log_level_filtering(self, backend_name, caplog):

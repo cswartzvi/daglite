@@ -146,7 +146,7 @@ class TestTaskLoggerAdapter:
             assert msg == "test message"
             assert "extra" in kwargs
             assert kwargs["extra"]["daglite_task_name"] == "test_task"
-            assert kwargs["extra"]["daglite_node_key"] == "test_task[0]"
+            assert kwargs["extra"]["daglite_task_key"] == "test_task[0]"
             assert "daglite_task_id" in kwargs["extra"]
 
 
@@ -323,7 +323,7 @@ class TestCentralizedLoggingPluginUnit:
                 "filename": "worker.py",
                 "lineno": 123,
                 "daglite_task_name": "test_task",
-                "daglite_node_key": "test_task[0]",
+                "daglite_task_key": "test_task[0]",
             },
         }
 
@@ -336,7 +336,7 @@ class TestCentralizedLoggingPluginUnit:
         assert record.filename == "worker.py"
         assert record.lineno == 123
         assert record.daglite_task_name == "test_task"
-        assert record.daglite_node_key == "test_task[0]"
+        assert record.daglite_task_key == "test_task[0]"
 
 
 class TestReporterImplementations:

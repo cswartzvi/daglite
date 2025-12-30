@@ -51,7 +51,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     This is the main entry point into daglite logging for user code. It returns a standard
     Python `logging.LoggerAdapter` that automatically:
-    - Injects task context (`daglite_task_name`, `daglite_task_id`, and `daglite_node_key`) into
+    - Injects task context (`daglite_task_name`, `daglite_task_id`, and `daglite_task_key`) into
       all log records
     - Uses the reporter system when available for centralized logging (requires
       CentralizedLoggingPlugin on coordinator side)
@@ -60,7 +60,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     Args:
         name: Logger name for code organization. If None, uses "daglite.tasks". Typically use
             `__name__` for module-based naming. Note: Task context (daglite_task_name,
-            daglite_task_id, daglite_node_key) is automatically added to log records
+            daglite_task_id, daglite_task_key) is automatically added to log records
             regardless of logger name and can be used in formatters.
 
     Returns:
@@ -254,7 +254,7 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
 
 class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     """
-    Plugin that logs task lifecycle events (start, completion, failure).
+    Plugin that logs node lifecycle events (start, completion, failure).
 
     This plugin extends CentralizedLoggingPlugin to log key task lifecycle events such as
     task start, successful completion, and failure. It provides visibility into task execution
@@ -318,7 +318,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             registry: Event registry for registering handlers
         """
         super().register_event_handlers(registry)
-        registry.register("logging-node-start", self._handle_task_start)
+        registry.register("logging-node-start", self._handle_node_start)
         # registry.register("logging-node-complete", self._handle_task_complete)
         # registry.register("logging-node-fail", self._handle_task_fail)
 
@@ -344,7 +344,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
-        self._logger.info(f"Completed graph {graph_id} in {duration:.2f} seconds")
+        self._logger.info(f"Completed graph {graph_id} in {duration:.2f}s")
 
     @hook_impl
     def on_graph_error(
@@ -355,9 +355,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         is_async: bool,
     ) -> None:
-        self._logger.error(
-            f"Graph {graph_id} failed after {duration:.2f} seconds with error: {error}"
-        )
+        self._logger.error(f"Graph {graph_id} failed after {duration:.2f}s with error: {error}")
 
     @hook_impl
     def before_mapped_node_execute(
@@ -370,7 +368,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         # This enables format strings like %(daglite_task_name)s to work in log output.
         node_key = metadata.key or metadata.name
         self._logger.info(
-            f"Node '{node_key}' - Starting mapped node with {len(inputs_list)} mappings",
+            f"Task '{node_key}' - Starting mapped task with {len(inputs_list)} iterations",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
@@ -385,7 +383,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("logging-node-start", data=data)
         else:  # pragma: no cover
-            self._handle_task_start(data)  # Fallback if no reporter is available
+            self._handle_node_start(data)  # Fallback if no reporter is available
 
     @hook_impl
     def after_mapped_node_execute(
@@ -393,20 +391,21 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         metadata: GraphMetadata,
         inputs_list: list[dict[str, Any]],
         results: list[Any],
+        duration: float,
     ) -> None:
         node_key = metadata.key or metadata.name
         self._logger.info(
-            f"Node '{node_key}' - Completed mapped node with {len(results)} results",
+            f"Task '{node_key}' - Completed mapped task in {duration:.2f}s",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
-    def _handle_task_start(self, event: dict[str, Any]) -> None:
+    def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]
         if node_id in self._mapped_nodes:
-            self._logger.debug(f"Node '{node_key}' - Starting mapped task iteration")
+            self._logger.debug(f"Task '{node_key}' - Starting mapped iteration")
         else:
-            self._logger.info(f"Node '{node_key}' - Starting task")
+            self._logger.info(f"Task '{node_key}' - Starting task")
 
     # def _handle_task_complete(self, event: dict[str, Any]) -> None:
     #     task_name = event.get("task_name", "unknown")
@@ -520,7 +519,7 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         return msg, dict(kwargs)
 
 
-def _build_task_context(task_id: UUID, task_name: str, node_key: str | None) -> dict[str, str]:
+def _build_task_context(task_id: UUID, task_name: str, task_key: str | None) -> dict[str, str]:
     """
     Build task context dict for logging extra fields.
 
@@ -531,13 +530,13 @@ def _build_task_context(task_id: UUID, task_name: str, node_key: str | None) -> 
     Args:
         task_id: Task UUID
         task_name: Task name
-        node_key: Node key (optional)
+        task_key: Task key (optional)
 
     Returns:
-        Dict with daglite_task_id, daglite_task_name, and daglite_node_key
+        Dict with daglite_task_id, daglite_task_name, and daglite_task_key
     """
     return {
         "daglite_task_id": str(task_id),
         "daglite_task_name": task_name,
-        "daglite_node_key": node_key or task_name,
+        "daglite_task_key": task_key or task_name,
     }

@@ -128,6 +128,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         metadata: GraphMetadata,
         inputs_list: list[dict[str, Any]],
         results: list[Any],
+        duration: float,
     ) -> None:
         map_task_id = self._id_to_task.pop(metadata.id, None)
         if map_task_id is not None:
