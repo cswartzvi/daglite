@@ -7,7 +7,7 @@ formatters:
     datefmt: "[%X]"
 
   rich_task:
-    format: "Node '%(daglite_task_key)s' - %(message)s"
+    format: "Task '%(daglite_task_key)s' - %(message)s"
     datefmt: "[%X]"
 
   file_detailed:
