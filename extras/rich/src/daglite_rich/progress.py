@@ -18,6 +18,9 @@ from daglite.plugins.reporters import EventReporter
 if TYPE_CHECKING:
     from rich.progress import Task as RichTask
     from rich.progress_bar import ProgressBar as RichProgressBar
+else:
+    RichTask = Any
+    RichProgressBar = Any
 
 
 class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
