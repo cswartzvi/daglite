@@ -78,9 +78,13 @@ daglite run [OPTIONS] PIPELINE
 **Options:**
 
 - `--param NAME=VALUE`, `-p NAME=VALUE` - Pipeline parameter (can be specified multiple times)
-- `--backend NAME`, `-b NAME` - Execution backend (`sequential`, `threading`, `multiprocessing`)
-- `--async` - Enable async execution with sibling parallelism
+- `--backend NAME`, `-b NAME` - Execution backend (`sequential`, `threading`, `processes`)
+- `--async` - Use async evaluation (for async tasks or event loop integration)
 - `--settings NAME=VALUE`, `-s NAME=VALUE` - Override global settings (can be specified multiple times)
+
+!!! note "Parallel Execution"
+    Sibling tasks run in parallel when using `--backend threading` or `--backend processes`, even without `--async`.
+    Use `--async` only when you have async tasks or need async/await semantics.
 
 ---
 

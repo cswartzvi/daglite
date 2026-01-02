@@ -165,6 +165,36 @@ class TestSyncTasksWithEvaluateAsync:
         result = asyncio.run(run())
         assert result == 9
 
+    def test_sequential_backend_with_sync_tasks_raises_error(self) -> None:
+        """Sequential backend with sync tasks in evaluate_async() raises ValueError."""
+
+        @task(backend_name="sequential")
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        result_future = add(x=10, y=20)
+
+        async def run():
+            return await evaluate_async(result_future)
+
+        with pytest.raises(ValueError, match="Sequential backend cannot execute synchronous task"):
+            asyncio.run(run())
+
+    def test_sequential_backend_with_map_tasks_raises_error(self) -> None:
+        """Sequential backend with sync map tasks in evaluate_async() raises ValueError."""
+
+        @task(backend_name="sequential")
+        def double(x: int) -> int:
+            return x * 2
+
+        result_future = double.product(x=[1, 2, 3])
+
+        async def run():
+            return await evaluate_async(result_future)
+
+        with pytest.raises(ValueError, match="Sequential backend cannot execute synchronous task"):
+            asyncio.run(run())
+
     def test_map_async(self) -> None:
         """Async evaluation handles map operations."""
 

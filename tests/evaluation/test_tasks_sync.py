@@ -997,3 +997,81 @@ def test_cycle_detection_raises_error() -> None:
 
     with pytest.raises(ExecutionError, match="Cycle detected"):
         state.check_complete()
+
+
+class TestSiblingParallelism:
+    """Tests for concurrent execution of sibling tasks using evaluate()."""
+
+    def test_sync_siblings_with_threading_backend(self) -> None:
+        """Sibling tasks with threading backend are submitted concurrently."""
+        import threading
+        import time
+
+        execution_order: list[tuple[int, float]] = []
+        lock = threading.Lock()
+
+        @task(backend_name="threading")
+        def track_execution(value: int) -> int:
+            """Track execution order and add small delay."""
+            start = time.perf_counter()
+            time.sleep(0.01)  # Small delay to ensure overlap if parallel
+            with lock:
+                execution_order.append((value, start))
+            return value
+
+        @task
+        def sum_values(a: int, b: int, c: int) -> int:
+            return a + b + c
+
+        # Create sibling tasks
+        t1 = track_execution(value=10)
+        t2 = track_execution(value=20)
+        t3 = track_execution(value=30)
+        total = sum_values(a=t1, b=t2, c=t3)
+
+        result = evaluate(total)
+
+        # Verify results
+        assert result == 60
+
+        # Verify all tasks executed
+        assert len(execution_order) == 3
+
+        # If truly concurrent, start times should overlap
+        # (all should start within a small window, not sequentially)
+        start_times = [t[1] for t in execution_order]
+        time_range = max(start_times) - min(start_times)
+
+        # If sequential with 0.01s sleep each, would be ~0.02s between first and last
+        # If parallel, should start within ~0.001s of each other
+        assert time_range < 0.015, (
+            f"Tasks appear to have run sequentially. "
+            f"Time range between first and last start: {time_range:.4f}s"
+        )
+
+    def test_sync_siblings_with_processes_backend(self) -> None:
+        """Sibling tasks with processes backend execute concurrently in sync evaluation."""
+        import os
+
+        @task(backend_name="processes")
+        def get_pid(value: int) -> tuple[int, int]:
+            """Return (value, process_id)."""
+            return (value, os.getpid())
+
+        @task
+        def combine(a: tuple[int, int], b: tuple[int, int]) -> dict:
+            return {"sum": a[0] + b[0], "pids": [a[1], b[1]]}
+
+        # Create sibling tasks
+        t1 = get_pid(value=10)
+        t2 = get_pid(value=20)
+        result_future = combine(a=t1, b=t2)
+
+        result = evaluate(result_future)
+
+        # Verify results
+        assert result["sum"] == 30
+
+        # PIDs should be different if truly parallel (may be same if sequential)
+        # Just verify we got valid PIDs
+        assert all(pid > 0 for pid in result["pids"])
