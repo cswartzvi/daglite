@@ -3,12 +3,13 @@ name: Release
 on:
     push:
         tags:
-            - "v*.*.*" # daglite releases: v0.2.1
+            - "core-v*.*.*" # daglite (core) releases: core-v0.2.1
             - "cli-v*.*.*" # daglite-cli releases: cli-v0.1.0
+            - "rich-v*.*.*" # daglite-rich releases: rich-v0.1.0
 
 jobs:
     release-daglite:
-        if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, 'cli')
+        if: startsWith(github.ref, 'refs/tags/core-v')
         runs-on: ubuntu-latest
         permissions:
             contents: read
