@@ -434,13 +434,13 @@ class Engine:
         Returns:
             The node's execution result (single value or list)
         """
-        from daglite.graph.base import BaseMapGraphNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
-        if isinstance(node, BaseMapGraphNode):
+        if isinstance(node, MapTaskNode):
             # For mapped nodes, submit each iteration separately
             futures = []
             calls = node.build_iteration_calls(resolved_inputs)
@@ -483,14 +483,14 @@ class Engine:
         """
         from asyncio import wrap_future
 
-        from daglite.graph.base import BaseMapGraphNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
         # Determine how to submit to backend based on node type
-        if isinstance(node, BaseMapGraphNode):
+        if isinstance(node, MapTaskNode):
             # For mapped nodes, submit each iteration separately
             futures = []
             calls = node.build_iteration_calls(resolved_inputs)

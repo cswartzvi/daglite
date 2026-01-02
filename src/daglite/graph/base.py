@@ -16,8 +16,6 @@ from dataclasses import field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from typing_extensions import final
-
 from daglite.exceptions import ExecutionError
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
@@ -155,42 +153,10 @@ class BaseGraphNode(abc.ABC):
         """
         ...
 
-    def to_metadata(self) -> "GraphMetadata":
-        """Returns a metadata object for this graph node."""
-        return GraphMetadata(
-            id=self.id,
-            name=self.name,
-            kind="task",
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
-        )
-
-
-class BaseMapGraphNode(BaseGraphNode, abc.ABC):
-    """Mixin for graph nodes that support mapping over inputs."""
-
     @abc.abstractmethod
-    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
-        """
-        Build the list of input dictionaries for each iteration of the mapped node.
-
-        Args:
-            resolved_inputs: Pre-resolved parameter inputs for this node.
-        """
-        ...
-
-    @final
     def to_metadata(self) -> "GraphMetadata":
         """Returns a metadata object for this graph node."""
-        return GraphMetadata(
-            id=self.id,
-            name=self.name,
-            kind="map",
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
-        )
+        ...
 
 
 @dataclass(frozen=True)
