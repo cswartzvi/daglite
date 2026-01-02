@@ -550,6 +550,11 @@ class TestLifecycleLoggingPlugin:
 
     def test_loads_yaml_config(self):
         """Test that plugin loads logging.yml configuration."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        # Create plugin instance to trigger YAML config loading
+        _ = LifecycleLoggingPlugin()
+
         # Config should be loaded (handler names should exist)
         logger = logging.getLogger("daglite.lifecycle")
         handler_classes = [h.__class__.__name__ for h in logger.handlers]
