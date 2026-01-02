@@ -4,18 +4,6 @@ Logging plugin for cross-process/thread execution.
 This module provides logging that works seamlessly across different execution backends
 (threading, multiprocessing, distributed) by leveraging the event reporter system to
 send log records from workers back to the coordinator/main process.
-
-Example:
-    >>> from daglite import evaluate, task
-    >>> from daglite.plugins.default.logging import CentralizedLoggingPlugin, get_logger
-    >>>
-    >>> @task
-    ... def my_task(x: int) -> int:
-    ...     logger = get_logger(__name__)
-    ...     logger.info(f"Processing {x}")
-    ...     return x * 2
-    >>> evaluate(my_task(x=10), plugins=[CentralizedLoggingPlugin()])
-    20
 """
 
 import logging
@@ -135,26 +123,6 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
 
     Args:
         level: Minimum log level to handle on coordinator side (default: WARNING).
-
-    Examples:
-        >>> from daglite import evaluate, task
-        >>> from daglite.plugins.default import CentralizedLoggingPlugin
-        >>> import logging
-        >>> @task
-        ... def my_task(x: int) -> int:
-        ...     logger = get_logger(__name__)
-        ...     logger.info(f"Processing {x}")
-        ...     return x * 2
-
-        Configure logging format to include task context
-        >>> logging.basicConfig(
-        ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
-        ... )
-
-        Add plugin to enable centralized logging
-        >>> plugin = CentralizedLoggingPlugin(level=logging.INFO)
-        >>> evaluate(my_task(x=10), plugins=[plugin])
-        20
     """
 
     def __init__(self, level: int = logging.WARNING):
