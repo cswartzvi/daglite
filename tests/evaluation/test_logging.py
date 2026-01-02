@@ -504,3 +504,26 @@ class TestLifecycleLoggingWithMappedTasks:
         # Should mention processes backend for mapped task
         assert "using processes backend" in log_text
         assert "Task 'triple' - Starting task with 3 iterations using processes backend" in log_text
+
+    def test_logs_mapped_task_failure(self, capsys):
+        """Test that mapped task failures are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def failing_square(x: int) -> int:
+            if x == 2:
+                raise ValueError("Failed on 2")
+            return x * x
+
+        with pytest.raises(ValueError, match="Failed on 2"):
+            evaluate(
+                failing_square.product(x=[1, 2, 3]),
+                plugins=[LifecycleLoggingPlugin()],
+            )
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check that failure is logged with "Mapped iteration failed"
+        assert "Task 'failing_square' - Starting task with 3 iterations" in log_text
+        assert "Mapped iteration failed after" in log_text
+        assert "ValueError: Failed on 2" in log_text
