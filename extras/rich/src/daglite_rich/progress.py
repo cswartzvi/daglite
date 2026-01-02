@@ -131,7 +131,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         duration: float,
     ) -> None:
         map_task_id = self._id_to_task.pop(metadata.id, None)
-        if map_task_id is not None:
+        if map_task_id is not None:  # pragma: no branch
             self._progress.update(map_task_id, visible=False)
 
         # Advance the main progress bar for the completed map node
