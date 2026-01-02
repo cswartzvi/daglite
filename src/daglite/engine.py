@@ -468,7 +468,10 @@ class Engine:
                     except Exception:
                         # Cancel all remaining tasks before propagating
                         for t in tasks.keys():
-                            if not t.done():
+                            if not t.done():  # pragma: no cover
+                                # Defensive: Cancels concurrent siblings on error. Requires
+                                # contrived timing to test where one task fails while others still
+                                # running
                                 t.cancel()
                         await asyncio.gather(*tasks.keys(), return_exceptions=True)
                         raise
@@ -730,16 +733,23 @@ class _ExecutionState:
 
 
 def _materialize_sync(result: Any) -> Any:
-    """Materialize coroutines and generators in synchronous execution context."""
+    """
+    Materialize generators in synchronous execution context.
+
+    Note: Async results (coroutines, async generators) should never reach this function
+    due to early validation in _validate_sync_compatibility(). The checks remain as
+    defensive code.
+    """
     # Handle lists (from map operations)
     if isinstance(result, list):
         return [_materialize_sync(item) for item in result]
 
-    if inspect.iscoroutine(result):
+    if inspect.iscoroutine(result):  # pragma: no cover
+        # Defensive: Should be caught by _validate_sync_compatibility()
         result = asyncio.run(result)
 
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-
+    if isinstance(result, (AsyncGenerator, AsyncIterator)):  # pragma: no cover
+        # Defensive: Should be caught by _validate_sync_compatibility()
         async def _collect():
             items = []
             async for item in result:
