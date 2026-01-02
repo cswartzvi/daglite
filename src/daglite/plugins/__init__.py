@@ -1,7 +1,5 @@
-from daglite.plugins.default import CentralizedLoggingPlugin
-from daglite.plugins.default import get_logger
+from daglite.plugins.manager import register_plugins
 
 __all__ = [
-    "CentralizedLoggingPlugin",
-    "get_logger",
+    "register_plugins",
 ]
