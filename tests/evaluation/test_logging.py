@@ -50,6 +50,23 @@ def worker_task(x: int) -> int:
 
 
 @task
+def failing_map_task(x: int) -> int:
+    """Task that fails for specific values."""
+    logger = get_logger()
+    if x == 2:
+        logger.error(f"Processing failed for {x}")
+        raise ValueError(f"Failed on {x}")
+    logger.info(f"Processing {x}")
+    return x * 2
+
+
+@task
+def triple(x: int) -> int:
+    """Task that triples a value."""
+    return x * 3
+
+
+@task
 def metadata_task(x: int) -> int:
     """Task for testing metadata preservation."""
     logger = get_logger()
@@ -245,17 +262,6 @@ class TestCentralizedLoggingIntegration:
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_mapped_task_error_logging(self, backend_name, caplog):
         """Test that errors in mapped tasks are logged correctly."""
-
-        @task
-        def failing_map_task(x: int) -> int:
-            """Task that fails for specific values."""
-            logger = get_logger()
-            if x == 2:
-                logger.error(f"Processing failed for {x}")
-                raise ValueError(f"Failed on {x}")
-            logger.info(f"Processing {x}")
-            return x * 2
-
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         task_with_backend = failing_map_task.with_options(backend_name=backend_name)
@@ -487,10 +493,6 @@ class TestLifecycleLoggingWithMappedTasks:
     def test_logs_mapped_task_with_processes_backend(self, capsys):
         """Test that mapped task with processes backend is logged correctly."""
         from daglite.plugins.default.logging import LifecycleLoggingPlugin
-
-        @task
-        def triple(x: int) -> int:
-            return x * 3
 
         result = evaluate(
             triple.with_options(backend_name="processes").product(x=[1, 2, 3]),

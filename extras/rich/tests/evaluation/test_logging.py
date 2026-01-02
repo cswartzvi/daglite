@@ -6,6 +6,22 @@ from daglite_rich.logging import RichLifecycleLoggingPlugin
 from daglite import evaluate
 from daglite import task
 
+# Module-level tasks required for multiprocessing backend (pickle compatibility)
+
+
+@task
+def failing_map_task(x: int) -> int:
+    """Task that fails for specific values."""
+    if x == 2:
+        raise ValueError(f"Failed on {x}")
+    return x * 2
+
+
+@task
+def triple(x: int) -> int:
+    """Task that triples a value."""
+    return x * 3
+
 
 class TestRichLifecycleLoggingIntegration:
     """Integration tests for RichLifecycleLoggingPlugin."""
