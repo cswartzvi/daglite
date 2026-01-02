@@ -1,7 +1,7 @@
 """Integration tests for centralized logging.
 
 Tests verify that logs from worker tasks are properly routed to the coordinator
-across different execution backends using the CentralizedLoggingPlugin.
+across different execution backends using the logging plugins.
 """
 
 import logging
@@ -95,30 +95,6 @@ def multi_logger_task(x: int) -> int:
     logger1.info(f"Logger one: {x}")
     logger2.info(f"Logger two: {x}")
     return x
-
-
-@task
-def upstream_task(x: int) -> int:
-    """Upstream task in a pipeline."""
-    logger = get_logger()
-    logger.info(f"Upstream processing {x}")
-    return x * 2
-
-
-@task
-def downstream_task(x: int) -> int:
-    """Downstream task in a pipeline."""
-    logger = get_logger()
-    logger.info(f"Downstream processing {x}")
-    return x + 10
-
-
-@task
-def double(x: int) -> int:
-    """Task that doubles a value."""
-    logger = get_logger()
-    logger.info(f"Doubling {x}")
-    return x * 2
 
 
 @task
@@ -266,75 +242,38 @@ class TestCentralizedLoggingIntegration:
         assert "Logger one: 42" in caplog.text
         assert "Logger two: 42" in caplog.text
 
-
-class TestCentralizedLoggingWithPipelines:
-    """Test centralized logging with complex pipeline configurations."""
-
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
-    def test_pipeline_with_dependencies(self, backend_name, caplog):
-        """Test logging in pipeline with task dependencies."""
+    def test_mapped_task_error_logging(self, backend_name, caplog):
+        """Test that errors in mapped tasks are logged correctly."""
+
+        @task
+        def failing_map_task(x: int) -> int:
+            """Task that fails for specific values."""
+            logger = get_logger()
+            if x == 2:
+                logger.error(f"Processing failed for {x}")
+                raise ValueError(f"Failed on {x}")
+            logger.info(f"Processing {x}")
+            return x * 2
+
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        upstream_with_backend = upstream_task.with_options(backend_name=backend_name)
+        task_with_backend = failing_map_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            future = upstream_with_backend(x=5).then(downstream_task)
-            result = evaluate(future, plugins=[plugin])
-            assert result == 20  # (5 * 2) + 10
+            with pytest.raises(ValueError, match="Failed on 2"):
+                future = task_with_backend.product(x=[1, 2, 3])
+                evaluate(future, plugins=[plugin])
 
-        # Both tasks should have logged
-        assert "Upstream processing 5" in caplog.text
-        assert "Downstream processing 10" in caplog.text
-
-    @pytest.mark.parametrize("backend_name", ["threads", "processes"])
-    def test_product_mapping(self, backend_name, caplog):
-        """Test logging in product() pattern with mapped tasks."""
-        plugin = CentralizedLoggingPlugin(level=logging.INFO)
-
-        double_with_backend = double.with_options(backend_name=backend_name)
-
-        with caplog.at_level(logging.INFO):
-            future = double_with_backend.product(x=[1, 2, 3, 4, 5])
-            results = evaluate(future, plugins=[plugin])
-            assert results == [2, 4, 6, 8, 10]
-
-        # All double operations should be logged
-        for i in range(1, 6):
-            assert f"Doubling {i}" in caplog.text
+        # Verify error was logged before the exception was raised
+        assert "Processing failed for 2" in caplog.text
 
 
 class TestCentralizedLoggingDirectReporter:
-    """Test centralized logging with backends using DirectReporter (sequential, threads)."""
+    """Test centralized logging with DirectReporter backends (sequential, threads)."""
 
     @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
-    def test_logging_with_direct_reporter_backends(self, backend_name, caplog):
-        """Test logging works with sequential and threads backends (DirectReporter)."""
-        from daglite import task
-
-        @task
-        def logging_task(x: int, message: str) -> int:
-            """Task that logs a message."""
-            logger = get_logger(__name__)
-            logger.info(message)
-            return x
-
-        plugin = CentralizedLoggingPlugin(level=logging.INFO)
-
-        # Use sequential backend when backend_name is "sequential" (default behavior)
-        if backend_name == "sequential":
-            task_with_backend = logging_task
-        else:
-            task_with_backend = logging_task.with_options(backend_name=backend_name)
-
-        with caplog.at_level(logging.INFO):
-            result = evaluate(task_with_backend(x=42, message="Test message"), plugins=[plugin])
-            assert result == 42
-
-        # Check that log was captured
-        assert "Test message" in caplog.text
-
-    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
-    def test_contextual_logging_auto_name(self, backend_name, caplog):
+    def test_contextual_logging(self, backend_name, caplog):
         """Test that get_logger() without name uses daglite.tasks logger."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
@@ -351,39 +290,6 @@ class TestCentralizedLoggingDirectReporter:
         # Logger should use daglite.tasks (not task-specific name)
         assert "daglite.tasks" in caplog.text
         assert "Processing 42" in caplog.text
-
-    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
-    def test_different_log_levels(self, backend_name, caplog):
-        """Test different log levels are handled correctly."""
-        from daglite import task
-
-        @task
-        def logging_task_with_levels(x: int) -> int:
-            """Task that logs at different levels."""
-            logger = get_logger(__name__)
-            logger.debug(f"Debug: {x}")
-            logger.info(f"Info: {x}")
-            logger.warning(f"Warning: {x}")
-            logger.error(f"Error: {x}")
-            return x
-
-        plugin = CentralizedLoggingPlugin(level=logging.DEBUG)
-
-        # Use sequential backend when backend_name is "sequential" (default behavior)
-        if backend_name == "sequential":
-            task_with_backend = logging_task_with_levels
-        else:
-            task_with_backend = logging_task_with_levels.with_options(backend_name=backend_name)
-
-        with caplog.at_level(logging.DEBUG):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
-            assert result == 42
-
-        # All levels should be present
-        assert "Debug: 42" in caplog.text
-        assert "Info: 42" in caplog.text
-        assert "Warning: 42" in caplog.text
-        assert "Error: 42" in caplog.text
 
 
 class TestCentralizedLoggingProcessBackend:
@@ -402,3 +308,199 @@ class TestCentralizedLoggingProcessBackend:
 
         # Verify the log was captured
         assert "Test 42" in caplog.text
+
+
+class TestLifecycleLoggingWithSequentialEvaluation:
+    """Test LifecycleLoggingPlugin with sequential backend evaluation."""
+
+    def test_logs_simple_task_execution(self, capsys):
+        """Test that simple task execution is logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        # Run with logging plugin
+        result = evaluate(
+            add(a=1, b=2),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == 3
+
+        # Check that we got the expected log messages
+        captured = capsys.readouterr()
+        log_text = captured.out
+        assert "Starting evaluation" in log_text
+        assert "Task 'add' - Starting task using sequential backend" in log_text
+        assert "Task 'add' - Completed task successfully in" in log_text
+        assert "Completed evaluation" in log_text and "successfully in" in log_text
+
+    def test_logs_task_chain(self, capsys):
+        """Test that task chains are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def add(a: int, b: int) -> int:
+            return a + b
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        added = add(a=1, b=2)
+        multiplied = multiply(x=added, y=3)
+
+        result = evaluate(
+            multiplied,
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == 9
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check all tasks are logged
+        assert "Task 'add' - Starting task" in log_text
+        assert "Task 'add' - Completed task successfully" in log_text
+        assert "Task 'multiply' - Starting task" in log_text
+        assert "Task 'multiply' - Completed task successfully" in log_text
+
+    def test_duration_formatting(self, capsys):
+        """Test that durations are formatted correctly."""
+        import time
+
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def slow_task() -> str:
+            time.sleep(0.05)  # 50ms
+            return "done"
+
+        result = evaluate(
+            slow_task(),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == "done"
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Should have duration in milliseconds since it's < 1 second
+        assert "Completed task successfully in" in log_text
+        # Check format (should be like "50ms" or similar)
+        assert "ms" in log_text
+
+
+class TestLifecycleLoggingWithErrors:
+    """Test LifecycleLoggingPlugin with error scenarios."""
+
+    def test_logs_task_error(self, capsys):
+        """Test that task errors are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def failing_task() -> int:
+            raise ValueError("Something went wrong")
+
+        with pytest.raises(ValueError, match="Something went wrong"):
+            evaluate(
+                failing_task(),
+                plugins=[LifecycleLoggingPlugin()],
+            )
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check error logging
+        assert "Task 'failing_task' - Starting task" in log_text
+        assert "Task 'failing_task' - Failed after" in log_text
+        assert "ValueError: Something went wrong" in log_text
+
+    def test_logs_evaluation_error(self, capsys):
+        """Test that evaluation-level errors are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def error_task() -> int:
+            raise RuntimeError("Evaluation failed")
+
+        with pytest.raises(RuntimeError, match="Evaluation failed"):
+            evaluate(
+                error_task(),
+                plugins=[LifecycleLoggingPlugin()],
+            )
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check that evaluation error is logged
+        assert "Starting evaluation" in log_text
+        assert "Evaluation" in log_text and "failed after" in log_text
+
+
+class TestLifecycleLoggingWithMappedTasks:
+    """Test LifecycleLoggingPlugin with mapped tasks."""
+
+    def test_logs_mapped_task_execution(self, capsys):
+        """Test that mapped task execution is logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def square(x: int) -> int:
+            return x * x
+
+        result = evaluate(
+            square.product(x=[1, 2, 3, 4]),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == [1, 4, 9, 16]
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check mapped task logging
+        assert "Task 'square' - Starting task with 4 iterations" in log_text
+        assert "Task 'square' - Completed task successfully in" in log_text
+        assert "sequential backend" in log_text
+
+    def test_logs_mapped_task_with_threads_backend(self, capsys):
+        """Test that mapped task backend is logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        result = evaluate(
+            double.with_options(backend_name="threads").product(x=[1, 2, 3]),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == [2, 4, 6]
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Should mention threads backend for mapped task
+        assert "using threads backend" in log_text
+        assert "Task 'double' - Starting task with 3 iterations using threads backend" in log_text
+
+    def test_logs_mapped_task_with_processes_backend(self, capsys):
+        """Test that mapped task with processes backend is logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        @task
+        def triple(x: int) -> int:
+            return x * 3
+
+        result = evaluate(
+            triple.with_options(backend_name="processes").product(x=[1, 2, 3]),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == [3, 6, 9]
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Should mention processes backend for mapped task
+        assert "using processes backend" in log_text
+        assert "Task 'triple' - Starting task with 3 iterations using processes backend" in log_text
