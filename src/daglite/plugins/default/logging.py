@@ -281,19 +281,17 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         self._logger.logger.setLevel(level)
 
         # Load logging config if not provided
-        if config is None:
-            config = self._load_default_config()
+        config = config if config is not None else self._load_default_config()
+        self._apply_logging_config(config)
 
-        if config:
-            self._apply_logging_config(config)
-
-    def _load_default_config(self) -> dict[str, Any] | None:
+    def _load_default_config(self) -> dict[str, Any]:
         """Load default logging configuration from logging.yml."""
         config_path = Path(__file__).parent / "logging.yml"
         if config_path.exists():
             with open(config_path) as f:
                 return yaml.safe_load(f)
-        return None
+        else:  # pragma: no cover
+            raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
 
     def _apply_logging_config(self, config: dict[str, Any]) -> None:
         """Apply logging configuration using dictConfig."""
