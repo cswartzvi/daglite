@@ -11,9 +11,7 @@ from typing_extensions import override
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import BaseMapGraphNode
 from daglite.graph.base import GraphMetadata
-from daglite.graph.base import NodeKind
 from daglite.graph.base import ParamInput
 
 T_co = TypeVar("T_co", covariant=True)
@@ -29,11 +27,6 @@ class TaskNode(BaseGraphNode):
     kwargs: Mapping[str, ParamInput]
     """Keyword parameters for the task function."""
 
-    @property
-    @override
-    def kind(self) -> NodeKind:
-        return "task"
-
     @override
     def dependencies(self) -> set[UUID]:
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
@@ -48,6 +41,17 @@ class TaskNode(BaseGraphNode):
             else:
                 inputs[name] = param.resolve(completed_nodes)
         return inputs
+
+    @override
+    def to_metadata(self) -> "GraphMetadata":
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            kind="task",
+            description=self.description,
+            backend_name=self.backend_name,
+            key=self.key,
+        )
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
@@ -75,7 +79,7 @@ class TaskNode(BaseGraphNode):
 
 
 @dataclass(frozen=True)
-class MapTaskNode(BaseMapGraphNode):
+class MapTaskNode(BaseGraphNode):
     """Map function task node representation within the graph IR."""
 
     func: Callable
@@ -123,8 +127,14 @@ class MapTaskNode(BaseMapGraphNode):
 
         return inputs
 
-    @override
     def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Build the list of input dictionaries for each iteration of the mapped node.
+
+        Args:
+            resolved_inputs: Pre-resolved parameter inputs for this node.
+        """
+
         from itertools import product
 
         fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
@@ -162,6 +172,18 @@ class MapTaskNode(BaseMapGraphNode):
             )
 
         return calls
+
+    @override
+    def to_metadata(self) -> "GraphMetadata":
+        """Returns a metadata object for this graph node."""
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            kind="map",
+            description=self.description,
+            backend_name=self.backend_name,
+            key=self.key,
+        )
 
     @override
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:

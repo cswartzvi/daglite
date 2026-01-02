@@ -16,12 +16,10 @@ from dataclasses import field
 from typing import Any, Literal, Protocol
 from uuid import UUID
 
-from typing_extensions import override
-
 from daglite.exceptions import ExecutionError
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
-NodeKind = Literal["task", "map", "artifact"]
+NodeKind = Literal["task", "map"]
 
 
 class GraphBuilder(Protocol):
@@ -66,6 +64,9 @@ class GraphMetadata:
     name: str
     """Human-readable name for the graph."""
 
+    kind: NodeKind
+    """Kind of this graph node (e.g., 'task', 'map', etc.)."""
+
     description: str | None = field(default=None, kw_only=True)
     """Optional human-readable description for the graph."""
 
@@ -75,26 +76,25 @@ class GraphMetadata:
     key: str | None = field(default=None, kw_only=True)
     """Optional key identifying this specific node instance in the execution graph."""
 
-    def to_metadata(self) -> "GraphMetadata":
-        """Returns a metadata object for this graph node."""
-        return GraphMetadata(
-            id=self.id,
-            name=self.name,
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
-        )
-
 
 @dataclass(frozen=True)
-class BaseGraphNode(GraphMetadata, abc.ABC):
+class BaseGraphNode(abc.ABC):
     """Represents a node in the compiled graph Intermediate Representation (IR)."""
 
-    @property
-    @abc.abstractmethod
-    def kind(self) -> NodeKind:
-        """Describes the kind of this graph node."""
-        ...
+    id: UUID
+    """Unique identifier for this node."""
+
+    name: str
+    """Human-readable name for the graph."""
+
+    description: str | None = field(default=None, kw_only=True)
+    """Optional human-readable description for the graph."""
+
+    backend_name: str | None = field(default=None, kw_only=True)
+    """Default backend name for executing nodes in this graph."""
+
+    key: str | None = field(default=None, kw_only=True)
+    """Optional key identifying this specific node instance in the execution graph."""
 
     @abc.abstractmethod
     def dependencies(self) -> set[UUID]:
@@ -153,23 +153,9 @@ class BaseGraphNode(GraphMetadata, abc.ABC):
         """
         ...
 
-
-class BaseMapGraphNode(BaseGraphNode, abc.ABC):
-    """Mixin for graph nodes that support mapping over inputs."""
-
-    @property
-    @override
-    def kind(self) -> NodeKind:
-        return "map"
-
     @abc.abstractmethod
-    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
-        """
-        Build the list of input dictionaries for each iteration of the mapped node.
-
-        Args:
-            resolved_inputs: Pre-resolved parameter inputs for this node.
-        """
+    def to_metadata(self) -> "GraphMetadata":
+        """Returns a metadata object for this graph node."""
         ...
 
 

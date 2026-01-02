@@ -1,0 +1,59 @@
+version: 1
+disable_existing_loggers: false
+
+formatters:
+  default:
+    format: "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+  detailed:
+    format: "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+  task:
+    format: "%(asctime)s | %(levelname)-8s | Task '%(daglite_task_key)s' - %(message)s"
+    datefmt: "%Y-%m-%d %H:%M:%S"
+
+handlers:
+  console:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: default
+    stream: ext://sys.stdout
+
+  console_task:
+    class: logging.StreamHandler
+    level: INFO
+    formatter: task
+    stream: ext://sys.stdout
+
+  file:
+    class: logging.handlers.RotatingFileHandler
+    level: DEBUG
+    formatter: detailed
+    filename: run.log
+    mode: a
+    encoding: utf-8
+    delay: true
+    maxBytes: 10485760  # 10 MB
+    backupCount: 3
+
+loggers:
+  daglite:
+    level: DEBUG
+    handlers: [console, file]
+    propagate: false
+
+  daglite.lifecycle:
+    level: DEBUG
+    handlers: [console, file]
+    propagate: false
+
+  daglite.tasks:
+    level: DEBUG
+    handlers: [console_task, file]
+    propagate: false
+
+root:
+  level: WARNING
+  handlers: [console]

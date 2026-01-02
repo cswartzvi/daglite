@@ -75,7 +75,7 @@ Get a logger instance that works across process/thread/machine boundaries.
 - Automatically injects task context into all log records:
   - `daglite_task_name` - Name of the task being executed
   - `daglite_task_id` - Unique ID for the task instance
-  - `daglite_node_key` - Node key in the DAG
+  - `daglite_task_key` - Node key in the DAG
 - Routes logs through the reporter system when available
 - Falls back to standard Python logging for sequential execution
 
@@ -171,7 +171,7 @@ def process(item: dict):
 Available task context fields:
 - `%(daglite_task_name)s` - Task function name
 - `%(daglite_task_id)s` - Unique task instance ID (UUID)
-- `%(daglite_node_key)s` - Node key in the execution graph
+- `%(daglite_task_key)s` - Node key in the execution graph
 
 ### File Logging
 

@@ -15,6 +15,7 @@ from dataclasses import field
 from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
+from uuid import uuid4
 
 from pluggy import PluginManager
 
@@ -322,11 +323,12 @@ class Engine:
 
     def _run_sequential(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
+        graph_id = uuid4()
         plugin_manager, event_processor = self._setup_plugin_system()
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), is_async=False
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=False
         )
 
         start_time = time.perf_counter()
@@ -346,15 +348,16 @@ class Engine:
             result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
 
+            event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=False
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=False
             )
             raise
         finally:
@@ -363,11 +366,12 @@ class Engine:
 
     async def _run_async(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Async execution with sibling parallelism."""
+        graph_id = uuid4()
         plugin_manager, event_processor = self._setup_plugin_system()
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            root_id=root_id, node_count=len(nodes), is_async=True
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=True
         )
 
         start_time = time.perf_counter()
@@ -404,15 +408,17 @@ class Engine:
             state.check_complete()
             result = state.completed_nodes[root_id]
             duration = time.perf_counter() - start_time
+
+            event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
-                root_id=root_id, result=result, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=True
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                root_id=root_id, error=e, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=True
             )
             raise
         finally:
@@ -428,29 +434,37 @@ class Engine:
         Returns:
             The node's execution result (single value or list)
         """
-        from daglite.graph.base import BaseMapGraphNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
-        future_or_futures = None
-        if isinstance(node, BaseMapGraphNode):
-            future_or_futures = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+        if isinstance(node, MapTaskNode):
+            # For mapped nodes, submit each iteration separately
+            futures = []
+            calls = node.build_iteration_calls(resolved_inputs)
+
+            start_time = time.perf_counter()
+            backend.plugin_manager.hook.before_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls
+            )
+
+            for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
                 future = backend.submit(node.run, call, **kwargs)
-                future_or_futures.append(future)
-        else:
-            future_or_futures = backend.submit(node.run, resolved_inputs)
+                futures.append(future)
 
-        result = None
-        if isinstance(future_or_futures, list):
-            result = [f.result() for f in future_or_futures]
-        elif future_or_futures is not None:
-            result = future_or_futures.result()
-        else:  # pragma: no cover
-            raise RuntimeError("Backend returned None future for node execution.")
+            assert isinstance(futures, list), "Expected list of futures for mapped node."
+            result = [future.result() for future in futures]
+            duration = time.perf_counter() - start_time
+
+            backend.plugin_manager.hook.after_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls, results=result, duration=duration
+            )
+        else:
+            future = backend.submit(node.run, resolved_inputs)
+            result = future.result()
 
         result = _materialize_sync(result)
         return result
@@ -469,31 +483,37 @@ class Engine:
         """
         from asyncio import wrap_future
 
-        from daglite.graph.base import BaseMapGraphNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
 
         # Determine how to submit to backend based on node type
-        future_or_futures = None
-        if isinstance(node, BaseMapGraphNode):
-            future_or_futures = []
-            for idx, call in enumerate(node.build_iteration_calls(resolved_inputs)):
+        if isinstance(node, MapTaskNode):
+            # For mapped nodes, submit each iteration separately
+            futures = []
+            calls = node.build_iteration_calls(resolved_inputs)
+
+            start_time = time.perf_counter()
+            backend.plugin_manager.hook.before_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls
+            )
+
+            for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
                 future = wrap_future(backend.submit(node.run_async, call, **kwargs))
-                future_or_futures.append(future)
-        else:
-            future_or_futures = wrap_future(backend.submit(node.run_async, resolved_inputs))
+                futures.append(future)
 
-        # Determine how to await results based on future returned from submission
-        result = None
-        if isinstance(future_or_futures, list):
-            result = await asyncio.gather(*future_or_futures)
-        elif future_or_futures is not None:
-            result = await future_or_futures
-        else:  # pragma: no cover
-            raise RuntimeError("Backend returned None future for node execution.")
+            result = await asyncio.gather(*futures)
+            duration = time.perf_counter() - start_time
+
+            backend.plugin_manager.hook.after_mapped_node_execute(
+                metadata=node.to_metadata(), inputs_list=calls, results=result, duration=duration
+            )
+        else:
+            future = wrap_future(backend.submit(node.run_async, resolved_inputs))
+            result = await future
 
         result = await _materialize_async(result)
 

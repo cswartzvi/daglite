@@ -4,31 +4,30 @@ Logging plugin for cross-process/thread execution.
 This module provides logging that works seamlessly across different execution backends
 (threading, multiprocessing, distributed) by leveraging the event reporter system to
 send log records from workers back to the coordinator/main process.
-
-Example:
-    >>> from daglite import evaluate, task
-    >>> from daglite.plugins.default.logging import CentralizedLoggingPlugin, get_logger
-    >>>
-    >>> @task
-    ... def my_task(x: int) -> int:
-    ...     logger = get_logger(__name__)
-    ...     logger.info(f"Processing {x}")
-    ...     return x * 2
-    >>> evaluate(my_task(x=10), plugins=[CentralizedLoggingPlugin()])
-    20
 """
 
 import logging
+import logging.config
 import threading
+from pathlib import Path
 from typing import Any, MutableMapping
+from uuid import UUID
 
+import yaml
+from typing_extensions import override
+
+from daglite.backends.context import get_current_task
 from daglite.backends.context import get_reporter
+from daglite.graph.base import GraphMetadata
 from daglite.plugins.base import BidirectionalPlugin
+from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import EventRegistry
+from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
-DEFAULT_LOGGER_NAME = "daglite.tasks"
+DEFAULT_LOGGER_NAME_COORD = "daglite.lifecycle"  # Coordinator-side default logger
+DEFAULT_LOGGER_NAME_TASKS = "daglite.tasks"  # Worker-side default logger
 
 # Lock to prevent race conditions when adding handlers (critical for free-threaded Python)
 _logger_lock = threading.Lock()
@@ -40,7 +39,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     This is the main entry point into daglite logging for user code. It returns a standard
     Python `logging.LoggerAdapter` that automatically:
-    - Injects task context (`daglite_task_name`, `daglite_task_id`, and `daglite_node_key`) into
+    - Injects task context (`daglite_task_name`, `daglite_task_id`, and `daglite_task_key`) into
       all log records
     - Uses the reporter system when available for centralized logging (requires
       CentralizedLoggingPlugin on coordinator side)
@@ -49,7 +48,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     Args:
         name: Logger name for code organization. If None, uses "daglite.tasks". Typically use
             `__name__` for module-based naming. Note: Task context (daglite_task_name,
-            daglite_task_id, daglite_node_key) is automatically added to log records
+            daglite_task_id, daglite_task_key) is automatically added to log records
             regardless of logger name and can be used in formatters.
 
     Returns:
@@ -80,8 +79,11 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
+    if get_current_task() is not None:
+        name = DEFAULT_LOGGER_NAME_TASKS  # Called within a worker task context
+
     if name is None:
-        name = DEFAULT_LOGGER_NAME
+        name = DEFAULT_LOGGER_NAME_COORD
 
     base_logger = logging.getLogger(name)
 
@@ -90,6 +92,11 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     if reporter and reporter.is_remote:  # pragma: no branch
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
+                # In worker processes, remove all existing handlers and only use ReporterHandler
+                # The coordinator will receive logs via the reporter and re-emit them through
+                # its own handlers (console, file, etc.)
+                base_logger.handlers.clear()
+
                 handler = _ReporterHandler(reporter)
                 base_logger.addHandler(handler)
 
@@ -116,26 +123,6 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
 
     Args:
         level: Minimum log level to handle on coordinator side (default: WARNING).
-
-    Examples:
-        >>> from daglite import evaluate, task
-        >>> from daglite.plugins.default import CentralizedLoggingPlugin
-        >>> import logging
-        >>> @task
-        ... def my_task(x: int) -> int:
-        ...     logger = get_logger(__name__)
-        ...     logger.info(f"Processing {x}")
-        ...     return x * 2
-
-        Configure logging format to include task context
-        >>> logging.basicConfig(
-        ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
-        ... )
-
-        Add plugin to enable centralized logging
-        >>> plugin = CentralizedLoggingPlugin(level=logging.INFO)
-        >>> evaluate(my_task(x=10), plugins=[plugin])
-        20
     """
 
     def __init__(self, level: int = logging.WARNING):
@@ -191,12 +178,13 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
             "thread",
             "threadName",
             "taskName",
+            "asctime",  # Generated by formatters, not allowed in extra
         }
 
         extra = {k: v for k, v in all_extra.items() if k not in standard_fields}
 
         # Emit record to coordinator-side logger (excluding ReporterHandler to avoid loops)
-        base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME)
+        base_logger = logging.getLogger(logger_name or DEFAULT_LOGGER_NAME_TASKS)
         record = base_logger.makeRecord(
             name=base_logger.name,
             level=log_level,
@@ -228,15 +216,245 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
         # Mark record to prevent re-emission by ReporterHandler (avoid infinite loops)
         setattr(record, "_daglite_already_forwarded", True)
 
-        # Temporarily restore propagation for coordinator re-emission
-        # (worker processes may have disabled it to prevent duplicates)
-        original_propagate = base_logger.propagate
-        base_logger.propagate = True
-        try:
-            # Use normal logging flow (includes propagation to parent loggers)
-            base_logger.handle(record)
-        finally:
-            base_logger.propagate = original_propagate
+        # Use normal logging flow with configured propagation settings
+        base_logger.handle(record)
+
+
+class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
+    """
+    Plugin that logs node lifecycle events (start, completion, failure).
+
+    This plugin extends CentralizedLoggingPlugin to log key task lifecycle events such as
+    task start, successful completion, and failure. It provides visibility into task execution
+    flow in the logs.
+
+    Args:
+        name: Optional logger name to use (default: "daglite").
+        level: Optional minimum log level to handle on coordinator side (default: INFO).
+    """
+
+    __config_attrs__: list[str] = ["mapped_nodes"]
+
+    def __init__(
+        self,
+        name: str | None = None,
+        level: int = logging.INFO,
+        config: dict[str, Any] | None = None,
+    ):
+        super().__init__(level=level)
+        self._logger = get_logger(name)
+        self._mapped_nodes: set[UUID] = set()
+
+        # Set logger level to ensure debug messages aren't filtered out.
+        self._logger.logger.setLevel(level)
+
+        # Load logging config if not provided
+        config = config if config is not None else self._load_default_config()
+        self._apply_logging_config(config)
+
+    def _load_default_config(self) -> dict[str, Any]:
+        """Load default logging configuration from logging.yml."""
+        config_path = Path(__file__).parent / "logging.yml"
+        if config_path.exists():
+            with open(config_path) as f:
+                return yaml.safe_load(f)
+        else:  # pragma: no cover
+            raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
+
+    def _apply_logging_config(self, config: dict[str, Any]) -> None:
+        """Apply logging configuration using dictConfig."""
+        logging.config.dictConfig(config)
+
+    @override
+    def to_config(self) -> dict[str, Any]:
+        return {"mapped_nodes": list(self._mapped_nodes)}
+
+    @classmethod
+    @override
+    def from_config(cls, config: dict[str, Any]) -> "LifecycleLoggingPlugin":
+        instance = cls()  # Use defaults when deserializing on workers
+        instance._mapped_nodes = set(config.get("mapped_nodes", []))
+        return instance
+
+    def register_event_handlers(self, registry: EventRegistry) -> None:
+        """
+        Register event handlers for task lifecycle events.
+
+        Args:
+            registry: Event registry for registering handlers
+        """
+        super().register_event_handlers(registry)
+        registry.register("logging-node-start", self._handle_node_start)
+        registry.register("logging-node-complete", self._handle_node_complete)
+        registry.register("logging-node-fail", self._handle_task_fail)
+
+    @hook_impl
+    def before_graph_execute(
+        self,
+        graph_id: UUID,
+        root_id: UUID,
+        node_count: int,
+        is_async: bool,
+    ) -> None:
+        eval_type = "async evaluation" if is_async else "evaluation"
+        self._logger.info(f"Starting {eval_type} {graph_id}")
+        self._logger.debug(f"Evaluation {graph_id}: Computing {node_count} tasks total")
+        self._logger.debug(f"Evaluation {graph_id}: Root task ID is {root_id}")
+
+    @hook_impl
+    def after_graph_execute(
+        self,
+        graph_id: UUID,
+        root_id: UUID,
+        result: Any,
+        duration: float,
+        is_async: bool,
+    ) -> None:
+        eval_type = "async evaluation" if is_async else "evaluation"
+        self._logger.info(
+            f"Completed {eval_type} {graph_id} successfully in {_format_duration(duration)}"
+        )
+
+    @hook_impl
+    def on_graph_error(
+        self,
+        graph_id: UUID,
+        root_id: UUID,
+        error: Exception,
+        duration: float,
+        is_async: bool,
+    ) -> None:
+        eval_type = "async evaluation" if is_async else "evaluation"
+        self._logger.error(
+            f"{eval_type.capitalize()} {graph_id} failed after {_format_duration(duration)} with "
+            f"error: {error}"
+        )
+
+    @hook_impl
+    def before_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+    ) -> None:
+        self._mapped_nodes.add(metadata.id)
+        # Coordinator-side hooks need manual task context since get_current_task() returns None.
+        # This enables format strings like %(daglite_task_name)s to work in log output.
+        node_key = metadata.key or metadata.name
+        backend_name = metadata.backend_name or "sequential"
+        self._logger.info(
+            f"Task '{node_key}' - Starting task with {len(inputs_list)} iterations using "
+            f"{backend_name} backend",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
+
+    @hook_impl
+    def before_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "backend_name": metadata.backend_name,
+        }
+        if reporter:
+            reporter.report("logging-node-start", data=data)
+        else:  # pragma: no cover
+            self._handle_node_start(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def after_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {"node_id": metadata.id, "node_key": metadata.key, "duration": duration}
+        if reporter:
+            reporter.report("logging-node-complete", data=data)
+        else:  # pragma: no cover
+            self._handle_node_complete(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def on_node_error(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        error: Exception,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "error": str(error),
+            "error_type": type(error).__name__,
+            "duration": duration,
+        }
+        if reporter:
+            reporter.report("logging-node-fail", data=data)
+        else:  # pragma: no cover
+            self._handle_task_fail(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def after_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+        results: list[Any],
+        duration: float,
+    ) -> None:
+        node_key = metadata.key or metadata.name
+        self._logger.info(
+            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
+
+    def _handle_node_start(self, event: dict[str, Any]) -> None:
+        node_id = event["node_id"]
+        node_key = event["node_key"]
+        backend_name = event.get("backend_name") or "sequential"
+        if node_id in self._mapped_nodes:
+            self._logger.debug(
+                f"Task '{node_key}' - Starting iteration using {backend_name} backend"
+            )
+        else:
+            self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
+
+    def _handle_node_complete(self, event: dict[str, Any]) -> None:
+        node_id = event["node_id"]
+        node_key = event["node_key"]
+        duration = event.get("duration", 0)
+        if node_id in self._mapped_nodes:
+            self._logger.debug(
+                f"Task '{node_key}' - Completed iteration successfully in "
+                f"{_format_duration(duration)}"
+            )
+        else:
+            self._logger.info(
+                f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}"
+            )
+
+    def _handle_task_fail(self, event: dict[str, Any]) -> None:
+        node_id = event["node_id"]
+        node_key = event["node_key"]
+        error = event.get("error", "unknown error")
+        error_type = event.get("error_type", "Exception")
+        duration = event.get("duration", 0)
+        if node_id in self._mapped_nodes:
+            self._logger.error(
+                f"Task '{node_key}' - Mapped iteration failed after "
+                f"{_format_duration(duration)}: {error_type}: {error}"
+            )
+        else:
+            self._logger.error(
+                f"Task '{node_key}' - Failed after {_format_duration(duration)}: "
+                f"{error_type}: {error}"
+            )
 
 
 class _ReporterHandler(logging.Handler):
@@ -333,13 +551,42 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         extra = kwargs.get("extra", {})
         task = get_current_task()
         if task:
-            extra.update(
-                {
-                    "daglite_task_id": str(task.id),
-                    "daglite_task_name": task.name,
-                    "daglite_node_key": task.key or "unknown",
-                }
-            )
+            extra.update(_build_task_context(task.id, task.name, task.key))
 
         kwargs["extra"] = extra
         return msg, dict(kwargs)
+
+
+def _build_task_context(task_id: UUID, task_name: str, task_key: str | None) -> dict[str, str]:
+    """
+    Build task context dict for logging extra fields.
+
+    Helper to construct the standard daglite task context fields.
+    Used when automatic context injection isn't available (coordinator-side hooks)
+    or when merging with existing extra dicts.
+
+    Args:
+        task_id: Task UUID
+        task_name: Task name
+        task_key: Task key (optional)
+
+    Returns:
+        Dict with daglite_task_id, daglite_task_name, and daglite_task_key
+    """
+    return {
+        "daglite_task_id": str(task_id),
+        "daglite_task_name": task_name,
+        "daglite_task_key": task_key or task_name,
+    }
+
+
+def _format_duration(duration: float) -> str:
+    """Format duration in seconds to human-readable string."""
+    if duration < 1:
+        return f"{duration * 1000:.0f} ms"
+    elif duration < 60:
+        return f"{duration:.2f} s"
+    else:
+        minutes = int(duration // 60)
+        seconds = duration % 60
+        return f"{minutes} min {seconds:.2f} s"

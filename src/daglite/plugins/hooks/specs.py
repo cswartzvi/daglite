@@ -8,15 +8,15 @@ from daglite.plugins.hooks.markers import hook_spec
 from daglite.plugins.reporters import EventReporter
 
 
-class NodeSpec:
-    """Hook specifications for node-level execution events."""
+class WorkerSideNodeSpecs:
+    """Hook specifications for node-level execution events on the **backend worker**."""
 
     @hook_spec
     def before_node_execute(
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called before a node begins execution.
@@ -34,7 +34,7 @@ class NodeSpec:
         inputs: dict[str, Any],
         result: Any,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called after a node completes execution successfully.
@@ -54,7 +54,7 @@ class NodeSpec:
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
-        reporter: EventReporter | None = None,
+        reporter: EventReporter | None,
     ) -> None:
         """
         Called when a node execution fails.
@@ -68,12 +68,49 @@ class NodeSpec:
         """
 
 
+class CoordinatorSideNodeSpecs:
+    """Hook specifications for node-level execution events on the **coordinator**."""
+
+    @hook_spec
+    def before_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+    ) -> None:
+        """
+        Called before a mapped node begins execution.
+
+        Args:
+            metadata: Metadata for the mapped node to be executed.
+            inputs_list: List of resolved inputs for each mapping.
+        """
+
+    @hook_spec
+    def after_mapped_node_execute(
+        self,
+        metadata: GraphMetadata,
+        inputs_list: list[dict[str, Any]],
+        results: list[Any],
+        duration: float,
+    ) -> None:
+        """
+        Called after a mapped node completes execution successfully.
+
+        Args:
+            metadata: Metadata for the executed mapped node.
+            inputs_list: List of resolved inputs for each mapping.
+            duration: Execution time in seconds for all mappings.
+            results: List of results produced by each mapping.
+        """
+
+
 class GraphSpec:
-    """Hook specifications for graph-level execution events."""
+    """Hook specifications for graph-level execution events on the **coordinator**."""
 
     @hook_spec
     def before_graph_execute(
         self,
+        graph_id: UUID,
         root_id: UUID,
         node_count: int,
         is_async: bool,
@@ -82,6 +119,7 @@ class GraphSpec:
         Called before graph execution begins.
 
         Args:
+            graph_id: UUID of the entire graph execution
             root_id: UUID of the root node
             node_count: Total number of nodes in the graph
             is_async: True for async execution, False for sequential
@@ -90,6 +128,7 @@ class GraphSpec:
     @hook_spec
     def after_graph_execute(
         self,
+        graph_id: UUID,
         root_id: UUID,
         result: Any,
         duration: float,
@@ -99,6 +138,7 @@ class GraphSpec:
         Called after graph execution completes successfully.
 
         Args:
+            graph_id: UUID of the entire graph execution
             root_id: UUID of the root node
             result: Final result of the graph execution
             duration: Total time taken to execute in seconds
@@ -108,6 +148,7 @@ class GraphSpec:
     @hook_spec
     def on_graph_error(
         self,
+        graph_id: UUID,
         root_id: UUID,
         error: Exception,
         duration: float,
@@ -117,6 +158,7 @@ class GraphSpec:
         Called when graph execution fails.
 
         Args:
+            graph_id: UUID of the entire graph execution
             root_id: UUID of the root node
             error: The exception that was raised
             duration: Time taken before failure in seconds

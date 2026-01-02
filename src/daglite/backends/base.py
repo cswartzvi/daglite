@@ -17,9 +17,9 @@ T = TypeVar("T")
 class Backend(abc.ABC):
     """Abstract base class for task execution backends."""
 
-    _plugin_manager: PluginManager
-    _event_processor: EventProcessor
-    _reporter: EventReporter
+    plugin_manager: PluginManager
+    event_processor: EventProcessor
+    reporter: EventReporter
 
     @abc.abstractmethod
     def _get_reporter(self) -> EventReporter:
@@ -37,9 +37,9 @@ class Backend(abc.ABC):
             plugin_manager: Plugin manager for hook execution
             event_processor: Event processor for event handling
         """
-        self._plugin_manager = plugin_manager
-        self._event_processor = event_processor
-        self._reporter = self._get_reporter()
+        self.plugin_manager = plugin_manager
+        self.event_processor = event_processor
+        self.reporter = self._get_reporter()
         self._start()
 
     def _start(self) -> None:
@@ -58,10 +58,10 @@ class Backend(abc.ABC):
         Subclasses should NOT override this method. Instead, override `_stop()`.
         """
         self._stop()
-        delattr(self, "_plugin_manager")
-        delattr(self, "_event_processor")
-        if hasattr(self, "_reporter"):  # pragma: no branch
-            del self._reporter
+        delattr(self, "plugin_manager")
+        delattr(self, "event_processor")
+        if hasattr(self, "reporter"):  # pragma: no branch
+            del self.reporter
 
     def _stop(self) -> None:
         """

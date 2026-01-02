@@ -9,7 +9,9 @@ from multiprocessing import Queue as MultiprocessingQueue
 from unittest.mock import Mock
 from unittest.mock import patch
 
-from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME
+import pytest
+
+from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME_COORD
 from daglite.plugins.default.logging import LOGGER_EVENT
 from daglite.plugins.default.logging import CentralizedLoggingPlugin
 from daglite.plugins.default.logging import _ReporterHandler
@@ -19,6 +21,24 @@ from daglite.plugins.reporters import DirectReporter
 from daglite.plugins.reporters import ProcessReporter
 
 
+@pytest.fixture(autouse=True)
+def reset_logging():
+    """Reset logging configuration after each test to prevent interference with caplog.
+
+    This is needed because LifecycleLoggingPlugin configures logging globally via YAML,
+    which can interfere with pytest's caplog fixture.
+    """
+    yield
+
+    # Clean up all daglite loggers after each test
+    for logger_name in list(logging.Logger.manager.loggerDict.keys()):
+        if logger_name.startswith("daglite"):
+            logger = logging.getLogger(logger_name)
+            logger.handlers.clear()
+            logger.setLevel(logging.NOTSET)
+            logger.propagate = True
+
+
 class TestGetLoggerUnit:
     """Unit tests for get_logger function."""
 
@@ -26,7 +46,7 @@ class TestGetLoggerUnit:
         """Test get_logger with default name."""
         logger = get_logger()
         assert isinstance(logger, logging.LoggerAdapter)
-        assert logger.logger.name == DEFAULT_LOGGER_NAME
+        assert logger.logger.name == DEFAULT_LOGGER_NAME_COORD
 
     def test_get_logger_custom_name(self):
         """Test get_logger with custom name."""
@@ -134,6 +154,7 @@ class TestTaskLoggerAdapter:
         task_metadata = GraphMetadata(
             id=uuid4(),
             name="test_task",
+            kind="task",
             description="Test",
             backend_name="processes",
             key="test_task[0]",
@@ -145,7 +166,7 @@ class TestTaskLoggerAdapter:
             assert msg == "test message"
             assert "extra" in kwargs
             assert kwargs["extra"]["daglite_task_name"] == "test_task"
-            assert kwargs["extra"]["daglite_node_key"] == "test_task[0]"
+            assert kwargs["extra"]["daglite_task_key"] == "test_task[0]"
             assert "daglite_task_id" in kwargs["extra"]
 
 
@@ -322,7 +343,7 @@ class TestCentralizedLoggingPluginUnit:
                 "filename": "worker.py",
                 "lineno": 123,
                 "daglite_task_name": "test_task",
-                "daglite_node_key": "test_task[0]",
+                "daglite_task_key": "test_task[0]",
             },
         }
 
@@ -335,7 +356,7 @@ class TestCentralizedLoggingPluginUnit:
         assert record.filename == "worker.py"
         assert record.lineno == 123
         assert record.daglite_task_name == "test_task"
-        assert record.daglite_node_key == "test_task[0]"
+        assert record.daglite_task_key == "test_task[0]"
 
 
 class TestReporterImplementations:
@@ -446,3 +467,137 @@ class TestReporterImplementations:
 
         # put was called despite error
         assert queue.put.called
+
+
+class TestFormatDuration:
+    """Unit tests for _format_duration helper function."""
+
+    def test_format_milliseconds(self):
+        """Test formatting durations less than 1 second."""
+        from daglite.plugins.default.logging import _format_duration
+
+        assert _format_duration(0.001) == "1 ms"
+        assert _format_duration(0.5) == "500 ms"
+        assert _format_duration(0.999) == "999 ms"
+
+    def test_format_seconds(self):
+        """Test formatting durations in seconds."""
+        from daglite.plugins.default.logging import _format_duration
+
+        assert _format_duration(1.0) == "1.00 s"
+        assert _format_duration(1.5) == "1.50 s"
+        assert _format_duration(59.99) == "59.99 s"
+
+    def test_format_minutes(self):
+        """Test formatting durations in minutes."""
+        from daglite.plugins.default.logging import _format_duration
+
+        assert _format_duration(60.0) == "1 min 0.00 s"
+        assert _format_duration(90.5) == "1 min 30.50 s"
+        assert _format_duration(125.0) == "2 min 5.00 s"
+
+
+class TestBuildTaskContext:
+    """Unit tests for _build_task_context helper function."""
+
+    def test_build_task_context_with_key(self):
+        """Test building task context with all fields."""
+        from uuid import UUID
+
+        from daglite.plugins.default.logging import _build_task_context
+
+        task_id = UUID("12345678-1234-5678-1234-567812345678")
+        context = _build_task_context(task_id, "my_task", "task_key")
+
+        assert context["daglite_task_id"] == "12345678-1234-5678-1234-567812345678"
+        assert context["daglite_task_name"] == "my_task"
+        assert context["daglite_task_key"] == "task_key"
+
+    def test_build_task_context_without_key(self):
+        """Test building task context when key is None."""
+        from uuid import UUID
+
+        from daglite.plugins.default.logging import _build_task_context
+
+        task_id = UUID("12345678-1234-5678-1234-567812345678")
+        context = _build_task_context(task_id, "my_task", None)
+
+        assert context["daglite_task_id"] == "12345678-1234-5678-1234-567812345678"
+        assert context["daglite_task_name"] == "my_task"
+        assert context["daglite_task_key"] == "my_task"  # Falls back to name
+
+
+class TestLifecycleLoggingPlugin:
+    """Unit tests for LifecycleLoggingPlugin."""
+
+    def test_initialization_default(self):
+        """Test plugin initialization with defaults."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        assert plugin._mapped_nodes == set()
+        assert plugin._logger is not None
+
+    def test_initialization_with_custom_level(self):
+        """Test plugin initialization with custom log level."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin(level=logging.DEBUG)
+
+        # Logger level should be set
+        assert plugin._logger.logger.level == logging.DEBUG
+
+    def test_loads_yaml_config(self):
+        """Test that plugin loads logging.yml configuration."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        # Create plugin instance to trigger YAML config loading
+        _ = LifecycleLoggingPlugin()
+
+        # Config should be loaded (handler names should exist)
+        logger = logging.getLogger("daglite.lifecycle")
+        handler_classes = [h.__class__.__name__ for h in logger.handlers]
+
+        # Should have either StreamHandler or FileHandler or RotatingFileHandler
+        assert any(
+            name in ["StreamHandler", "FileHandler", "RotatingFileHandler"]
+            for name in handler_classes
+        )
+
+    def test_serialization(self):
+        """Test plugin serialization to/from config."""
+        from uuid import UUID
+
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        plugin._mapped_nodes.add(UUID("12345678-1234-5678-1234-567812345678"))
+        plugin._mapped_nodes.add(UUID("87654321-4321-8765-4321-876543218765"))
+
+        # Serialize
+        config = plugin.to_config()
+        assert "mapped_nodes" in config
+        assert len(config["mapped_nodes"]) == 2
+
+        # Deserialize
+        new_plugin = LifecycleLoggingPlugin.from_config(config)
+        assert len(new_plugin._mapped_nodes) == 2
+
+    def test_tracks_mapped_nodes(self):
+        """Test that plugin tracks mapped node IDs."""
+        from uuid import uuid4
+
+        from daglite.graph.base import GraphMetadata
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        # Simulate before_mapped_node_execute hook
+        node_id = uuid4()
+        metadata = GraphMetadata(id=node_id, name="test_task", kind="map", key="test_key")
+
+        plugin.before_mapped_node_execute(metadata, inputs_list=[{}, {}])
+
+        # Should track the node ID
+        assert node_id in plugin._mapped_nodes

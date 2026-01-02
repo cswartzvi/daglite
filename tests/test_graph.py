@@ -126,7 +126,6 @@ class TestTaskNodes:
             },
         )
 
-        assert node.kind == "task"
         assert node.name == "add_task"
         assert len(node.kwargs) == 2
 
@@ -189,7 +188,6 @@ class TestMapTaskNodes:
             mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
         )
 
-        assert node.kind == "map"
         assert node.mode == "extend"
 
     def test_zip_mode(self) -> None:
@@ -209,7 +207,6 @@ class TestMapTaskNodes:
             mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
         )
 
-        assert node.kind == "map"
         assert node.mode == "zip"
 
     def test_dependencies_from_fixed(self) -> None:
