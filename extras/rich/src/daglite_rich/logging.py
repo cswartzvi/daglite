@@ -30,10 +30,8 @@ class RichLifecycleLoggingPlugin(LifecycleLoggingPlugin):
         super().__init__(name=name, level=level, config=config)
 
     @override
-    def _load_default_config(self) -> dict[str, Any] | None:
+    def _load_default_config(self) -> dict[str, Any]:
         """Load rich-specific logging configuration from logging.yml."""
         config_path = Path(__file__).parent / "logging.yml"
-        if config_path.exists():
-            with open(config_path) as f:
-                return yaml.safe_load(f)
-        return None
+        with open(config_path) as f:
+            return yaml.safe_load(f)
