@@ -44,39 +44,6 @@ T = TypeVar("T")
 # region API
 
 
-# Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload  # some type checkers need this overload for compatibility
-async def evaluate(
-    expr: TaskFuture[CoroutineType[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    expr: TaskFuture[Coroutine[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    expr: TaskFuture[AsyncGenerator[T, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    expr: TaskFuture[AsyncIterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
 @overload
 def evaluate(
     expr: TaskFuture[Generator[T, Any, Any]],
@@ -122,6 +89,9 @@ def evaluate(
     non-sequential backends (e.g., `threading`, `processes`). This enables parallel execution
     without requiring async/await syntax.
 
+    **Important**: Async tasks (defined with `async def`) cannot be executed with `evaluate()`.
+    Use `evaluate_async()` for async tasks.
+
     Args:
         expr: Task graph object to evaluate, typically a `TaskFuture` or `MapTaskFuture`.
         plugins: Optional list of plugin implementations for this execution only.
@@ -129,6 +99,9 @@ def evaluate(
 
     Returns:
         The result of evaluating the root task
+
+    Raises:
+        ValueError: If async tasks are used with synchronous evaluation
 
     Examples:
         >>> from daglite import task, evaluate
@@ -354,6 +327,23 @@ class Engine:
 
         return self._plugin_manager, self._event_processor
 
+    def _validate_sync_compatibility(self, nodes: dict[UUID, BaseGraphNode]) -> None:
+        """
+        Validate that nodes are compatible with synchronous execution.
+
+        Raises ValueError if any node has an async task function.
+        """
+        from daglite.graph.nodes import MapTaskNode
+        from daglite.graph.nodes import TaskNode
+
+        for node in nodes.values():
+            if isinstance(node, (TaskNode, MapTaskNode)):  # pragma: no branch
+                if inspect.iscoroutinefunction(node.func):  # pragma: no branch
+                    raise ValueError(
+                        f"Cannot execute async task '{node.name}' with evaluate(). "
+                        "Use evaluate_async() for async tasks."
+                    )
+
     def _validate_async_compatibility(self, nodes: dict[UUID, BaseGraphNode]) -> None:
         """
         Validate that nodes are compatible with async execution.
@@ -376,6 +366,9 @@ class Engine:
     def _run_sequential(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Sequential blocking execution."""
         from concurrent.futures import wait
+
+        # Validate that async tasks are not used with sync evaluation
+        self._validate_sync_compatibility(nodes)
 
         graph_id = uuid4()
         plugin_manager, event_processor = self._setup_plugin_system()
@@ -436,7 +429,6 @@ class Engine:
 
     async def _run_async(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
         """Async execution with sibling parallelism."""
-        # Validate that sequential backend is not used with sync tasks
         self._validate_async_compatibility(nodes)
 
         graph_id = uuid4()
