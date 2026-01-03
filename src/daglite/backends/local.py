@@ -133,7 +133,6 @@ class ProcessBackend(Backend):
         max_workers = settings.max_parallel_processes
 
         # Use the mp_context that was already determined in _get_reporter
-        # Use the mp_context that was already determined in _get_reporter
         assert isinstance(self.reporter, ProcessReporter)
         self._reporter_id = self.event_processor.add_source(self.reporter.queue)
         serialized_pm = serialize_plugin_manager(self.plugin_manager)
