@@ -243,7 +243,8 @@ def _run_sync_impl(
     timeout: float | None = None,
 ) -> Any:
     """Helper to run a node synchronously with context setup, retries, and timeout."""
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
 
     from daglite.backends.context import get_plugin_manager
     from daglite.backends.context import get_reporter
@@ -299,17 +300,13 @@ def _run_sync_impl(
                     duration=duration,
                     reporter=reporter,
                 )
-                raise TimeoutError(
-                    f"Task '{metadata.key}' exceeded timeout of {timeout}s"
-                ) from error
+                raise TimeoutError(f"Task '{metadata.key}' exceeded timeout of {timeout}s")
 
             except Exception as error:
                 last_error = error
                 attempt += 1
                 if attempt >= max_attempts:
-                    # No more retries left
-                    break
-                # Continue to next attempt
+                    break  # No more retries left
 
         # All attempts exhausted
         duration = time.time() - start_time
@@ -368,13 +365,7 @@ async def _run_async_impl(
                     else:
                         result = await func(**resolved_inputs)
                 else:
-                    if metadata.backend_name == "sequential":  # pragma: no cover
-                        # Defensive: This should be caught earlier during graph validation in _run_async()
-                        raise ValueError(
-                            "Sequential backend cannot execute synchronous tasks with evaluate_async(). "
-                            "Use threading/processes backend for parallel execution, or evaluate() for "
-                            "sync tasks."
-                        )
+                    assert metadata.backend_name != "sequential"
                     result = func(**resolved_inputs)
 
                 duration = time.time() - start_time
@@ -399,17 +390,13 @@ async def _run_async_impl(
                     duration=duration,
                     reporter=reporter,
                 )
-                raise TimeoutError(
-                    f"Task '{metadata.key}' exceeded timeout of {timeout}s"
-                ) from error
+                raise TimeoutError(f"Task '{metadata.key}' exceeded timeout of {timeout}s")
 
             except Exception as error:
                 last_error = error
                 attempt += 1
                 if attempt >= max_attempts:
-                    # No more retries left
-                    break
-                # Continue to next attempt
+                    break  # No more retries left
 
         # All attempts exhausted
         duration = time.time() - start_time
