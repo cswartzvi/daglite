@@ -1,0 +1,29 @@
+# --- build system ---
+
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# --- project & dependencies ---
+
+[project]
+name = "daglite-viz"
+description = "Graph visualization for daglite using Mermaid and Graphviz."
+dynamic = ["version"]
+readme = "README.md"
+dependencies = ["daglite"]
+
+[project.optional-dependencies]
+graphviz = ["graphviz>=0.20.0"]
+all = ["daglite-viz[graphviz]"]
+
+# --- tool.setuptools ---
+
+[tool.setuptools.dynamic.version]
+attr = "daglite_viz.__version__"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"daglite_viz" = ["py.typed"]

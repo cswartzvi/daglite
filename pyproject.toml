@@ -21,12 +21,14 @@ dependencies = [
 cli = ["daglite-cli"]
 serialization = ["daglite-serialization"]
 rich = ["daglite-rich"]
+viz = ["daglite-viz"]
 
 [dependency-groups]
 dev = [
     "daglite-cli",
     "daglite-serialization[all]",
     "daglite-rich",
+    "daglite-viz[all]",
     "nox",
     "pandas-stubs",
     "poethepoet",
@@ -78,6 +80,7 @@ source_pkgs = [
     "daglite_cli",
     "daglite_serialization",
     "daglite_rich",
+    "daglite_viz",
 ] # Add new plugins here
 omit = ["tests/typing/assert_type_tests.py"]
 branch = true
@@ -96,7 +99,7 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "src:extras/cli/src:extras/serialization/src:extras/rich/src" # Add new plugins here
+mypy_path = "src:extras/cli/src:extras/serialization/src:extras/rich/src:extras/viz/src" # Add new plugins here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
@@ -111,6 +114,7 @@ executionEnvironments = [ # Add new plugins here
     { root = "extras/cli/src" },
     { root = "extras/serialization/src" },
     { root = "extras/rich/src" },
+    { root = "extras/viz/src" },
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
 exclude = [
@@ -224,6 +228,7 @@ daglite = { workspace = true }
 daglite-cli = { workspace = true }
 daglite-serialization = { workspace = true }
 daglite-rich = { workspace = true }
+daglite-viz = { workspace = true }
 
 [tool.uv.workspace]
 members = ["extras/*"]
