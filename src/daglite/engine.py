@@ -524,7 +524,7 @@ class Engine:
             futures = []
             for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
-                future = backend.submit(node.run, call, **kwargs)
+                future = backend.submit(node.run, call, node.timeout, **kwargs)
                 futures.append(future)
 
             return _MapFutureWrapper(
@@ -535,7 +535,7 @@ class Engine:
                 backend=backend,
             )
         else:
-            future = backend.submit(node.run, resolved_inputs)
+            future = backend.submit(node.run, resolved_inputs, node.timeout)
             return _NodeFutureWrapper(future=future, node=node)
 
     def _collect_result_sync(self, wrapper: _NodeFutureWrapper | _MapFutureWrapper) -> Any:
@@ -596,7 +596,9 @@ class Engine:
 
             for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
-                future = wrap_future(backend.submit(node.run_async, call, **kwargs))
+                future = wrap_future(
+                    backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
+                )
                 futures.append(future)
 
             result = await asyncio.gather(*futures)
@@ -606,7 +608,9 @@ class Engine:
                 metadata=node.to_metadata(), inputs_list=calls, results=result, duration=duration
             )
         else:
-            future = wrap_future(backend.submit(node.run_async, resolved_inputs))
+            future = wrap_future(
+                backend.submit(node.run_async, resolved_inputs, timeout=node.timeout)
+            )
             result = await future
 
         result = await _materialize_async(result)

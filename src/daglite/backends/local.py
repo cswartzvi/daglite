@@ -8,6 +8,7 @@ import asyncio
 import inspect
 import os
 import sys
+import threading
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
@@ -36,7 +37,11 @@ class SequentialBackend(Backend):
 
     @override
     def submit(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+        self,
+        func: Callable[[dict[str, Any]], Any],
+        inputs: dict[str, Any],
+        timeout: float | None = None,
+        **kwargs: Any,
     ) -> Future[Any]:
         future: Future[Any] = Future()
 
@@ -45,8 +50,26 @@ class SequentialBackend(Backend):
         set_execution_context(self.plugin_manager, self.reporter)
 
         try:
-            result = func(inputs, **kwargs)
-            future.set_result(result)
+            if inspect.iscoroutinefunction(func):
+                coro = func(inputs, **kwargs)
+
+                if timeout is not None:
+                    coro = asyncio.wait_for(coro, timeout=timeout)
+
+                asyncio_future = asyncio.ensure_future(coro)
+
+                # Wrap asyncio future as concurrent.futures.Future
+                def _on_done(f):
+                    try:
+                        future.set_result(f.result())
+                    except Exception as e:
+                        future.set_exception(e)
+
+                asyncio_future.add_done_callback(_on_done)
+            else:
+                result = func(inputs, **kwargs)
+                future.set_result(result)
+
         except Exception as e:
             future.set_exception(e)
 
@@ -80,11 +103,37 @@ class ThreadBackend(Backend):
 
     @override
     def submit(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+        self,
+        func: Callable[[dict[str, Any]], Any],
+        inputs: dict[str, Any],
+        timeout: float | None = None,
+        **kwargs: Any,
     ) -> Future[Any]:
+        # Submit to executor first
         if inspect.iscoroutinefunction(func):
-            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
-        return self._executor.submit(func, inputs, **kwargs)
+            executor_future = self._executor.submit(
+                _run_coroutine_in_worker, func, inputs, **kwargs
+            )
+        else:
+            executor_future = self._executor.submit(func, inputs, **kwargs)
+
+        if timeout is None:
+            return executor_future
+
+        # Wrap to enforce timeout
+        wrapped_future: Future[Any] = Future()
+
+        def _wait_with_timeout() -> None:
+            try:
+                result = executor_future.result(timeout=timeout)
+                wrapped_future.set_result(result)
+            except TimeoutError:
+                wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
+            except Exception as e:
+                wrapped_future.set_exception(e)
+
+        self._executor.submit(_wait_with_timeout)
+        return wrapped_future
 
 
 class ProcessBackend(Backend):
@@ -148,10 +197,40 @@ class ProcessBackend(Backend):
         self.reporter.queue.close()
 
     @override
-    def submit(self, func, inputs: dict[str, Any], **kwargs: Any) -> Future[Any]:
+    def submit(
+        self,
+        func: Callable[[dict[str, Any]], Any],
+        inputs: dict[str, Any],
+        timeout: float | None = None,
+        **kwargs: Any,
+    ) -> Future[Any]:
+        # Submit to executor first
         if inspect.iscoroutinefunction(func):
-            return self._executor.submit(_run_coroutine_in_worker, func, inputs, **kwargs)
-        return self._executor.submit(func, inputs, **kwargs)
+            executor_future = self._executor.submit(
+                _run_coroutine_in_worker, func, inputs, **kwargs
+            )
+        else:
+            executor_future = self._executor.submit(func, inputs, **kwargs)
+
+        if timeout is None:
+            return executor_future
+
+        # If timeout specified, wrap to enforce it
+        wrapped_future: Future[Any] = Future()
+
+        def _wait_with_timeout() -> None:
+            try:
+                result = executor_future.result(timeout=timeout)
+                wrapped_future.set_result(result)
+            except TimeoutError:
+                wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
+            except Exception as e:
+                wrapped_future.set_exception(e)
+
+        # Submit the timeout wrapper to executor (must use thread pool for timeout waiting)
+        thread = threading.Thread(target=_wait_with_timeout, daemon=True)
+        thread.start()
+        return wrapped_future
 
 
 def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:

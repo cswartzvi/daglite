@@ -96,6 +96,9 @@ class BaseGraphNode(abc.ABC):
     key: str | None = field(default=None, kw_only=True)
     """Optional key identifying this specific node instance in the execution graph."""
 
+    timeout: float | None = field(default=None, kw_only=True)
+    """Maximum execution time in seconds (enforced by backend). If None, no timeout."""
+
     @abc.abstractmethod
     def dependencies(self) -> set[UUID]:
         """

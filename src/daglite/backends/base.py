@@ -73,7 +73,11 @@ class Backend(abc.ABC):
 
     @abc.abstractmethod
     def submit(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+        self,
+        func: Callable[[dict[str, Any]], Any],
+        inputs: dict[str, Any],
+        timeout: float | None = None,
+        **kwargs: Any,
     ) -> ConcurrentFuture[Any]:
         """
         Submit a callable for execution in the backend.
@@ -81,6 +85,7 @@ class Backend(abc.ABC):
         Args:
             func: Callable to execute
             inputs: Pre-resolved parameter inputs
+            timeout: Maximum execution time in seconds. If None, no timeout is enforced.
             **kwargs: Additional backend-specific execution parameters
 
         Returns:
