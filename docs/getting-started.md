@@ -231,24 +231,49 @@ evaluate(double(x="hello"))
 
 ---
 
-## Async Execution
+## Parallel Execution
 
-Run tasks in parallel using threading or multiprocessing:
+Daglite supports parallel execution of sibling tasks (tasks at the same level of the DAG) using threading or multiprocessing backends:
 
 ```python
-import time
+import requests
+from daglite import task, evaluate
 
-@task(backend="threading")
-def slow_io(url: str) -> bytes:
-    time.sleep(1)  # Simulate network call
-    return b"data"
+@task(backend_name="threading")
+def fetch_data(url: str) -> dict:
+    # I/O-bound tasks benefit from threading
+    response = requests.get(url)
+    return response.json()
 
-# Execute with async support
-result = evaluate(
-    slow_io.product(url=["url1", "url2", "url3"]),
-    use_async=True  # Runs in parallel!
+@task
+def combine(data_a: dict, data_b: dict, data_c: dict) -> dict:
+    return {**data_a, **data_b, **data_c}
+
+# These three fetches run in parallel!
+a = fetch_data(url="https://api.example.com/a")
+b = fetch_data(url="https://api.example.com/b")
+c = fetch_data(url="https://api.example.com/c")
+
+result = evaluate(combine(data_a=a, data_b=b, data_c=c))
+```
+
+For CPU-bound tasks, use the processes backend:
+
+```python
+@task(backend_name="processes")
+def compute_heavy(x: int) -> int:
+    # CPU-intensive work
+    return sum(i**2 for i in range(x))
+
+# Run calculations in parallel across processes
+results = evaluate(
+    compute_heavy.product(x=[1000, 2000, 3000])
 )
 ```
+
+!!! tip "Sync vs Async"
+    For most use cases, `evaluate()` with threading/processes backends is simpler than `evaluate_async()`.
+    Use `evaluate_async()` only when you have async tasks or need to integrate with existing async code.
 
 ---
 

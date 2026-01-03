@@ -99,7 +99,6 @@ class ProcessBackend(Backend):
         from multiprocessing import Queue
         from multiprocessing import get_context
 
-        # NOTE: Coverage only runs on Linux CI runners
         if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             self._mp_context = get_context("spawn")
@@ -112,11 +111,15 @@ class ProcessBackend(Backend):
             # incompatible with free-threading in 3.13t, causing hangs. Python 3.14 defaults to
             # 'forkserver', so this workaround is only needed for 3.13t.
             self._mp_context = get_context("spawn")
-        else:
-            # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
+        elif sys.version_info >= (3, 14):  # pragma: no cover
+            # Use 'forkserver' on Python 3.14+ (safe with event loops, and it's the new default)
+            self._mp_context = get_context("forkserver")
+        else:  # pragma: no cover
+            # Use 'fork' on Linux with Python < 3.14 (fast startup, safe without event loops)
+            # This path is not covered in CI which runs Python 3.14+
             self._mp_context = get_context("fork")
 
-        # NOTE: We need to defer Queue creation until we know the context
+        # We need to defer Queue creation until we know the context
         queue: Queue[Any] = self._mp_context.Queue()
         return ProcessReporter(queue)
 
@@ -125,8 +128,6 @@ class ProcessBackend(Backend):
         settings = get_global_settings()
         max_workers = settings.max_parallel_processes
 
-        # Use the mp_context that was already determined in _get_reporter
-        # Use the mp_context that was already determined in _get_reporter
         assert isinstance(self.reporter, ProcessReporter)
         self._reporter_id = self.event_processor.add_source(self.reporter.queue)
         serialized_pm = serialize_plugin_manager(self.plugin_manager)
@@ -159,7 +160,12 @@ def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) 
 
 
 def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
-    """Run an async function to completion in a worker thread/process."""
+    """
+    Run an async function to completion in a worker thread/process.
+
+    Uses asyncio.run() to create an isolated event loop for each task. This works correctly in both
+    sync and async contexts because the worker thread/process has no running event loop of its own.
+    """
     return asyncio.run(func(inputs, **kwargs))
 
 

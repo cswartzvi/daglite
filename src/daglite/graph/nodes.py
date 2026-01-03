@@ -296,6 +296,13 @@ async def _run_async_impl(
         if inspect.iscoroutinefunction(func):
             result = await func(**resolved_inputs)
         else:
+            if metadata.backend_name == "sequential":  # pragma: no cover
+                # Defensive: This should be caught earlier during graph validation in _run_async()
+                raise ValueError(
+                    "Sequential backend cannot execute synchronous tasks with evaluate_async(). "
+                    "Use threading/processes backend for parallel execution, or evaluate() for "
+                    "sync tasks."
+                )
             result = func(**resolved_inputs)
 
         duration = time.time() - start_time

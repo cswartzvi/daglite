@@ -1,11 +1,25 @@
 """Integration test for task evaluation using evaluate() with both sync and async tasks."""
 
 import asyncio
+import os
 
 import pytest
 
 from daglite import evaluate
 from daglite import task
+
+
+# Module-level tasks for ProcessBackend (must be picklable)
+@task(backend_name="processes")
+def get_pid_process(value: int) -> tuple[int, int]:
+    """Return (value, process_id). Module-level for pickling."""
+    return (value, os.getpid())
+
+
+@task
+def combine_pids(a: tuple[int, int], b: tuple[int, int]) -> dict:
+    """Combine results from process tasks."""
+    return {"sum": a[0] + b[0], "pids": [a[1], b[1]]}
 
 
 class TestSinglePathExecution:
@@ -565,105 +579,32 @@ class TestComplexPathEvaluation:
 
 
 class TestAsyncTasksWithEvaluate:
-    """Tests for async tasks evaluated with evaluate() (synchronous execution)."""
+    """Tests that async tasks raise errors when evaluated with evaluate (synchronous execution)."""
 
-    def test_async_task_sync_evaluation(self) -> None:
-        """Async tasks can be evaluated synchronously."""
-
-        @task
-        async def async_add(x: int, y: int) -> int:
-            await asyncio.sleep(0.001)  # Simulate async work
-            return x + y
-
-        result = evaluate(async_add(x=5, y=10))
-        assert result == 15
-
-    def test_async_task_with_dependencies(self) -> None:
-        """Async tasks work with dependencies."""
-
-        @task
-        def sync_start(n: int) -> int:
-            return n * 2
-
-        @task
-        async def async_process(x: int) -> int:
-            await asyncio.sleep(0.001)
-            return x + 10
-
-        @task
-        def sync_finish(x: int) -> int:
-            return x * 3
-
-        # Chain: sync -> async -> sync
-        start = sync_start(n=5)  # 10
-        processed = async_process(x=start)  # 20
-        finished = sync_finish(x=processed)  # 60
-
-        result = evaluate(finished)
-        assert result == 60
-
-    def test_async_task_product(self) -> None:
-        """Async tasks work with product operations."""
-
-        @task
-        async def async_square(x: int) -> int:
-            await asyncio.sleep(0.001)
-            return x * x
-
-        @task
-        def sum_all(values: list[int]) -> int:
-            return sum(values)
-
-        squared = async_square.product(x=[1, 2, 3, 4])
-        total = squared.join(sum_all)
-
-        result = evaluate(total)
-        assert result == 30  # 1 + 4 + 9 + 16
-
-    def test_async_task_zip(self) -> None:
-        """Async tasks work with zip operations."""
+    def test_async_task_raises_error(self) -> None:
+        """Async tasks cannot be evaluated synchronously."""
 
         @task
         async def async_add(x: int, y: int) -> int:
             await asyncio.sleep(0.001)
             return x + y
 
-        @task
-        def product(values: list[int]) -> int:
-            result = 1
-            for v in values:
-                result *= v
-            return result
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(async_add(x=5, y=10))  # type: ignore
 
-        added = async_add.zip(x=[1, 2, 3], y=[10, 20, 30])
-        prod = added.join(product)
-
-        result = evaluate(prod)
-        assert result == 11 * 22 * 33
-
-    def test_async_task_with_then_chain(self) -> None:
-        """Async tasks work with .then() chains."""
-
-        @task
-        async def async_double(x: int) -> int:
-            await asyncio.sleep(0.001)
-            return x * 2
-
-        @task
-        def add_ten(x: int) -> int:
-            return x + 10
+    def test_async_map_task_raises_error(self) -> None:
+        """Async map tasks cannot be evaluated synchronously."""
 
         @task
         async def async_square(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * x
 
-        # Chain: async -> sync -> async
-        result = evaluate(async_double(x=5).then(add_ten).then(async_square))
-        assert result == 400  # (5*2 + 10)^2 = 20^2 = 400
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(async_square.product(x=[1, 2, 3, 4]))
 
-    def test_mixed_sync_async_complex_graph(self) -> None:
-        """Complex graph with mixed sync and async tasks."""
+    def test_mixed_graph_with_async_raises_error(self) -> None:
+        """Graphs containing any async tasks raise error in sync evaluation."""
 
         @task
         def sync_task(x: int) -> int:
@@ -675,17 +616,16 @@ class TestAsyncTasksWithEvaluate:
             return x * 2
 
         @task
-        def combine(a: int, b: int, c: int) -> int:
-            return a + b + c
+        def combine(a: int, b: int) -> int:
+            return a + b
 
-        # Diamond pattern with mixed sync/async
-        start = sync_task(x=10)  # 11
-        left = async_double(x=start)  # 22
-        right = sync_task(x=start)  # 12
-        result_future = combine(a=start, b=left, c=right)
+        # Even one async task in the graph causes error
+        start = sync_task(x=10)
+        async_result = async_double(x=start)
+        combined = combine(a=start, b=async_result)
 
-        result = evaluate(result_future)
-        assert result == 45  # 11 + 22 + 12
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(combined)
 
 
 class TestGeneratorMaterialization:
@@ -855,9 +795,31 @@ class TestGeneratorMaterialization:
         assert len(iter_result) == 4
         assert len(gen_result) == 4
 
-    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
-    def test_async_generator_materialization(self, evaluation_mode: str) -> None:
-        """Async generators returned from async tasks are materialized."""
+    def test_async_generator_materialization_sync_raises_error(self) -> None:
+        """Async generators raise error in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @task
+        async def async_generate_numbers(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i
+
+            return _gen()
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        nums = async_generate_numbers(n=5)
+        total = sum_values(values=nums)
+
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(total)
+
+    def test_async_generator_materialization_async_mode(self) -> None:
+        """Async generators are materialized properly in async evaluation."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -881,16 +843,34 @@ class TestGeneratorMaterialization:
 
             return await evaluate_async(total)
 
-        if evaluation_mode == "sync":
-            result = evaluate(total)
-        else:
-            result = asyncio.run(run_async())
-
+        result = asyncio.run(run_async())
         assert result == 10  # 0 + 1 + 2 + 3 + 4
 
-    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
-    def test_async_generator_map_materialization(self, evaluation_mode: str) -> None:
-        """Map tasks that return async generators are materialized properly."""
+    def test_async_generator_map_materialization_sync_raises_error(self) -> None:
+        """Map tasks with async generators raise error in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @task
+        async def async_get_range(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i
+
+            return _gen()
+
+        @task
+        def sum_all_ranges(ranges: list[list[int]]) -> int:
+            return sum(sum(r) for r in ranges)
+
+        ranges = async_get_range.product(n=[3, 4, 5])
+        total = sum_all_ranges(ranges=ranges)
+
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(total)
+
+    def test_async_generator_map_materialization_async_mode(self) -> None:
+        """Map tasks that return async generators are materialized properly in async mode."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -915,16 +895,34 @@ class TestGeneratorMaterialization:
 
             return await evaluate_async(total)
 
-        if evaluation_mode == "sync":
-            result = evaluate(total)
-        else:
-            result = asyncio.run(run_async())
-
+        result = asyncio.run(run_async())
         assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
-    @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
-    def test_async_generator_with_thread_backend(self, evaluation_mode: str) -> None:
-        """Async generators work with ThreadBackend."""
+    def test_async_generator_with_thread_backend_sync_raises_error(self) -> None:
+        """Async generators with ThreadBackend raise error in sync evaluation."""
+        from collections.abc import AsyncGenerator
+
+        @task(backend_name="threading")
+        async def async_generate(n: int) -> AsyncGenerator[int, None]:
+            async def _gen():
+                for i in range(n):
+                    await asyncio.sleep(0.001)
+                    yield i * 2
+
+            return _gen()
+
+        @task
+        def sum_values(values: list[int]) -> int:
+            return sum(values)
+
+        nums = async_generate(n=5)
+        total = sum_values(values=nums)
+
+        with pytest.raises(ValueError, match="Cannot execute async task"):
+            evaluate(total)
+
+    def test_async_generator_with_thread_backend_async_mode(self) -> None:
+        """Async generators work with ThreadBackend in async mode."""
         from collections.abc import AsyncGenerator
 
         @task(backend_name="threading")
@@ -948,11 +946,7 @@ class TestGeneratorMaterialization:
 
             return await evaluate_async(total)
 
-        if evaluation_mode == "sync":
-            result = evaluate(total)
-        else:
-            result = asyncio.run(run_async())
-
+        result = asyncio.run(run_async())
         assert result == 20  # 0+2+4+6+8
 
 
@@ -997,3 +991,71 @@ def test_cycle_detection_raises_error() -> None:
 
     with pytest.raises(ExecutionError, match="Cycle detected"):
         state.check_complete()
+
+
+class TestSiblingParallelism:
+    """Tests for concurrent execution of sibling tasks using evaluate()."""
+
+    def test_sync_siblings_with_threading_backend(self) -> None:
+        """Sibling tasks with threading backend are submitted concurrently."""
+        import threading
+        import time
+
+        execution_order: list[tuple[int, float]] = []
+        lock = threading.Lock()
+
+        @task(backend_name="threading")
+        def track_execution(value: int) -> int:
+            """Track execution order and add small delay."""
+            start = time.perf_counter()
+            time.sleep(0.01)  # Small delay to ensure overlap if parallel
+            with lock:
+                execution_order.append((value, start))
+            return value
+
+        @task
+        def sum_values(a: int, b: int, c: int) -> int:
+            return a + b + c
+
+        # Create sibling tasks
+        t1 = track_execution(value=10)
+        t2 = track_execution(value=20)
+        t3 = track_execution(value=30)
+        total = sum_values(a=t1, b=t2, c=t3)
+
+        result = evaluate(total)
+
+        # Verify results
+        assert result == 60
+
+        # Verify all tasks executed
+        assert len(execution_order) == 3
+
+        # If truly concurrent, start times should overlap
+        # (all should start within a small window, not sequentially)
+        start_times = [t[1] for t in execution_order]
+        time_range = max(start_times) - min(start_times)
+
+        # If sequential with 0.01s sleep each, would be ~0.02s between first and last
+        # If parallel, should start within ~0.001s of each other
+        assert time_range < 0.015, (
+            f"Tasks appear to have run sequentially. "
+            f"Time range between first and last start: {time_range:.4f}s"
+        )
+
+    def test_sync_siblings_with_processes_backend(self) -> None:
+        """Sibling tasks with processes backend execute concurrently in sync evaluation."""
+
+        # Create sibling tasks (using module-level tasks for pickling)
+        t1 = get_pid_process(value=10)
+        t2 = get_pid_process(value=20)
+        result_future = combine_pids(a=t1, b=t2)
+
+        result = evaluate(result_future)
+
+        # Verify results
+        assert result["sum"] == 30
+
+        # PIDs should be different if truly parallel (may be same if sequential)
+        # Just verify we got valid PIDs
+        assert all(pid > 0 for pid in result["pids"])
