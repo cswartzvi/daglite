@@ -12,6 +12,41 @@ from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
 
+# Module-level async tasks for ProcessBackend (must be picklable)
+@task(backend_name="processes")
+async def async_square_process(x: int) -> int:
+    """Module-level async task for process backend testing."""
+    await asyncio.sleep(0.001)
+    return x * x
+
+
+@task(backend_name="processes")
+async def async_double_process(x: int) -> int:
+    """Module-level async task for process backend testing."""
+    await asyncio.sleep(0.001)
+    return x * 2
+
+
+@task(backend_name="processes")
+async def async_add_process(y: int, z: int) -> int:
+    """Module-level async task for process backend testing."""
+    await asyncio.sleep(0.001)
+    return y + z
+
+
+# Module-level sync tasks for ProcessBackend map testing (must be picklable)
+@task(backend_name="processes")
+def double_process(x: int) -> int:
+    """Module-level sync task for process backend map testing."""
+    return x * 2
+
+
+@task(backend_name="processes")
+def square_process(z: int) -> int:
+    """Module-level sync task for process backend map testing."""
+    return z**2
+
+
 class TestSyncTasksWithEvaluateAsync:
     """Tests evaluate_async() with regular (sync) task functions."""
 
@@ -255,6 +290,18 @@ class TestSyncTasksWithEvaluateAsync:
         result = asyncio.run(run())
         assert result == [4, 16, 36]  # [2, 4, 6] squared
 
+    def test_map_async_with_process_backend(self) -> None:
+        """Async evaluation handles map with ProcessBackend."""
+
+        doubled: MapTaskFuture[int] = double_process.product(x=[1, 2, 3])
+        squared: MapTaskFuture[int] = doubled.then(square_process)
+
+        async def run():
+            return await evaluate_async(squared)
+
+        result = asyncio.run(run())
+        assert result == [4, 16, 36]  # [2, 4, 6] squared
+
 
 class TestAsyncTasksWithEvaluateAsync:
     """Tests evaluate_async() with async task functions (async def)."""
@@ -343,6 +390,28 @@ class TestAsyncTasksWithEvaluateAsync:
 
         result = asyncio.run(run())
         assert result == 42
+
+    def test_async_with_process_backend(self) -> None:
+        """Async tasks work with ProcessBackend using persistent event loop."""
+
+        async def run():
+            result_future = async_square_process(x=7)
+            return await evaluate_async(result_future)
+
+        result = asyncio.run(run())
+        assert result == 49
+
+    def test_async_chain_with_process_backend(self) -> None:
+        """Chain of async tasks works with ProcessBackend."""
+
+        doubled = async_double_process(x=5)  # 10
+        result = async_add_process(y=doubled, z=3)  # 13
+
+        async def run():
+            return await evaluate_async(result)
+
+        final = asyncio.run(run())
+        assert final == 13
 
 
 class TestMappedOperationsWithEvaluateAsync:
