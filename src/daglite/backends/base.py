@@ -11,8 +11,8 @@ if TYPE_CHECKING:
     from daglite.plugins.events import EventProcessor
     from daglite.plugins.reporters import EventReporter
 else:
-    EventProcessor = Any
-    EventReporter = Any
+    EventProcessor = object
+    EventReporter = object
 
 T = TypeVar("T")
 
