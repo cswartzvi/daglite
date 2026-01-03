@@ -7,6 +7,7 @@ from collections.abc import Callable
 from collections.abc import Iterable
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import field
 from dataclasses import fields
 from functools import cached_property
 from inspect import Signature
@@ -37,6 +38,8 @@ def task(
     name: str | None = None,
     description: str | None = None,
     backend_name: str | None = None,
+    retries: int | None = None,
+    timeout: float | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -46,6 +49,8 @@ def task(  # noqa: D417
     name: str | None = None,
     description: str | None = None,
     backend_name: str | None = None,
+    retries: int | None = None,
+    timeout: float | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -62,6 +67,8 @@ def task(  # noqa: D417
         description: Task description. Defaults to the function's docstring.
         backend_name: Name of the backend to use for this task. If not provided, uses the default
             global settings backend.
+        retries: Number of times to retry the task on failure. Defaults to 0 (no retries).
+        timeout: Maximum execution time in seconds. If None, no timeout is enforced.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -109,6 +116,8 @@ def task(  # noqa: D417
             description=description if description is not None else getattr(fn, "__doc__", ""),
             backend_name=backend_name,
             is_async=is_async,
+            retries=retries if retries is not None else 0,
+            timeout=timeout,
         )
 
     if func is not None:
@@ -134,6 +143,12 @@ class BaseTask(abc.ABC, Generic[P, R]):
     backend_name: str | None
     """Name of backend to use for this task."""
 
+    retries: int = field(default=0, kw_only=True)
+    """Number of times to retry the task on failure."""
+
+    timeout: float | None = field(default=None, kw_only=True)
+    """Maximum execution time in seconds. If None, no timeout is enforced."""
+
     @cached_property
     @abc.abstractmethod
     def signature(self) -> Signature:
@@ -146,6 +161,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
         name: str | None = None,
         description: str | None = None,
         backend_name: str | None = None,
+        retries: int | None = None,
+        timeout: float | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -154,6 +171,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
             name: New name for the task. If `None`, keeps the existing name.
             description: New description for the task. If `None`, keeps the existing description.
             backend_name: New backend name for the task. If `None`, keeps the existing backend name.
+            retries: New number of retries for the task. If `None`, keeps the existing retries.
+            timeout: New timeout for the task. If `None`, keeps the existing timeout.
 
         Returns:
             A new `BaseTask` instance with updated options.
@@ -162,16 +181,23 @@ class BaseTask(abc.ABC, Generic[P, R]):
         name = name if name is not None else self.name
         description = description if description is not None else self.description
         backend_name = backend_name if backend_name is not None else self.backend_name
+        new_retries = retries if retries is not None else self.retries
+        new_timeout = timeout if timeout is not None else self.timeout
 
         # Collect the remaining fields (assumes this is a dataclass)
         remaining_fields = {
             f.name: getattr(self, f.name)
             for f in fields(self)
-            if f.name not in {"name", "description", "backend_name"}
+            if f.name not in {"name", "description", "backend_name", "retries", "timeout"}
         }
 
         return type(self)(
-            name=name, description=description, backend_name=backend_name, **remaining_fields
+            name=name,
+            description=description,
+            backend_name=backend_name,
+            retries=new_retries,
+            timeout=new_timeout,
+            **remaining_fields,
         )
 
     @abc.abstractmethod
@@ -352,6 +378,8 @@ class Task(BaseTask[P, R]):
             task=self,
             fixed_kwargs=dict(kwargs),
             backend_name=self.backend_name,
+            retries=self.retries,
+            timeout=self.timeout,
         )
 
     @override

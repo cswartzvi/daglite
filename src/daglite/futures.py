@@ -425,6 +425,8 @@ class TaskFuture(BaseTaskFuture[R]):
             func=self.task.func,
             kwargs=kwargs,
             backend_name=self.backend_name,
+            retries=self.task.retries,
+            timeout=self.task.timeout,
         )
 
 
@@ -617,6 +619,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
             fixed_kwargs=fixed_kwargs,
             mapped_kwargs=mapped_kwargs,
             backend_name=self.backend_name,
+            retries=self.task.retries,
+            timeout=self.task.timeout,
         )
 
 

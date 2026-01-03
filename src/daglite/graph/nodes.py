@@ -27,6 +27,12 @@ class TaskNode(BaseGraphNode):
     kwargs: Mapping[str, ParamInput]
     """Keyword parameters for the task function."""
 
+    retries: int = 0
+    """Number of times to retry the task on failure."""
+
+    timeout: float | None = None
+    """Maximum execution time in seconds. If None, no timeout is enforced."""
+
     @override
     def dependencies(self) -> set[UUID]:
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
@@ -63,6 +69,8 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
+            timeout=self.timeout,
         )
 
     @override
@@ -75,6 +83,8 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
+            timeout=self.timeout,
         )
 
 
@@ -93,6 +103,12 @@ class MapTaskNode(BaseGraphNode):
 
     mapped_kwargs: Mapping[str, ParamInput]
     """Mapped keyword arguments for the mapped function."""
+
+    retries: int = 0
+    """Number of times to retry the task on failure."""
+
+    timeout: float | None = None
+    """Maximum execution time in seconds. If None, no timeout is enforced."""
 
     @override
     def dependencies(self) -> set[UUID]:
@@ -196,6 +212,8 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
+            timeout=self.timeout,
         )
 
     @override
@@ -209,6 +227,8 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
+            timeout=self.timeout,
         )
 
 
@@ -219,8 +239,12 @@ def _run_sync_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    retries: int = 0,
+    timeout: float | None = None,
 ) -> Any:
-    """Helper to run a node synchronously with context setup."""
+    """Helper to run a node synchronously with context setup, retries, and timeout."""
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+
     from daglite.backends.context import get_plugin_manager
     from daglite.backends.context import get_reporter
     from daglite.backends.context import reset_current_task
@@ -236,32 +260,68 @@ def _run_sync_impl(
         reporter=reporter,
     )
 
+    last_error: Exception | None = None
+    attempt = 0
+    max_attempts = retries + 1
+
     start_time = time.time()
     try:
-        result = func(**resolved_inputs)
+        while attempt < max_attempts:
+            try:
+                # Execute with timeout if specified
+                if timeout is not None:
+                    # Use ThreadPoolExecutor for timeout functionality
+                    with ThreadPoolExecutor(max_workers=1) as executor:
+                        future = executor.submit(func, **resolved_inputs)
+                        result = future.result(timeout=timeout)
+                else:
+                    result = func(**resolved_inputs)
+
+                duration = time.time() - start_time
+
+                plugin_manager.hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    duration=duration,
+                    reporter=reporter,
+                )
+
+                return result
+
+            except (FuturesTimeoutError, TimeoutError) as error:
+                # Timeout errors should not be retried
+                duration = time.time() - start_time
+                plugin_manager.hook.on_node_error(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    error=error,
+                    duration=duration,
+                    reporter=reporter,
+                )
+                raise TimeoutError(
+                    f"Task '{metadata.key}' exceeded timeout of {timeout}s"
+                ) from error
+
+            except Exception as error:
+                last_error = error
+                attempt += 1
+                if attempt >= max_attempts:
+                    # No more retries left
+                    break
+                # Continue to next attempt
+
+        # All attempts exhausted
         duration = time.time() - start_time
-
-        plugin_manager.hook.after_node_execute(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            result=result,
-            duration=duration,
-            reporter=reporter,
-        )
-
-        return result
-
-    except Exception as error:
-        duration = time.time() - start_time
-
+        assert last_error is not None
         plugin_manager.hook.on_node_error(
             metadata=metadata,
             inputs=resolved_inputs,
-            error=error,
+            error=last_error,
             duration=duration,
             reporter=reporter,
         )
-        raise
+        raise last_error
 
     finally:
         reset_current_task(task_token)
@@ -271,8 +331,11 @@ async def _run_async_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    retries: int = 0,
+    timeout: float | None = None,
 ) -> Any:
-    """Helper to run a node asynchronously with context setup."""
+    """Helper to run a node asynchronously with context setup, retries, and timeout."""
+    import asyncio
     import inspect
 
     from daglite.backends.context import get_plugin_manager
@@ -290,44 +353,75 @@ async def _run_async_impl(
         reporter=reporter,
     )
 
+    last_error: Exception | None = None
+    attempt = 0
+    max_attempts = retries + 1
+
     start_time = time.time()
     try:
-        # Handle both async and sync functions
-        if inspect.iscoroutinefunction(func):
-            result = await func(**resolved_inputs)
-        else:
-            if metadata.backend_name == "sequential":  # pragma: no cover
-                # Defensive: This should be caught earlier during graph validation in _run_async()
-                raise ValueError(
-                    "Sequential backend cannot execute synchronous tasks with evaluate_async(). "
-                    "Use threading/processes backend for parallel execution, or evaluate() for "
-                    "sync tasks."
+        while attempt < max_attempts:
+            try:
+                # Handle both async and sync functions
+                if inspect.iscoroutinefunction(func):
+                    if timeout is not None:
+                        result = await asyncio.wait_for(func(**resolved_inputs), timeout=timeout)
+                    else:
+                        result = await func(**resolved_inputs)
+                else:
+                    if metadata.backend_name == "sequential":  # pragma: no cover
+                        # Defensive: This should be caught earlier during graph validation in _run_async()
+                        raise ValueError(
+                            "Sequential backend cannot execute synchronous tasks with evaluate_async(). "
+                            "Use threading/processes backend for parallel execution, or evaluate() for "
+                            "sync tasks."
+                        )
+                    result = func(**resolved_inputs)
+
+                duration = time.time() - start_time
+
+                plugin_manager.hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    duration=duration,
+                    reporter=reporter,
                 )
-            result = func(**resolved_inputs)
 
+                return result
+
+            except asyncio.TimeoutError as error:
+                # Timeout errors should not be retried
+                duration = time.time() - start_time
+                plugin_manager.hook.on_node_error(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    error=error,
+                    duration=duration,
+                    reporter=reporter,
+                )
+                raise TimeoutError(
+                    f"Task '{metadata.key}' exceeded timeout of {timeout}s"
+                ) from error
+
+            except Exception as error:
+                last_error = error
+                attempt += 1
+                if attempt >= max_attempts:
+                    # No more retries left
+                    break
+                # Continue to next attempt
+
+        # All attempts exhausted
         duration = time.time() - start_time
-
-        plugin_manager.hook.after_node_execute(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            result=result,
-            duration=duration,
-            reporter=reporter,
-        )
-
-        return result
-
-    except Exception as error:
-        duration = time.time() - start_time
-
+        assert last_error is not None
         plugin_manager.hook.on_node_error(
             metadata=metadata,
             inputs=resolved_inputs,
-            error=error,
+            error=last_error,
             duration=duration,
             reporter=reporter,
         )
-        raise
+        raise last_error
 
     finally:
         reset_current_task(task_token)
