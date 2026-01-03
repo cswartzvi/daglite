@@ -39,9 +39,12 @@ class SequentialBackend(Backend):
 
     @override
     def _start(self) -> None:
+        settings = get_global_settings()
+        max_timeout_workers = settings.max_timeout_workers
+
         # Small thread pool for timeout enforcement on sync tasks
         self._timeout_executor = ThreadPoolExecutor(
-            max_workers=4,
+            max_workers=max_timeout_workers,
             thread_name_prefix="seq-timeout-",
             initializer=_thread_initializer,
             initargs=(self.plugin_manager, self.reporter),
@@ -115,6 +118,7 @@ class ThreadBackend(Backend):
     def _start(self) -> None:
         settings = get_global_settings()
         max_workers = settings.max_backend_threads
+        max_timeout_workers = settings.max_timeout_workers
 
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
@@ -122,7 +126,7 @@ class ThreadBackend(Backend):
             initargs=(self.plugin_manager, self.reporter),
         )
         self._timeout_executor = ThreadPoolExecutor(
-            max_workers=4, thread_name_prefix="thread-timeout-"
+            max_workers=max_timeout_workers, thread_name_prefix="thread-timeout-"
         )
 
     @override
@@ -198,6 +202,7 @@ class ProcessBackend(Backend):
     def _start(self) -> None:
         settings = get_global_settings()
         max_workers = settings.max_parallel_processes
+        max_timeout_workers = settings.max_timeout_workers
 
         assert isinstance(self.reporter, ProcessReporter)
         self._reporter_id = self.event_processor.add_source(self.reporter.queue)
@@ -209,7 +214,7 @@ class ProcessBackend(Backend):
             initargs=(serialized_pm, self.reporter.queue),
         )
         self._timeout_executor = ThreadPoolExecutor(
-            max_workers=4,
+            max_workers=max_timeout_workers,
             thread_name_prefix="proc-timeout-",
             initializer=_thread_initializer,
             initargs=(self.plugin_manager, self.reporter),

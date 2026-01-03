@@ -30,6 +30,15 @@ class DagliteSettings:
     Defaults to the number of CPU cores available.
     """
 
+    max_timeout_workers: int = 4
+    """
+    Maximum number of worker threads for enforcing task timeouts per backend.
+
+    Each local backend (sequential, threading, multiprocessing) gets its own dedicated
+    thread pool of this size for timeout enforcement. Increase this value if you have a
+    large number of concurrent tasks with timeouts to avoid delays in timeout enforcement.
+    """
+
     enable_plugin_tracing: bool = field(
         default_factory=lambda: _env_get_bool("DAGLITE_TRACE_HOOKS", False)
     )
