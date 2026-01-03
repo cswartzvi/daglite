@@ -10,6 +10,28 @@ from daglite import evaluate_async
 from daglite import task
 
 
+# Module-level tasks for ProcessBackend (must be picklable)
+@task(timeout=0.1, backend_name="multiprocessing")
+def slow_task_process(x: int) -> int:
+    """Module-level slow task for process backend timeout testing."""
+    time.sleep(0.5)
+    return x * 2
+
+
+@task(timeout=1.0, backend_name="multiprocessing")
+def fast_task_process(x: int) -> int:
+    """Module-level fast task for process backend timeout testing."""
+    time.sleep(0.01)
+    return x * 2
+
+
+@task(timeout=0.1, backend_name="multiprocessing")
+async def slow_async_task_process(x: int) -> int:
+    """Module-level async slow task for process backend timeout testing."""
+    await asyncio.sleep(0.5)
+    return x * 2
+
+
 class TestThreadBackendTimeout:
     """Tests for ThreadBackend timeout handling."""
 
@@ -55,36 +77,19 @@ class TestProcessBackendTimeout:
 
     def test_process_backend_timeout_enforced(self) -> None:
         """ProcessBackend enforces timeout and raises TimeoutError."""
-
-        @task(timeout=0.1, backend_name="multiprocessing")
-        def slow_task(x: int) -> int:
-            time.sleep(0.5)
-            return x * 2
-
         with pytest.raises(TimeoutError, match="exceeded timeout"):
-            evaluate(slow_task(x=5))
+            evaluate(slow_task_process(x=5))
 
     def test_process_backend_timeout_success(self) -> None:
         """ProcessBackend allows tasks that complete within timeout."""
-
-        @task(timeout=1.0, backend_name="multiprocessing")
-        def fast_task(x: int) -> int:
-            time.sleep(0.01)
-            return x * 2
-
-        result = evaluate(fast_task(x=5))
+        result = evaluate(fast_task_process(x=5))
         assert result == 10
 
     def test_process_backend_async_timeout_enforced(self) -> None:
         """ProcessBackend enforces timeout on async tasks."""
 
-        @task(timeout=0.1, backend_name="multiprocessing")
-        async def slow_async_task(x: int) -> int:
-            await asyncio.sleep(0.5)
-            return x * 2
-
         async def run():
-            return await evaluate_async(slow_async_task(x=5))
+            return await evaluate_async(slow_async_task_process(x=5))
 
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             asyncio.run(run())
