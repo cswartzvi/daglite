@@ -26,6 +26,9 @@ from daglite.plugins.reporters import EventReporter
 from daglite.plugins.reporters import ProcessReporter
 from daglite.settings import get_global_settings
 
+# Per-worker event loop (thread-local for threads, process-local for processes)
+_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
+
 
 class SequentialBackend(Backend):
     """Executes immediately in current thread/process, returns completed futures."""
@@ -112,8 +115,12 @@ class ProcessBackend(Backend):
             # incompatible with free-threading in 3.13t, causing hangs. Python 3.14 defaults to
             # 'forkserver', so this workaround is only needed for 3.13t.
             self._mp_context = get_context("spawn")
-        else:
-            # Use 'fork' on Linux (explicit, since Python 3.14 changed default to forkserver)
+        elif sys.version_info >= (3, 14):
+            # Use 'forkserver' on Python 3.14+ (safe with event loops, and it's the new default)
+            self._mp_context = get_context("forkserver")
+        else:  # pragma: no cover
+            # Use 'fork' on Linux with Python < 3.14 (fast startup, safe without event loops)
+            # This path is not covered in CI which runs Python 3.14+
             self._mp_context = get_context("fork")
 
         # NOTE: We need to defer Queue creation until we know the context
@@ -159,7 +166,12 @@ def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) 
 
 
 def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
-    """Run an async function to completion in a worker thread/process."""
+    """
+    Run an async function to completion in a worker thread/process.
+
+    Uses asyncio.run() to create an isolated event loop for each task. This works correctly in both
+    sync and async contexts because the worker thread/process has no running event loop of its own.
+    """
     return asyncio.run(func(inputs, **kwargs))
 
 
