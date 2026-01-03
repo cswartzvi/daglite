@@ -75,6 +75,8 @@ class SequentialBackend(Backend):
                 def _on_done(f):
                     try:
                         future.set_result(f.result())
+                    except asyncio.TimeoutError:
+                        future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
                     except Exception as e:
                         future.set_exception(e)
 
