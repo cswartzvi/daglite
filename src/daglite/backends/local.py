@@ -99,7 +99,6 @@ class ProcessBackend(Backend):
         from multiprocessing import Queue
         from multiprocessing import get_context
 
-        # NOTE: Coverage only runs on Linux CI runners
         if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             self._mp_context = get_context("spawn")
@@ -112,7 +111,7 @@ class ProcessBackend(Backend):
             # incompatible with free-threading in 3.13t, causing hangs. Python 3.14 defaults to
             # 'forkserver', so this workaround is only needed for 3.13t.
             self._mp_context = get_context("spawn")
-        elif sys.version_info >= (3, 14):
+        elif sys.version_info >= (3, 14):  # pragma: no cover
             # Use 'forkserver' on Python 3.14+ (safe with event loops, and it's the new default)
             self._mp_context = get_context("forkserver")
         else:  # pragma: no cover
@@ -120,7 +119,7 @@ class ProcessBackend(Backend):
             # This path is not covered in CI which runs Python 3.14+
             self._mp_context = get_context("fork")
 
-        # NOTE: We need to defer Queue creation until we know the context
+        # We need to defer Queue creation until we know the context
         queue: Queue[Any] = self._mp_context.Queue()
         return ProcessReporter(queue)
 
