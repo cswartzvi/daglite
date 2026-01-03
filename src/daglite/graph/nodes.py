@@ -253,10 +253,9 @@ def _run_sync_impl(
 
     start_time = time.time()
     try:
-        while attempt < max_attempts:
+        while attempt < max_attempts:  # pragma: no branch
             attempt += 1
             try:
-                # Notify plugins before retry (skip for first attempt)
                 if attempt > 1:
                     assert last_error is not None
                     plugin_manager.hook.before_node_retry(
@@ -268,8 +267,8 @@ def _run_sync_impl(
                     )
 
                 result = func(**resolved_inputs)
+                duration = time.time() - start_time
 
-                # Notify plugins after successful retry (skip for first attempt)
                 if attempt > 1:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
@@ -278,8 +277,6 @@ def _run_sync_impl(
                         succeeded=True,
                         reporter=reporter,
                     )
-
-                duration = time.time() - start_time
 
                 plugin_manager.hook.after_node_execute(
                     metadata=metadata,
@@ -294,7 +291,6 @@ def _run_sync_impl(
             except Exception as error:
                 last_error = error
 
-                # Notify plugins after failed retry (skip for last attempt which will error)
                 if attempt > 1 and attempt < max_attempts:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
@@ -350,13 +346,11 @@ async def _run_async_impl(
     last_error: Exception | None = None
     attempt = 0
     max_attempts = retries + 1
-
     start_time = time.time()
     try:
-        while attempt < max_attempts:
+        while attempt < max_attempts:  # pragma: no branch
             attempt += 1
             try:
-                # Notify plugins before retry (skip for first attempt)
                 if attempt > 1:
                     assert last_error is not None
                     plugin_manager.hook.before_node_retry(
@@ -373,8 +367,8 @@ async def _run_async_impl(
                 else:
                     assert metadata.backend_name != "sequential"
                     result = func(**resolved_inputs)
+                duration = time.time() - start_time
 
-                # Notify plugins after successful retry (skip for first attempt)
                 if attempt > 1:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
@@ -383,8 +377,6 @@ async def _run_async_impl(
                         succeeded=True,
                         reporter=reporter,
                     )
-
-                duration = time.time() - start_time
 
                 plugin_manager.hook.after_node_execute(
                     metadata=metadata,
@@ -399,7 +391,6 @@ async def _run_async_impl(
             except Exception as error:
                 last_error = error
 
-                # Notify plugins after failed retry (skip for last attempt which will error)
                 if attempt > 1 and attempt < max_attempts:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
