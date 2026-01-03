@@ -33,6 +33,7 @@ dev = [
     "pre-commit",
     "pre-commit-uv>=4.2.0",
     "ruff",
+    "requests>=2.32.5",
 ]
 test = [
     "mypy",

@@ -438,6 +438,7 @@ dev = [
     { name = "poethepoet" },
     { name = "pre-commit" },
     { name = "pre-commit-uv" },
+    { name = "requests" },
     { name = "ruff" },
 ]
 docs = [
@@ -483,6 +484,7 @@ dev = [
     { name = "poethepoet" },
     { name = "pre-commit" },
     { name = "pre-commit-uv", specifier = ">=4.2.0" },
+    { name = "requests", specifier = ">=2.32.5" },
     { name = "ruff" },
 ]
 docs = [
