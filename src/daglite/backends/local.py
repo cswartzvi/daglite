@@ -120,19 +120,10 @@ class ThreadBackend(Backend):
         if timeout is None:
             return executor_future
 
-        # Wrap to enforce timeout
+        # Wrap the executor future to enforce timeout
         wrapped_future: Future[Any] = Future()
+        self._executor.submit(_wait_with_timeout, executor_future, wrapped_future, timeout)
 
-        def _wait_with_timeout() -> None:
-            try:
-                result = executor_future.result(timeout=timeout)
-                wrapped_future.set_result(result)
-            except TimeoutError:
-                wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
-            except Exception as e:
-                wrapped_future.set_exception(e)
-
-        self._executor.submit(_wait_with_timeout)
         return wrapped_future
 
 
@@ -215,27 +206,13 @@ class ProcessBackend(Backend):
         if timeout is None:
             return executor_future
 
-        # If timeout specified, wrap to enforce it
+        # Wrap the executor future to enforce timeout
         wrapped_future: Future[Any] = Future()
-
-        def _wait_with_timeout() -> None:
-            try:
-                result = executor_future.result(timeout=timeout)
-                wrapped_future.set_result(result)
-            except TimeoutError:
-                wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
-            except Exception as e:
-                wrapped_future.set_exception(e)
-
-        # Submit the timeout wrapper to executor (must use thread pool for timeout waiting)
-        thread = threading.Thread(target=_wait_with_timeout, daemon=True)
+        args = (executor_future, wrapped_future, timeout)
+        thread = threading.Thread(target=_wait_with_timeout, args=args, daemon=True)
         thread.start()
+
         return wrapped_future
-
-
-def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
-    """Initializer for thread pool workers to set execution context."""
-    set_execution_context(plugin_manager, reporter)
 
 
 def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
@@ -246,6 +223,24 @@ def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: A
     sync and async contexts because the worker thread/process has no running event loop of its own.
     """
     return asyncio.run(func(inputs, **kwargs))
+
+
+def _wait_with_timeout(
+    executor_future: Future[Any], wrapped_future: Future[Any], timeout: float
+) -> None:
+    """Wait for executor future with timeout and propagate result to wrapped future."""
+    try:
+        result = executor_future.result(timeout=timeout)
+        wrapped_future.set_result(result)
+    except TimeoutError:
+        wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
+    except Exception as e:  # pragma: no cover
+        wrapped_future.set_exception(e)
+
+
+def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
+    """Initializer for thread pool workers to set execution context."""
+    set_execution_context(plugin_manager, reporter)
 
 
 def _process_initializer(serialized_plugin_manager: dict, queue) -> None:  # pragma: no cover
