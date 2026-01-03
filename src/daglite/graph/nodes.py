@@ -1,5 +1,6 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+import inspect
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -8,6 +9,10 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite.backends.context import get_plugin_manager
+from daglite.backends.context import get_reporter
+from daglite.backends.context import reset_current_task
+from daglite.backends.context import set_current_task
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
@@ -26,6 +31,15 @@ class TaskNode(BaseGraphNode):
 
     kwargs: Mapping[str, ParamInput]
     """Keyword parameters for the task function."""
+
+    retries: int = 0
+    """Number of times to retry the task on failure."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # This is unlikely to happen given retries is checked at task level, but just in case
+        assert self.retries >= 0, "Retries must be non-negative"
 
     @override
     def dependencies(self) -> set[UUID]:
@@ -63,6 +77,7 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
         )
 
     @override
@@ -75,6 +90,7 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
         )
 
 
@@ -93,6 +109,15 @@ class MapTaskNode(BaseGraphNode):
 
     mapped_kwargs: Mapping[str, ParamInput]
     """Mapped keyword arguments for the mapped function."""
+
+    retries: int = 0
+    """Number of times to retry the task on failure."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # This is unlikely to happen given retries is checked at task level, but just in case
+        assert self.retries >= 0, "Retries must be non-negative"
 
     @override
     def dependencies(self) -> set[UUID]:
@@ -196,6 +221,7 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
         )
 
     @override
@@ -209,6 +235,7 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            retries=self.retries,
         )
 
 
@@ -219,115 +246,132 @@ def _run_sync_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    retries: int = 0,
 ) -> Any:
-    """Helper to run a node synchronously with context setup."""
-    from daglite.backends.context import get_plugin_manager
-    from daglite.backends.context import get_reporter
-    from daglite.backends.context import reset_current_task
-    from daglite.backends.context import set_current_task
+    """
+    Synchronous implementation for running a node with context setup and retries.
 
-    task_token = set_current_task(metadata)
-    plugin_manager = get_plugin_manager()
+    Args:
+        func: Synchronous function to execute.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Pre-resolved parameter inputs for this node.
+        retries: Number of times to retry on failure.
+
+    Returns:
+        Result of the function execution.
+    """
+
+    token = set_current_task(metadata)
+    hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    plugin_manager.hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        reporter=reporter,
-    )
+    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    hook.before_node_execute(**common)
 
+    last_error: Exception | None = None
+    attempt, max_attempts = 0, retries + 1
     start_time = time.time()
+
     try:
-        result = func(**resolved_inputs)
+        while attempt < max_attempts:  # pragma: no branch
+            attempt += 1
+            try:
+                if attempt > 1:
+                    assert last_error is not None
+                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
+
+                result = func(**resolved_inputs)
+                duration = time.time() - start_time
+
+                if attempt > 1:
+                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                hook.after_node_execute(result=result, duration=duration, **common)
+
+                return result
+
+            except Exception as error:
+                last_error = error
+
+                if attempt > 1:
+                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+
+                if attempt >= max_attempts:
+                    break  # No more retries left
+
+        # All attempts exhausted
         duration = time.time() - start_time
-
-        plugin_manager.hook.after_node_execute(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            result=result,
-            duration=duration,
-            reporter=reporter,
-        )
-
-        return result
-
-    except Exception as error:
-        duration = time.time() - start_time
-
-        plugin_manager.hook.on_node_error(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            error=error,
-            duration=duration,
-            reporter=reporter,
-        )
-        raise
+        assert last_error is not None
+        hook.on_node_error(error=last_error, duration=duration, **common)
+        raise last_error
 
     finally:
-        reset_current_task(task_token)
+        reset_current_task(token)
 
 
 async def _run_async_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    retries: int = 0,
 ) -> Any:
-    """Helper to run a node asynchronously with context setup."""
-    import inspect
+    """
+    Async implementation for running a node with context setup and retries.
 
-    from daglite.backends.context import get_plugin_manager
-    from daglite.backends.context import get_reporter
-    from daglite.backends.context import reset_current_task
-    from daglite.backends.context import set_current_task
+    Args:
+        func: Async function to execute.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Pre-resolved parameter inputs for this node.
+        retries: Number of times to retry on failure.
 
-    task_token = set_current_task(metadata)
-    plugin_manager = get_plugin_manager()
+    Returns:
+        Result of the function execution.
+    """
+
+    token = set_current_task(metadata)
+    hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    plugin_manager.hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        reporter=reporter,
-    )
+    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    hook.before_node_execute(**common)
 
+    last_error: Exception | None = None
+    attempt, max_attempts = 0, retries + 1
     start_time = time.time()
+
     try:
-        # Handle both async and sync functions
-        if inspect.iscoroutinefunction(func):
-            result = await func(**resolved_inputs)
-        else:
-            if metadata.backend_name == "sequential":  # pragma: no cover
-                # Defensive: This should be caught earlier during graph validation in _run_async()
-                raise ValueError(
-                    "Sequential backend cannot execute synchronous tasks with evaluate_async(). "
-                    "Use threading/processes backend for parallel execution, or evaluate() for "
-                    "sync tasks."
-                )
-            result = func(**resolved_inputs)
+        while attempt < max_attempts:  # pragma: no branch
+            attempt += 1
+            try:
+                if attempt > 1:
+                    assert last_error is not None
+                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
 
+                if inspect.iscoroutinefunction(func):
+                    result = await func(**resolved_inputs)
+                else:
+                    result = func(**resolved_inputs)
+                duration = time.time() - start_time
+
+                if attempt > 1:
+                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                hook.after_node_execute(result=result, duration=duration, **common)
+
+                return result
+
+            except Exception as error:
+                last_error = error
+
+                if attempt > 1:
+                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+
+                if attempt >= max_attempts:
+                    break  # No more retries left
+
+        # All attempts exhausted
         duration = time.time() - start_time
-
-        plugin_manager.hook.after_node_execute(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            result=result,
-            duration=duration,
-            reporter=reporter,
-        )
-
-        return result
-
-    except Exception as error:
-        duration = time.time() - start_time
-
-        plugin_manager.hook.on_node_error(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            error=error,
-            duration=duration,
-            reporter=reporter,
-        )
-        raise
+        assert last_error is not None
+        hook.on_node_error(error=last_error, duration=duration, **common)
+        raise last_error
 
     finally:
-        reset_current_task(task_token)
+        reset_current_task(token)

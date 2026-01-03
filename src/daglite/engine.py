@@ -524,7 +524,7 @@ class Engine:
             futures = []
             for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
-                future = backend.submit(node.run, call, **kwargs)
+                future = backend.submit(node.run, call, node.timeout, **kwargs)
                 futures.append(future)
 
             return _MapFutureWrapper(
@@ -535,7 +535,7 @@ class Engine:
                 backend=backend,
             )
         else:
-            future = backend.submit(node.run, resolved_inputs)
+            future = backend.submit(node.run, resolved_inputs, node.timeout)
             return _NodeFutureWrapper(future=future, node=node)
 
     def _collect_result_sync(self, wrapper: _NodeFutureWrapper | _MapFutureWrapper) -> Any:
@@ -596,7 +596,9 @@ class Engine:
 
             for idx, call in enumerate(calls):
                 kwargs = {"iteration_index": idx}
-                future = wrap_future(backend.submit(node.run_async, call, **kwargs))
+                future = wrap_future(
+                    backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
+                )
                 futures.append(future)
 
             result = await asyncio.gather(*futures)
@@ -606,7 +608,9 @@ class Engine:
                 metadata=node.to_metadata(), inputs_list=calls, results=result, duration=duration
             )
         else:
-            future = wrap_future(backend.submit(node.run_async, resolved_inputs))
+            future = wrap_future(
+                backend.submit(node.run_async, resolved_inputs, timeout=node.timeout)
+            )
             result = await future
 
         result = await _materialize_async(result)
@@ -740,23 +744,8 @@ def _materialize_sync(result: Any) -> Any:
     due to early validation in _validate_sync_compatibility(). The checks remain as
     defensive code.
     """
-    # Handle lists (from map operations)
-    if isinstance(result, list):
+    if isinstance(result, list):  # From map tasks
         return [_materialize_sync(item) for item in result]
-
-    if inspect.iscoroutine(result):  # pragma: no cover
-        # Defensive: Should be caught by _validate_sync_compatibility()
-        result = asyncio.run(result)
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):  # pragma: no cover
-        # Defensive: Should be caught by _validate_sync_compatibility()
-        async def _collect():
-            items = []
-            async for item in result:
-                items.append(item)
-            return items
-
-        return asyncio.run(_collect())
 
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
@@ -765,12 +754,8 @@ def _materialize_sync(result: Any) -> Any:
 
 async def _materialize_async(result: Any) -> Any:
     """Materialize coroutines and generators in asynchronous execution context."""
-    # Handle lists (from map operations)
-    if isinstance(result, list):
+    if isinstance(result, list):  # From map tasks
         return await asyncio.gather(*[_materialize_async(item) for item in result])
-
-    if inspect.iscoroutine(result):
-        result = await result
 
     if isinstance(result, (AsyncGenerator, AsyncIterator)):
         items = []

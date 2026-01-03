@@ -287,6 +287,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         registry.register("logging-node-start", self._handle_node_start)
         registry.register("logging-node-complete", self._handle_node_complete)
         registry.register("logging-node-fail", self._handle_task_fail)
+        registry.register("logging-node-retry", self._handle_node_retry)
+        registry.register("logging-node-retry-result", self._handle_node_retry_result)
 
     @hook_impl
     def before_graph_execute(
@@ -401,6 +403,47 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             self._handle_task_fail(data)  # Fallback if no reporter is available
 
     @hook_impl
+    def before_node_retry(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        attempt: int,
+        last_error: Exception,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "attempt": attempt,
+            "error": str(last_error),
+            "error_type": type(last_error).__name__,
+        }
+        if reporter:
+            reporter.report("logging-node-retry", data=data)
+        else:  # pragma: no cover
+            self._handle_node_retry(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def after_node_retry(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        attempt: int,
+        succeeded: bool,
+        reporter: EventReporter | None,
+    ) -> None:
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "attempt": attempt,
+            "succeeded": succeeded,
+        }
+        if reporter:
+            reporter.report("logging-node-retry-result", data=data)
+        else:  # pragma: no cover
+            self._handle_node_retry_result(data)  # Fallback if no reporter is available
+
+    @hook_impl
     def after_mapped_node_execute(
         self,
         metadata: GraphMetadata,
@@ -455,6 +498,24 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"Task '{node_key}' - Failed after {_format_duration(duration)}: "
                 f"{error_type}: {error}"
             )
+
+    def _handle_node_retry(self, event: dict[str, Any]) -> None:
+        node_key = event["node_key"]
+        attempt = event["attempt"]
+        error_type = event.get("error_type", "Exception")
+        error = event.get("error", "unknown error")
+        self._logger.warning(
+            f"Task '{node_key}' - Retrying after failure (attempt {attempt}): {error_type}: {error}"
+        )
+
+    def _handle_node_retry_result(self, event: dict[str, Any]) -> None:
+        node_key = event["node_key"]
+        attempt = event["attempt"]
+        succeeded = event["succeeded"]
+        if succeeded:
+            self._logger.info(f"Task '{node_key}' - Retry succeeded on attempt {attempt}")
+        else:
+            self._logger.debug(f"Task '{node_key}' - Retry attempt {attempt} failed")
 
 
 class _ReporterHandler(logging.Handler):

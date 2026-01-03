@@ -10,6 +10,9 @@ from typing_extensions import final
 if TYPE_CHECKING:
     from daglite.plugins.events import EventProcessor
     from daglite.plugins.reporters import EventReporter
+else:
+    EventProcessor = object
+    EventReporter = object
 
 T = TypeVar("T")
 
@@ -48,7 +51,7 @@ class Backend(abc.ABC):
 
         Subclasses may override this to set up context-specific resources.
         """
-        pass
+        pass  # pragma: no cover
 
     @final
     def stop(self) -> None:
@@ -69,11 +72,15 @@ class Backend(abc.ABC):
 
         Subclasses may override this to clean up context-specific resources.
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def submit(
-        self, func: Callable[[dict[str, Any]], Any], inputs: dict[str, Any], **kwargs: Any
+        self,
+        func: Callable[[dict[str, Any]], Any],
+        inputs: dict[str, Any],
+        timeout: float | None = None,
+        **kwargs: Any,
     ) -> ConcurrentFuture[Any]:
         """
         Submit a callable for execution in the backend.
@@ -81,6 +88,7 @@ class Backend(abc.ABC):
         Args:
             func: Callable to execute
             inputs: Pre-resolved parameter inputs
+            timeout: Maximum execution time in seconds. If None, no timeout is enforced.
             **kwargs: Additional backend-specific execution parameters
 
         Returns:
