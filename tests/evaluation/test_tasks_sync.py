@@ -1,11 +1,25 @@
 """Integration test for task evaluation using evaluate() with both sync and async tasks."""
 
 import asyncio
+import os
 
 import pytest
 
 from daglite import evaluate
 from daglite import task
+
+
+# Module-level tasks for ProcessBackend (must be picklable)
+@task(backend_name="processes")
+def get_pid_process(value: int) -> tuple[int, int]:
+    """Return (value, process_id). Module-level for pickling."""
+    return (value, os.getpid())
+
+
+@task
+def combine_pids(a: tuple[int, int], b: tuple[int, int]) -> dict:
+    """Combine results from process tasks."""
+    return {"sum": a[0] + b[0], "pids": [a[1], b[1]]}
 
 
 class TestSinglePathExecution:
@@ -1031,21 +1045,11 @@ class TestSiblingParallelism:
 
     def test_sync_siblings_with_processes_backend(self) -> None:
         """Sibling tasks with processes backend execute concurrently in sync evaluation."""
-        import os
 
-        @task(backend_name="processes")
-        def get_pid(value: int) -> tuple[int, int]:
-            """Return (value, process_id)."""
-            return (value, os.getpid())
-
-        @task
-        def combine(a: tuple[int, int], b: tuple[int, int]) -> dict:
-            return {"sum": a[0] + b[0], "pids": [a[1], b[1]]}
-
-        # Create sibling tasks
-        t1 = get_pid(value=10)
-        t2 = get_pid(value=20)
-        result_future = combine(a=t1, b=t2)
+        # Create sibling tasks (using module-level tasks for pickling)
+        t1 = get_pid_process(value=10)
+        t2 = get_pid_process(value=20)
+        result_future = combine_pids(a=t1, b=t2)
 
         result = evaluate(result_future)
 
