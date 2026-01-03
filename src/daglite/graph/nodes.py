@@ -231,7 +231,7 @@ def _run_sync_impl(
     resolved_inputs: dict[str, Any],
     retries: int = 0,
 ) -> Any:
-    """Helper to run a node synchronously with context setup and retries."""
+    """Synchronous implementation for running a node with context setup and retries."""
     from daglite.backends.context import get_plugin_manager
     from daglite.backends.context import get_reporter
     from daglite.backends.context import reset_current_task
@@ -250,8 +250,8 @@ def _run_sync_impl(
     last_error: Exception | None = None
     attempt = 0
     max_attempts = retries + 1
-
     start_time = time.time()
+
     try:
         while attempt < max_attempts:  # pragma: no branch
             attempt += 1
@@ -266,7 +266,9 @@ def _run_sync_impl(
                         reporter=reporter,
                     )
 
+                # Execute function directly (must be sync)
                 result = func(**resolved_inputs)
+
                 duration = time.time() - start_time
 
                 if attempt > 1:
@@ -325,7 +327,7 @@ async def _run_async_impl(
     resolved_inputs: dict[str, Any],
     retries: int = 0,
 ) -> Any:
-    """Helper to run a node asynchronously with context setup and retries."""
+    """Async implementation for running a node with context setup and retries."""
     import inspect
 
     from daglite.backends.context import get_plugin_manager
@@ -347,6 +349,7 @@ async def _run_async_impl(
     attempt = 0
     max_attempts = retries + 1
     start_time = time.time()
+
     try:
         while attempt < max_attempts:  # pragma: no branch
             attempt += 1
@@ -361,12 +364,12 @@ async def _run_async_impl(
                         reporter=reporter,
                     )
 
-                # Handle both async and sync functions
+                # Execute function (await if coroutine function, otherwise call directly)
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
                 else:
-                    assert metadata.backend_name != "sequential"
                     result = func(**resolved_inputs)
+
                 duration = time.time() - start_time
 
                 if attempt > 1:
