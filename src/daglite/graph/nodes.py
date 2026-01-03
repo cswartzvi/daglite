@@ -30,9 +30,6 @@ class TaskNode(BaseGraphNode):
     retries: int = 0
     """Number of times to retry the task on failure."""
 
-    timeout: float | None = None
-    """Maximum execution time in seconds. If None, no timeout is enforced."""
-
     @override
     def dependencies(self) -> set[UUID]:
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
@@ -106,9 +103,6 @@ class MapTaskNode(BaseGraphNode):
 
     retries: int = 0
     """Number of times to retry the task on failure."""
-
-    timeout: float | None = None
-    """Maximum execution time in seconds. If None, no timeout is enforced."""
 
     @override
     def dependencies(self) -> set[UUID]:
