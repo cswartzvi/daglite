@@ -236,6 +236,7 @@ evaluate(double(x="hello"))
 Daglite supports parallel execution of sibling tasks (tasks at the same level of the DAG) using threading or multiprocessing backends:
 
 ```python
+import requests
 from daglite import task, evaluate
 
 @task(backend_name="threading")
