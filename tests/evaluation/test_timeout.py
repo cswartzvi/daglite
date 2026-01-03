@@ -200,3 +200,33 @@ class TestSequentialBackendTimeout:
 
         result = evaluate(fast_task(x=5))
         assert result == 10
+
+
+class TestTimeoutPropagation:
+    """Tests for timeout parameter propagation through with_options() and partial()."""
+
+    def test_timeout_with_with_options(self) -> None:
+        """Timeout can be set via with_options."""
+
+        @task(backend_name="threading")
+        def slow_task(x: int) -> int:
+            time.sleep(0.2)  # 4x timeout value for CI stability
+            return x * 2
+
+        task_with_timeout = slow_task.with_options(timeout=0.05)
+
+        with pytest.raises(TimeoutError):
+            evaluate(task_with_timeout(x=5))
+
+    def test_timeout_with_partial_task(self) -> None:
+        """Timeout works with partial tasks."""
+
+        @task(timeout=0.05, backend_name="threading")
+        def slow_multiply(x: int, factor: int) -> int:
+            time.sleep(0.2)  # 4x timeout value for CI stability
+            return x * factor
+
+        partial = slow_multiply.partial(factor=3)
+
+        with pytest.raises(TimeoutError):
+            evaluate(partial(x=4))
