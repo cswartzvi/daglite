@@ -26,9 +26,6 @@ from daglite.plugins.reporters import EventReporter
 from daglite.plugins.reporters import ProcessReporter
 from daglite.settings import get_global_settings
 
-# Per-worker event loop (thread-local for threads, process-local for processes)
-_WORKER_LOOP: asyncio.AbstractEventLoop | None = None
-
 
 class SequentialBackend(Backend):
     """Executes immediately in current thread/process, returns completed futures."""
