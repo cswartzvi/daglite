@@ -8,7 +8,6 @@ import asyncio
 import inspect
 import os
 import sys
-import threading
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
@@ -31,9 +30,25 @@ from daglite.settings import get_global_settings
 class SequentialBackend(Backend):
     """Executes immediately in current thread/process, returns completed futures."""
 
+    _timeout_executor: ThreadPoolExecutor
+
     @override
     def _get_reporter(self) -> DirectReporter:
         return DirectReporter(self.event_processor.dispatch)
+
+    @override
+    def _start(self) -> None:
+        # Small thread pool for timeout enforcement on sync tasks
+        self._timeout_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="seq-timeout-",
+            initializer=_thread_initializer,
+            initargs=(self.plugin_manager, self.reporter),
+        )
+
+    @override
+    def _stop(self) -> None:
+        self._timeout_executor.shutdown(wait=True)
 
     @override
     def submit(
@@ -56,19 +71,25 @@ class SequentialBackend(Backend):
                 if timeout is not None:
                     coro = asyncio.wait_for(coro, timeout=timeout)
 
-                asyncio_future = asyncio.ensure_future(coro)
-
-                # Wrap asyncio future as concurrent.futures.Future
                 def _on_done(f):
                     try:
                         future.set_result(f.result())
                     except Exception as e:
                         future.set_exception(e)
 
+                asyncio_future = asyncio.ensure_future(coro)
                 asyncio_future.add_done_callback(_on_done)
             else:
-                result = func(inputs, **kwargs)
-                future.set_result(result)
+                if timeout is not None:
+                    executor_future = self._timeout_executor.submit(func, inputs, **kwargs)
+                    wrapped_future: Future[Any] = Future()
+                    self._timeout_executor.submit(
+                        _wait_with_timeout, executor_future, wrapped_future, timeout
+                    )
+                    return wrapped_future
+                else:
+                    result = func(inputs, **kwargs)
+                    future.set_result(result)
 
         except Exception as e:
             future.set_exception(e)
@@ -80,6 +101,7 @@ class ThreadBackend(Backend):
     """Executes in thread pool, returns pending futures."""
 
     _executor: ThreadPoolExecutor
+    _timeout_executor: ThreadPoolExecutor
 
     @override
     def _get_reporter(self) -> DirectReporter:
@@ -96,10 +118,14 @@ class ThreadBackend(Backend):
             initializer=_thread_initializer,
             initargs=(self.plugin_manager, self.reporter),
         )
+        self._timeout_executor = ThreadPoolExecutor(
+            max_workers=4, thread_name_prefix="thread-timeout-"
+        )
 
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
+        self._timeout_executor.shutdown(wait=True)
 
     @override
     def submit(
@@ -118,9 +144,9 @@ class ThreadBackend(Backend):
         if timeout is None:
             return executor_future
 
-        # Wrap the executor future to enforce timeout
+        # Use dedicated timeout executor to avoid consuming task execution threads
         wrapped_future: Future[Any] = Future()
-        self._executor.submit(_wait_with_timeout, executor_future, wrapped_future, timeout)
+        self._timeout_executor.submit(_wait_with_timeout, executor_future, wrapped_future, timeout)
 
         return wrapped_future
 
@@ -129,6 +155,7 @@ class ProcessBackend(Backend):
     """Executes in process pool, returns pending futures."""
 
     _executor: ProcessPoolExecutor
+    _timeout_executor: ThreadPoolExecutor
     _reporter_id: UUID
     _mp_context: Any  # BaseContext, but we can't import it at class level
 
@@ -178,10 +205,17 @@ class ProcessBackend(Backend):
             initializer=_process_initializer,
             initargs=(serialized_pm, self.reporter.queue),
         )
+        self._timeout_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="proc-timeout-",
+            initializer=_thread_initializer,
+            initargs=(self.plugin_manager, self.reporter),
+        )
 
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
+        self._timeout_executor.shutdown(wait=True)
         self.event_processor.flush()  # Before removing source
         self.event_processor.remove_source(self._reporter_id)
 
@@ -205,11 +239,9 @@ class ProcessBackend(Backend):
         if timeout is None:
             return executor_future
 
-        # Wrap the executor future to enforce timeout
+        # Use dedicated timeout executor to avoid unbounded thread creation
         wrapped_future: Future[Any] = Future()
-        args = (executor_future, wrapped_future, timeout)
-        thread = threading.Thread(target=_wait_with_timeout, args=args, daemon=True)
-        thread.start()
+        self._timeout_executor.submit(_wait_with_timeout, executor_future, wrapped_future, timeout)
 
         return wrapped_future
 

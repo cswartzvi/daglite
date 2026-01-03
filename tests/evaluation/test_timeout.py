@@ -153,3 +153,29 @@ class TestAsyncTimeout:
 
         with pytest.raises(TimeoutError):
             asyncio.run(run())
+
+
+class TestSequentialBackendTimeout:
+    """Tests for SequentialBackend timeout handling with sync tasks."""
+
+    def test_sequential_backend_sync_timeout_enforced(self) -> None:
+        """SequentialBackend enforces timeout on sync tasks and raises TimeoutError."""
+
+        @task(timeout=0.1)  # Default backend is SequentialBackend
+        def slow_task(x: int) -> int:
+            time.sleep(0.5)
+            return x * 2
+
+        with pytest.raises(TimeoutError, match="exceeded timeout"):
+            evaluate(slow_task(x=5))
+
+    def test_sequential_backend_sync_timeout_success(self) -> None:
+        """SequentialBackend allows sync tasks that complete within timeout."""
+
+        @task(timeout=1.0)  # Default backend is SequentialBackend
+        def fast_task(x: int) -> int:
+            time.sleep(0.01)
+            return x * 2
+
+        result = evaluate(fast_task(x=5))
+        assert result == 10

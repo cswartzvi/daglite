@@ -10,6 +10,9 @@ from typing_extensions import final
 if TYPE_CHECKING:
     from daglite.plugins.events import EventProcessor
     from daglite.plugins.reporters import EventReporter
+else:
+    EventProcessor = Any
+    EventReporter = Any
 
 T = TypeVar("T")
 
@@ -48,7 +51,7 @@ class Backend(abc.ABC):
 
         Subclasses may override this to set up context-specific resources.
         """
-        pass
+        pass  # pragma: no cover
 
     @final
     def stop(self) -> None:
@@ -69,7 +72,7 @@ class Backend(abc.ABC):
 
         Subclasses may override this to clean up context-specific resources.
         """
-        pass
+        pass  # pragma: no cover
 
     @abc.abstractmethod
     def submit(
