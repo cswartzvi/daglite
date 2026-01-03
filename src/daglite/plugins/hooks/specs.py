@@ -67,6 +67,46 @@ class WorkerSideNodeSpecs:
             reporter: Optional event reporter for this execution context.
         """
 
+    @hook_spec
+    def before_node_retry(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        attempt: int,
+        last_error: Exception,
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called before retrying a failed node execution.
+
+        Args:
+            metadata: Metadata for the node to be retried.
+            inputs: Resolved inputs for the node execution.
+            attempt: Attempt number (1-indexed, so attempt=2 means first retry).
+            last_error: The exception that caused the previous attempt to fail.
+            reporter: Optional event reporter for this execution context.
+        """
+
+    @hook_spec
+    def after_node_retry(
+        self,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        attempt: int,
+        succeeded: bool,
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called after a retry attempt completes.
+
+        Args:
+            metadata: Metadata for the retried node.
+            inputs: Resolved inputs for the node execution.
+            attempt: Attempt number (1-indexed).
+            succeeded: True if this retry attempt succeeded, False if it failed.
+            reporter: Optional event reporter for this execution context.
+        """
+
 
 class CoordinatorSideNodeSpecs:
     """Hook specifications for node-level execution events on the **coordinator**."""
