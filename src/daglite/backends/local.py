@@ -255,6 +255,14 @@ def _run_coro_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -
 
     Uses asyncio.run() to create an isolated event loop for each task. This works correctly in both
     sync and async contexts because the worker thread/process has no running event loop of its own.
+
+    Args:
+        func: Async function to run.
+        inputs: Inputs to pass to the function.
+        **kwargs: Additional keyword arguments to pass to the function.
+
+    Returns:
+        The result of the async function.
     """
     return asyncio.run(func(inputs, **kwargs))
 
@@ -262,7 +270,14 @@ def _run_coro_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -
 def _wait_with_timeout(
     executor_future: Future[Any], wrapped_future: Future[Any], timeout: float
 ) -> None:
-    """Wait for executor future with timeout and propagate result to wrapped future."""
+    """
+    Wait for executor future with timeout and propagate result to wrapped future.
+
+    Args:
+        executor_future: The future returned by the executor.
+        wrapped_future: The future to set the result or exception on.
+        timeout: Timeout in seconds.
+    """
     try:
         result = executor_future.result(timeout=timeout)
         wrapped_future.set_result(result)
