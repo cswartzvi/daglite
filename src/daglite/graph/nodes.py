@@ -1,5 +1,6 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+import inspect
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -8,6 +9,10 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite.backends.context import get_plugin_manager
+from daglite.backends.context import get_reporter
+from daglite.backends.context import reset_current_task
+from daglite.backends.context import set_current_task
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
@@ -244,24 +249,16 @@ def _run_sync_impl(
     retries: int = 0,
 ) -> Any:
     """Synchronous implementation for running a node with context setup and retries."""
-    from daglite.backends.context import get_plugin_manager
-    from daglite.backends.context import get_reporter
-    from daglite.backends.context import reset_current_task
-    from daglite.backends.context import set_current_task
 
-    task_token = set_current_task(metadata)
-    plugin_manager = get_plugin_manager()
+    token = set_current_task(metadata)
+    hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    plugin_manager.hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        reporter=reporter,
-    )
+    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
-    attempt = 0
-    max_attempts = retries + 1
+    attempt, max_attempts = 0, retries + 1
     start_time = time.time()
 
     try:
@@ -270,35 +267,14 @@ def _run_sync_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    plugin_manager.hook.before_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        last_error=last_error,
-                        reporter=reporter,
-                    )
+                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
 
-                # Execute function directly (must be sync)
                 result = func(**resolved_inputs)
-
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    plugin_manager.hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        succeeded=True,
-                        reporter=reporter,
-                    )
-
-                plugin_manager.hook.after_node_execute(
-                    metadata=metadata,
-                    inputs=resolved_inputs,
-                    result=result,
-                    duration=duration,
-                    reporter=reporter,
-                )
+                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                hook.after_node_execute(result=result, duration=duration, **common)
 
                 return result
 
@@ -306,13 +282,7 @@ def _run_sync_impl(
                 last_error = error
 
                 if attempt > 1:
-                    plugin_manager.hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        succeeded=False,
-                        reporter=reporter,
-                    )
+                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -320,17 +290,11 @@ def _run_sync_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        plugin_manager.hook.on_node_error(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            error=last_error,
-            duration=duration,
-            reporter=reporter,
-        )
+        hook.on_node_error(error=last_error, duration=duration, **common)
         raise last_error
 
     finally:
-        reset_current_task(task_token)
+        reset_current_task(token)
 
 
 async def _run_async_impl(
@@ -340,26 +304,16 @@ async def _run_async_impl(
     retries: int = 0,
 ) -> Any:
     """Async implementation for running a node with context setup and retries."""
-    import inspect
 
-    from daglite.backends.context import get_plugin_manager
-    from daglite.backends.context import get_reporter
-    from daglite.backends.context import reset_current_task
-    from daglite.backends.context import set_current_task
-
-    task_token = set_current_task(metadata)
-    plugin_manager = get_plugin_manager()
+    token = set_current_task(metadata)
+    hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    plugin_manager.hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        reporter=reporter,
-    )
+    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
-    attempt = 0
-    max_attempts = retries + 1
+    attempt, max_attempts = 0, retries + 1
     start_time = time.time()
 
     try:
@@ -368,38 +322,17 @@ async def _run_async_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    plugin_manager.hook.before_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        last_error=last_error,
-                        reporter=reporter,
-                    )
+                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
 
-                # Execute function (await if coroutine function, otherwise call directly)
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
                 else:
                     result = func(**resolved_inputs)
-
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    plugin_manager.hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        succeeded=True,
-                        reporter=reporter,
-                    )
-
-                plugin_manager.hook.after_node_execute(
-                    metadata=metadata,
-                    inputs=resolved_inputs,
-                    result=result,
-                    duration=duration,
-                    reporter=reporter,
-                )
+                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                hook.after_node_execute(result=result, duration=duration, **common)
 
                 return result
 
@@ -407,13 +340,7 @@ async def _run_async_impl(
                 last_error = error
 
                 if attempt > 1:
-                    plugin_manager.hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        attempt=attempt,
-                        succeeded=False,
-                        reporter=reporter,
-                    )
+                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -421,14 +348,8 @@ async def _run_async_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        plugin_manager.hook.on_node_error(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            error=last_error,
-            duration=duration,
-            reporter=reporter,
-        )
+        hook.on_node_error(error=last_error, duration=duration, **common)
         raise last_error
 
     finally:
-        reset_current_task(task_token)
+        reset_current_task(token)
