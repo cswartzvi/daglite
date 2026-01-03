@@ -248,7 +248,18 @@ def _run_sync_impl(
     resolved_inputs: dict[str, Any],
     retries: int = 0,
 ) -> Any:
-    """Synchronous implementation for running a node with context setup and retries."""
+    """
+    Synchronous implementation for running a node with context setup and retries.
+
+    Args:
+        func: Synchronous function to execute.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Pre-resolved parameter inputs for this node.
+        retries: Number of times to retry on failure.
+
+    Returns:
+        Result of the function execution.
+    """
 
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
@@ -303,7 +314,18 @@ async def _run_async_impl(
     resolved_inputs: dict[str, Any],
     retries: int = 0,
 ) -> Any:
-    """Async implementation for running a node with context setup and retries."""
+    """
+    Async implementation for running a node with context setup and retries.
+
+    Args:
+        func: Async function to execute.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Pre-resolved parameter inputs for this node.
+        retries: Number of times to retry on failure.
+
+    Returns:
+        Result of the function execution.
+    """
 
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
