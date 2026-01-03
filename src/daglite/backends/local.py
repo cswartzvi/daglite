@@ -111,9 +111,7 @@ class ThreadBackend(Backend):
     ) -> Future[Any]:
         # Submit to executor first
         if inspect.iscoroutinefunction(func):
-            executor_future = self._executor.submit(
-                _run_coroutine_in_worker, func, inputs, **kwargs
-            )
+            executor_future = self._executor.submit(_run_coro_in_worker, func, inputs, **kwargs)
         else:
             executor_future = self._executor.submit(func, inputs, **kwargs)
 
@@ -142,6 +140,7 @@ class ProcessBackend(Backend):
         if os.name == "nt" or sys.platform == "darwin":  # pragma: no cover
             # Use 'spawn' on Windows (required) and macOS (fork deprecated)
             self._mp_context = get_context("spawn")
+
         elif (
             sys.version_info >= (3, 13)
             and sys.version_info < (3, 14)
@@ -151,9 +150,11 @@ class ProcessBackend(Backend):
             # incompatible with free-threading in 3.13t, causing hangs. Python 3.14 defaults to
             # 'forkserver', so this workaround is only needed for 3.13t.
             self._mp_context = get_context("spawn")
+
         elif sys.version_info >= (3, 14):  # pragma: no cover
             # Use 'forkserver' on Python 3.14+ (safe with event loops, and it's the new default)
             self._mp_context = get_context("forkserver")
+
         else:  # pragma: no cover
             # Use 'fork' on Linux with Python < 3.14 (fast startup, safe without event loops)
             # This path is not covered in CI which runs Python 3.14+
@@ -197,9 +198,7 @@ class ProcessBackend(Backend):
     ) -> Future[Any]:
         # Submit to executor first
         if inspect.iscoroutinefunction(func):
-            executor_future = self._executor.submit(
-                _run_coroutine_in_worker, func, inputs, **kwargs
-            )
+            executor_future = self._executor.submit(_run_coro_in_worker, func, inputs, **kwargs)
         else:
             executor_future = self._executor.submit(func, inputs, **kwargs)
 
@@ -215,7 +214,7 @@ class ProcessBackend(Backend):
         return wrapped_future
 
 
-def _run_coroutine_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
+def _run_coro_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
     """
     Run an async function to completion in a worker thread/process.
 

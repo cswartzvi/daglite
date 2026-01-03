@@ -30,6 +30,12 @@ class TaskNode(BaseGraphNode):
     retries: int = 0
     """Number of times to retry the task on failure."""
 
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # This is unlikely to happen given retries is checked at task level, but just in case
+        assert self.retries >= 0, "Retries must be non-negative"
+
     @override
     def dependencies(self) -> set[UUID]:
         return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
@@ -101,6 +107,12 @@ class MapTaskNode(BaseGraphNode):
 
     retries: int = 0
     """Number of times to retry the task on failure."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+
+        # This is unlikely to happen given retries is checked at task level, but just in case
+        assert self.retries >= 0, "Retries must be non-negative"
 
     @override
     def dependencies(self) -> set[UUID]:
@@ -293,7 +305,7 @@ def _run_sync_impl(
             except Exception as error:
                 last_error = error
 
-                if attempt > 1 and attempt < max_attempts:
+                if attempt > 1:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
                         inputs=resolved_inputs,
@@ -394,7 +406,7 @@ async def _run_async_impl(
             except Exception as error:
                 last_error = error
 
-                if attempt > 1 and attempt < max_attempts:
+                if attempt > 1:
                     plugin_manager.hook.after_node_retry(
                         metadata=metadata,
                         inputs=resolved_inputs,

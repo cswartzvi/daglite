@@ -99,6 +99,10 @@ class BaseGraphNode(abc.ABC):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds (enforced by backend). If None, no timeout."""
 
+    def __post_init__(self) -> None:
+        # This is unlikely to happen given timeout is checked at task level, but just in case
+        assert self.timeout is None or self.timeout >= 0, "Timeout must be non-negative"
+
     @abc.abstractmethod
     def dependencies(self) -> set[UUID]:
         """

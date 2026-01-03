@@ -115,6 +115,24 @@ class TestTaskDefinition:
             class NotCallable:
                 pass
 
+    def test_task_with_negative_retries(self) -> None:
+        """Defining a task with negative retries raises ParameterError."""
+
+        with pytest.raises(ParameterError, match="invalid retries=-1"):
+
+            @task(retries=-1)
+            def faulty_task(x: int) -> int:
+                return x
+
+    def test_task_with_negative_timeout(self) -> None:
+        """Defining a task with negative timeout raises ParameterError."""
+
+        with pytest.raises(ParameterError, match="invalid timeout=-5"):
+
+            @task(timeout=-5)
+            def faulty_task(x: int) -> int:
+                return x
+
 
 class TestParameterValidation:
     """Test parameter validation for task calls and partial() operations."""

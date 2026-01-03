@@ -68,7 +68,8 @@ def task(  # noqa: D417
         backend_name: Name of the backend to use for this task. If not provided, uses the default
             global settings backend.
         retries: Number of times to retry the task on failure. Defaults to 0 (no retries).
-        timeout: Maximum execution time in seconds. If None, no timeout is enforced.
+        timeout: Maximum execution time in seconds. Must be non-negative if provided.
+            If None, no timeout is enforced.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -148,6 +149,16 @@ class BaseTask(abc.ABC, Generic[P, R]):
 
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds. If None, no timeout is enforced."""
+
+    def __post_init__(self) -> None:
+        if self.retries < 0:
+            raise ParameterError(
+                f"Task '{self.name}' has invalid retries={self.retries}. Must be non-negative."
+            )
+        if self.timeout is not None and self.timeout < 0:
+            raise ParameterError(
+                f"Task '{self.name}' has invalid timeout={self.timeout}. Must be non-negative."
+            )
 
     @cached_property
     @abc.abstractmethod
@@ -327,6 +338,7 @@ class Task(BaseTask[P, R]):
     """Whether this task's function is an async coroutine function."""
 
     def __post_init__(self) -> None:
+        super().__post_init__()
         # Detect if function is async and update is_async field
         if inspect.iscoroutinefunction(self.func):
             object.__setattr__(self, "is_async", True)
