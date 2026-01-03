@@ -744,23 +744,8 @@ def _materialize_sync(result: Any) -> Any:
     due to early validation in _validate_sync_compatibility(). The checks remain as
     defensive code.
     """
-    # Handle lists (from map operations)
-    if isinstance(result, list):
+    if isinstance(result, list):  # From map tasks
         return [_materialize_sync(item) for item in result]
-
-    if inspect.iscoroutine(result):  # pragma: no cover
-        # Defensive: Should be caught by _validate_sync_compatibility()
-        result = asyncio.run(result)
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):  # pragma: no cover
-        # Defensive: Should be caught by _validate_sync_compatibility()
-        async def _collect():
-            items = []
-            async for item in result:
-                items.append(item)
-            return items
-
-        return asyncio.run(_collect())
 
     if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
         return list(result)
@@ -769,12 +754,8 @@ def _materialize_sync(result: Any) -> Any:
 
 async def _materialize_async(result: Any) -> Any:
     """Materialize coroutines and generators in asynchronous execution context."""
-    # Handle lists (from map operations)
-    if isinstance(result, list):
+    if isinstance(result, list):  # From map tasks
         return await asyncio.gather(*[_materialize_async(item) for item in result])
-
-    if inspect.iscoroutine(result):
-        result = await result
 
     if isinstance(result, (AsyncGenerator, AsyncIterator)):
         items = []
