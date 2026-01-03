@@ -398,6 +398,66 @@ class TestLifecycleLoggingWithSequentialEvaluation:
         # Check format (should be like "50ms" or similar)
         assert "ms" in log_text
 
+    def test_logs_retry_success(self, capsys):
+        """Test that successful retries are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        attempt_count = 0
+
+        @task(retries=2)
+        def flaky_task() -> str:
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count < 2:
+                raise ValueError(f"Attempt {attempt_count} failed")
+            return "success"
+
+        result = evaluate(
+            flaky_task(),
+            plugins=[LifecycleLoggingPlugin()],
+        )
+
+        assert result == "success"
+        assert attempt_count == 2
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check retry logging
+        assert "Task 'flaky_task' - Retrying after failure (attempt 2)" in log_text
+        assert "ValueError: Attempt 1 failed" in log_text
+        assert "Task 'flaky_task' - Retry succeeded on attempt 2" in log_text
+        assert "Task 'flaky_task' - Completed task successfully" in log_text
+
+    def test_logs_retry_exhausted(self, capsys):
+        """Test that exhausted retries are logged correctly."""
+        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+
+        attempt_count = 0
+
+        @task(retries=2)
+        def always_fails() -> str:
+            nonlocal attempt_count
+            attempt_count += 1
+            raise RuntimeError(f"Attempt {attempt_count} failed")
+
+        with pytest.raises(RuntimeError, match="Attempt 3 failed"):
+            evaluate(
+                always_fails(),
+                plugins=[LifecycleLoggingPlugin()],
+            )
+
+        assert attempt_count == 3  # Original + 2 retries
+
+        captured = capsys.readouterr()
+        log_text = captured.out
+        # Check that retries are logged
+        assert "Task 'always_fails' - Retrying after failure (attempt 2)" in log_text
+        assert "RuntimeError: Attempt 1 failed" in log_text
+        assert "Task 'always_fails' - Retrying after failure (attempt 3)" in log_text
+        assert "RuntimeError: Attempt 2 failed" in log_text
+        # Final failure should be logged
+        assert "Task 'always_fails' - Failed after" in log_text
+
 
 class TestLifecycleLoggingWithErrors:
     """Test LifecycleLoggingPlugin with error scenarios."""
