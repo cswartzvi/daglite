@@ -263,10 +263,13 @@ def _wait_with_timeout(
     try:
         result = executor_future.result(timeout=timeout)
         wrapped_future.set_result(result)
-    except TimeoutError:
-        wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
-    except Exception as e:  # pragma: no cover
-        wrapped_future.set_exception(e)
+    except Exception as e:
+        # Catch both built-in TimeoutError and concurrent.futures TimeoutError
+        # (they're aliased in Python 3.10+, but exception handling needs both)
+        if isinstance(e, TimeoutError):
+            wrapped_future.set_exception(TimeoutError(f"Task exceeded timeout of {timeout}s"))
+        else:  # pragma: no cover
+            wrapped_future.set_exception(e)
 
 
 def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) -> None:
