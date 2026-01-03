@@ -230,3 +230,50 @@ class TestTimeoutPropagation:
 
         with pytest.raises(TimeoutError):
             evaluate(partial(x=4))
+
+
+class TestMapTaskTimeout:
+    """Tests for timeout functionality with map operations."""
+
+    def test_product_task_timeout_per_iteration(self) -> None:
+        """Each iteration of a product task has independent timeout enforcement."""
+        attempts = []
+
+        @task(timeout=0.1, backend_name="threading")
+        def process_item(x: int) -> int:
+            attempts.append(x)
+            # Only slow down even numbers to exceed timeout
+            if x % 2 == 0:
+                time.sleep(0.3)  # Exceeds timeout
+            return x * 2
+
+        # Should fail on first even number (2)
+        with pytest.raises(TimeoutError):
+            evaluate(process_item.product(x=[1, 2, 3, 4]))
+
+        # Verify that x=1 succeeded before x=2 timed out
+        assert 1 in attempts
+        assert 2 in attempts
+
+    def test_async_product_task_timeout_per_iteration(self) -> None:
+        """Each iteration of an async product task has independent timeout enforcement."""
+        attempts = []
+
+        @task(timeout=0.1, backend_name="threading")
+        async def process_item(x: int) -> int:
+            attempts.append(x)
+            # Only slow down even numbers to exceed timeout
+            if x % 2 == 0:
+                await asyncio.sleep(0.3)  # Exceeds timeout
+            return x * 2
+
+        async def run():
+            return await evaluate_async(process_item.product(x=[1, 2, 3, 4]))
+
+        # Should fail on first even number (2)
+        with pytest.raises(TimeoutError):
+            asyncio.run(run())
+
+        # Verify that x=1 succeeded before x=2 timed out
+        assert 1 in attempts
+        assert 2 in attempts
