@@ -71,6 +71,22 @@ class TestThreadBackendTimeout:
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             asyncio.run(run())
 
+    def test_thread_backend_timeout_without_retries(self) -> None:
+        """ThreadBackend timeout errors are not retried."""
+        attempts = []
+
+        @task(timeout=0.05, retries=3, backend_name="threading")
+        def slow_task(x: int) -> int:
+            attempts.append(1)
+            time.sleep(0.2)  # 4x timeout value for CI stability
+            return x * 2
+
+        with pytest.raises(TimeoutError):
+            evaluate(slow_task(x=5))
+
+        # Should only attempt once - timeouts are not retried
+        assert len(attempts) == 1
+
 
 class TestProcessBackendTimeout:
     """Tests for ProcessBackend timeout handling."""
