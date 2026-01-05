@@ -6,56 +6,14 @@ of built-in and custom Python types. Adding support for external types (e.g., nu
 dataframes, PIL images, PyTorch tensors) can be done via separate `daglite-serialization` package.
 """
 
+from __future__ import annotations
+
 import hashlib
 import pickle
 from dataclasses import dataclass
 from typing import Any, Callable, Type, TypeVar
 
 T = TypeVar("T")
-
-
-@dataclass
-class SerializationHandler:
-    """Handler for serializing/deserializing a specific type in a specific format."""
-
-    type_: Type
-    """Python type this handler applies to"""
-
-    format: str
-    """Format identifier (e.g., 'pickle', 'csv', 'parquet')"""
-
-    file_extension: str
-    """File extension for this format (e.g., 'pkl', 'csv')"""
-
-    serializer: Callable[[Any], bytes]
-    """Function to convert object to bytes"""
-
-    deserializer: Callable[[bytes], Any]
-    """Function to convert bytes back to object"""
-
-    is_default: bool = False
-    """Whether this is the default format for the type"""
-
-
-@dataclass
-class HashStrategy:
-    """
-    Strategy for hashing a specific type.
-
-    Attributes:
-        type_: The Python type this strategy applies to
-        hasher: Function to compute hash string from object
-        description: Human-readable description of the strategy
-    """
-
-    type_: Type
-    """Python type this strategy applies to"""
-
-    hasher: Callable[[Any], str]
-    """Function to compute hash string from object"""
-
-    description: str = ""
-    """Human-readable description of the strategy"""
 
 
 class SerializationRegistry:
@@ -107,9 +65,9 @@ class SerializationRegistry:
 
     def __init__(self) -> None:
         """Initialize registry with built-in types."""
-        self._handlers: dict[tuple[Type, str], SerializationHandler] = {}
+        self._handlers: dict[tuple[Type, str], _SerializationHandler] = {}
         self._default_formats: dict[Type, str] = {}
-        self._hash_strategies: dict[Type, HashStrategy] = {}
+        self._hash_strategies: dict[Type, _HashStrategy] = {}
         self._register_builtin_types()
 
     def register(
@@ -132,7 +90,7 @@ class SerializationRegistry:
             file_extension: File extension for this format, defaults to 'bin'.
             make_default: Whether to make this the default format for the type.
         """
-        handler = SerializationHandler(
+        handler = _SerializationHandler(
             type_=type_,
             format=format,
             file_extension=file_extension,
@@ -162,7 +120,7 @@ class SerializationRegistry:
             hasher: Function to compute hash string from object.
             description: Human-readable description of the strategy.
         """
-        strategy = HashStrategy(
+        strategy = _HashStrategy(
             type_=type_,
             hasher=hasher,
             description=description,
@@ -374,7 +332,7 @@ class SerializationRegistry:
         self,
         type_: Type,
         format: str,
-    ) -> SerializationHandler | None:
+    ) -> _SerializationHandler | None:
         """Find handler for type/format, checking subclasses if needed."""
         # Try exact match first
         key = (type_, format)
@@ -394,7 +352,7 @@ class SerializationRegistry:
 
         return None
 
-    def _find_hash_strategy(self, type_: Type) -> HashStrategy | None:
+    def _find_hash_strategy(self, type_: Type) -> _HashStrategy | None:
         """Find hash strategy for type, checking subclasses if needed."""
         # Try exact match first
         if type_ in self._hash_strategies:
@@ -552,13 +510,57 @@ class SerializationRegistry:
             )
 
 
+@dataclass
+class _SerializationHandler:
+    """Handler for serializing/deserializing a specific type in a specific format."""
+
+    type_: Type
+    """Python type this handler applies to"""
+
+    format: str
+    """Format identifier (e.g., 'pickle', 'csv', 'parquet')"""
+
+    file_extension: str
+    """File extension for this format (e.g., 'pkl', 'csv')"""
+
+    serializer: Callable[[Any], bytes]
+    """Function to convert object to bytes"""
+
+    deserializer: Callable[[bytes], Any]
+    """Function to convert bytes back to object"""
+
+    is_default: bool = False
+    """Whether this is the default format for the type"""
+
+
+@dataclass
+class _HashStrategy:
+    """
+    Strategy for hashing a specific type.
+
+    Attributes:
+        type_: The Python type this strategy applies to
+        hasher: Function to compute hash string from object
+        description: Human-readable description of the strategy
+    """
+
+    type_: Type
+    """Python type this strategy applies to"""
+
+    hasher: Callable[[Any], str]
+    """Function to compute hash string from object"""
+
+    description: str = ""
+    """Human-readable description of the strategy"""
+
+
 # Global default registry instance
 default_registry = SerializationRegistry()
 
 
 __all__ = [
     "SerializationRegistry",
-    "SerializationHandler",
-    "HashStrategy",
+    "_SerializationHandler",
+    "_HashStrategy",
     "default_registry",
 ]
