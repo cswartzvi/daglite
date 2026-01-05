@@ -40,6 +40,8 @@ def task(
     backend_name: str | None = None,
     retries: int | None = None,
     timeout: float | None = None,
+    cache: bool = False,
+    cache_ttl: int | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -51,6 +53,8 @@ def task(  # noqa: D417
     backend_name: str | None = None,
     retries: int | None = None,
     timeout: float | None = None,
+    cache: bool = False,
+    cache_ttl: int | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -70,6 +74,11 @@ def task(  # noqa: D417
         retries: Number of times to retry the task on failure. Defaults to 0 (no retries).
         timeout: Maximum execution time in seconds. Must be non-negative if provided.
             If None, no timeout is enforced.
+        cache: Whether to enable hash-based caching for this task. When True, the task's output
+            will be cached based on a hash of its function source and input parameters.
+            Defaults to False.
+        cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
+            Only used when cache=True.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -119,6 +128,8 @@ def task(  # noqa: D417
             is_async=is_async,
             retries=retries if retries is not None else 0,
             timeout=timeout,
+            cache=cache,
+            cache_ttl=cache_ttl,
         )
 
     if func is not None:
@@ -150,6 +161,12 @@ class BaseTask(abc.ABC, Generic[P, R]):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds. If None, no timeout is enforced."""
 
+    cache: bool = field(default=False, kw_only=True)
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = field(default=None, kw_only=True)
+    """Time-to-live for cached results in seconds. If None, cached results never expire."""
+
     def __post_init__(self) -> None:
         if self.retries < 0:
             raise ParameterError(
@@ -158,6 +175,10 @@ class BaseTask(abc.ABC, Generic[P, R]):
         if self.timeout is not None and self.timeout < 0:
             raise ParameterError(
                 f"Task '{self.name}' has invalid timeout={self.timeout}. Must be non-negative."
+            )
+        if self.cache_ttl is not None and self.cache_ttl < 0:
+            raise ParameterError(
+                f"Task '{self.name}' has invalid cache_ttl={self.cache_ttl}. Must be non-negative."
             )
 
     @cached_property
@@ -174,6 +195,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
         backend_name: str | None = None,
         retries: int | None = None,
         timeout: float | None = None,
+        cache: bool | None = None,
+        cache_ttl: int | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -184,6 +207,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
             backend_name: New backend name for the task. If `None`, keeps the existing backend name.
             retries: New number of retries for the task. If `None`, keeps the existing retries.
             timeout: New timeout for the task. If `None`, keeps the existing timeout.
+            cache: Whether to enable caching for the task. If `None`, keeps the existing setting.
+            cache_ttl: Time-to-live for cached results. If `None`, keeps the existing cache_ttl.
 
         Returns:
             A new `BaseTask` instance with updated options.
@@ -194,12 +219,23 @@ class BaseTask(abc.ABC, Generic[P, R]):
         backend_name = backend_name if backend_name is not None else self.backend_name
         new_retries = retries if retries is not None else self.retries
         new_timeout = timeout if timeout is not None else self.timeout
+        new_cache = cache if cache is not None else self.cache
+        new_cache_ttl = cache_ttl if cache_ttl is not None else self.cache_ttl
 
         # Collect the remaining fields (assumes this is a dataclass)
         remaining_fields = {
             f.name: getattr(self, f.name)
             for f in fields(self)
-            if f.name not in {"name", "description", "backend_name", "retries", "timeout"}
+            if f.name
+            not in {
+                "name",
+                "description",
+                "backend_name",
+                "retries",
+                "timeout",
+                "cache",
+                "cache_ttl",
+            }
         }
 
         return type(self)(
@@ -208,6 +244,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
             backend_name=backend_name,
             retries=new_retries,
             timeout=new_timeout,
+            cache=new_cache,
+            cache_ttl=new_cache_ttl,
             **remaining_fields,
         )
 
