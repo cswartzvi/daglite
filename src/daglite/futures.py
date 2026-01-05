@@ -6,11 +6,12 @@ import abc
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
 
-from typing_extensions import override
+from typing_extensions import Self, override
 
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
@@ -43,6 +44,8 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     _id: UUID = field(init=False, repr=False)
+    _output_key: str | None = field(init=False, repr=False, default=None)
+    _is_checkpoint: bool = field(init=False, repr=False, default=False)
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
@@ -52,6 +55,62 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     @override
     def id(self) -> UUID:
         return self._id
+
+    def save(self, key: str) -> Self:
+        """
+        Save task output for inspection (non-blocking side effect).
+
+        The output will be stored with the given key after task execution completes.
+        This does NOT mark the task as a resumption point - use .checkpoint() for that.
+
+        Args:
+            key: Storage key for this output. Can use {param} format strings which
+                will be auto-resolved from task parameters.
+
+        Returns:
+            The same TaskFuture instance with updated metadata for output storage.
+
+        Examples:
+            >>> from daglite import task
+            >>> @task
+            ... def process(data_id: str) -> Result: ...
+            >>> process(data_id="abc123").save("processed_{data_id}")  # doctest: +ELLIPSIS
+            TaskFuture(...)
+        """
+        new_future = replace(self)
+        object.__setattr__(new_future, "_id", self._id)
+        object.__setattr__(new_future, "_output_key", key)
+        object.__setattr__(new_future, "_is_checkpoint", False)
+        return new_future
+
+    def checkpoint(self, key: str) -> Self:
+        """
+        Save task output and mark as a resumption point.
+
+        Similar to .save() but additionally marks this as a checkpoint that can be
+        used with evaluate(from_=key) to resume execution from this point.
+
+        Args:
+            key: Storage key for this checkpoint. Can use {param} format strings which
+                will be auto-resolved from task parameters.
+
+        Returns:
+            The same TaskFuture instance with updated metadata for output storage.
+
+        Examples:
+            >>> from daglite import task
+            >>> @task
+            ... def train_model(model_type: str) -> Model: ...
+            >>> train_model(model_type="linear").checkpoint(
+            ...     "model_{model_type}"
+            ... )  # doctest: +ELLIPSIS
+            TaskFuture(...)
+        """
+        new_future = replace(self)
+        object.__setattr__(new_future, "_id", self._id)
+        object.__setattr__(new_future, "_output_key", key)
+        object.__setattr__(new_future, "_is_checkpoint", True)
+        return new_future
 
     # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
 
