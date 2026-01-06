@@ -44,72 +44,92 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     _id: UUID = field(init=False, repr=False)
-    _output_key: str | None = field(init=False, repr=False, default=None)
-    _is_checkpoint: bool = field(init=False, repr=False, default=False)
+    _output_configs: tuple[_OutputConfig, ...] = field(init=False, repr=False, default=())
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())
+        object.__setattr__(self, "_output_configs", ())
 
     @property
     @override
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str) -> Self:
+    def save(self, key: str, *, extra: Any = None) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
         The output will be stored with the given key after task execution completes.
         This does NOT mark the task as a resumption point - use .checkpoint() for that.
+        Can be called multiple times to save to multiple keys.
 
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
+            extra: Optional additional context (can be a TaskFuture, e.g., version number)
 
         Returns:
-            The same TaskFuture instance with updated metadata for output storage.
+            Self for method chaining
 
         Examples:
             >>> from daglite import task
             >>> @task
             ... def process(data_id: str) -> Result: ...
-            >>> process(data_id="abc123").save("processed_{data_id}")  # doctest: +ELLIPSIS
+            >>> @task
+            ... def get_version() -> str: ...
+            >>> process(data_id="abc123").save(
+            ...     "processed_{data_id}", extra=get_version()
+            ... )  # doctest: +ELLIPSIS
+            TaskFuture(...)
+
+            Multiple saves:
+            >>> future = process(data_id="abc")
+            >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
+        config = _OutputConfig(key=key, name=None, extra=extra)
+        new_configs = self._output_configs + (config,)  # type: ignore[attr-defined]
+
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_output_key", key)
-        object.__setattr__(new_future, "_is_checkpoint", False)
+        object.__setattr__(new_future, "_output_configs", new_configs)
         return new_future
 
-    def checkpoint(self, key: str) -> Self:
+    def checkpoint(self, name: str, key: str, *, extra: Any = None) -> Self:
         """
         Save task output and mark as a resumption point.
 
-        Similar to .save() but additionally marks this as a checkpoint that can be
-        used with evaluate(from_=key) to resume execution from this point.
+        Creates a named checkpoint that can be used with evaluate(from_=name) to
+        resume execution from this point. The output is also saved with the given key.
+        Can be called multiple times to create multiple checkpoints.
 
         Args:
-            key: Storage key for this checkpoint. Can use {param} format strings which
+            name: Explicit name for this checkpoint (used for graph resumption)
+            key: Storage key for the output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
+            extra: Optional additional context (can be a TaskFuture, e.g., version number)
 
         Returns:
-            The same TaskFuture instance with updated metadata for output storage.
+            Self for method chaining
 
         Examples:
             >>> from daglite import task
             >>> @task
             ... def train_model(model_type: str) -> Model: ...
+            >>> @task
+            ... def get_version() -> str: ...
             >>> train_model(model_type="linear").checkpoint(
-            ...     "model_{model_type}"
+            ...     name="trained_model", key="model_{model_type}", extra=get_version()
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
+        config = _OutputConfig(key=key, name=name, extra=extra)
+        new_configs = self._output_configs + (config,)  # type: ignore[attr-defined]
+
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_output_key", key)
-        object.__setattr__(new_future, "_is_checkpoint", True)
+        object.__setattr__(new_future, "_output_configs", new_configs)
         return new_future
 
     # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
@@ -467,6 +487,10 @@ class TaskFuture(BaseTaskFuture[R]):
         for value in self.kwargs.values():
             if isinstance(value, BaseTaskFuture):
                 deps.append(value)
+        # Include extras from output configs
+        for config in self._output_configs:  # type: ignore[attr-defined]
+            if isinstance(config.extra, BaseTaskFuture):
+                deps.append(config.extra)
         return deps
 
     @override
@@ -645,6 +669,10 @@ class MapTaskFuture(BaseTaskFuture[R]):
         for seq in self.mapped_kwargs.values():
             if isinstance(seq, BaseTaskFuture):
                 deps.append(seq)
+        # Include extras from output configs
+        for config in self._output_configs:  # type: ignore[attr-defined]
+            if isinstance(config.extra, BaseTaskFuture):
+                deps.append(config.extra)
         return deps
 
     @override
@@ -684,6 +712,20 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
 
 # region Helpers
+
+
+@dataclass(frozen=True)
+class _OutputConfig:
+    """Configuration for saving/checkpointing task output."""
+
+    key: str
+    """Storage key (may contain {param} template strings)"""
+
+    name: str | None = None
+    """If set, marks this as a named checkpoint for graph resumption"""
+
+    extra: Any = None
+    """Optional extra context (can be TaskFuture)"""
 
 
 def _infer_tuple_size(task_func: Any) -> int | None:
