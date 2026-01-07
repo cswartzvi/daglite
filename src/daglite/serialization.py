@@ -47,7 +47,7 @@ class SerializationRegistry:
         ...     lambda m: m.to_bytes(),
         ...     lambda b: MyModel.from_bytes(b),
         ...     format="default",
-        ...     file_extension="model",
+        ...     file_extensions="model",
         ... )
 
         Register a hash strategy for the custom type
@@ -67,6 +67,7 @@ class SerializationRegistry:
         """Initialize registry with built-in types."""
         self._handlers: dict[tuple[Type, str], _SerializationHandler] = {}
         self._default_formats: dict[Type, str] = {}
+        self._extension_to_format: dict[str, list[tuple[Type, str]]] = {}
         self._hash_strategies: dict[Type, _HashStrategy] = {}
         self._register_builtin_types()
 
@@ -76,7 +77,7 @@ class SerializationRegistry:
         serializer: Callable[[T], bytes],
         deserializer: Callable[[bytes], T],
         format: str = "default",
-        file_extension: str = "bin",
+        file_extensions: list[str] | str = "bin",
         make_default: bool = False,
     ) -> None:
         """
@@ -87,13 +88,18 @@ class SerializationRegistry:
             serializer: Function to convert object to bytes.
             deserializer: Function to convert bytes back to object.
             format: Format identifier (e.g., 'pickle', 'csv', 'parquet'), defaults to 'default'.
-            file_extension: File extension for this format, defaults to 'bin'.
+            file_extensions: File extension(s) for this format. Can be a single string or list.
+                First extension is preferred (used when saving). Defaults to 'bin'.
             make_default: Whether to make this the default format for the type.
         """
+        # Normalize to list
+        if isinstance(file_extensions, str):
+            file_extensions = [file_extensions]
+
         handler = _SerializationHandler(
             type_=type_,
             format=format,
-            file_extension=file_extension,
+            file_extensions=file_extensions,
             serializer=serializer,
             deserializer=deserializer,
             is_default=make_default,
@@ -101,6 +107,13 @@ class SerializationRegistry:
 
         key = (type_, format)
         self._handlers[key] = handler
+
+        # Register all extensions for reverse lookup
+        # Multiple types can share the same extension (e.g., dict, list, tuple all use .pkl)
+        for ext in file_extensions:
+            if ext not in self._extension_to_format:
+                self._extension_to_format[ext] = []
+            self._extension_to_format[ext].append((type_, format))
 
         # Set as default if requested or if it's the first format for this type
         if make_default or type_ not in self._default_formats:
@@ -167,7 +180,7 @@ class SerializationRegistry:
 
         # Serialize
         data = handler.serializer(obj)
-        return data, handler.file_extension
+        return data, handler.file_extensions[0]  # Return preferred extension
 
     def deserialize(
         self,
@@ -299,6 +312,45 @@ class SerializationRegistry:
             )
         self._default_formats[type_] = format
 
+    def get_format_from_extension(
+        self,
+        type_: Type,
+        extension: str,
+    ) -> str | None:
+        """
+        Get the format identifier for a given type and file extension.
+
+        Args:
+            type_: The Python type
+            extension: File extension (without leading dot)
+
+        Returns:
+            Format identifier if found, None otherwise
+
+        Examples:
+            >>> from daglite.serialization import default_registry
+            >>> default_registry.get_format_from_extension(dict, "pkl")
+            'pickle'
+            >>> default_registry.get_format_from_extension(dict, "pickle")
+            'pickle'
+        """
+        registrations = self._extension_to_format.get(extension, [])
+
+        # Try exact type match first
+        for registered_type, format in registrations:
+            if registered_type == type_:
+                return format
+
+        # Check if any registered type is a parent class
+        for registered_type, format in registrations:
+            try:
+                if issubclass(type_, registered_type):
+                    return format
+            except TypeError:  # pragma: no cover
+                continue
+
+        return None
+
     def get_extension(
         self,
         type_: Type,
@@ -326,7 +378,7 @@ class SerializationRegistry:
                 f"No handler registered for type {type_.__name__} with format '{format}'."
             )
 
-        return handler.file_extension
+        return handler.file_extensions[0]  # Return preferred extension
 
     def _find_handler(
         self,
@@ -389,7 +441,7 @@ class SerializationRegistry:
             lambda b: b,
             lambda b: b,
             format="raw",
-            file_extension="bin",
+            file_extensions="bin",
         )
         self.register_hash_strategy(
             bytes,
@@ -403,7 +455,7 @@ class SerializationRegistry:
             lambda s: s.encode("utf-8"),
             lambda b: b.decode("utf-8"),
             format="text",
-            file_extension="txt",
+            file_extensions="txt",
         )
         self.register_hash_strategy(str, hash_simple, "Hash str via repr")
 
@@ -413,7 +465,7 @@ class SerializationRegistry:
             lambda x: str(x).encode(),
             lambda b: int(b.decode()),
             format="text",
-            file_extension="txt",
+            file_extensions="txt",
         )
         self.register_hash_strategy(int, hash_simple, "Hash int via repr")
 
@@ -423,7 +475,7 @@ class SerializationRegistry:
             lambda x: str(x).encode(),
             lambda b: float(b.decode()),
             format="text",
-            file_extension="txt",
+            file_extensions="txt",
         )
         self.register_hash_strategy(float, hash_simple, "Hash float via repr")
 
@@ -433,7 +485,7 @@ class SerializationRegistry:
             lambda x: str(x).encode(),
             lambda b: b.decode() == "True",
             format="text",
-            file_extension="txt",
+            file_extensions="txt",
         )
         self.register_hash_strategy(bool, hash_simple, "Hash bool via repr")
 
@@ -443,7 +495,7 @@ class SerializationRegistry:
             lambda _: b"None",
             lambda _: None,
             format="text",
-            file_extension="txt",
+            file_extensions="txt",
         )
         self.register_hash_strategy(type(None), hash_simple, "Hash NoneType via repr")
 
@@ -462,7 +514,7 @@ class SerializationRegistry:
             pickle.dumps,
             pickle.loads,
             format="pickle",
-            file_extension="pkl",
+            file_extensions=["pkl", "pickle"],
         )
         self.register_hash_strategy(dict, hash_dict, "Recursive hash of dict values")
 
@@ -481,7 +533,7 @@ class SerializationRegistry:
                 pickle.dumps,
                 pickle.loads,
                 format="pickle",
-                file_extension="pkl",
+                file_extensions=["pkl", "pickle"],
             )
             self.register_hash_strategy(
                 type_, hash_sequence, f"Recursive hash of {type_.__name__} items"
@@ -503,7 +555,7 @@ class SerializationRegistry:
                 pickle.dumps,
                 pickle.loads,
                 format="pickle",
-                file_extension="pkl",
+                file_extensions=["pkl", "pickle"],
             )
             self.register_hash_strategy(
                 type_, hash_unordered, f"Recursive hash of {type_.__name__} items"
@@ -520,8 +572,8 @@ class _SerializationHandler:
     format: str
     """Format identifier (e.g., 'pickle', 'csv', 'parquet')"""
 
-    file_extension: str
-    """File extension for this format (e.g., 'pkl', 'csv')"""
+    file_extensions: list[str]
+    """File extensions for this format (first is preferred, e.g., ['pkl', 'pickle'])"""
 
     serializer: Callable[[Any], bytes]
     """Function to convert object to bytes"""
