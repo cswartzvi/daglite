@@ -43,7 +43,13 @@ class TaskNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        # Include extra refs from output configs
+        for config in self.output_configs:
+            for param in config.extras.values():
+                if param.is_ref and param.ref is not None:
+                    deps.add(param.ref)
+        return deps
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
@@ -128,6 +134,11 @@ class MapTaskNode(BaseGraphNode):
         for param in self.mapped_kwargs.values():
             if param.is_ref and param.ref is not None:
                 deps.add(param.ref)
+        # Include extra refs from output configs
+        for config in self.output_configs:
+            for param in config.extras.values():
+                if param.is_ref and param.ref is not None:
+                    deps.add(param.ref)
         return deps
 
     @override

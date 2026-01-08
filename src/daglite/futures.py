@@ -21,9 +21,11 @@ from daglite.graph.nodes import TaskNode
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
 if TYPE_CHECKING:
+    from daglite.graph.base import OutputConfig
     from daglite.tasks import PartialTask
     from daglite.tasks import Task
 else:
+    OutputConfig = object
     PartialTask = object
     Task = object
 
@@ -44,7 +46,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     _id: UUID = field(init=False, repr=False)
-    _output_configs: tuple[_OutputConfig, ...] = field(init=False, repr=False, default=())
+    _output_configs: tuple[_FutureOutputConfig, ...] = field(init=False, repr=False, default=())
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
@@ -56,7 +58,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str, *, extra: Any = None) -> Self:
+    def save(self, key: str, **extras: Any) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
@@ -67,7 +69,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
-            extra: Optional additional context (can be a TaskFuture, e.g., version number)
+            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
 
         Returns:
             Self for method chaining
@@ -88,15 +90,19 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        config = _OutputConfig(key=key, name=None, extra=extra)
-        new_configs = self._output_configs + (config,)  # type: ignore[attr-defined]
+        config = _FutureOutputConfig(
+            key=key,
+            name=None,
+            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
+        )
+        new_configs = self._output_configs + (config,)
 
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
         object.__setattr__(new_future, "_output_configs", new_configs)
         return new_future
 
-    def checkpoint(self, name: str, key: str, *, extra: Any = None) -> Self:
+    def checkpoint(self, name: str, key: str, **extras: Any) -> Self:
         """
         Save task output and mark as a resumption point.
 
@@ -108,7 +114,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             name: Explicit name for this checkpoint (used for graph resumption)
             key: Storage key for the output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
-            extra: Optional additional context (can be a TaskFuture, e.g., version number)
+            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
 
         Returns:
             Self for method chaining
@@ -120,12 +126,16 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> @task
             ... def get_version() -> str: ...
             >>> train_model(model_type="linear").checkpoint(
-            ...     name="trained_model", key="model_{model_type}", extra=get_version()
+            ...     name="trained_model", key="model_{model_type}", version=get_version()
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        config = _OutputConfig(key=key, name=name, extra=extra)
-        new_configs = self._output_configs + (config,)  # type: ignore[attr-defined]
+        config = _FutureOutputConfig(
+            key=key,
+            name=name,
+            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
+        )
+        new_configs = self._output_configs + (config,)
 
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
@@ -487,20 +497,36 @@ class TaskFuture(BaseTaskFuture[R]):
         for value in self.kwargs.values():
             if isinstance(value, BaseTaskFuture):
                 deps.append(value)
-        # Include extras from output configs
-        for config in self._output_configs:  # type: ignore[attr-defined]
-            if isinstance(config.extra, BaseTaskFuture):
-                deps.append(config.extra)
+        for config in self._output_configs:
+            for value in config.extras.values():
+                if isinstance(value, BaseTaskFuture):
+                    deps.append(value)
         return deps
 
     @override
     def to_graph(self) -> TaskNode:
+        from daglite.graph.base import OutputConfig
+        from daglite.graph.base import ParamInput
+
         kwargs: dict[str, ParamInput] = {}
         for name, value in self.kwargs.items():
             if isinstance(value, BaseTaskFuture):
                 kwargs[name] = ParamInput.from_ref(value.id)
             else:
                 kwargs[name] = ParamInput.from_value(value)
+
+        output_configs: list[OutputConfig] = []
+        for config in self._output_configs:
+            converted_extras = {}
+            for name, value in config.extras.items():
+                if isinstance(value, BaseTaskFuture):
+                    converted_extras[name] = ParamInput.from_ref(value.id)
+                else:
+                    converted_extras[name] = ParamInput.from_value(value)
+            output_configs.append(
+                OutputConfig(key=config.key, name=config.name, extras=converted_extras)
+            )
+
         return TaskNode(
             id=self.id,
             name=self.task.name,
@@ -510,6 +536,7 @@ class TaskFuture(BaseTaskFuture[R]):
             backend_name=self.backend_name,
             retries=self.task.retries,
             timeout=self.task.timeout,
+            output_configs=tuple(output_configs),
         )
 
 
@@ -669,14 +696,17 @@ class MapTaskFuture(BaseTaskFuture[R]):
         for seq in self.mapped_kwargs.values():
             if isinstance(seq, BaseTaskFuture):
                 deps.append(seq)
-        # Include extras from output configs
-        for config in self._output_configs:  # type: ignore[attr-defined]
-            if isinstance(config.extra, BaseTaskFuture):
-                deps.append(config.extra)
+        # Include extra values that are TaskFutures (raw values in _FutureOutputConfig)
+        for config in self._output_configs:
+            for value in config.extras.values():
+                if isinstance(value, BaseTaskFuture):
+                    deps.append(value)
         return deps
 
     @override
     def to_graph(self) -> MapTaskNode:
+        from daglite.graph.base import ParamInput
+
         fixed_kwargs: dict[str, ParamInput] = {}
         mapped_kwargs: dict[str, ParamInput] = {}
 
@@ -697,6 +727,18 @@ class MapTaskFuture(BaseTaskFuture[R]):
                 # Concrete sequence - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
+        output_configs: list[OutputConfig] = []
+        for config in self._output_configs:
+            converted_extras = {}
+            for name, value in config.extras.items():
+                if isinstance(value, BaseTaskFuture):
+                    converted_extras[name] = ParamInput.from_ref(value.id)
+                else:
+                    converted_extras[name] = ParamInput.from_value(value)
+            output_configs.append(
+                OutputConfig(key=config.key, name=config.name, extras=converted_extras)
+            )
+
         return MapTaskNode(
             id=self.id,
             name=self.task.name,
@@ -708,6 +750,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             backend_name=self.backend_name,
             retries=self.task.retries,
             timeout=self.task.timeout,
+            output_configs=tuple(output_configs),
         )
 
 
@@ -715,17 +758,12 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
 
 @dataclass(frozen=True)
-class _OutputConfig:
-    """Configuration for saving/checkpointing task output."""
+class _FutureOutputConfig:
+    """Builder-level output configuration with raw extras (before graph IR conversion)."""
 
     key: str
-    """Storage key (may contain {param} template strings)"""
-
-    name: str | None = None
-    """If set, marks this as a named checkpoint for graph resumption"""
-
-    extra: Any = None
-    """Optional extra context (can be TaskFuture)"""
+    name: str | None
+    extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
 
 
 def _infer_tuple_size(task_func: Any) -> int | None:

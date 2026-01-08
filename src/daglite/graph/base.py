@@ -99,6 +99,9 @@ class BaseGraphNode(abc.ABC):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds (enforced by backend). If None, no timeout."""
 
+    output_configs: tuple[OutputConfig, ...] = field(default=(), kw_only=True)
+    """Output save/checkpoint configurations for this node."""
+
     def __post_init__(self) -> None:
         # This is unlikely to happen given timeout is checked at task level, but just in case
         assert self.timeout is None or self.timeout >= 0, "Timeout must be non-negative"
@@ -125,6 +128,27 @@ class BaseGraphNode(abc.ABC):
             Dictionary of resolved parameter names to values, ready for execution.
         """
         ...
+
+    def resolve_outputs(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
+        """
+        Resolve output configurations to concrete values for processing.
+
+        Converts OutputConfig (graph IR with ParamInputs) to runtime dictionaries
+        with resolved extras, ready for plugin processing.
+
+        Args:
+            completed_nodes: Mapping from node IDs to their computed results.
+
+        Returns:
+            List of resolved output configurations as dictionaries.
+        """
+        outputs = []
+        for config in self.output_configs:
+            resolved_extras = {
+                name: param.resolve(completed_nodes) for name, param in config.extras.items()
+            }
+            outputs.append({"key": config.key, "name": config.name, "extras": resolved_extras})
+        return outputs
 
     @abc.abstractmethod
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
@@ -251,3 +275,22 @@ class ParamInput:
     def from_sequence_ref(cls, node_id: UUID) -> ParamInput:
         """Creates a ParamInput that references another node's sequence output."""
         return cls(kind="sequence_ref", ref=node_id)
+
+
+@dataclass(frozen=True)
+class OutputConfig:
+    """
+    Configuration for saving or checkpointing a task output.
+
+    Outputs can be saved with a storage key and optional checkpoint name for resumption.
+    Extra parameters (as ParamInputs) can be included for formatting or metadata.
+    """
+
+    key: str
+    """Storage key template with {param} placeholders for formatting."""
+
+    name: str | None = None
+    """Optional checkpoint name for graph resumption via evaluate(from_={name: key})."""
+
+    extras: Mapping[str, ParamInput] = field(default_factory=dict)
+    """Extra parameters for key formatting or storage metadata (values or refs)."""
