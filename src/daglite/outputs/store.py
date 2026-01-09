@@ -3,54 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
     from daglite.serialization import SerializationRegistry
+else:
+    SerializationRegistry = object
+
 
 T = TypeVar("T")
-
-
-class OutputStore(Protocol):
-    """Protocol for storing task outputs."""
-
-    def save(self, key: str, value: Any) -> None:
-        """
-        Save an output artifact.
-
-        Args:
-            key: Unique identifier for this output
-            value: The value to store
-        """
-        ...
-
-    def load(self, key: str, return_type: type[T] | None = None) -> T:
-        """
-        Load an output artifact.
-
-        Args:
-            key: The key to load
-            return_type: Optional type hint for deserialization
-
-        Returns:
-            The loaded value
-
-        Raises:
-            KeyError: If key doesn't exist
-        """
-        ...
-
-    def exists(self, key: str) -> bool:
-        """Check if an output exists."""
-        ...
-
-    def delete(self, key: str) -> None:
-        """Delete an output."""
-        ...
-
-    def list_keys(self) -> list[str]:
-        """List all stored output keys."""
-        ...
 
 
 class FileOutputStore:
@@ -64,9 +25,7 @@ class FileOutputStore:
     """
 
     def __init__(
-        self,
-        base_path: Path | str | None = None,
-        registry: SerializationRegistry | None = None,
+        self, base_path: Path | str | None = None, registry: SerializationRegistry | None = None
     ) -> None:
         """
         Initialize file-based output store.
@@ -75,12 +34,12 @@ class FileOutputStore:
             base_path: Root directory for outputs
             registry: Serialization registry (uses default if None)
         """
+        from daglite.serialization import default_registry
+
         self.base_path = Path(base_path) if base_path else Path.cwd()
         self.base_path.mkdir(parents=True, exist_ok=True)
 
         if registry is None:
-            from daglite.serialization import default_registry
-
             self.registry = default_registry
         else:
             self.registry = registry
@@ -150,6 +109,3 @@ class FileOutputStore:
             if f.is_file():
                 keys.add(f.stem)
         return sorted(keys)
-
-
-__all__ = ["OutputStore", "FileOutputStore"]
