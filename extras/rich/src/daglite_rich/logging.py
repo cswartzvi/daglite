@@ -5,7 +5,7 @@ from typing import Any
 import yaml
 from typing_extensions import override
 
-from daglite.plugins.default.logging import LifecycleLoggingPlugin
+from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
 
 class RichLifecycleLoggingPlugin(LifecycleLoggingPlugin):

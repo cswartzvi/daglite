@@ -11,12 +11,12 @@ from unittest.mock import patch
 
 import pytest
 
-from daglite.plugins.default.logging import DEFAULT_LOGGER_NAME_COORD
-from daglite.plugins.default.logging import LOGGER_EVENT
-from daglite.plugins.default.logging import CentralizedLoggingPlugin
-from daglite.plugins.default.logging import _ReporterHandler
-from daglite.plugins.default.logging import _TaskLoggerAdapter
-from daglite.plugins.default.logging import get_logger
+from daglite.plugins.builtin.logging import DEFAULT_LOGGER_NAME_COORD
+from daglite.plugins.builtin.logging import LOGGER_EVENT
+from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
+from daglite.plugins.builtin.logging import _ReporterHandler
+from daglite.plugins.builtin.logging import _TaskLoggerAdapter
+from daglite.plugins.builtin.logging import get_logger
 from daglite.plugins.reporters import DirectReporter
 from daglite.plugins.reporters import ProcessReporter
 
@@ -56,12 +56,12 @@ class TestGetLoggerUnit:
 
     def test_get_logger_no_reporter(self):
         """Test get_logger when no reporter is available."""
-        with patch("daglite.plugins.default.logging.get_reporter", return_value=None):
+        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=None):
             logger = get_logger("test.no.reporter")
             base_logger = logger.logger
 
             # Should not have ReporterHandler
-            from daglite.plugins.default.logging import _ReporterHandler
+            from daglite.plugins.builtin.logging import _ReporterHandler
 
             assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
 
@@ -70,7 +70,7 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_remote = False
 
-        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger = get_logger("test.direct.reporter")
             base_logger = logger.logger
 
@@ -82,7 +82,7 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_remote = True
 
-        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger = get_logger("test.process.reporter")
             base_logger = logger.logger
 
@@ -103,7 +103,7 @@ class TestGetLoggerUnit:
         test_logger.setLevel(logging.DEBUG)
         original_level = test_logger.level
 
-        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger = get_logger("test.already.debug")
             base_logger = logger.logger
 
@@ -115,7 +115,7 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_remote = True
 
-        with patch("daglite.plugins.default.logging.get_reporter", return_value=mock_reporter):
+        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger1 = get_logger("test.dedupe")
             _ = get_logger("test.dedupe")
 
@@ -474,7 +474,7 @@ class TestFormatDuration:
 
     def test_format_milliseconds(self):
         """Test formatting durations less than 1 second."""
-        from daglite.plugins.default.logging import _format_duration
+        from daglite.plugins.builtin.logging import _format_duration
 
         assert _format_duration(0.001) == "1 ms"
         assert _format_duration(0.5) == "500 ms"
@@ -482,7 +482,7 @@ class TestFormatDuration:
 
     def test_format_seconds(self):
         """Test formatting durations in seconds."""
-        from daglite.plugins.default.logging import _format_duration
+        from daglite.plugins.builtin.logging import _format_duration
 
         assert _format_duration(1.0) == "1.00 s"
         assert _format_duration(1.5) == "1.50 s"
@@ -490,7 +490,7 @@ class TestFormatDuration:
 
     def test_format_minutes(self):
         """Test formatting durations in minutes."""
-        from daglite.plugins.default.logging import _format_duration
+        from daglite.plugins.builtin.logging import _format_duration
 
         assert _format_duration(60.0) == "1 min 0.00 s"
         assert _format_duration(90.5) == "1 min 30.50 s"
@@ -504,7 +504,7 @@ class TestBuildTaskContext:
         """Test building task context with all fields."""
         from uuid import UUID
 
-        from daglite.plugins.default.logging import _build_task_context
+        from daglite.plugins.builtin.logging import _build_task_context
 
         task_id = UUID("12345678-1234-5678-1234-567812345678")
         context = _build_task_context(task_id, "my_task", "task_key")
@@ -517,7 +517,7 @@ class TestBuildTaskContext:
         """Test building task context when key is None."""
         from uuid import UUID
 
-        from daglite.plugins.default.logging import _build_task_context
+        from daglite.plugins.builtin.logging import _build_task_context
 
         task_id = UUID("12345678-1234-5678-1234-567812345678")
         context = _build_task_context(task_id, "my_task", None)
@@ -532,7 +532,7 @@ class TestLifecycleLoggingPlugin:
 
     def test_initialization_default(self):
         """Test plugin initialization with defaults."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
@@ -541,7 +541,7 @@ class TestLifecycleLoggingPlugin:
 
     def test_initialization_with_custom_level(self):
         """Test plugin initialization with custom log level."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin(level=logging.DEBUG)
 
@@ -550,7 +550,7 @@ class TestLifecycleLoggingPlugin:
 
     def test_loads_yaml_config(self):
         """Test that plugin loads logging.yml configuration."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         # Create plugin instance to trigger YAML config loading
         _ = LifecycleLoggingPlugin()
@@ -569,7 +569,7 @@ class TestLifecycleLoggingPlugin:
         """Test plugin serialization to/from config."""
         from uuid import UUID
 
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
         plugin._mapped_nodes.add(UUID("12345678-1234-5678-1234-567812345678"))
@@ -589,7 +589,7 @@ class TestLifecycleLoggingPlugin:
         from uuid import uuid4
 
         from daglite.graph.base import GraphMetadata
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
