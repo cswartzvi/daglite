@@ -16,7 +16,6 @@ from .hooks.markers import HOOK_NAMESPACE
 
 logger = logging.getLogger(__name__)
 
-_PLUGIN_ENTRY_POINT = "daglite.hooks"  # entry-point to load hooks from for installed plugins
 _PLUGIN_MANAGER: PluginManager | None = None
 
 
@@ -45,12 +44,6 @@ def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None
             _plugin_manager.register(plugin)
 
 
-def register_plugins_entry_points(_plugin_manager: PluginManager | None = None) -> None:
-    """Registers daglite plugins from Python package entrypoints with the global plugin manager."""
-    _plugin_manager = _plugin_manager if _plugin_manager else _get_global_plugin_manager()
-    _plugin_manager.load_setuptools_entrypoints(_PLUGIN_ENTRY_POINT)  # Doesn't use setuptools
-
-
 def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginManager:
     """
     Creates a new plugin manager with both global and execution-specific plugins.
@@ -73,9 +66,6 @@ def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginM
     for plugin in global_manager.get_plugins():
         if not new_manager.is_registered(plugin):  # pragma: no branch
             new_manager.register(plugin)
-
-    # Register entry-point plugins
-    register_plugins_entry_points(_plugin_manager=new_manager)
 
     # Add execution-specific plugins
     register_plugins(*plugins, _plugin_manager=new_manager)
