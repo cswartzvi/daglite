@@ -20,12 +20,13 @@ class FileOutputStore:
 
     Storage layout:
         base_path/
-            outputs/
-                {key}.{ext}  # Serialized data
+            {key}.{ext}  # Serialized data
     """
 
     def __init__(
-        self, base_path: Path | str | None = None, registry: SerializationRegistry | None = None
+        self,
+        base_path: Path | str | None = None,
+        registry: SerializationRegistry | None = None,
     ) -> None:
         """
         Initialize file-based output store.
