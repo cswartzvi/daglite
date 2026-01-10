@@ -4,6 +4,7 @@ from typing import Any
 from uuid import UUID
 
 from daglite.graph.base import GraphMetadata
+from daglite.graph.base import OutputConfig
 from daglite.plugins.hooks.markers import hook_spec
 from daglite.plugins.reporters import EventReporter
 
@@ -16,6 +17,7 @@ class WorkerSideNodeSpecs:
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
+        output_config: tuple[OutputConfig, ...],
         reporter: EventReporter | None,
     ) -> None:
         """
@@ -24,6 +26,7 @@ class WorkerSideNodeSpecs:
         Args:
             metadata: Metadata for the node to be executed.
             inputs: Resolved inputs for the node execution.
+            output_config: Output configuration for this node execution.
             reporter: Optional event reporter for this execution context.
         """
 
@@ -33,6 +36,7 @@ class WorkerSideNodeSpecs:
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         result: Any,
+        output_config: tuple[OutputConfig, ...],
         duration: float,
         reporter: EventReporter | None,
     ) -> None:
@@ -43,6 +47,7 @@ class WorkerSideNodeSpecs:
             metadata: Metadata for the executed node.
             inputs: Resolved inputs for the node execution.
             result: Result produced by the node execution.
+            output_config: Output configuration for this node execution.
             duration: Time taken to execute in seconds.
             reporter: Optional event reporter for this execution context.
         """
@@ -53,6 +58,7 @@ class WorkerSideNodeSpecs:
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         error: Exception,
+        output_config: tuple[OutputConfig, ...],
         duration: float,
         reporter: EventReporter | None,
     ) -> None:
@@ -63,6 +69,7 @@ class WorkerSideNodeSpecs:
             metadata: Metadata for the executed node.
             inputs: Resolved inputs for the node execution.
             error: The exception that was raised.
+            output_config: Output configuration for this node execution.
             duration: Time taken before failure in seconds.
             reporter: Optional event reporter for this execution context.
         """
@@ -72,6 +79,7 @@ class WorkerSideNodeSpecs:
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
+        output_config: tuple[OutputConfig, ...],
         attempt: int,
         last_error: Exception,
         reporter: EventReporter | None,
@@ -82,6 +90,7 @@ class WorkerSideNodeSpecs:
         Args:
             metadata: Metadata for the node to be retried.
             inputs: Resolved inputs for the node execution.
+            output_config: Output configuration for this node execution.
             attempt: Attempt number (1-indexed, so attempt=2 means first retry).
             last_error: The exception that caused the previous attempt to fail.
             reporter: Optional event reporter for this execution context.
@@ -92,6 +101,7 @@ class WorkerSideNodeSpecs:
         self,
         metadata: GraphMetadata,
         inputs: dict[str, Any],
+        output_config: tuple[OutputConfig, ...],
         attempt: int,
         succeeded: bool,
         reporter: EventReporter | None,
@@ -102,6 +112,7 @@ class WorkerSideNodeSpecs:
         Args:
             metadata: Metadata for the retried node.
             inputs: Resolved inputs for the node execution.
+            output_config: Output configuration for this node execution.
             attempt: Attempt number (1-indexed).
             succeeded: True if this retry attempt succeeded, False if it failed.
             reporter: Optional event reporter for this execution context.
