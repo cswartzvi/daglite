@@ -66,7 +66,6 @@ class OutputPlugin:
                     f"Output key '{config.key}' references parameter {e} which is not in inputs"
                 ) from e
 
-            # Determine which store to use
             store = config.store or self.store
             if store is None:
                 raise ValueError(
@@ -78,11 +77,30 @@ class OutputPlugin:
                     f"\n  3. Explicit save: .save('{config.key}', store='/path/to/outputs')"
                 )
 
-            # TODO: Support extra refs (requires access to completed_nodes)
+            # Resolve extras from ParamInputs
             extras = {}
             for extra_name, param in config.extras.items():
-                if not param.is_ref:
+                if param.kind == "value":
+                    # Literal value
                     extras[extra_name] = param.value
+                elif param.kind == "ref":
+                    # Reference - check if the extra name matches an input name
+                    if extra_name in inputs:
+                        # The extra references a task parameter - use its resolved value
+                        extras[extra_name] = inputs[extra_name]
+                    else:
+                        # The extra is a ref but not a task parameter
+                        raise ValueError(
+                            f"Cannot resolve extra parameter '{extra_name}' "
+                            f"for output '{formatted_key}'. "
+                            f"Extra '{extra_name}' references a task output but is not "
+                            f"a parameter of '{metadata.name}'. "
+                            f"To use task outputs in extras, pass them as parameters to the task."
+                        )
+                else:
+                    raise ValueError(
+                        f"Unsupported ParamInput kind '{param.kind}' for extra '{extra_name}'"
+                    )
 
             store.save(key=formatted_key, value=result)
 
