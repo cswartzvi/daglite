@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from dataclasses import field
 from typing import TYPE_CHECKING
 
-from daglite.outputs.store import FileOutputStore
-
 if TYPE_CHECKING:
     from daglite.outputs.base import OutputStore
 else:
@@ -59,7 +57,7 @@ class DagliteSettings:
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
     """
 
-    output_store: OutputStore | None = field(default_factory=lambda: FileOutputStore())
+    output_store: OutputStore | None = None
     """
     Default output store for .save() and .checkpoint() operations.
 
