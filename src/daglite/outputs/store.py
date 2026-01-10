@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
+    from fsspec import AbstractFileSystem
+
     from daglite.serialization import SerializationRegistry
 else:
+    AbstractFileSystem = object
     SerializationRegistry = object
 
 
@@ -16,34 +18,58 @@ T = TypeVar("T")
 
 class FileOutputStore:
     """
-    File-based implementation of OutputStore.
+    File-based implementation of OutputStore using fsspec.
+
+    Supports both local and remote filesystems (s3://, gcs://, etc.) via fsspec.
 
     Storage layout:
         base_path/
             {key}.{ext}  # Serialized data
+
+    Examples:
+        >>> # Local filesystem
+        >>> store = FileOutputStore("file:///tmp/outputs")
+        >>> store = FileOutputStore("/tmp/outputs")  # Equivalent
+        >>>
+        >>> # S3
+        >>> store = FileOutputStore("s3://my-bucket/outputs")
+        >>>
+        >>> # Google Cloud Storage
+        >>> store = FileOutputStore("gcs://my-bucket/outputs")
     """
 
     def __init__(
         self,
-        base_path: Path | str | None = None,
+        base_path: str,
         registry: SerializationRegistry | None = None,
+        fs: AbstractFileSystem | None = None,
     ) -> None:
         """
         Initialize file-based output store.
 
         Args:
-            base_path: Root directory for outputs
+            base_path: Root directory/prefix for outputs (can be fsspec URL like s3://bucket/path)
             registry: Serialization registry (uses default if None)
+            fs: fsspec filesystem instance (auto-detected from base_path if None)
         """
+        from fsspec import filesystem
+        from fsspec.utils import get_protocol
+
         from daglite.serialization import default_registry
 
-        self.base_path = Path(base_path) if base_path else Path.cwd()
-        self.base_path.mkdir(parents=True, exist_ok=True)
+        self.base_path = base_path.rstrip("/")
 
         if registry is None:
             self.registry = default_registry
         else:
             self.registry = registry
+
+        if fs is None:
+            self.fs = filesystem(get_protocol(base_path))
+        else:
+            self.fs = fs
+
+        self.fs.mkdirs(self.base_path, exist_ok=True)
 
     def save(
         self,
@@ -60,20 +86,29 @@ class FileOutputStore:
             format: Serialization format (independent of filename).
         """
         data, ext = self.registry.serialize(value, format=format)
-        key_path = Path(key)
 
-        if key_path.suffix:
-            output_file = self.base_path / key
+        if "." in key.split("/")[-1]:  # Has extension
+            output_path = f"{self.base_path}/{key}"
         else:
-            output_file = self.base_path / f"{key}.{ext}"
+            output_path = f"{self.base_path}/{key}.{ext}"
 
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        output_file.write_bytes(data)
+        parent = "/".join(output_path.rsplit("/", 1)[:-1])
+        if parent:
+            self.fs.mkdirs(parent, exist_ok=True)
+
+        with self.fs.open(output_path, "wb") as f:
+            f.write(data)  # type: ignore
 
     def load(self, key: str, return_type: type[T] | None = None) -> T:
         """Load output from file."""
-        # Find the file with this key (any extension)
-        matching_files = list(self.base_path.glob(f"{key}.*"))
+        try:
+            all_files = self.fs.ls(self.base_path, detail=False)
+        except FileNotFoundError:
+            all_files = []
+
+        matching_files = [
+            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+        ]
 
         if not matching_files:
             raise KeyError(f"Output '{key}' not found")
@@ -81,9 +116,11 @@ class FileOutputStore:
         if len(matching_files) > 1:
             raise ValueError(f"Multiple files found for key '{key}': {matching_files}")
 
-        output_file = matching_files[0]
-        data = output_file.read_bytes()
-        ext = output_file.suffix[1:]  # Remove leading dot
+        output_path = matching_files[0]
+        with self.fs.open(output_path, "rb") as f:
+            data = f.read()
+
+        ext = output_path.rsplit(".", 1)[-1]
 
         if return_type is None:
             # Check if this extension is used by pickle format (works without type hints)
@@ -93,7 +130,7 @@ class FileOutputStore:
             if "pickle" in formats:
                 import pickle
 
-                return pickle.loads(data)
+                return pickle.loads(data)  # type: ignore
             else:
                 raise ValueError(
                     f"return_type is required for extension '{ext}'. "
@@ -105,22 +142,69 @@ class FileOutputStore:
         if format_name is None:
             format_name = ext
 
-        return self.registry.deserialize(data, return_type, format=format_name)
+        return self.registry.deserialize(data, return_type, format=format_name)  # type: ignore
 
     def exists(self, key: str) -> bool:
         """Check if an output exists."""
-        matching_files = list(self.base_path.glob(f"{key}.*"))
+        try:
+            all_files = self.fs.ls(self.base_path, detail=False)
+        except FileNotFoundError:
+            return False
+
+        matching_files = [
+            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+        ]
         return len(matching_files) > 0
 
     def delete(self, key: str) -> None:
         """Delete an output."""
-        for f in self.base_path.glob(f"{key}.*"):
-            f.unlink()
+        try:
+            all_files = self.fs.ls(self.base_path, detail=False)
+        except FileNotFoundError:
+            return
+
+        matching_files = [
+            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+        ]
+
+        for f in matching_files:
+            self.fs.rm(f)
 
     def list_keys(self) -> list[str]:
         """List all stored output keys."""
+        try:
+            all_files = self.fs.ls(self.base_path, detail=False)
+        except FileNotFoundError:
+            return []
+
         keys = set()
-        for f in self.base_path.iterdir():
-            if f.is_file():
-                keys.add(f.stem)
+        for f in all_files:
+            filename = f.split("/")[-1]
+            # Remove extension
+            key = filename.rsplit(".", 1)[0] if "." in filename else filename
+            keys.add(key)
+
         return sorted(keys)
+
+    def __getstate__(self) -> dict[str, Any]:
+        """
+        Serialize FileOutputStore for pickling (needed for distributed backends).
+
+        Returns only the base_path - filesystem will be reconstructed on unpickling.
+        """
+        return {"base_path": self.base_path}
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        """
+        Reconstruct FileOutputStore from pickled state.
+
+        Recreates the filesystem instance and registry from the base_path.
+        """
+        from fsspec import filesystem
+        from fsspec.utils import get_protocol
+
+        from daglite.serialization import default_registry
+
+        self.base_path = state["base_path"]
+        self.registry = default_registry
+        self.fs = filesystem(get_protocol(self.base_path))
