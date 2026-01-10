@@ -97,7 +97,8 @@ class OutputPlugin:
                             f"a parameter of '{metadata.name}'. "
                             f"To use task outputs in extras, pass them as parameters to the task."
                         )
-                else:
+                else:  # pragma: no cover
+                    # Defensive: ParamInput can only be "value" or "ref"
                     raise ValueError(
                         f"Unsupported ParamInput kind '{param.kind}' for extra '{extra_name}'"
                     )
