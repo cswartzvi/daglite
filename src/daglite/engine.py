@@ -115,7 +115,7 @@ def evaluate(
         3
 
         Evaluation with plugins
-        >>> from daglite.plugins.builtin import CentralizedLoggingPlugin
+        >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
         >>> evaluate(future, plugins=[CentralizedLoggingPlugin()])
         3
 
@@ -246,7 +246,7 @@ async def evaluate_async(
 
         With execution-specific plugins
         >>> import asyncio
-        >>> from daglite.plugins.builtin import CentralizedLoggingPlugin
+        >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
         >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
         3
     """

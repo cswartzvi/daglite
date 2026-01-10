@@ -57,7 +57,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     Examples:
         >>> from daglite import task
-        >>> from daglite.plugins.builtin import get_logger
+        >>> from daglite.plugins.builtin.logging import get_logger
 
         Simple usage - automatic task context in logs
         >>> @task
