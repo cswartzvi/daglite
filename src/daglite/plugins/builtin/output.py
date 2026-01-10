@@ -20,9 +20,29 @@ class OutputPlugin:
     Intercepts after_node_execute and saves outputs for .save() and .checkpoint() calls.
     """
 
-    def __init__(self, store: OutputStore | None = None) -> None:
-        """Initialize with optional default store."""
-        self.store = store
+    def __init__(self, store: OutputStore | str | None = None) -> None:
+        """
+        Initialize with optional default store.
+
+        Args:
+            store: Default output store. Can be an OutputStore instance or a string path
+                (which will be converted to FileOutputStore). If None, stores must be
+                provided at task or explicit level.
+
+        Examples:
+            >>> # String shortcut
+            >>> plugin = OutputPlugin(store="/tmp/outputs")  # doctest: +SKIP
+            >>>
+            >>> # Explicit OutputStore
+            >>> from daglite.outputs.store import FileOutputStore
+            >>> plugin = OutputPlugin(store=FileOutputStore("/tmp/outputs"))  # doctest: +SKIP
+        """
+        if isinstance(store, str):
+            from daglite.outputs.store import FileOutputStore
+
+            self.store = FileOutputStore(store)
+        else:
+            self.store = store
 
     @hook_impl
     def after_node_execute(

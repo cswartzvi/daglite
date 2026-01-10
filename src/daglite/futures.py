@@ -61,7 +61,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str, store: OutputStore | None = None, **extras: Any) -> Self:
+    def save(self, key: str, store: OutputStore | str | None = None, **extras: Any) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
@@ -98,7 +98,12 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        resolved_store = store or self.task_store
+        if isinstance(store, str):
+            from daglite.outputs.store import FileOutputStore
+
+            resolved_store: OutputStore | None = FileOutputStore(store)
+        else:
+            resolved_store = store or self.task_store
 
         config = _FutureOutput(
             key=key,
@@ -114,7 +119,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         return new_future
 
     def checkpoint(
-        self, name: str, key: str, store: OutputStore | None = None, **extras: Any
+        self, name: str, key: str, store: OutputStore | str | None = None, **extras: Any
     ) -> Self:
         """
         Save task output and mark as a resumption point.
@@ -148,7 +153,12 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        resolved_store = store or self.task_store
+        if isinstance(store, str):
+            from daglite.outputs.store import FileOutputStore
+
+            resolved_store: OutputStore | None = FileOutputStore(store)
+        else:
+            resolved_store = store or self.task_store
 
         config = _FutureOutput(
             key=key,

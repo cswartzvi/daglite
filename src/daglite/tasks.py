@@ -47,7 +47,7 @@ def task(
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
-    store: OutputStore | None = None,
+    store: OutputStore | str | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -61,7 +61,7 @@ def task(  # noqa: D417
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
-    store: OutputStore | None = None,
+    store: OutputStore | str | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -87,7 +87,8 @@ def task(  # noqa: D417
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
         store: Default output store for all .save() and .checkpoint() calls on this task.
-            If not provided, uses the global settings output_store.
+            Can be an OutputStore instance or a string path (which will be converted to
+            FileOutputStore). If not provided, uses OutputPlugin's default store.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -129,6 +130,14 @@ def task(  # noqa: D417
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
+        actual_store: OutputStore | None
+        if isinstance(store, str):
+            from daglite.outputs.store import FileOutputStore
+
+            actual_store = FileOutputStore(store)
+        else:
+            actual_store = store
+
         return Task(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
@@ -139,7 +148,7 @@ def task(  # noqa: D417
             timeout=timeout,
             cache=cache,
             cache_ttl=cache_ttl,
-            store=store,
+            store=actual_store,
         )
 
     if func is not None:
