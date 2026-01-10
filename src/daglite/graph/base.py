@@ -290,8 +290,8 @@ class OutputConfig:
     key: str
     """Storage key template with {param} placeholders for formatting."""
 
-    store: OutputStore
-    """OutputStore instance where this output should be saved."""
+    store: OutputStore | None = None
+    """OutputStore instance where this output should be saved (None uses plugin default)."""
 
     name: str | None = None
     """Optional checkpoint name for graph resumption via evaluate(from_={name: key})."""

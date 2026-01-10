@@ -47,14 +47,14 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     _id: UUID = field(init=False, repr=False)
-    _output_configs: tuple[_FutureOutputConfig, ...] = field(init=False, repr=False, default=())
+    _future_outputs: tuple[_FutureOutput, ...] = field(init=False, repr=False, default=())
 
     task_store: OutputStore | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())
-        object.__setattr__(self, "_output_configs", ())
+        object.__setattr__(self, "_future_outputs", ())
 
     @property
     @override
@@ -98,27 +98,19 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        from daglite.settings import get_global_settings
+        resolved_store = store or self.task_store
 
-        # Three-level resolution: explicit > task-level > global settings
-        resolved_store = store or self.task_store or get_global_settings().output_store
-        if resolved_store is None:
-            raise ValueError(
-                "No output store configured for save() on task. Provide store explicitly, set it "
-                "on @task(store=...), or configure DagliteSettings.output_store."
-            )
-
-        config = _FutureOutputConfig(
+        config = _FutureOutput(
             key=key,
             name=None,
             store=resolved_store,
             extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
         )
-        new_configs = self._output_configs + (config,)
+        new_configs = self._future_outputs + (config,)
 
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_output_configs", new_configs)
+        object.__setattr__(new_future, "_future_outputs", new_configs)
         return new_future
 
     def checkpoint(
@@ -156,27 +148,19 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        from daglite.settings import get_global_settings
+        resolved_store = store or self.task_store
 
-        # Three-level resolution: explicit > task-level > global settings
-        resolved_store = store or self.task_store or get_global_settings().output_store
-        if resolved_store is None:
-            raise ValueError(
-                "No output store configured for save() on task. Provide store explicitly, set it "
-                "on @task(store=...), or configure DagliteSettings.output_store."
-            )
-
-        config = _FutureOutputConfig(
+        config = _FutureOutput(
             key=key,
             name=name,
             store=resolved_store,
             extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
         )
-        new_configs = self._output_configs + (config,)
+        new_configs = self._future_outputs + (config,)
 
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_output_configs", new_configs)
+        object.__setattr__(new_future, "_future_outputs", new_configs)
         return new_future
 
     # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
@@ -534,8 +518,8 @@ class TaskFuture(BaseTaskFuture[R]):
         for value in self.kwargs.values():
             if isinstance(value, BaseTaskFuture):
                 deps.append(value)
-        for config in self._output_configs:
-            for value in config.extras.values():
+        for future_output in self._future_outputs:
+            for value in future_output.extras.values():
                 if isinstance(value, BaseTaskFuture):
                     deps.append(value)
         return deps
@@ -553,16 +537,20 @@ class TaskFuture(BaseTaskFuture[R]):
                 kwargs[name] = ParamInput.from_value(value)
 
         output_configs: list[OutputConfig] = []
-        for config in self._output_configs:
+        for future_output in self._future_outputs:
             extras = {}
-            for name, value in config.extras.items():
+            for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
                     extras[name] = ParamInput.from_ref(value.id)
                 else:
                     extras[name] = ParamInput.from_value(value)
-            output_configs.append(
-                OutputConfig(key=config.key, name=config.name, store=config.store, extras=extras)
+            output_config = OutputConfig(
+                key=future_output.key,
+                name=future_output.name,
+                store=future_output.store,
+                extras=extras,
             )
+            output_configs.append(output_config)
 
         return TaskNode(
             id=self.id,
@@ -735,9 +723,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
         for seq in self.mapped_kwargs.values():
             if isinstance(seq, BaseTaskFuture):
                 deps.append(seq)
-        # Include extra values that are TaskFutures (raw values in _FutureOutputConfig)
-        for config in self._output_configs:
-            for value in config.extras.values():
+        for future_output in self._future_outputs:
+            for value in future_output.extras.values():
                 if isinstance(value, BaseTaskFuture):
                     deps.append(value)
         return deps
@@ -767,16 +754,20 @@ class MapTaskFuture(BaseTaskFuture[R]):
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
         output_configs: list[OutputConfig] = []
-        for config in self._output_configs:
+        for future_output in self._future_outputs:
             extras = {}
-            for name, value in config.extras.items():
+            for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
                     extras[name] = ParamInput.from_ref(value.id)
                 else:
                     extras[name] = ParamInput.from_value(value)
-            output_configs.append(
-                OutputConfig(key=config.key, name=config.name, store=config.store, extras=extras)
+            output_config = OutputConfig(
+                key=future_output.key,
+                name=future_output.name,
+                store=future_output.store,
+                extras=extras,
             )
+            output_configs.append(output_config)
 
         return MapTaskNode(
             id=self.id,
@@ -797,12 +788,12 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
 
 @dataclass(frozen=True)
-class _FutureOutputConfig:
+class _FutureOutput:
     """Builder-level output configuration with raw extras (before graph IR conversion)."""
 
     key: str
     name: str | None
-    store: OutputStore
+    store: OutputStore | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
 
 
