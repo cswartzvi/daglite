@@ -1,9 +1,9 @@
 """Default plugins shipped with daglite."""
 
-from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
-from daglite.plugins.builtin.logging import get_logger
+from daglite.plugins.builtin import logging
+from daglite.plugins.builtin import output
 
 __all__ = [
-    "CentralizedLoggingPlugin",
-    "get_logger",
+    "logging",
+    "output",
 ]

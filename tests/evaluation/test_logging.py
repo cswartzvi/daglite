@@ -10,8 +10,8 @@ import pytest
 
 from daglite import evaluate
 from daglite import task
-from daglite.plugins.builtin import CentralizedLoggingPlugin
-from daglite.plugins.builtin import get_logger
+from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
+from daglite.plugins.builtin.logging import get_logger
 
 
 @pytest.fixture(autouse=True)
