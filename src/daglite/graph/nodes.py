@@ -83,6 +83,7 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
             retries=self.retries,
         )
 
@@ -96,6 +97,7 @@ class TaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
             retries=self.retries,
         )
 
@@ -232,6 +234,7 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
             retries=self.retries,
         )
 
@@ -246,6 +249,7 @@ class MapTaskNode(BaseGraphNode):
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
             retries=self.retries,
         )
 
@@ -257,6 +261,7 @@ def _run_sync_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    output_config: tuple,
     retries: int = 0,
 ) -> Any:
     """
@@ -266,6 +271,7 @@ def _run_sync_impl(
         func: Synchronous function to execute.
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
+        output_config: Output configuration tuple for this node.
         retries: Number of times to retry on failure.
 
     Returns:
@@ -276,7 +282,9 @@ def _run_sync_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    common = dict(
+        metadata=metadata, inputs=resolved_inputs, output_config=output_config, reporter=reporter
+    )
     hook.before_node_execute(**common)
 
     last_error: Exception | None = None
@@ -323,6 +331,7 @@ async def _run_async_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    output_config: tuple,
     retries: int = 0,
 ) -> Any:
     """
@@ -332,6 +341,7 @@ async def _run_async_impl(
         func: Async function to execute.
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
+        output_config: Output configuration tuple for this node.
         retries: Number of times to retry on failure.
 
     Returns:
@@ -342,7 +352,9 @@ async def _run_async_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    common = dict(
+        metadata=metadata, inputs=resolved_inputs, output_config=output_config, reporter=reporter
+    )
     hook.before_node_execute(**common)
 
     last_error: Exception | None = None
