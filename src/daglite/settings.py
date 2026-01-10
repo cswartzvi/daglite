@@ -4,6 +4,14 @@ import os
 import threading
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
+
+from daglite.outputs.store import FileOutputStore
+
+if TYPE_CHECKING:
+    from daglite.outputs.base import OutputStore
+else:
+    OutputStore = object
 
 _GLOBAL_DAGLITE_SETTINGS: DagliteSettings | None = None
 _SETTINGS_LOCK = threading.RLock()
@@ -49,6 +57,14 @@ class DagliteSettings:
     arguments, and return values. Useful for debugging plugin behavior but can be verbose.
 
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
+    """
+
+    output_store: OutputStore | None = field(default_factory=lambda: FileOutputStore())
+    """
+    Default output store for .save() and .checkpoint() operations.
+
+    If None, tasks must specify a store at the task level (@task(store=...)) or
+    at the call site (.save(store=...) or .checkpoint(store=...)).
     """
 
 
