@@ -51,9 +51,23 @@ class FileOutputStore:
         value: Any,
         format: str | None = None,
     ) -> None:
-        """Save output to file."""
+        """
+        Save output to file.
+
+        Args:
+            key: Storage key/path. Extension controls filename, not serialization format.
+            value: Value to serialize and save.
+            format: Serialization format (independent of filename).
+        """
         data, ext = self.registry.serialize(value, format=format)
-        output_file = self.base_path / f"{key}.{ext}"
+        key_path = Path(key)
+
+        if key_path.suffix:
+            output_file = self.base_path / key
+        else:
+            output_file = self.base_path / f"{key}.{ext}"
+
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         output_file.write_bytes(data)
 
     def load(self, key: str, return_type: type[T] | None = None) -> T:
