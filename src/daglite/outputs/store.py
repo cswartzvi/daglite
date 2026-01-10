@@ -32,10 +32,10 @@ class FileOutputStore:
         >>> store = FileOutputStore("/tmp/outputs")  # Equivalent
         >>>
         >>> # S3
-        >>> store = FileOutputStore("s3://my-bucket/outputs")
+        >>> store = FileOutputStore("s3://my-bucket/outputs")  # doctest: +SKIP
         >>>
         >>> # Google Cloud Storage
-        >>> store = FileOutputStore("gcs://my-bucket/outputs")
+        >>> store = FileOutputStore("gcs://my-bucket/outputs")  # doctest: +SKIP
     """
 
     def __init__(
