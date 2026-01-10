@@ -101,13 +101,20 @@ class FileOutputStore:
 
     def load(self, key: str, return_type: type[T] | None = None) -> T:
         """Load output from file."""
+        if "/" in key:
+            parent_dir = "/".join([self.base_path] + key.split("/")[:-1])
+            filename_prefix = key.split("/")[-1]
+        else:
+            parent_dir = self.base_path
+            filename_prefix = key
+
         try:
-            all_files = self.fs.ls(self.base_path, detail=False)
+            all_files = self.fs.ls(parent_dir, detail=False)
         except FileNotFoundError:
             all_files = []
 
         matching_files = [
-            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+            f for f in all_files if f.split("/")[-1].startswith(f"{filename_prefix}.")
         ]
 
         if not matching_files:
@@ -146,25 +153,39 @@ class FileOutputStore:
 
     def exists(self, key: str) -> bool:
         """Check if an output exists."""
+        if "/" in key:
+            parent_dir = "/".join([self.base_path] + key.split("/")[:-1])
+            filename_prefix = key.split("/")[-1]
+        else:
+            parent_dir = self.base_path
+            filename_prefix = key
+
         try:
-            all_files = self.fs.ls(self.base_path, detail=False)
+            all_files = self.fs.ls(parent_dir, detail=False)
         except FileNotFoundError:
             return False
 
         matching_files = [
-            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+            f for f in all_files if f.split("/")[-1].startswith(f"{filename_prefix}.")
         ]
         return len(matching_files) > 0
 
     def delete(self, key: str) -> None:
         """Delete an output."""
+        if "/" in key:
+            parent_dir = "/".join([self.base_path] + key.split("/")[:-1])
+            filename_prefix = key.split("/")[-1]
+        else:
+            parent_dir = self.base_path
+            filename_prefix = key
+
         try:
-            all_files = self.fs.ls(self.base_path, detail=False)
+            all_files = self.fs.ls(parent_dir, detail=False)
         except FileNotFoundError:
             return
 
         matching_files = [
-            f for f in all_files if f.split("/")[-1].startswith(f"{key.split('/')[-1]}.")
+            f for f in all_files if f.split("/")[-1].startswith(f"{filename_prefix}.")
         ]
 
         for f in matching_files:
