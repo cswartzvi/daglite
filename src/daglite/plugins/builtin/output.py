@@ -70,9 +70,12 @@ class OutputPlugin:
             store = config.store or self.store
             if store is None:
                 raise ValueError(
-                    f"No output store configured for node '{metadata.name}'. "
-                    "Provide store via OutputPlugin(store=...), @task(store=...), "
-                    "or .save(store=...)"
+                    f"No output store configured for saving '{formatted_key}' "
+                    f"in task '{metadata.name}'. "
+                    f"\nFix by adding a store at one of these levels:"
+                    f"\n  1. OutputPlugin: plugins=[OutputPlugin(store='/path/to/outputs')]"
+                    f"\n  2. Task decorator: @task(store='/path/to/outputs')"
+                    f"\n  3. Explicit save: .save('{config.key}', store='/path/to/outputs')"
                 )
 
             # TODO: Support extra refs (requires access to completed_nodes)
