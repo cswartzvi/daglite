@@ -17,6 +17,7 @@ from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.outputs.base import OutputStore
 
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
@@ -48,6 +49,8 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     _id: UUID = field(init=False, repr=False)
     _output_configs: tuple[_FutureOutputConfig, ...] = field(init=False, repr=False, default=())
 
+    task_store: OutputStore | None = field(default=None, kw_only=True)
+
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())
@@ -58,7 +61,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str, **extras: Any) -> Self:
+    def save(self, key: str, store: OutputStore | None = None, **extras: Any) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
@@ -69,10 +72,15 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
+            store: Output store override for this specific save. If not provided, uses the
+                task's default store, then falls back to global settings.
             **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ValueError: If no store is configured at any level (explicit, task, or global).
 
         Examples:
             >>> from daglite import task
@@ -90,9 +98,20 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
+        from daglite.settings import get_global_settings
+
+        # Three-level resolution: explicit > task-level > global settings
+        resolved_store = store or self.task_store or get_global_settings().output_store
+        if resolved_store is None:
+            raise ValueError(
+                "No output store configured for save() on task. Provide store explicitly, set it "
+                "on @task(store=...), or configure DagliteSettings.output_store."
+            )
+
         config = _FutureOutputConfig(
             key=key,
             name=None,
+            store=resolved_store,
             extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
         )
         new_configs = self._output_configs + (config,)
@@ -102,7 +121,9 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         object.__setattr__(new_future, "_output_configs", new_configs)
         return new_future
 
-    def checkpoint(self, name: str, key: str, **extras: Any) -> Self:
+    def checkpoint(
+        self, name: str, key: str, store: OutputStore | None = None, **extras: Any
+    ) -> Self:
         """
         Save task output and mark as a resumption point.
 
@@ -114,10 +135,15 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             name: Explicit name for this checkpoint (used for graph resumption)
             key: Storage key for the output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
+            store: Output store override for this specific checkpoint. If not provided, uses the
+                task's default store, then falls back to global settings.
             **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
 
         Returns:
             Self for method chaining
+
+        Raises:
+            ValueError: If no store is configured at any level (explicit, task, or global).
 
         Examples:
             >>> from daglite import task
@@ -130,9 +156,20 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
+        from daglite.settings import get_global_settings
+
+        # Three-level resolution: explicit > task-level > global settings
+        resolved_store = store or self.task_store or get_global_settings().output_store
+        if resolved_store is None:
+            raise ValueError(
+                "No output store configured for save() on task. Provide store explicitly, set it "
+                "on @task(store=...), or configure DagliteSettings.output_store."
+            )
+
         config = _FutureOutputConfig(
             key=key,
             name=name,
+            store=resolved_store,
             extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
         )
         new_configs = self._output_configs + (config,)
@@ -517,14 +554,14 @@ class TaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for config in self._output_configs:
-            converted_extras = {}
+            extras = {}
             for name, value in config.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    converted_extras[name] = ParamInput.from_ref(value.id)
+                    extras[name] = ParamInput.from_ref(value.id)
                 else:
-                    converted_extras[name] = ParamInput.from_value(value)
+                    extras[name] = ParamInput.from_value(value)
             output_configs.append(
-                OutputConfig(key=config.key, name=config.name, extras=converted_extras)
+                OutputConfig(key=config.key, name=config.name, store=config.store, extras=extras)
             )
 
         return TaskNode(
@@ -640,6 +677,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             fixed_kwargs=all_fixed,
             mapped_kwargs={unbound_param: self},
             backend_name=self.backend_name,
+            task_store=self.task_store,
         )
 
     @overload
@@ -685,6 +723,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             task=actual_task,
             kwargs=merged_kwargs,
             backend_name=self.backend_name,
+            task_store=self.task_store,
         )
 
     @override
@@ -729,14 +768,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for config in self._output_configs:
-            converted_extras = {}
+            extras = {}
             for name, value in config.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    converted_extras[name] = ParamInput.from_ref(value.id)
+                    extras[name] = ParamInput.from_ref(value.id)
                 else:
-                    converted_extras[name] = ParamInput.from_value(value)
+                    extras[name] = ParamInput.from_value(value)
             output_configs.append(
-                OutputConfig(key=config.key, name=config.name, extras=converted_extras)
+                OutputConfig(key=config.key, name=config.name, store=config.store, extras=extras)
             )
 
         return MapTaskNode(
@@ -763,6 +802,7 @@ class _FutureOutputConfig:
 
     key: str
     name: str | None
+    store: OutputStore
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
 
 

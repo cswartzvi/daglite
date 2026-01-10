@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from daglite.exceptions import ExecutionError
+from daglite.outputs.base import OutputStore
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map"]
@@ -288,6 +289,9 @@ class OutputConfig:
 
     key: str
     """Storage key template with {param} placeholders for formatting."""
+
+    store: OutputStore
+    """OutputStore instance where this output should be saved."""
 
     name: str | None = None
     """Optional checkpoint name for graph resumption via evaluate(from_={name: key})."""

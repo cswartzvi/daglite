@@ -11,7 +11,7 @@ from dataclasses import field
 from dataclasses import fields
 from functools import cached_property
 from inspect import Signature
-from typing import Any, Generic, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
@@ -19,6 +19,11 @@ from daglite.exceptions import ParameterError
 from daglite.futures import BaseTaskFuture
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
+
+if TYPE_CHECKING:
+    from daglite.outputs.base import OutputStore
+else:
+    OutputStore = object
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -42,6 +47,7 @@ def task(
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
+    store: OutputStore | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -55,6 +61,7 @@ def task(  # noqa: D417
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
+    store: OutputStore | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -79,6 +86,8 @@ def task(  # noqa: D417
             Defaults to False.
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
+        store: Default output store for all .save() and .checkpoint() calls on this task.
+            If not provided, uses the global settings output_store.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -130,6 +139,7 @@ def task(  # noqa: D417
             timeout=timeout,
             cache=cache,
             cache_ttl=cache_ttl,
+            store=store,
         )
 
     if func is not None:
@@ -167,6 +177,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
     cache_ttl: int | None = field(default=None, kw_only=True)
     """Time-to-live for cached results in seconds. If None, cached results never expire."""
 
+    store: OutputStore | None = field(default=None, kw_only=True)
+    """Default output store for .save() and .checkpoint() calls on this task."""
+
     def __post_init__(self) -> None:
         if self.retries < 0:
             raise ParameterError(
@@ -197,6 +210,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         timeout: float | None = None,
         cache: bool | None = None,
         cache_ttl: int | None = None,
+        store: OutputStore | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -209,6 +223,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             timeout: New timeout for the task. If `None`, keeps the existing timeout.
             cache: Whether to enable caching for the task. If `None`, keeps the existing setting.
             cache_ttl: Time-to-live for cached results. If `None`, keeps the existing cache_ttl.
+            store: Default output store for the task. If `None`, keeps the existing store.
 
         Returns:
             A new `BaseTask` instance with updated options.
@@ -221,6 +236,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         new_timeout = timeout if timeout is not None else self.timeout
         new_cache = cache if cache is not None else self.cache
         new_cache_ttl = cache_ttl if cache_ttl is not None else self.cache_ttl
+        new_store = store if store is not None else self.store
 
         # Collect the remaining fields (assumes this is a dataclass)
         remaining_fields = {
@@ -235,6 +251,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
                 "timeout",
                 "cache",
                 "cache_ttl",
+                "store",
             }
         }
 
@@ -246,6 +263,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             timeout=new_timeout,
             cache=new_cache,
             cache_ttl=new_cache_ttl,
+            store=new_store,
             **remaining_fields,
         )
 
@@ -430,6 +448,7 @@ class Task(BaseTask[P, R]):
             backend_name=self.backend_name,
             retries=self.retries,
             timeout=self.timeout,
+            store=self.store,
         )
 
     @override
@@ -473,7 +492,9 @@ class PartialTask(BaseTask[P, R]):
         check_missing_params(self, merged)
         check_overlap_params(self, kwargs)
 
-        return TaskFuture(task=self.task, kwargs=merged, backend_name=self.backend_name)
+        return TaskFuture(
+            task=self.task, kwargs=merged, backend_name=self.backend_name, task_store=self.store
+        )
 
     @override
     def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
@@ -491,6 +512,7 @@ class PartialTask(BaseTask[P, R]):
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend_name=self.backend_name,
+            task_store=self.store,
         )
 
     @override
@@ -520,6 +542,7 @@ class PartialTask(BaseTask[P, R]):
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend_name=self.backend_name,
+            task_store=self.store,
         )
 
 
