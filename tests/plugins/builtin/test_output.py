@@ -235,7 +235,7 @@ class TestOutputPluginAfterNodeExecute:
             # Verify reporter was called
             mock_reporter.report.assert_called_once()
             call_args = mock_reporter.report.call_args
-            assert call_args[0][0] == "output_saved"
+            assert call_args[0][0] == "daglite-output-saved"
             event_data = call_args[0][1]
             assert event_data["key"] == "result"
             assert event_data["checkpoint_name"] == "checkpoint1"

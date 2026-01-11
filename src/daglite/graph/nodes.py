@@ -35,6 +35,12 @@ class TaskNode(BaseGraphNode):
     retries: int = 0
     """Number of times to retry the task on failure."""
 
+    cache: bool = False
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = None
+    """Time-to-live for cached results in seconds. None means no expiration."""
+
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -86,6 +92,8 @@ class TaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
@@ -102,6 +110,8 @@ class TaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
 
@@ -123,6 +133,12 @@ class MapTaskNode(BaseGraphNode):
 
     retries: int = 0
     """Number of times to retry the task on failure."""
+
+    cache: bool = False
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = None
+    """Time-to-live for cached results in seconds. None means no expiration."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
@@ -242,6 +258,8 @@ class MapTaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
@@ -261,6 +279,8 @@ class MapTaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
 
@@ -274,6 +294,8 @@ def _run_sync_impl(
     output_config: tuple,
     resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
+    cache_enabled: bool = False,
+    cache_ttl: int | None = None,
 ) -> Any:
     """
     Synchronous implementation for running a node with context setup and retries.
@@ -285,6 +307,8 @@ def _run_sync_impl(
         output_config: Output configuration tuple for this node.
         resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
+        cache_enabled: Whether caching is enabled for this node.
+        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
 
     Returns:
         Result of the function execution.
@@ -294,14 +318,36 @@ def _run_sync_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(
+    cached_result = hook.check_cache(
+        func=func,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        cache_enabled=cache_enabled,
+        cache_ttl=cache_ttl,
+    )
+    if cached_result is not None:
+        result = (
+            cached_result["value"]
+            if isinstance(cached_result, dict) and "value" in cached_result
+            else cached_result
+        )
+        hook.on_cache_hit(
+            func=func,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            reporter=reporter,
+        )
+        reset_current_task(token)
+        return result
+
+    hook.before_node_execute(
         metadata=metadata,
         inputs=resolved_inputs,
         output_config=output_config,
         output_extras=resolved_output_extras,
         reporter=reporter,
     )
-    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -313,14 +359,46 @@ def _run_sync_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
+                    hook.before_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        last_error=last_error,
+                    )
 
                 result = func(**resolved_inputs)
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
-                hook.after_node_execute(result=result, duration=duration, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=True,
+                    )
+                hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    output_config=output_config,
+                    output_extras=resolved_output_extras,
+                    duration=duration,
+                    reporter=reporter,
+                )
+                hook.update_cache(
+                    func=func,
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    cache_enabled=cache_enabled,
+                    cache_ttl=cache_ttl,
+                )
 
                 return result
 
@@ -328,7 +406,15 @@ def _run_sync_impl(
                 last_error = error
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=False,
+                    )
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -336,7 +422,15 @@ def _run_sync_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        hook.on_node_error(error=last_error, duration=duration, **common)
+        hook.on_node_error(
+            metadata=metadata,
+            inputs=resolved_inputs,
+            output_config=output_config,
+            output_extras=resolved_output_extras,
+            reporter=reporter,
+            error=last_error,
+            duration=duration,
+        )
         raise last_error
 
     finally:
@@ -350,6 +444,8 @@ async def _run_async_impl(
     output_config: tuple,
     resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
+    cache_enabled: bool = False,
+    cache_ttl: int | None = None,
 ) -> Any:
     """
     Async implementation for running a node with context setup and retries.
@@ -361,6 +457,8 @@ async def _run_async_impl(
         output_config: Output configuration tuple for this node.
         resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
+        cache_enabled: Whether caching is enabled for this node.
+        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
 
     Returns:
         Result of the function execution.
@@ -370,14 +468,36 @@ async def _run_async_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(
+    cached_result = hook.check_cache(
+        func=func,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        cache_enabled=cache_enabled,
+        cache_ttl=cache_ttl,
+    )
+    if cached_result is not None:
+        result = (
+            cached_result["value"]
+            if isinstance(cached_result, dict) and "value" in cached_result
+            else cached_result
+        )
+        hook.on_cache_hit(
+            func=func,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            reporter=reporter,
+        )
+        reset_current_task(token)
+        return result
+
+    hook.before_node_execute(
         metadata=metadata,
         inputs=resolved_inputs,
         output_config=output_config,
         output_extras=resolved_output_extras,
         reporter=reporter,
     )
-    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -389,7 +509,15 @@ async def _run_async_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
+                    hook.before_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        last_error=last_error,
+                    )
 
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
@@ -398,8 +526,32 @@ async def _run_async_impl(
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
-                hook.after_node_execute(result=result, duration=duration, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=True,
+                    )
+                hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    output_config=output_config,
+                    output_extras=resolved_output_extras,
+                    duration=duration,
+                    reporter=reporter,
+                )
+                hook.update_cache(
+                    func=func,
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    cache_enabled=cache_enabled,
+                    cache_ttl=cache_ttl,
+                )
 
                 return result
 
@@ -407,7 +559,15 @@ async def _run_async_impl(
                 last_error = error
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=False,
+                    )
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -415,7 +575,15 @@ async def _run_async_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        hook.on_node_error(error=last_error, duration=duration, **common)
+        hook.on_node_error(
+            metadata=metadata,
+            inputs=resolved_inputs,
+            output_config=output_config,
+            output_extras=resolved_output_extras,
+            reporter=reporter,
+            error=last_error,
+            duration=duration,
+        )
         raise last_error
 
     finally:

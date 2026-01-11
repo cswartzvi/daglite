@@ -601,3 +601,66 @@ class TestLifecycleLoggingPlugin:
 
         # Should track the node ID
         assert node_id in plugin._mapped_nodes
+
+
+class TestLifecycleLoggingPluginOnCacheHit:
+    """Tests for LifecycleLoggingPlugin.on_cache_hit hook."""
+
+    def test_on_cache_hit_logs_message(self, caplog):
+        """Test that on_cache_hit logs an info message."""
+        from unittest.mock import Mock
+        from uuid import uuid4
+
+        from daglite.graph.base import GraphMetadata
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        node_id = uuid4()
+        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+
+        # Call hook - it should log without raising
+        plugin.on_cache_hit(
+            func=Mock(),
+            metadata=metadata,
+            inputs={"x": 5},
+            result=10,
+            reporter=None,
+        )
+
+        # Since the logger uses get_logger() which creates its own handlers,
+        # we can't easily capture with caplog. Just verify it doesn't raise.
+
+
+class TestLifecycleLoggingPluginOutputSaved:
+    """Tests for LifecycleLoggingPlugin output_saved event handling."""
+
+    def test_handle_output_saved_with_checkpoint_name(self):
+        """Test that output_saved event logs checkpoint saves."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        event = {
+            "key": "output.pkl",
+            "checkpoint_name": "my_checkpoint",
+            "node_name": "test_task",
+        }
+
+        # Should not raise
+        plugin._handle_output_saved(event)
+
+    def test_handle_output_saved_without_checkpoint_name(self):
+        """Test that output_saved event logs regular saves."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        event = {
+            "key": "result.pkl",
+            "checkpoint_name": None,
+            "node_name": "test_task",
+        }
+
+        # Should not raise
+        plugin._handle_output_saved(event)

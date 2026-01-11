@@ -104,7 +104,9 @@ class TestRichProgressPlugin:
 
         plugin.after_node_execute(metadata, inputs, result, duration, mock_reporter)
 
-        mock_reporter.report.assert_called_once_with("node_end", data={"node_id": metadata.id})
+        mock_reporter.report.assert_called_once_with(
+            "daglite-node-end", data={"node_id": metadata.id}
+        )
 
     def test_after_node_execute_without_reporter(self):
         """Test after_node_execute without reporter (fallback)."""
@@ -134,7 +136,9 @@ class TestRichProgressPlugin:
 
         plugin.on_node_error(metadata, inputs, error, duration, mock_reporter)
 
-        mock_reporter.report.assert_called_once_with("node_end", data={"node_id": metadata.id})
+        mock_reporter.report.assert_called_once_with(
+            "daglite-node-end", data={"node_id": metadata.id}
+        )
 
     def test_on_node_error_without_reporter(self):
         """Test on_node_error without reporter (fallback)."""
@@ -213,7 +217,7 @@ class TestRichProgressPlugin:
 
         plugin.register_event_handlers(registry)
 
-        registry.register.assert_called_once_with("node_end", plugin._handle_node_update)
+        registry.register.assert_called_once_with("daglite-node-end", plugin._handle_node_update)
 
     def test_handle_node_update_for_mapped_task(self):
         """Test _handle_node_update for mapped task iteration."""
@@ -303,3 +307,77 @@ class TestCustomBarColumn:
 
         # Original style should be restored
         assert column.complete_style == original_style
+
+
+class TestRichProgressOnCacheHit:
+    """Tests for RichProgressPlugin.on_cache_hit hook."""
+
+    def test_on_cache_hit_with_reporter(self):
+        """Test that on_cache_hit reports event when reporter is present."""
+        from daglite.graph.base import GraphMetadata
+
+        plugin = RichProgressPlugin()
+        metadata = GraphMetadata(id=uuid4(), name="test_task", kind="task", key="test_task")
+
+        mock_reporter = Mock()
+
+        plugin.on_cache_hit(
+            func=Mock(),
+            metadata=metadata,
+            inputs={"x": 5},
+            result=10,
+            reporter=mock_reporter,
+        )
+
+        mock_reporter.report.assert_called_once_with(
+            "daglite-node-end", data={"node_id": metadata.id}
+        )
+
+    def test_on_cache_hit_advances_progress(self):
+        """Test that on_cache_hit advances the progress bar."""
+        from daglite.graph.base import GraphMetadata
+
+        plugin = RichProgressPlugin()
+        plugin._progress = Mock()
+
+        node_id = uuid4()
+        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+
+        # Register a task for this node
+        task_id = TaskID(1)
+        plugin._id_to_task[node_id] = task_id
+
+        # Call on_cache_hit with no reporter (fallback path)
+        plugin.on_cache_hit(
+            func=Mock(),
+            metadata=metadata,
+            inputs={"x": 5},
+            result=10,
+            reporter=None,
+        )
+
+        # Progress should advance
+        plugin._progress.advance.assert_called_once_with(task_id=task_id)
+
+    def test_on_cache_hit_without_registered_task(self):
+        """Test that on_cache_hit handles missing task gracefully."""
+        from daglite.graph.base import GraphMetadata
+
+        plugin = RichProgressPlugin()
+        plugin._progress = Mock()
+        plugin._root_task_id = TaskID(0)
+
+        node_id = uuid4()
+        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+
+        # No task registered - should fall back to root task
+        plugin.on_cache_hit(
+            func=Mock(),
+            metadata=metadata,
+            inputs={"x": 5},
+            result=10,
+            reporter=None,
+        )
+
+        # Should advance root task
+        plugin._progress.advance.assert_called_once_with(task_id=plugin._root_task_id)

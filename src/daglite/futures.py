@@ -572,6 +572,8 @@ class TaskFuture(BaseTaskFuture[R]):
             retries=self.task.retries,
             timeout=self.task.timeout,
             output_configs=tuple(output_configs),
+            cache=self.task.cache,
+            cache_ttl=self.task.cache_ttl,
         )
 
 
@@ -792,6 +794,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
             retries=self.task.retries,
             timeout=self.task.timeout,
             output_configs=tuple(output_configs),
+            cache=self.task.cache,
+            cache_ttl=self.task.cache_ttl,
         )
 
 

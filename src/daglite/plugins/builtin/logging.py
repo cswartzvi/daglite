@@ -284,11 +284,12 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             registry: Event registry for registering handlers
         """
         super().register_event_handlers(registry)
-        registry.register("logging-node-start", self._handle_node_start)
-        registry.register("logging-node-complete", self._handle_node_complete)
-        registry.register("logging-node-fail", self._handle_task_fail)
-        registry.register("logging-node-retry", self._handle_node_retry)
-        registry.register("logging-node-retry-result", self._handle_node_retry_result)
+        registry.register("daglite-logging-node-start", self._handle_node_start)
+        registry.register("daglite-logging-node-complete", self._handle_node_complete)
+        registry.register("daglite-logging-node-fail", self._handle_task_fail)
+        registry.register("daglite-logging-node-retry", self._handle_node_retry)
+        registry.register("daglite-logging-node-retry-result", self._handle_node_retry_result)
+        registry.register("daglite-output-saved", self._handle_output_saved)
 
     @hook_impl
     def before_graph_execute(
@@ -362,7 +363,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             "backend_name": metadata.backend_name,
         }
         if reporter:
-            reporter.report("logging-node-start", data=data)
+            reporter.report("daglite-logging-node-start", data=data)
         else:  # pragma: no cover
             self._handle_node_start(data)  # Fallback if no reporter is available
 
@@ -377,7 +378,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {"node_id": metadata.id, "node_key": metadata.key, "duration": duration}
         if reporter:
-            reporter.report("logging-node-complete", data=data)
+            reporter.report("daglite-logging-node-complete", data=data)
         else:  # pragma: no cover
             self._handle_node_complete(data)  # Fallback if no reporter is available
 
@@ -398,7 +399,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             "duration": duration,
         }
         if reporter:
-            reporter.report("logging-node-fail", data=data)
+            reporter.report("daglite-logging-node-fail", data=data)
         else:  # pragma: no cover
             self._handle_task_fail(data)  # Fallback if no reporter is available
 
@@ -419,7 +420,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             "error_type": type(last_error).__name__,
         }
         if reporter:
-            reporter.report("logging-node-retry", data=data)
+            reporter.report("daglite-logging-node-retry", data=data)
         else:  # pragma: no cover
             self._handle_node_retry(data)  # Fallback if no reporter is available
 
@@ -439,9 +440,24 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             "succeeded": succeeded,
         }
         if reporter:
-            reporter.report("logging-node-retry-result", data=data)
+            reporter.report("daglite-logging-node-retry-result", data=data)
         else:  # pragma: no cover
             self._handle_node_retry_result(data)  # Fallback if no reporter is available
+
+    @hook_impl
+    def on_cache_hit(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        reporter: EventReporter | None,
+    ) -> None:
+        node_key = metadata.key or metadata.name
+        self._logger.info(
+            f"Task '{node_key}' - Using cached result",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
 
     @hook_impl
     def after_mapped_node_execute(
@@ -516,6 +532,19 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             self._logger.info(f"Task '{node_key}' - Retry succeeded on attempt {attempt}")
         else:
             self._logger.debug(f"Task '{node_key}' - Retry attempt {attempt} failed")
+
+    def _handle_output_saved(self, event: dict[str, Any]) -> None:
+        """Handle daglite-output-saved event from OutputPlugin."""
+        key = event.get("key")
+        checkpoint_name = event.get("checkpoint_name")
+        node_name = event.get("node_name")
+
+        if checkpoint_name:
+            self._logger.info(
+                f"Task '{node_name}' - Saved checkpoint '{checkpoint_name}' to '{key}'"
+            )
+        else:
+            self._logger.info(f"Task '{node_name}' - Saved output to '{key}'")
 
 
 class _ReporterHandler(logging.Handler):
