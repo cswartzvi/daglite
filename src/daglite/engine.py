@@ -509,6 +509,7 @@ class Engine:
 
         backend = backend_manager.get(node.backend_name)
         resolved_inputs = node.resolve_inputs(state.completed_nodes)
+        resolved_outputs = node.resolve_outputs(state.completed_nodes)
 
         if isinstance(node, MapTaskNode):
             # For mapped nodes, submit each iteration separately
@@ -523,7 +524,7 @@ class Engine:
             # Submit all iterations (non-blocking)
             futures = []
             for idx, call in enumerate(calls):
-                kwargs = {"iteration_index": idx}
+                kwargs = {"iteration_index": idx, "resolved_outputs": resolved_outputs}
                 future = backend.submit(node.run, call, node.timeout, **kwargs)
                 futures.append(future)
 
@@ -535,7 +536,9 @@ class Engine:
                 backend=backend,
             )
         else:
-            future = backend.submit(node.run, resolved_inputs, node.timeout)
+            future = backend.submit(
+                node.run, resolved_inputs, node.timeout, resolved_outputs=resolved_outputs
+            )
             return _NodeFutureWrapper(future=future, node=node)
 
     def _collect_result_sync(self, wrapper: _NodeFutureWrapper | _MapFutureWrapper) -> Any:
@@ -582,6 +585,7 @@ class Engine:
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
+        resolved_outputs = node.resolve_outputs(completed_nodes)
 
         # Determine how to submit to backend based on node type
         if isinstance(node, MapTaskNode):
@@ -595,7 +599,7 @@ class Engine:
             )
 
             for idx, call in enumerate(calls):
-                kwargs = {"iteration_index": idx}
+                kwargs = {"iteration_index": idx, "resolved_outputs": resolved_outputs}
                 future = wrap_future(
                     backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
                 )
@@ -609,7 +613,12 @@ class Engine:
             )
         else:
             future = wrap_future(
-                backend.submit(node.run_async, resolved_inputs, timeout=node.timeout)
+                backend.submit(
+                    node.run_async,
+                    resolved_inputs,
+                    timeout=node.timeout,
+                    resolved_outputs=resolved_outputs,
+                )
             )
             result = await future
 
