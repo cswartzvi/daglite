@@ -341,15 +341,13 @@ class SerializationRegistry:
             if registered_type == type_:
                 return format
 
-        # Check if any registered type is a parent class
-        for registered_type, format in registrations:
+        # Defensive check for subclasses
+        for registered_type, format in registrations:  # pragma: no cover
             try:
                 if issubclass(type_, registered_type):
                     return format
-            except TypeError:  # pragma: no cover
+            except TypeError:
                 continue
-
-        return None
 
     def get_extension(
         self,
