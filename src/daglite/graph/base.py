@@ -148,7 +148,14 @@ class BaseGraphNode(abc.ABC):
             resolved_extras = {
                 name: param.resolve(completed_nodes) for name, param in config.extras.items()
             }
-            outputs.append({"key": config.key, "name": config.name, "extras": resolved_extras})
+            outputs.append(
+                {
+                    "key": config.key,
+                    "name": config.name,
+                    "store": config.store,
+                    "extras": resolved_extras,
+                }
+            )
         return outputs
 
     @abc.abstractmethod
