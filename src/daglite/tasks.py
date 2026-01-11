@@ -458,6 +458,8 @@ class Task(BaseTask[P, R]):
             retries=self.retries,
             timeout=self.timeout,
             store=self.store,
+            cache=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
