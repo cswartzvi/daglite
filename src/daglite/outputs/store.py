@@ -93,7 +93,8 @@ class FileOutputStore:
             output_path = f"{self.base_path}/{key}.{ext}"
 
         parent = "/".join(output_path.rsplit("/", 1)[:-1])
-        self.fs.mkdirs(parent, exist_ok=True)
+        if parent:  # pragma: no branch
+            self.fs.mkdirs(parent, exist_ok=True)
 
         with self.fs.open(output_path, "wb") as f:
             f.write(data)  # type: ignore
