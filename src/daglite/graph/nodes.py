@@ -92,6 +92,8 @@ class TaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
@@ -108,6 +110,8 @@ class TaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
 
@@ -254,6 +258,8 @@ class MapTaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
@@ -273,6 +279,8 @@ class MapTaskNode(BaseGraphNode):
             output_config=self.output_configs,
             resolved_output_extras=resolved_output_extras,
             retries=self.retries,
+            cache_enabled=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
 
@@ -286,6 +294,8 @@ def _run_sync_impl(
     output_config: tuple,
     resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
+    cache_enabled: bool = False,
+    cache_ttl: int | None = None,
 ) -> Any:
     """
     Synchronous implementation for running a node with context setup and retries.
@@ -297,6 +307,8 @@ def _run_sync_impl(
         output_config: Output configuration tuple for this node.
         resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
+        cache_enabled: Whether caching is enabled for this node.
+        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
 
     Returns:
         Result of the function execution.
@@ -305,6 +317,29 @@ def _run_sync_impl(
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
     reporter = get_reporter()
+
+    cached_result = hook.check_cache(
+        func=func,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        cache_enabled=cache_enabled,
+        cache_ttl=cache_ttl,
+    )
+    if cached_result is not None:
+        result = (
+            cached_result["value"]
+            if isinstance(cached_result, dict) and "value" in cached_result
+            else cached_result
+        )
+        hook.on_cache_hit(
+            func=func,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            reporter=reporter,
+        )
+        reset_current_task(token)
+        return result
 
     common = dict(
         metadata=metadata,
@@ -332,7 +367,19 @@ def _run_sync_impl(
 
                 if attempt > 1:
                     hook.after_node_retry(attempt=attempt, succeeded=True, **common)
-                hook.after_node_execute(result=result, duration=duration, **common)
+                hook.after_node_execute(
+                    result=result,
+                    duration=duration,
+                    **common,
+                )
+                hook.update_cache(
+                    func=func,
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    cache_enabled=cache_enabled,
+                    cache_ttl=cache_ttl,
+                )
 
                 return result
 
@@ -362,6 +409,8 @@ async def _run_async_impl(
     output_config: tuple,
     resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
+    cache_enabled: bool = False,
+    cache_ttl: int | None = None,
 ) -> Any:
     """
     Async implementation for running a node with context setup and retries.
@@ -373,6 +422,8 @@ async def _run_async_impl(
         output_config: Output configuration tuple for this node.
         resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
+        cache_enabled: Whether caching is enabled for this node.
+        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
 
     Returns:
         Result of the function execution.
@@ -381,6 +432,29 @@ async def _run_async_impl(
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
     reporter = get_reporter()
+
+    cached_result = hook.check_cache(
+        func=func,
+        metadata=metadata,
+        inputs=resolved_inputs,
+        cache_enabled=cache_enabled,
+        cache_ttl=cache_ttl,
+    )
+    if cached_result is not None:
+        result = (
+            cached_result["value"]
+            if isinstance(cached_result, dict) and "value" in cached_result
+            else cached_result
+        )
+        hook.on_cache_hit(
+            func=func,
+            metadata=metadata,
+            inputs=resolved_inputs,
+            result=result,
+            reporter=reporter,
+        )
+        reset_current_task(token)
+        return result
 
     common = dict(
         metadata=metadata,
@@ -411,7 +485,19 @@ async def _run_async_impl(
 
                 if attempt > 1:
                     hook.after_node_retry(attempt=attempt, succeeded=True, **common)
-                hook.after_node_execute(result=result, duration=duration, **common)
+                hook.after_node_execute(
+                    result=result,
+                    duration=duration,
+                    **common,
+                )
+                hook.update_cache(
+                    func=func,
+                    metadata=metadata,
+                    inputs=resolved_inputs,
+                    result=result,
+                    cache_enabled=cache_enabled,
+                    cache_ttl=cache_ttl,
+                )
 
                 return result
 
