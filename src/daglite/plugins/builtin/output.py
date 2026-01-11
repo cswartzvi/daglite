@@ -85,7 +85,7 @@ class OutputPlugin:
 
             if reporter:
                 reporter.report(
-                    "output_saved",
+                    "daglite-output-saved",
                     {
                         "key": formatted_key,
                         "checkpoint_name": config.name,
