@@ -35,6 +35,12 @@ class TaskNode(BaseGraphNode):
     retries: int = 0
     """Number of times to retry the task on failure."""
 
+    cache: bool = False
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = None
+    """Time-to-live for cached results in seconds. None means no expiration."""
+
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -123,6 +129,12 @@ class MapTaskNode(BaseGraphNode):
 
     retries: int = 0
     """Number of times to retry the task on failure."""
+
+    cache: bool = False
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = None
+    """Time-to-live for cached results in seconds. None means no expiration."""
 
     def __post_init__(self) -> None:
         super().__post_init__()
