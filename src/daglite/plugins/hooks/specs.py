@@ -140,7 +140,7 @@ class WorkerSideNodeSpecs:
         """
         Called before node execution to check for cached results.
 
-        This hooks allows cache plugins to return a cached result, which will skip actual execution
+        This hook allows cache plugins to return a cached result, which will skip actual execution
         of the node. It should be considered an internal hook and not used for general plugin
         development, unless implementing a caching plugin.
 

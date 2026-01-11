@@ -43,7 +43,7 @@ def default_cache_hash(func: Callable, bound_args: dict[str, Any]) -> str:
     except (OSError, TypeError):  # pragma: no cover
         h.update(func.__qualname__.encode())
 
-    # Hash each parameter using registry's strategies bound_args can be either a dict or
+    # Hash each parameter using registry's strategies; bound_args can be either a dict or
     # BoundArguments object
     items = bound_args.arguments.items() if hasattr(bound_args, "arguments") else bound_args.items()  # type: ignore
     for name, value in sorted(items):
