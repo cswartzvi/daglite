@@ -131,8 +131,7 @@ class FileOutputStore:
 
         if return_type is None:
             # Check if this extension is used by pickle format (works without type hints)
-            registrations = self.registry._extension_to_format.get(ext, [])
-            formats = {fmt for _, fmt in registrations}
+            formats = self.registry.get_formats_for_extension(ext)
 
             if "pickle" in formats:
                 import pickle

@@ -349,6 +349,26 @@ class SerializationRegistry:
             except TypeError:
                 continue
 
+    def get_formats_for_extension(self, extension: str) -> set[str]:
+        """
+        Get all format identifiers registered for a file extension.
+
+        Args:
+            extension: File extension (without leading dot)
+
+        Returns:
+            Set of format identifiers registered for this extension
+
+        Examples:
+            >>> from daglite.serialization import default_registry
+            >>> default_registry.get_formats_for_extension("pkl")
+            {'pickle'}
+            >>> default_registry.get_formats_for_extension("txt")
+            {'text'}
+        """
+        registrations = self._extension_to_format.get(extension, [])
+        return {fmt for _, fmt in registrations}
+
     def get_extension(
         self,
         type_: Type,
