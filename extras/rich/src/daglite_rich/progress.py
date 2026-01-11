@@ -93,7 +93,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         reporter: EventReporter | None,
     ) -> None:
         if reporter:
-            reporter.report("node_end", data={"node_id": metadata.id})
+            reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
@@ -108,7 +108,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         reporter: EventReporter | None,
     ) -> None:
         if reporter:
-            reporter.report("node_end", data={"node_id": metadata.id})
+            reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
@@ -123,7 +123,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         reporter: EventReporter | None,
     ) -> None:
         if reporter:
-            reporter.report("node_end", data={"node_id": metadata.id})
+            reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
@@ -167,7 +167,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
 
     @override
     def register_event_handlers(self, registry: EventRegistry) -> None:
-        registry.register("node_end", self._handle_node_update)
+        registry.register("daglite-node-end", self._handle_node_update)
 
     def _handle_node_update(self, event: dict) -> None:
         # Check if this is a map iteration completion
