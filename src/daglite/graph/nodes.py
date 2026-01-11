@@ -341,14 +341,13 @@ def _run_sync_impl(
         reset_current_task(token)
         return result
 
-    common = dict(
+    hook.before_node_execute(
         metadata=metadata,
         inputs=resolved_inputs,
         output_config=output_config,
         output_extras=resolved_output_extras,
         reporter=reporter,
     )
-    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -360,17 +359,37 @@ def _run_sync_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
+                    hook.before_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        last_error=last_error,
+                    )
 
                 result = func(**resolved_inputs)
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=True,
+                    )
                 hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
                     result=result,
+                    output_config=output_config,
+                    output_extras=resolved_output_extras,
                     duration=duration,
-                    **common,
+                    reporter=reporter,
                 )
                 hook.update_cache(
                     func=func,
@@ -387,7 +406,15 @@ def _run_sync_impl(
                 last_error = error
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=False,
+                    )
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -395,7 +422,15 @@ def _run_sync_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        hook.on_node_error(error=last_error, duration=duration, **common)
+        hook.on_node_error(
+            metadata=metadata,
+            inputs=resolved_inputs,
+            output_config=output_config,
+            output_extras=resolved_output_extras,
+            reporter=reporter,
+            error=last_error,
+            duration=duration,
+        )
         raise last_error
 
     finally:
@@ -456,14 +491,13 @@ async def _run_async_impl(
         reset_current_task(token)
         return result
 
-    common = dict(
+    hook.before_node_execute(
         metadata=metadata,
         inputs=resolved_inputs,
         output_config=output_config,
         output_extras=resolved_output_extras,
         reporter=reporter,
     )
-    hook.before_node_execute(**common)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -475,7 +509,15 @@ async def _run_async_impl(
             try:
                 if attempt > 1:
                     assert last_error is not None
-                    hook.before_node_retry(attempt=attempt, last_error=last_error, **common)
+                    hook.before_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        last_error=last_error,
+                    )
 
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
@@ -484,11 +526,23 @@ async def _run_async_impl(
                 duration = time.time() - start_time
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=True, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=True,
+                    )
                 hook.after_node_execute(
+                    metadata=metadata,
+                    inputs=resolved_inputs,
                     result=result,
+                    output_config=output_config,
+                    output_extras=resolved_output_extras,
                     duration=duration,
-                    **common,
+                    reporter=reporter,
                 )
                 hook.update_cache(
                     func=func,
@@ -505,7 +559,15 @@ async def _run_async_impl(
                 last_error = error
 
                 if attempt > 1:
-                    hook.after_node_retry(attempt=attempt, succeeded=False, **common)
+                    hook.after_node_retry(
+                        metadata=metadata,
+                        inputs=resolved_inputs,
+                        output_config=output_config,
+                        output_extras=resolved_output_extras,
+                        reporter=reporter,
+                        attempt=attempt,
+                        succeeded=False,
+                    )
 
                 if attempt >= max_attempts:
                     break  # No more retries left
@@ -513,7 +575,15 @@ async def _run_async_impl(
         # All attempts exhausted
         duration = time.time() - start_time
         assert last_error is not None
-        hook.on_node_error(error=last_error, duration=duration, **common)
+        hook.on_node_error(
+            metadata=metadata,
+            inputs=resolved_inputs,
+            output_config=output_config,
+            output_extras=resolved_output_extras,
+            reporter=reporter,
+            error=last_error,
+            duration=duration,
+        )
         raise last_error
 
     finally:
