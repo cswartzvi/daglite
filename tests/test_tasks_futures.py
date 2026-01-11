@@ -133,6 +133,15 @@ class TestTaskDefinition:
             def faulty_task(x: int) -> int:
                 return x
 
+    def test_task_with_negative_cache_ttl(self) -> None:
+        """Defining a task with negative cache_ttl raises ParameterError."""
+
+        with pytest.raises(ParameterError, match="invalid cache_ttl=-10"):
+
+            @task(cache_ttl=-10)
+            def faulty_task(x: int) -> int:
+                return x
+
 
 class TestParameterValidation:
     """Test parameter validation for task calls and partial() operations."""

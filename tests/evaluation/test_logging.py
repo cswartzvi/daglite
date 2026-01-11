@@ -10,8 +10,8 @@ import pytest
 
 from daglite import evaluate
 from daglite import task
-from daglite.plugins.default import CentralizedLoggingPlugin
-from daglite.plugins.default import get_logger
+from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
+from daglite.plugins.builtin.logging import get_logger
 
 
 @pytest.fixture(autouse=True)
@@ -125,7 +125,7 @@ def contextual_logging_task(x: int) -> int:
 @task
 def dedupe_handler_task(x: int) -> int:
     """Task that calls get_logger multiple times to test handler deduplication."""
-    from daglite.plugins.default.logging import _ReporterHandler
+    from daglite.plugins.builtin.logging import _ReporterHandler
 
     logger1 = get_logger("test.dedupe.unique")
     logger2 = get_logger("test.dedupe.unique")
@@ -321,7 +321,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
 
     def test_logs_simple_task_execution(self, capsys):
         """Test that simple task execution is logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def add(a: int, b: int) -> int:
@@ -345,7 +345,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
 
     def test_logs_task_chain(self, capsys):
         """Test that task chains are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def add(a: int, b: int) -> int:
@@ -377,7 +377,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
         """Test that durations are formatted correctly."""
         import time
 
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def slow_task() -> str:
@@ -400,7 +400,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
 
     def test_logs_retry_success(self, capsys):
         """Test that successful retries are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         attempt_count = 0
 
@@ -430,7 +430,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
 
     def test_logs_retry_exhausted(self, capsys):
         """Test that exhausted retries are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         attempt_count = 0
 
@@ -464,7 +464,7 @@ class TestLifecycleLoggingWithErrors:
 
     def test_logs_task_error(self, capsys):
         """Test that task errors are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def failing_task() -> int:
@@ -485,7 +485,7 @@ class TestLifecycleLoggingWithErrors:
 
     def test_logs_evaluation_error(self, capsys):
         """Test that evaluation-level errors are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def error_task() -> int:
@@ -509,7 +509,7 @@ class TestLifecycleLoggingWithMappedTasks:
 
     def test_logs_mapped_task_execution(self, capsys):
         """Test that mapped task execution is logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def square(x: int) -> int:
@@ -531,7 +531,7 @@ class TestLifecycleLoggingWithMappedTasks:
 
     def test_logs_mapped_task_with_threads_backend(self, capsys):
         """Test that mapped task backend is logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def double(x: int) -> int:
@@ -552,7 +552,7 @@ class TestLifecycleLoggingWithMappedTasks:
 
     def test_logs_mapped_task_with_processes_backend(self, capsys):
         """Test that mapped task with processes backend is logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         result = evaluate(
             triple.with_options(backend_name="processes").product(x=[1, 2, 3]),
@@ -569,7 +569,7 @@ class TestLifecycleLoggingWithMappedTasks:
 
     def test_logs_mapped_task_failure(self, capsys):
         """Test that mapped task failures are logged correctly."""
-        from daglite.plugins.default.logging import LifecycleLoggingPlugin
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         @task
         def failing_square(x: int) -> int:

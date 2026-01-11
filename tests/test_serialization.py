@@ -81,7 +81,7 @@ class TestSerializationRegistry:
             lambda p: p.to_bytes(),
             lambda b: Point.from_bytes(b),
             format="csv",
-            file_extension="csv",
+            file_extensions="csv",
         )
 
         # Test serialization
@@ -105,7 +105,7 @@ class TestSerializationRegistry:
             lambda d: str(d.value).encode(),
             lambda b: SampleData(int(b.decode())),
             format="csv",
-            file_extension="csv",
+            file_extensions="csv",
             make_default=True,
         )
 
@@ -115,7 +115,7 @@ class TestSerializationRegistry:
             pickle.dumps,
             pickle.loads,
             format="pickle",
-            file_extension="pkl",
+            file_extensions="pkl",
         )
 
         data = SampleData(42)
@@ -139,7 +139,7 @@ class TestSerializationRegistry:
             lambda d: str(d.value).encode(),
             lambda b: SampleData(int(b.decode())),
             format="csv",
-            file_extension="csv",
+            file_extensions="csv",
         )
 
         registry.register(
@@ -147,7 +147,7 @@ class TestSerializationRegistry:
             pickle.dumps,
             pickle.loads,
             format="pickle",
-            file_extension="pkl",
+            file_extensions="pkl",
         )
 
         data = SampleData(42)
@@ -424,7 +424,7 @@ class TestErrorHandling:
             lambda obj: b"base",
             lambda data: BaseClass(),
             format="test",
-            file_extension="txt",
+            file_extensions="txt",
         )
 
         # Should work for derived class too

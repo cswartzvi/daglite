@@ -115,7 +115,7 @@ def evaluate(
         3
 
         Evaluation with plugins
-        >>> from daglite.plugins.default import CentralizedLoggingPlugin
+        >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
         >>> evaluate(future, plugins=[CentralizedLoggingPlugin()])
         3
 
@@ -246,7 +246,7 @@ async def evaluate_async(
 
         With execution-specific plugins
         >>> import asyncio
-        >>> from daglite.plugins.default import CentralizedLoggingPlugin
+        >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
         >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
         3
     """
@@ -509,33 +509,39 @@ class Engine:
 
         backend = backend_manager.get(node.backend_name)
         resolved_inputs = node.resolve_inputs(state.completed_nodes)
+        resolved_output_extras = node.resolve_output_extras(state.completed_nodes)
 
         if isinstance(node, MapTaskNode):
             # For mapped nodes, submit each iteration separately
-            calls = node.build_iteration_calls(resolved_inputs)
+            mapped_inputs = node.build_iteration_calls(resolved_inputs)
             start_time = time.perf_counter()
 
             # Hook fires before submission
             backend.plugin_manager.hook.before_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=calls
+                metadata=node.to_metadata(), inputs_list=mapped_inputs
             )
 
             # Submit all iterations (non-blocking)
             futures = []
-            for idx, call in enumerate(calls):
-                kwargs = {"iteration_index": idx}
+            for idx, call in enumerate(mapped_inputs):
+                kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
                 future = backend.submit(node.run, call, node.timeout, **kwargs)
                 futures.append(future)
 
             return _MapFutureWrapper(
                 futures=futures,
                 node=node,
-                calls=calls,
+                calls=mapped_inputs,
                 start_time=start_time,
                 backend=backend,
             )
         else:
-            future = backend.submit(node.run, resolved_inputs, node.timeout)
+            future = backend.submit(
+                node.run,
+                resolved_inputs,
+                node.timeout,
+                resolved_output_extras=resolved_output_extras,
+            )
             return _NodeFutureWrapper(future=future, node=node)
 
     def _collect_result_sync(self, wrapper: _NodeFutureWrapper | _MapFutureWrapper) -> Any:
@@ -582,20 +588,21 @@ class Engine:
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
+        resolved_output_extras = node.resolve_output_extras(completed_nodes)
 
         # Determine how to submit to backend based on node type
         if isinstance(node, MapTaskNode):
             # For mapped nodes, submit each iteration separately
             futures = []
-            calls = node.build_iteration_calls(resolved_inputs)
+            mapped_inputs = node.build_iteration_calls(resolved_inputs)
 
             start_time = time.perf_counter()
             backend.plugin_manager.hook.before_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=calls
+                metadata=node.to_metadata(), inputs_list=mapped_inputs
             )
 
-            for idx, call in enumerate(calls):
-                kwargs = {"iteration_index": idx}
+            for idx, call in enumerate(mapped_inputs):
+                kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
                 future = wrap_future(
                     backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
                 )
@@ -605,11 +612,19 @@ class Engine:
             duration = time.perf_counter() - start_time
 
             backend.plugin_manager.hook.after_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=calls, results=result, duration=duration
+                metadata=node.to_metadata(),
+                inputs_list=mapped_inputs,
+                results=result,
+                duration=duration,
             )
         else:
             future = wrap_future(
-                backend.submit(node.run_async, resolved_inputs, timeout=node.timeout)
+                backend.submit(
+                    node.run_async,
+                    resolved_inputs,
+                    timeout=node.timeout,
+                    resolved_output_extras=resolved_output_extras,
+                )
             )
             result = await future
 

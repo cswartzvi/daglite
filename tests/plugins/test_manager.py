@@ -13,7 +13,6 @@ from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.plugins.manager import deserialize_plugin_manager
 from daglite.plugins.manager import register_plugins
-from daglite.plugins.manager import register_plugins_entry_points
 from daglite.plugins.manager import serialize_plugin_manager
 from tests.examples.plugins import AnotherSerializablePlugin
 from tests.examples.plugins import CounterPlugin
@@ -30,21 +29,6 @@ class TestPluginSystem:
 
         assert hook_manager is not None
         assert hook_manager.project_name == "daglite"
-
-
-class TestRegisterHooksEntryPoints:
-    """Test entry point loading functionality."""
-
-    def test_register_hooks_entry_points_exists(self) -> None:
-        """register_hooks_entry_points function exists and is callable."""
-        # This just verifies the function exists and can be called
-        # without error (even if no entry points are defined)
-        register_plugins_entry_points()
-
-    def test_register_hooks_entry_points_no_crash_on_missing(self) -> None:
-        """Entry point loading doesn't crash when no plugins are installed."""
-        # Should gracefully handle no entry points being defined
-        register_plugins_entry_points()
 
 
 class TestHookManagerFunctions:

@@ -43,7 +43,12 @@ class TaskNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        return {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        for config in self.output_configs:
+            for param in config.extras.values():
+                if param.is_ref and param.ref is not None:
+                    deps.add(param.ref)
+        return deps
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
@@ -72,11 +77,14 @@ class TaskNode(BaseGraphNode):
         from dataclasses import replace
 
         metadata = replace(self.to_metadata(), key=self.name)
+        resolved_output_extras = kwargs.get("resolved_output_extras", [])
 
         return _run_sync_impl(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
+            resolved_output_extras=resolved_output_extras,
             retries=self.retries,
         )
 
@@ -85,11 +93,14 @@ class TaskNode(BaseGraphNode):
         from dataclasses import replace
 
         metadata = replace(self.to_metadata(), key=self.name)
+        resolved_output_extras = kwargs.get("resolved_output_extras", [])
 
         return await _run_async_impl(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
+            resolved_output_extras=resolved_output_extras,
             retries=self.retries,
         )
 
@@ -128,6 +139,10 @@ class MapTaskNode(BaseGraphNode):
         for param in self.mapped_kwargs.values():
             if param.is_ref and param.ref is not None:
                 deps.add(param.ref)
+        for config in self.output_configs:
+            for param in config.extras.values():
+                if param.is_ref and param.ref is not None:
+                    deps.add(param.ref)
         return deps
 
     @override
@@ -214,13 +229,18 @@ class MapTaskNode(BaseGraphNode):
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
-        node_key = f"{self.name}[{kwargs['iteration_index']}]"
+        iteration_index = kwargs["iteration_index"]
+        resolved_output_extras = kwargs.get("resolved_output_extras", [])
+
+        node_key = f"{self.name}[{iteration_index}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
         return _run_sync_impl(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
+            resolved_output_extras=resolved_output_extras,
             retries=self.retries,
         )
 
@@ -228,13 +248,18 @@ class MapTaskNode(BaseGraphNode):
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
-        node_key = f"{self.name}[{kwargs['iteration_index']}]"
+        iteration_index = kwargs["iteration_index"]
+        resolved_output_extras = kwargs.get("resolved_output_extras", [])
+
+        node_key = f"{self.name}[{iteration_index}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
         return await _run_async_impl(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
+            output_config=self.output_configs,
+            resolved_output_extras=resolved_output_extras,
             retries=self.retries,
         )
 
@@ -246,6 +271,8 @@ def _run_sync_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    output_config: tuple,
+    resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
 ) -> Any:
     """
@@ -255,6 +282,8 @@ def _run_sync_impl(
         func: Synchronous function to execute.
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
+        output_config: Output configuration tuple for this node.
+        resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
 
     Returns:
@@ -265,7 +294,13 @@ def _run_sync_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    common = dict(
+        metadata=metadata,
+        inputs=resolved_inputs,
+        output_config=output_config,
+        output_extras=resolved_output_extras,
+        reporter=reporter,
+    )
     hook.before_node_execute(**common)
 
     last_error: Exception | None = None
@@ -312,6 +347,8 @@ async def _run_async_impl(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
+    output_config: tuple,
+    resolved_output_extras: list[dict[str, Any]],
     retries: int = 0,
 ) -> Any:
     """
@@ -321,6 +358,8 @@ async def _run_async_impl(
         func: Async function to execute.
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
+        output_config: Output configuration tuple for this node.
+        resolved_output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
 
     Returns:
@@ -331,7 +370,13 @@ async def _run_async_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
-    common = dict(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    common = dict(
+        metadata=metadata,
+        inputs=resolved_inputs,
+        output_config=output_config,
+        output_extras=resolved_output_extras,
+        reporter=reporter,
+    )
     hook.before_node_execute(**common)
 
     last_error: Exception | None = None

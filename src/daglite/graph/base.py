@@ -17,6 +17,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from daglite.exceptions import ExecutionError
+from daglite.outputs.base import OutputStore
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map"]
@@ -99,6 +100,9 @@ class BaseGraphNode(abc.ABC):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds (enforced by backend). If None, no timeout."""
 
+    output_configs: tuple[OutputConfig, ...] = field(default=(), kw_only=True)
+    """Output save/checkpoint configurations for this node."""
+
     def __post_init__(self) -> None:
         # This is unlikely to happen given timeout is checked at task level, but just in case
         assert self.timeout is None or self.timeout >= 0, "Timeout must be non-negative"
@@ -125,6 +129,27 @@ class BaseGraphNode(abc.ABC):
             Dictionary of resolved parameter names to values, ready for execution.
         """
         ...
+
+    def resolve_output_extras(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
+        """
+        Resolve output configuration extras to concrete values.
+
+        Resolves ParamInput extras in output_configs to actual values from completed nodes.
+        Returns parallel list to output_configs containing only the resolved extras dicts.
+
+        Args:
+            completed_nodes: Mapping from node IDs to their computed results.
+
+        Returns:
+            List of resolved extras dictionaries, parallel to self.output_configs.
+        """
+        resolved_extras_list = []
+        for config in self.output_configs:
+            resolved_extras = {
+                name: param.resolve(completed_nodes) for name, param in config.extras.items()
+            }
+            resolved_extras_list.append(resolved_extras)
+        return resolved_extras_list
 
     @abc.abstractmethod
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
@@ -251,3 +276,25 @@ class ParamInput:
     def from_sequence_ref(cls, node_id: UUID) -> ParamInput:
         """Creates a ParamInput that references another node's sequence output."""
         return cls(kind="sequence_ref", ref=node_id)
+
+
+@dataclass(frozen=True)
+class OutputConfig:
+    """
+    Configuration for saving or checkpointing a task output.
+
+    Outputs can be saved with a storage key and optional checkpoint name for resumption.
+    Extra parameters (as ParamInputs) can be included for formatting or metadata.
+    """
+
+    key: str
+    """Storage key template with {param} placeholders for formatting."""
+
+    store: OutputStore | None = None
+    """OutputStore instance where this output should be saved (None uses plugin default)."""
+
+    name: str | None = None
+    """Optional checkpoint name for graph resumption via evaluate(from_={name: key})."""
+
+    extras: Mapping[str, ParamInput] = field(default_factory=dict)
+    """Extra parameters for key formatting or storage metadata (values or refs)."""

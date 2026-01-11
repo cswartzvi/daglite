@@ -11,7 +11,7 @@ from dataclasses import field
 from dataclasses import fields
 from functools import cached_property
 from inspect import Signature
-from typing import Any, Generic, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
@@ -19,6 +19,11 @@ from daglite.exceptions import ParameterError
 from daglite.futures import BaseTaskFuture
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
+
+if TYPE_CHECKING:
+    from daglite.outputs.base import OutputStore
+else:
+    OutputStore = object
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -40,6 +45,9 @@ def task(
     backend_name: str | None = None,
     retries: int | None = None,
     timeout: float | None = None,
+    cache: bool = False,
+    cache_ttl: int | None = None,
+    store: OutputStore | str | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -51,6 +59,9 @@ def task(  # noqa: D417
     backend_name: str | None = None,
     retries: int | None = None,
     timeout: float | None = None,
+    cache: bool = False,
+    cache_ttl: int | None = None,
+    store: OutputStore | str | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -70,6 +81,14 @@ def task(  # noqa: D417
         retries: Number of times to retry the task on failure. Defaults to 0 (no retries).
         timeout: Maximum execution time in seconds. Must be non-negative if provided.
             If None, no timeout is enforced.
+        cache: Whether to enable hash-based caching for this task. When True, the task's output
+            will be cached based on a hash of its function source and input parameters.
+            Defaults to False.
+        cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
+            Only used when cache=True.
+        store: Default output store for all .save() and .checkpoint() calls on this task.
+            Can be an OutputStore instance or a string path (which will be converted to
+            FileOutputStore). If not provided, uses OutputPlugin's default store.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -111,6 +130,14 @@ def task(  # noqa: D417
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
+        actual_store: OutputStore | None
+        if isinstance(store, str):
+            from daglite.outputs.store import FileOutputStore
+
+            actual_store = FileOutputStore(store)
+        else:
+            actual_store = store
+
         return Task(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
@@ -119,6 +146,9 @@ def task(  # noqa: D417
             is_async=is_async,
             retries=retries if retries is not None else 0,
             timeout=timeout,
+            cache=cache,
+            cache_ttl=cache_ttl,
+            store=actual_store,
         )
 
     if func is not None:
@@ -150,6 +180,15 @@ class BaseTask(abc.ABC, Generic[P, R]):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds. If None, no timeout is enforced."""
 
+    cache: bool = field(default=False, kw_only=True)
+    """Whether to enable hash-based caching for this task."""
+
+    cache_ttl: int | None = field(default=None, kw_only=True)
+    """Time-to-live for cached results in seconds. If None, cached results never expire."""
+
+    store: OutputStore | None = field(default=None, kw_only=True)
+    """Default output store for .save() and .checkpoint() calls on this task."""
+
     def __post_init__(self) -> None:
         if self.retries < 0:
             raise ParameterError(
@@ -158,6 +197,10 @@ class BaseTask(abc.ABC, Generic[P, R]):
         if self.timeout is not None and self.timeout < 0:
             raise ParameterError(
                 f"Task '{self.name}' has invalid timeout={self.timeout}. Must be non-negative."
+            )
+        if self.cache_ttl is not None and self.cache_ttl < 0:
+            raise ParameterError(
+                f"Task '{self.name}' has invalid cache_ttl={self.cache_ttl}. Must be non-negative."
             )
 
     @cached_property
@@ -174,6 +217,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
         backend_name: str | None = None,
         retries: int | None = None,
         timeout: float | None = None,
+        cache: bool | None = None,
+        cache_ttl: int | None = None,
+        store: OutputStore | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -184,6 +230,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
             backend_name: New backend name for the task. If `None`, keeps the existing backend name.
             retries: New number of retries for the task. If `None`, keeps the existing retries.
             timeout: New timeout for the task. If `None`, keeps the existing timeout.
+            cache: Whether to enable caching for the task. If `None`, keeps the existing setting.
+            cache_ttl: Time-to-live for cached results. If `None`, keeps the existing cache_ttl.
+            store: Default output store for the task. If `None`, keeps the existing store.
 
         Returns:
             A new `BaseTask` instance with updated options.
@@ -194,12 +243,25 @@ class BaseTask(abc.ABC, Generic[P, R]):
         backend_name = backend_name if backend_name is not None else self.backend_name
         new_retries = retries if retries is not None else self.retries
         new_timeout = timeout if timeout is not None else self.timeout
+        new_cache = cache if cache is not None else self.cache
+        new_cache_ttl = cache_ttl if cache_ttl is not None else self.cache_ttl
+        new_store = store if store is not None else self.store
 
         # Collect the remaining fields (assumes this is a dataclass)
         remaining_fields = {
             f.name: getattr(self, f.name)
             for f in fields(self)
-            if f.name not in {"name", "description", "backend_name", "retries", "timeout"}
+            if f.name
+            not in {
+                "name",
+                "description",
+                "backend_name",
+                "retries",
+                "timeout",
+                "cache",
+                "cache_ttl",
+                "store",
+            }
         }
 
         return type(self)(
@@ -208,6 +270,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
             backend_name=backend_name,
             retries=new_retries,
             timeout=new_timeout,
+            cache=new_cache,
+            cache_ttl=new_cache_ttl,
+            store=new_store,
             **remaining_fields,
         )
 
@@ -392,6 +457,9 @@ class Task(BaseTask[P, R]):
             backend_name=self.backend_name,
             retries=self.retries,
             timeout=self.timeout,
+            store=self.store,
+            cache=self.cache,
+            cache_ttl=self.cache_ttl,
         )
 
     @override
@@ -435,7 +503,9 @@ class PartialTask(BaseTask[P, R]):
         check_missing_params(self, merged)
         check_overlap_params(self, kwargs)
 
-        return TaskFuture(task=self.task, kwargs=merged, backend_name=self.backend_name)
+        return TaskFuture(
+            task=self.task, kwargs=merged, backend_name=self.backend_name, task_store=self.store
+        )
 
     @override
     def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
@@ -453,6 +523,7 @@ class PartialTask(BaseTask[P, R]):
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend_name=self.backend_name,
+            task_store=self.store,
         )
 
     @override
@@ -482,6 +553,7 @@ class PartialTask(BaseTask[P, R]):
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend_name=self.backend_name,
+            task_store=self.store,
         )
 
 
