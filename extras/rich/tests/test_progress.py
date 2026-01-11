@@ -312,6 +312,27 @@ class TestCustomBarColumn:
 class TestRichProgressOnCacheHit:
     """Tests for RichProgressPlugin.on_cache_hit hook."""
 
+    def test_on_cache_hit_with_reporter(self):
+        """Test that on_cache_hit reports event when reporter is present."""
+        from daglite.graph.base import GraphMetadata
+
+        plugin = RichProgressPlugin()
+        metadata = GraphMetadata(id=uuid4(), name="test_task", kind="task", key="test_task")
+
+        mock_reporter = Mock()
+
+        plugin.on_cache_hit(
+            func=Mock(),
+            metadata=metadata,
+            inputs={"x": 5},
+            result=10,
+            reporter=mock_reporter,
+        )
+
+        mock_reporter.report.assert_called_once_with(
+            "daglite-node-end", data={"node_id": metadata.id}
+        )
+
     def test_on_cache_hit_advances_progress(self):
         """Test that on_cache_hit advances the progress bar."""
         from daglite.graph.base import GraphMetadata
