@@ -99,6 +99,21 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             self._handle_node_update({"node_id": metadata.id})
 
     @hook_impl
+    def on_cache_hit(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        reporter: EventReporter | None,
+    ) -> None:
+        if reporter:
+            reporter.report("node_end", data={"node_id": metadata.id})
+        else:  # pragma: no cover
+            # Fallback if no reporter is available
+            self._handle_node_update({"node_id": metadata.id})
+
+    @hook_impl
     def on_node_error(
         self,
         metadata: GraphMetadata,
