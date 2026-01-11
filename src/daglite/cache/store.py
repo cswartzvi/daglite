@@ -99,7 +99,7 @@ class FileCacheStore(CacheStore):
             return None
 
         # Check TTL if metadata exists
-        if self.fs.exists(meta_path):
+        if self.fs.exists(meta_path):  # pragma: no branch
             try:
                 with self.fs.open(meta_path, "r") as f:
                     metadata = json.load(f)
