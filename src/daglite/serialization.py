@@ -606,11 +606,3 @@ class _HashStrategy:
 
 # Global default registry instance
 default_registry = SerializationRegistry()
-
-
-__all__ = [
-    "SerializationRegistry",
-    "_SerializationHandler",
-    "_HashStrategy",
-    "default_registry",
-]
