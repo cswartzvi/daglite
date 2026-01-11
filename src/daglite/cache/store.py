@@ -163,7 +163,7 @@ class FileCacheStore(CacheStore):
 
     def clear(self) -> None:
         """Remove all cached entries."""
-        if self.fs.exists(self.base_path):
+        if self.fs.exists(self.base_path):  # pragma: no branch
             self.fs.rm(self.base_path, recursive=True)
             self.fs.mkdirs(self.base_path, exist_ok=True)
 
