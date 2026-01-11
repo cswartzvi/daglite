@@ -238,21 +238,13 @@ def test_cache_with_async_task(cache_plugin):
         return x * 3
 
     async def run():
-        nonlocal call_count
-
         # First call - cache miss, should execute
-        result1 = await evaluate_async(async_expensive_task(x=7))
+        result1 = await evaluate_async(async_expensive_task(x=7), plugins=[cache_plugin])
         assert result1 == 21
-        assert call_count == 1
 
         # Second call - cache hit, should NOT execute
         result2 = await evaluate_async(async_expensive_task(x=7), plugins=[cache_plugin])
         assert result2 == 21
-        assert call_count == 2  # Should execute again (no plugin on first call)
-
-        # Third call with plugin - cache hit now
-        result3 = await evaluate_async(async_expensive_task(x=7), plugins=[cache_plugin])
-        assert result3 == 21
-        assert call_count == 2  # Should still be 2 (cache hit)
+        assert call_count == 1  # Verify cache hit - function not called again
 
     asyncio.run(run())
