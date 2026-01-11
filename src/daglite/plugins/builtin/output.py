@@ -8,6 +8,7 @@ from daglite.plugins.hooks.markers import hook_impl
 
 if TYPE_CHECKING:
     from daglite.graph.base import GraphMetadata
+    from daglite.graph.base import OutputConfig
     from daglite.outputs.base import OutputStore
     from daglite.plugins.reporters import EventReporter
 
@@ -49,29 +50,26 @@ class OutputPlugin:
         metadata: GraphMetadata,
         inputs: dict[str, Any],
         result: Any,
-        outputs: list[dict[str, Any]],
+        output_config: tuple[OutputConfig, ...],
+        output_extras: list[dict[str, Any]],
         duration: float,
         reporter: EventReporter | None,
     ) -> None:
         """Save outputs after successful node execution."""
-        if not outputs:
+        if not output_config:
             return
 
-        for output in outputs:
-            key = output["key"]
-            name = output["name"]
-            store_from_config = output["store"]
-
+        for config, extras in zip(output_config, output_extras):
             # Format key with inputs
             try:
-                formatted_key = key.format(**inputs)
+                formatted_key = config.key.format(**inputs)
             except KeyError as e:
                 raise ValueError(
-                    f"Output key '{key}' references parameter {e} which is not in inputs"
+                    f"Output key '{config.key}' references parameter {e} which is not in inputs"
                 ) from e
 
             # Determine which store to use (config store takes precedence over plugin default)
-            store = store_from_config or self.store
+            store = config.store or self.store
             if store is None:
                 raise ValueError(
                     f"No output store configured for saving '{formatted_key}' "
@@ -79,10 +77,10 @@ class OutputPlugin:
                     f"\nFix by adding a store at one of these levels:"
                     f"\n  1. OutputPlugin: plugins=[OutputPlugin(store='/path/to/outputs')]"
                     f"\n  2. Task decorator: @task(store='/path/to/outputs')"
-                    f"\n  3. Explicit save: .save('{key}', store='/path/to/outputs')"
+                    f"\n  3. Explicit save: .save('{config.key}', store='/path/to/outputs')"
                 )
 
-            # Save the result
+            # Save the result (extras are already resolved and available if needed by store)
             store.save(key=formatted_key, value=result)
 
             if reporter:
@@ -90,7 +88,7 @@ class OutputPlugin:
                     "output_saved",
                     {
                         "key": formatted_key,
-                        "checkpoint_name": name,
+                        "checkpoint_name": config.name,
                         "node_id": metadata.id,
                         "node_name": metadata.name,
                     },
