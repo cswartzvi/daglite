@@ -444,6 +444,21 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             self._handle_node_retry_result(data)  # Fallback if no reporter is available
 
     @hook_impl
+    def on_cache_hit(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        reporter: EventReporter | None,
+    ) -> None:
+        node_key = metadata.key or metadata.name
+        self._logger.info(
+            f"Task '{node_key}' - Using cached result",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
+
+    @hook_impl
     def after_mapped_node_execute(
         self,
         metadata: GraphMetadata,
