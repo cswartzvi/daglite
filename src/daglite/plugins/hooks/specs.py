@@ -128,6 +128,75 @@ class WorkerSideNodeSpecs:
             reporter: Optional event reporter for this execution context.
         """
 
+    @hook_spec(firstresult=True)
+    def check_cache(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        cache_enabled: bool,
+        cache_ttl: int | None,
+    ) -> Any | None:
+        """
+        Called before node execution to check for cached results.
+
+        This hooks allows cache plugins to return a cached result, which will skip actual execution
+        of the node. It should be considered an internal hook and not used for general plugin
+        development, unless implementing a caching plugin.
+
+        Args:
+            func: The function being executed.
+            metadata: Metadata for the node to be executed.
+            inputs: Resolved inputs for the node execution.
+            cache_enabled: Whether caching is enabled for this node.
+            cache_ttl: Time-to-live for cache in seconds (None = no expiration).
+
+        Returns:
+            Cached result if found, None if cache miss or caching disabled.
+        """
+
+    @hook_spec
+    def on_cache_hit(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called when a cached result is used instead of executing the node.
+
+        Args:
+            func: The function that would have been executed.
+            metadata: Metadata for the node.
+            inputs: Resolved inputs for the node.
+            result: Cached result that was returned.
+            reporter: Optional event reporter.
+        """
+
+    @hook_spec
+    def update_cache(
+        self,
+        func: Any,
+        metadata: GraphMetadata,
+        inputs: dict[str, Any],
+        result: Any,
+        cache_enabled: bool,
+        cache_ttl: int | None,
+    ) -> None:
+        """
+        Store result in cache after successful execution.
+
+        Args:
+            func: The function that was executed.
+            metadata: Metadata for the executed node.
+            inputs: Resolved inputs for the node execution.
+            result: Result produced by the node execution.
+            cache_enabled: Whether caching is enabled for this node.
+            cache_ttl: Time-to-live for cache in seconds (None = no expiration).
+        """
+
 
 class CoordinatorSideNodeSpecs:
     """Hook specifications for node-level execution events on the **coordinator**."""
