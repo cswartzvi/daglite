@@ -93,8 +93,7 @@ class FileOutputStore:
             output_path = f"{self.base_path}/{key}.{ext}"
 
         parent = "/".join(output_path.rsplit("/", 1)[:-1])
-        if parent:
-            self.fs.mkdirs(parent, exist_ok=True)
+        self.fs.mkdirs(parent, exist_ok=True)
 
         with self.fs.open(output_path, "wb") as f:
             f.write(data)  # type: ignore
@@ -146,7 +145,7 @@ class FileOutputStore:
 
         # With type hint, look up format from extension
         format_name = self.registry.get_format_from_extension(return_type, ext)
-        if format_name is None:
+        if format_name is None:  # pragma: no cover
             format_name = ext
 
         return self.registry.deserialize(data, return_type, format=format_name)  # type: ignore

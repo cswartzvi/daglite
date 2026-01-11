@@ -266,6 +266,36 @@ class TestFileOutputStore:
             store.delete("simple")
             assert not store.exists("simple")
 
+    def test_save_without_subdirectory(self):
+        """Test saving a file at root level (no parent directory creation)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileOutputStore(tmpdir)
+            # Save at root - triggers parent='' case
+            store.save("rootfile.txt", "content", format="text")
+            assert store.load("rootfile", str) == "content"
+
+    def test_load_from_nonexistent_subdirectory(self):
+        """Test loading from non-existent subdirectory path."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileOutputStore(tmpdir)
+            # Try loading from path with non-existent parent directory
+            with pytest.raises(KeyError):
+                store.load("missing_dir/file", str)
+
+    def test_delete_from_nonexistent_subdirectory(self):
+        """Test deleting from non-existent subdirectory doesn't raise error."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileOutputStore(tmpdir)
+            # Should not raise even if parent directory doesn't exist
+            store.delete("missing_dir/file")
+
+    def test_exists_in_nonexistent_subdirectory(self):
+        """Test checking existence in non-existent subdirectory."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = FileOutputStore(tmpdir)
+            # Should return False without raising error
+            assert not store.exists("missing_dir/file")
+
 
 class TestFileOutputStoreProtocols:
     """Tests for fsspec protocol support."""
