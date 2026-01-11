@@ -130,33 +130,26 @@ class BaseGraphNode(abc.ABC):
         """
         ...
 
-    def resolve_outputs(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
+    def resolve_output_extras(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
         """
-        Resolve output configurations to concrete values for processing.
+        Resolve output configuration extras to concrete values.
 
-        Converts OutputConfig (graph IR with ParamInputs) to runtime dictionaries
-        with resolved extras, ready for plugin processing.
+        Resolves ParamInput extras in output_configs to actual values from completed nodes.
+        Returns parallel list to output_configs containing only the resolved extras dicts.
 
         Args:
             completed_nodes: Mapping from node IDs to their computed results.
 
         Returns:
-            List of resolved output configurations as dictionaries.
+            List of resolved extras dictionaries, parallel to self.output_configs.
         """
-        outputs = []
+        resolved_extras_list = []
         for config in self.output_configs:
             resolved_extras = {
                 name: param.resolve(completed_nodes) for name, param in config.extras.items()
             }
-            outputs.append(
-                {
-                    "key": config.key,
-                    "name": config.name,
-                    "store": config.store,
-                    "extras": resolved_extras,
-                }
-            )
-        return outputs
+            resolved_extras_list.append(resolved_extras)
+        return resolved_extras_list
 
     @abc.abstractmethod
     def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
