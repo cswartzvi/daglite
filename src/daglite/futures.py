@@ -741,6 +741,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> MapTaskNode:
+        from daglite.graph.base import OutputConfig
         from daglite.graph.base import ParamInput
 
         fixed_kwargs: dict[str, ParamInput] = {}
