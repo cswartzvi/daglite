@@ -140,32 +140,31 @@ def _are_nodes_compatible(node1: BaseGraphNode, node2: BaseGraphNode) -> bool:
     """
     Check if two nodes can be grouped into a composite node.
 
-    Nodes are compatible if:
-    1. They use the same backend
-    2. They are both TaskNodes (or CompositeTaskNodes)
-    3. They don't have output configs (for simplicity in this initial implementation)
-
-    Note: Map nodes are currently not optimized in chains, as they require more
-    complex handling of sequence dependencies.
+    Nodes are compatible if they use the same backend and form a valid chain:
+    - TaskNode -> TaskNode (standard chain)
+    - MapTaskNode -> MapTaskNode (chained map operations)
+    - MapTaskNode -> TaskNode (map followed by per-iteration processing)
+    - CompositeTaskNode -> TaskNode (extending existing composite)
+    - CompositeMapTaskNode -> MapTaskNode/TaskNode (extending map composite)
     """
-    # Must use the same backend
     if node1.backend_name != node2.backend_name:
         return False
 
-    # For simplicity, don't group nodes with output configs
-    # This could be relaxed in future versions
-    if node1.output_configs or node2.output_configs:
-        return False
-
-    # Both must be TaskNode (or CompositeTaskNode)
-    # Map nodes are not currently optimized in chains
     node1_is_task = isinstance(node1, (TaskNode, CompositeTaskNode))
     node2_is_task = isinstance(node2, (TaskNode, CompositeTaskNode))
+    node1_is_map = isinstance(node1, (MapTaskNode, CompositeMapTaskNode))
+    node2_is_map = isinstance(node2, MapTaskNode)
 
+    # TaskNode chains: both nodes are tasks
     if node1_is_task and node2_is_task:
         return True
-    else:
-        return False
+
+    # Map chains: MapTaskNode followed by another MapTaskNode or TaskNode
+    # Both execute inside each iteration
+    if node1_is_map and (node2_is_map or node2_is_task):
+        return True
+
+    return False
 
 
 def _remap_node_dependencies(
@@ -187,7 +186,7 @@ def _remap_node_dependencies(
         new_kwargs = {}
         for name, param in node.kwargs.items():
             if param.is_ref and param.ref in node_to_composite:
-                new_kwargs[name] = ParamInput.from_ref(node_to_composite[param.ref])
+                new_kwargs[name] = ParamInput.from_ref(node_to_composite[param.ref])  # type: ignore[index]
             else:
                 new_kwargs[name] = param
         return replace(node, kwargs=new_kwargs)
@@ -200,16 +199,16 @@ def _remap_node_dependencies(
         new_fixed_kwargs = {}
         for name, param in node.fixed_kwargs.items():
             if param.is_ref and param.ref in node_to_composite:
-                new_fixed_kwargs[name] = ParamInput.from_ref(node_to_composite[param.ref])
+                new_fixed_kwargs[name] = ParamInput.from_ref(node_to_composite[param.ref])  # type: ignore[index]
             else:
                 new_fixed_kwargs[name] = param
 
         new_mapped_kwargs = {}
         for name, param in node.mapped_kwargs.items():
             if param.is_ref and param.ref in node_to_composite:
-                new_mapped_kwargs[name] = ParamInput.from_sequence_ref(node_to_composite[param.ref])
+                new_mapped_kwargs[name] = ParamInput.from_sequence_ref(node_to_composite[param.ref])  # type: ignore[index]
             elif param.kind == "sequence_ref" and param.ref in node_to_composite:
-                new_mapped_kwargs[name] = ParamInput.from_sequence_ref(node_to_composite[param.ref])
+                new_mapped_kwargs[name] = ParamInput.from_sequence_ref(node_to_composite[param.ref])  # type: ignore[index]
             else:
                 new_mapped_kwargs[name] = param
         return replace(node, fixed_kwargs=new_fixed_kwargs, mapped_kwargs=new_mapped_kwargs)
@@ -219,6 +218,44 @@ def _remap_node_dependencies(
         return replace(node, nodes=new_nodes)
 
     return node
+
+
+def _map_node_to_task_node(map_node: MapTaskNode) -> TaskNode:
+    """
+    Convert a MapTaskNode to a TaskNode for use in composite map chains.
+
+    In a composite map chain, MapTaskNodes after the first operate on scalar values
+    (the result of the previous iteration), not sequences. This function converts
+    their mapped_kwargs to regular kwargs.
+    """
+    from daglite.graph.base import ParamInput
+
+    # Combine fixed and mapped kwargs into regular kwargs
+    # Mapped kwargs become regular kwargs since we're operating on scalars
+    kwargs = dict(map_node.fixed_kwargs)
+
+    # Convert mapped_kwargs: sequence_ref -> ref for scalar operations
+    for name, param in map_node.mapped_kwargs.items():
+        if param.kind == "sequence_ref":
+            # Convert sequence reference to scalar reference
+            kwargs[name] = ParamInput.from_ref(param.ref)  # type: ignore[arg-type]
+        else:
+            kwargs[name] = param
+
+    return TaskNode(
+        id=map_node.id,
+        name=map_node.name,
+        description=map_node.description,
+        backend_name=map_node.backend_name,
+        key=map_node.key,
+        timeout=map_node.timeout,
+        output_configs=map_node.output_configs,
+        func=map_node.func,
+        kwargs=kwargs,
+        retries=map_node.retries,
+        cache=map_node.cache,
+        cache_ttl=map_node.cache_ttl,
+    )
 
 
 def _create_composite_node(
@@ -242,11 +279,23 @@ def _create_composite_node(
 
     # Flatten any existing composite nodes in the chain
     flattened_nodes: list[BaseGraphNode] = []
-    for node in nodes_in_chain:
+    for i, node in enumerate(nodes_in_chain):
         if isinstance(node, (CompositeTaskNode, CompositeMapTaskNode)):
             flattened_nodes.extend(node.nodes)
         else:
             flattened_nodes.append(node)
+
+    # For map chains, convert any MapTaskNodes after the first to TaskNodes
+    # because they operate on scalars within each iteration, not sequences
+    if is_map_chain:
+        converted_nodes: list[BaseGraphNode] = []
+        for i, node in enumerate(flattened_nodes):
+            if i == 0 or not isinstance(node, MapTaskNode):
+                converted_nodes.append(node)
+            else:
+                # Convert MapTaskNode to TaskNode for subsequent nodes
+                converted_nodes.append(_map_node_to_task_node(node))
+        flattened_nodes = converted_nodes
 
     # Create composite node with a new ID
     composite_id = uuid4()
@@ -259,6 +308,11 @@ def _create_composite_node(
     backend_name = first_node.backend_name
     timeout = first_node.timeout
 
+    # Aggregate output configs from all nodes in the chain
+    aggregated_output_configs = []
+    for node in flattened_nodes:
+        aggregated_output_configs.extend(node.output_configs)
+
     if is_map_chain:
         return CompositeMapTaskNode(
             id=composite_id,
@@ -267,7 +321,7 @@ def _create_composite_node(
             timeout=timeout,
             description=f"Composite of {len(flattened_nodes)} map tasks",
             key=composite_name,
-            output_configs=(),
+            output_configs=tuple(aggregated_output_configs),
             nodes=tuple(flattened_nodes),  # type: ignore[arg-type]
         )
     else:
@@ -278,6 +332,6 @@ def _create_composite_node(
             timeout=timeout,
             description=f"Composite of {len(flattened_nodes)} tasks",
             key=composite_name,
-            output_configs=(),
+            output_configs=tuple(aggregated_output_configs),
             nodes=tuple(flattened_nodes),  # type: ignore[arg-type]
         )

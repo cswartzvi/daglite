@@ -5,6 +5,7 @@ Unit tests for graph optimization and composite nodes.
 from daglite import evaluate
 from daglite import task
 from daglite.graph.builder import build_graph
+from daglite.graph.nodes import CompositeMapTaskNode
 from daglite.graph.nodes import CompositeTaskNode
 from daglite.graph.nodes import TaskNode
 from daglite.graph.optimizer import optimize_graph
@@ -139,8 +140,8 @@ class TestGraphOptimizer:
         assert len(optimized) == 2
         assert all(isinstance(node, TaskNode) for node in optimized.values())
 
-    def test_map_chains_not_optimized(self) -> None:
-        """Optimizer does not currently optimize chains of map operations."""
+    def test_map_chains_are_optimized(self) -> None:
+        """Optimizer groups map operations followed by task operations."""
 
         @task
         def square(x: int) -> int:
@@ -150,7 +151,7 @@ class TestGraphOptimizer:
         def add_ten(x: int) -> int:
             return x + 10
 
-        # Create a map chain
+        # Create a map chain: MapTaskNode -> TaskNode
         m1 = square.product(x=[1, 2, 3])
         m2 = m1.then(add_ten)
 
@@ -160,8 +161,11 @@ class TestGraphOptimizer:
         # Optimize
         optimized = optimize_graph(graph, m2.id, enable_optimization=True)
 
-        # Should not create a composite (map chains not yet supported)
-        assert len(optimized) == 2
+        # Should create a composite map node
+        assert len(optimized) == 1
+        composite = list(optimized.values())[0]
+        assert isinstance(composite, CompositeMapTaskNode)
+        assert len(composite.nodes) == 2
 
     def test_single_node_no_optimization(self) -> None:
         """Optimizer leaves single nodes unchanged."""
@@ -207,8 +211,8 @@ class TestCompositeNodeExecution:
         # (1 + 1) * 2 - 3 = 4 - 3 = 1
         assert result == 1
 
-    def test_map_execution_without_optimization(self) -> None:
-        """Map chains execute correctly without optimization."""
+    def test_map_chain_with_multiple_then_operations(self) -> None:
+        """Map chains with multiple .then() operations are optimized and execute correctly."""
 
         @task
         def square(x: int) -> int:
@@ -218,14 +222,29 @@ class TestCompositeNodeExecution:
         def add_ten(x: int) -> int:
             return x + 10
 
-        # Create a map chain
+        @task
+        def multiply_two(x: int) -> int:
+            return x * 2
+
+        # Create the pattern: .product() -> .then() -> .then()
         m1 = square.product(x=[1, 2, 3])
         m2 = m1.then(add_ten)
+        m3 = m2.then(multiply_two)
 
-        result = evaluate(m2)
+        result = evaluate(m3)
 
-        # [1, 2, 3] -> square -> [1, 4, 9] -> add_ten -> [11, 14, 19]
-        assert result == [11, 14, 19]
+        # [1, 2, 3] -> square -> [1, 4, 9]
+        #           -> add_ten -> [11, 14, 19]
+        #           -> multiply_two -> [22, 28, 38]
+        assert result == [22, 28, 38]
+
+        # Verify optimization occurred
+        graph = build_graph(m3)
+        optimized = optimize_graph(graph, m3.id, enable_optimization=True)
+        assert len(optimized) == 1
+        composite = list(optimized.values())[0]
+        assert isinstance(composite, CompositeMapTaskNode)
+        assert len(composite.nodes) == 3
 
     def test_optimization_produces_correct_results(self) -> None:
         """Optimized graphs produce the same results as unoptimized."""
