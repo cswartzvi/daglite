@@ -372,8 +372,24 @@ class CompositeTaskNode(BaseGraphNode):
                 if i > 0:
                     current_inputs = node.resolve_inputs(completed)
 
+                # Process internal node outputs using the plugin system
+                resolved_output_extras = node.resolve_output_extras(completed)
+                node_start_time = time.time()
+
                 result = node.run(current_inputs)
                 completed[node.id] = result
+
+                # Fire after_node_execute for internal node so outputs are saved
+                node_duration = time.time() - node_start_time
+                hook.after_node_execute(
+                    metadata=node.to_metadata(),
+                    inputs=current_inputs,
+                    result=result,
+                    output_config=node.output_configs,
+                    output_extras=resolved_output_extras,
+                    duration=node_duration,
+                    reporter=reporter,
+                )
 
             duration = time.time() - start_time
             hook.after_group_execute(
@@ -433,11 +449,27 @@ class CompositeTaskNode(BaseGraphNode):
                 if i > 0:
                     current_inputs = node.resolve_inputs(completed)
 
+                # Process internal node outputs using the plugin system
+                resolved_output_extras = node.resolve_output_extras(completed)
+                node_start_time = time.time()
+
                 # Execute the node
                 result = await node.run_async(current_inputs)
 
                 # Store result for subsequent nodes
                 completed[node.id] = result
+
+                # Fire after_node_execute for internal node so outputs are saved
+                node_duration = time.time() - node_start_time
+                hook.after_node_execute(
+                    metadata=node.to_metadata(),
+                    inputs=current_inputs,
+                    result=result,
+                    output_config=node.output_configs,
+                    output_extras=resolved_output_extras,
+                    duration=node_duration,
+                    reporter=reporter,
+                )
 
             duration = time.time() - start_time
             hook.after_group_execute(
@@ -568,6 +600,10 @@ class CompositeMapTaskNode(BaseGraphNode):
                 if i > 0:
                     current_inputs = node.resolve_inputs(completed)
 
+                # Process internal node outputs using the plugin system
+                resolved_output_extras = node.resolve_output_extras(completed)
+                node_start_time = time.time()
+
                 # Execute the node
                 if isinstance(node, MapTaskNode):
                     result = node.run(current_inputs, iteration_index=iteration_index)
@@ -576,6 +612,18 @@ class CompositeMapTaskNode(BaseGraphNode):
 
                 # Store result for subsequent nodes
                 completed[node.id] = result
+
+                # Fire after_node_execute for internal node so outputs are saved
+                node_duration = time.time() - node_start_time
+                hook.after_node_execute(
+                    metadata=node.to_metadata(),
+                    inputs=current_inputs,
+                    result=result,
+                    output_config=node.output_configs,
+                    output_extras=resolved_output_extras,
+                    duration=node_duration,
+                    reporter=reporter,
+                )
 
             duration = time.time() - start_time
             hook.after_group_execute(
@@ -637,6 +685,10 @@ class CompositeMapTaskNode(BaseGraphNode):
                 if i > 0:
                     current_inputs = node.resolve_inputs(completed)
 
+                # Process internal node outputs using the plugin system
+                resolved_output_extras = node.resolve_output_extras(completed)
+                node_start_time = time.time()
+
                 # Execute the node
                 if isinstance(node, MapTaskNode):
                     result = await node.run_async(current_inputs, iteration_index=iteration_index)
@@ -645,6 +697,18 @@ class CompositeMapTaskNode(BaseGraphNode):
 
                 # Store result for subsequent nodes
                 completed[node.id] = result
+
+                # Fire after_node_execute for internal node so outputs are saved
+                node_duration = time.time() - node_start_time
+                hook.after_node_execute(
+                    metadata=node.to_metadata(),
+                    inputs=current_inputs,
+                    result=result,
+                    output_config=node.output_configs,
+                    output_extras=resolved_output_extras,
+                    duration=node_duration,
+                    reporter=reporter,
+                )
 
             duration = time.time() - start_time
             hook.after_group_execute(

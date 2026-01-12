@@ -141,7 +141,7 @@ class TestGraphOptimizer:
         assert all(isinstance(node, TaskNode) for node in optimized.values())
 
     def test_map_chains_are_optimized(self) -> None:
-        """Optimizer groups map operations followed by task operations."""
+        """Optimizer groups chained map operations created with .then()."""
 
         @task
         def square(x: int) -> int:
@@ -151,7 +151,7 @@ class TestGraphOptimizer:
         def add_ten(x: int) -> int:
             return x + 10
 
-        # Create a map chain: MapTaskNode -> TaskNode
+        # Create a map chain: MapTaskNode -> MapTaskNode (via .then())
         m1 = square.product(x=[1, 2, 3])
         m2 = m1.then(add_ten)
 
