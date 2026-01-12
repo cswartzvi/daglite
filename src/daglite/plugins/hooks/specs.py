@@ -197,6 +197,62 @@ class WorkerSideNodeSpecs:
             cache_ttl: Time-to-live for cache in seconds (None = no expiration).
         """
 
+    @hook_spec
+    def before_group_execute(
+        self,
+        group_metadata: list[GraphMetadata],
+        initial_inputs: dict[str, Any],
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called before a composite node group begins execution.
+
+        Args:
+            group_metadata: List of metadata for all nodes in the group.
+            initial_inputs: Resolved inputs for the first node in the group.
+            reporter: Optional event reporter for this execution context.
+        """
+
+    @hook_spec
+    def after_group_execute(
+        self,
+        group_metadata: list[GraphMetadata],
+        initial_inputs: dict[str, Any],
+        final_result: Any,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called after a composite node group completes execution successfully.
+
+        Args:
+            group_metadata: List of metadata for all nodes in the group.
+            initial_inputs: Resolved inputs for the first node in the group.
+            final_result: Result produced by the last node in the group.
+            duration: Total time taken to execute the entire group in seconds.
+            reporter: Optional event reporter for this execution context.
+        """
+
+    @hook_spec
+    def on_group_error(
+        self,
+        group_metadata: list[GraphMetadata],
+        initial_inputs: dict[str, Any],
+        error: Exception,
+        duration: float,
+        reporter: EventReporter | None,
+    ) -> None:
+        """
+        Called when a composite node group execution fails.
+
+        Args:
+            group_metadata: List of metadata for all nodes in the group.
+            initial_inputs: Resolved inputs for the first node in the group.
+            error: The exception that was raised during group execution.
+            duration: Time taken before failure in seconds.
+            reporter: Optional event reporter for this execution context.
+        """
+
 
 class CoordinatorSideNodeSpecs:
     """Hook specifications for node-level execution events on the **coordinator**."""

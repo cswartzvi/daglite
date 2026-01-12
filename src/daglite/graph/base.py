@@ -20,7 +20,7 @@ from daglite.exceptions import ExecutionError
 from daglite.outputs.base import OutputStore
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
-NodeKind = Literal["task", "map"]
+NodeKind = Literal["task", "map", "composite_task", "composite_map"]
 
 
 class GraphBuilder(Protocol):

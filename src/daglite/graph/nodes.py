@@ -1,5 +1,7 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+from __future__ import annotations
+
 import inspect
 import time
 from collections.abc import Mapping
@@ -282,6 +284,398 @@ class MapTaskNode(BaseGraphNode):
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
         )
+
+
+@dataclass(frozen=True)
+class CompositeTaskNode(BaseGraphNode):
+    """
+    Composite node that executes a sequence of TaskNodes as a single unit.
+
+    This node type is created by the graph optimizer to group linear chains of tasks,
+    reducing backend submission overhead by executing multiple operations in sequence
+    during a single backend invocation.
+    """
+
+    nodes: tuple[TaskNode | "CompositeTaskNode", ...]
+    """Sequence of nodes to execute in order."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        assert len(self.nodes) > 0, "CompositeTaskNode must contain at least one node"
+
+    @override
+    def dependencies(self) -> set[UUID]:
+        """
+        Returns dependencies of the first node plus any external dependencies.
+
+        Internal dependencies (between nodes in the group) are satisfied during
+        group execution and are not exposed as external dependencies.
+        """
+        # Start with dependencies of the first node
+        deps = set(self.nodes[0].dependencies())
+
+        # Add any output config dependencies from all nodes
+        for node in self.nodes:
+            for config in node.output_configs:
+                for param in config.extras.values():
+                    if param.is_ref and param.ref is not None:
+                        deps.add(param.ref)
+
+        # Remove internal dependencies (nodes within this group)
+        internal_ids = {node.id for node in self.nodes}
+        return deps - internal_ids
+
+    @override
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
+        """Resolve inputs for the first node in the sequence."""
+        return self.nodes[0].resolve_inputs(completed_nodes)
+
+    @override
+    def to_metadata(self) -> "GraphMetadata":
+        """Returns metadata for the composite node group."""
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            kind="composite_task",
+            description=self.description or f"Group of {len(self.nodes)} tasks",
+            backend_name=self.backend_name,
+            key=self.key,
+        )
+
+    @override
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        """
+        Execute all nodes in the sequence synchronously.
+
+        Each node's output becomes available for subsequent nodes in the group.
+        """
+        token = set_current_task(self.to_metadata())
+        hook = get_plugin_manager().hook
+        reporter = get_reporter()
+
+        # Prepare group metadata for hooks
+        group_metadata = [node.to_metadata() for node in self.nodes]
+
+        hook.before_group_execute(
+            group_metadata=group_metadata,
+            initial_inputs=resolved_inputs,
+            reporter=reporter,
+        )
+
+        start_time = time.time()
+        completed: dict[UUID, Any] = {}
+
+        try:
+            # Execute each node in sequence
+            current_inputs = resolved_inputs
+            result = None
+
+            for i, node in enumerate(self.nodes):
+                # For subsequent nodes, resolve inputs using completed results
+                if i > 0:
+                    current_inputs = node.resolve_inputs(completed)
+
+                # Execute the node
+                result = node.run(current_inputs)
+
+                # Store result for subsequent nodes
+                completed[node.id] = result
+
+            duration = time.time() - start_time
+            hook.after_group_execute(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                final_result=result,
+                duration=duration,
+                reporter=reporter,
+            )
+
+            return result
+
+        except Exception as error:
+            duration = time.time() - start_time
+            hook.on_group_error(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                error=error,
+                duration=duration,
+                reporter=reporter,
+            )
+            raise
+
+        finally:
+            reset_current_task(token)
+
+    @override
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        """
+        Execute all nodes in the sequence asynchronously.
+
+        Each node's output becomes available for subsequent nodes in the group.
+        """
+        token = set_current_task(self.to_metadata())
+        hook = get_plugin_manager().hook
+        reporter = get_reporter()
+
+        # Prepare group metadata for hooks
+        group_metadata = [node.to_metadata() for node in self.nodes]
+
+        hook.before_group_execute(
+            group_metadata=group_metadata,
+            initial_inputs=resolved_inputs,
+            reporter=reporter,
+        )
+
+        start_time = time.time()
+        completed: dict[UUID, Any] = {}
+
+        try:
+            # Execute each node in sequence
+            current_inputs = resolved_inputs
+            result = None
+
+            for i, node in enumerate(self.nodes):
+                # For subsequent nodes, resolve inputs using completed results
+                if i > 0:
+                    current_inputs = node.resolve_inputs(completed)
+
+                # Execute the node
+                result = await node.run_async(current_inputs)
+
+                # Store result for subsequent nodes
+                completed[node.id] = result
+
+            duration = time.time() - start_time
+            hook.after_group_execute(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                final_result=result,
+                duration=duration,
+                reporter=reporter,
+            )
+
+            return result
+
+        except Exception as error:
+            duration = time.time() - start_time
+            hook.on_group_error(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                error=error,
+                duration=duration,
+                reporter=reporter,
+            )
+            raise
+
+        finally:
+            reset_current_task(token)
+
+
+@dataclass(frozen=True)
+class CompositeMapTaskNode(BaseGraphNode):
+    """
+    Composite node that executes a sequence of MapTaskNodes as a single unit.
+
+    Similar to CompositeTaskNode but handles mapped operations. Each iteration
+    of the map executes the entire sequence of nodes before moving to the next iteration.
+    """
+
+    nodes: tuple[MapTaskNode | TaskNode | CompositeTaskNode, ...]
+    """Sequence of nodes to execute in order. First node must be a MapTaskNode."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        assert len(self.nodes) > 0, "CompositeMapTaskNode must contain at least one node"
+        assert isinstance(
+            self.nodes[0], MapTaskNode
+        ), "First node in CompositeMapTaskNode must be a MapTaskNode"
+
+    @override
+    def dependencies(self) -> set[UUID]:
+        """
+        Returns dependencies of the first node plus any external dependencies.
+
+        Internal dependencies (between nodes in the group) are satisfied during
+        group execution and are not exposed as external dependencies.
+        """
+        # Start with dependencies of the first node
+        deps = set(self.nodes[0].dependencies())
+
+        # Add any output config dependencies from all nodes
+        for node in self.nodes:
+            for config in node.output_configs:
+                for param in config.extras.values():
+                    if param.is_ref and param.ref is not None:
+                        deps.add(param.ref)
+
+        # Remove internal dependencies (nodes within this group)
+        internal_ids = {node.id for node in self.nodes}
+        return deps - internal_ids
+
+    @override
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
+        """Resolve inputs for the first node in the sequence."""
+        return self.nodes[0].resolve_inputs(completed_nodes)
+
+    @override
+    def to_metadata(self) -> "GraphMetadata":
+        """Returns metadata for the composite map node group."""
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            kind="composite_map",
+            description=self.description or f"Group of {len(self.nodes)} map tasks",
+            backend_name=self.backend_name,
+            key=self.key,
+        )
+
+    def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
+        """
+        Build the list of input dictionaries for each iteration.
+
+        Delegates to the first MapTaskNode in the sequence.
+        """
+        first_node = self.nodes[0]
+        assert isinstance(first_node, MapTaskNode)
+        return first_node.build_iteration_calls(resolved_inputs)
+
+    @override
+    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        """
+        Execute one iteration of the composite map node group.
+
+        All nodes in the sequence are executed for this specific iteration.
+        """
+        iteration_index = kwargs["iteration_index"]
+
+        token = set_current_task(self.to_metadata())
+        hook = get_plugin_manager().hook
+        reporter = get_reporter()
+
+        # Prepare group metadata for hooks
+        group_metadata = [node.to_metadata() for node in self.nodes]
+
+        hook.before_group_execute(
+            group_metadata=group_metadata,
+            initial_inputs=resolved_inputs,
+            reporter=reporter,
+        )
+
+        start_time = time.time()
+        completed: dict[UUID, Any] = {}
+
+        try:
+            # Execute each node in sequence for this iteration
+            current_inputs = resolved_inputs
+            result = None
+
+            for i, node in enumerate(self.nodes):
+                # For subsequent nodes, resolve inputs using completed results
+                if i > 0:
+                    current_inputs = node.resolve_inputs(completed)
+
+                # Execute the node
+                if isinstance(node, MapTaskNode):
+                    result = node.run(current_inputs, iteration_index=iteration_index)
+                else:
+                    result = node.run(current_inputs)
+
+                # Store result for subsequent nodes
+                completed[node.id] = result
+
+            duration = time.time() - start_time
+            hook.after_group_execute(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                final_result=result,
+                duration=duration,
+                reporter=reporter,
+            )
+
+            return result
+
+        except Exception as error:
+            duration = time.time() - start_time
+            hook.on_group_error(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                error=error,
+                duration=duration,
+                reporter=reporter,
+            )
+            raise
+
+        finally:
+            reset_current_task(token)
+
+    @override
+    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        """
+        Execute one iteration of the composite map node group asynchronously.
+
+        All nodes in the sequence are executed for this specific iteration.
+        """
+        iteration_index = kwargs["iteration_index"]
+
+        token = set_current_task(self.to_metadata())
+        hook = get_plugin_manager().hook
+        reporter = get_reporter()
+
+        # Prepare group metadata for hooks
+        group_metadata = [node.to_metadata() for node in self.nodes]
+
+        hook.before_group_execute(
+            group_metadata=group_metadata,
+            initial_inputs=resolved_inputs,
+            reporter=reporter,
+        )
+
+        start_time = time.time()
+        completed: dict[UUID, Any] = {}
+
+        try:
+            # Execute each node in sequence for this iteration
+            current_inputs = resolved_inputs
+            result = None
+
+            for i, node in enumerate(self.nodes):
+                # For subsequent nodes, resolve inputs using completed results
+                if i > 0:
+                    current_inputs = node.resolve_inputs(completed)
+
+                # Execute the node
+                if isinstance(node, MapTaskNode):
+                    result = await node.run_async(current_inputs, iteration_index=iteration_index)
+                else:
+                    result = await node.run_async(current_inputs)
+
+                # Store result for subsequent nodes
+                completed[node.id] = result
+
+            duration = time.time() - start_time
+            hook.after_group_execute(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                final_result=result,
+                duration=duration,
+                reporter=reporter,
+            )
+
+            return result
+
+        except Exception as error:
+            duration = time.time() - start_time
+            hook.on_group_error(
+                group_metadata=group_metadata,
+                initial_inputs=resolved_inputs,
+                error=error,
+                duration=duration,
+                reporter=reporter,
+            )
+            raise
+
+        finally:
+            reset_current_task(token)
 
 
 # region Helpers

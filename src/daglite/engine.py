@@ -294,8 +294,26 @@ class Engine:
         Returns:
             The result of evaluating the root node.
         """
+        from daglite.graph.optimizer import optimize_graph
+        from daglite.settings import get_global_settings
+
         nodes = build_graph(root)
-        return self._run_sequential(nodes, root.id)
+
+        # Apply graph optimization if enabled
+        settings = get_global_settings()
+        nodes = optimize_graph(nodes, root.id, settings.enable_optimization)
+
+        # Find the potentially new root ID after optimization
+        # (the optimizer returns the same dict if no optimization occurred)
+        root_id = root.id
+        for node_id, node in nodes.items():
+            if hasattr(node, 'nodes'):
+                # Check if this composite contains the original root
+                if any(child.id == root.id for child in node.nodes):
+                    root_id = node_id
+                    break
+
+        return self._run_sequential(nodes, root_id)
 
     async def evaluate_async(self, root: GraphBuilder) -> Any:
         """
@@ -307,8 +325,26 @@ class Engine:
         Returns:
             The result of evaluating the root node.
         """
+        from daglite.graph.optimizer import optimize_graph
+        from daglite.settings import get_global_settings
+
         nodes = build_graph(root)
-        return await self._run_async(nodes, root.id)
+
+        # Apply graph optimization if enabled
+        settings = get_global_settings()
+        nodes = optimize_graph(nodes, root.id, settings.enable_optimization)
+
+        # Find the potentially new root ID after optimization
+        # (the optimizer returns the same dict if no optimization occurred)
+        root_id = root.id
+        for node_id, node in nodes.items():
+            if hasattr(node, 'nodes'):
+                # Check if this composite contains the original root
+                if any(child.id == root.id for child in node.nodes):
+                    root_id = node_id
+                    break
+
+        return await self._run_async(nodes, root_id)
 
     def _setup_plugin_system(self) -> tuple[PluginManager, EventProcessor]:
         """Sets up plugin system (manager, processor, registry) for this engine."""
@@ -505,13 +541,13 @@ class Engine:
         Returns:
             Wrapper containing future(s) and context for later collection.
         """
-        from daglite.graph.nodes import MapTaskNode
+        from daglite.graph.nodes import CompositeMapTaskNode, MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         resolved_inputs = node.resolve_inputs(state.completed_nodes)
         resolved_output_extras = node.resolve_output_extras(state.completed_nodes)
 
-        if isinstance(node, MapTaskNode):
+        if isinstance(node, (MapTaskNode, CompositeMapTaskNode)):
             # For mapped nodes, submit each iteration separately
             mapped_inputs = node.build_iteration_calls(resolved_inputs)
             start_time = time.perf_counter()
@@ -583,7 +619,7 @@ class Engine:
         """
         from asyncio import wrap_future
 
-        from daglite.graph.nodes import MapTaskNode
+        from daglite.graph.nodes import CompositeMapTaskNode, MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
@@ -591,7 +627,7 @@ class Engine:
         resolved_output_extras = node.resolve_output_extras(completed_nodes)
 
         # Determine how to submit to backend based on node type
-        if isinstance(node, MapTaskNode):
+        if isinstance(node, (MapTaskNode, CompositeMapTaskNode)):
             # For mapped nodes, submit each iteration separately
             futures = []
             mapped_inputs = node.build_iteration_calls(resolved_inputs)

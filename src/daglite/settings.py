@@ -51,6 +51,19 @@ class DagliteSettings:
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
     """
 
+    enable_optimization: bool = field(
+        default_factory=lambda: _env_get_bool("DAGLITE_ENABLE_OPTIMIZATION", True)
+    )
+    """
+    Enable graph optimization to group linear chains of tasks into composite nodes.
+
+    When enabled, the graph optimizer identifies sequential chains of tasks that can be
+    grouped together and executed as a single unit, reducing backend submission overhead.
+    This can provide 10-100x performance improvements for long operation sequences.
+
+    Can be set via DAGLITE_ENABLE_OPTIMIZATION environment variable (0/false/no to disable).
+    """
+
 
 def get_global_settings() -> DagliteSettings:
     """
