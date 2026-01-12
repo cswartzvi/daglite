@@ -2,15 +2,14 @@
 Unit tests for graph optimization and composite nodes.
 """
 
-from uuid import uuid4
-
-import pytest
-
-from daglite import evaluate, task
+from daglite import evaluate
+from daglite import task
 from daglite.graph.builder import build_graph
-from daglite.graph.nodes import CompositeMapTaskNode, CompositeTaskNode, MapTaskNode, TaskNode
+from daglite.graph.nodes import CompositeTaskNode
+from daglite.graph.nodes import TaskNode
 from daglite.graph.optimizer import optimize_graph
-from daglite.settings import DagliteSettings, set_global_settings
+from daglite.settings import DagliteSettings
+from daglite.settings import set_global_settings
 
 
 class TestGraphOptimizer:
@@ -111,7 +110,9 @@ class TestGraphOptimizer:
 
         # Should not create composites because shared has multiple successors
         # (both branches are visible in the graph)
-        assert len(optimized) >= 3  # At minimum: shared, branch_a, branch_b (combine might be grouped)
+        assert (
+            len(optimized) >= 3
+        )  # At minimum: shared, branch_a, branch_b (combine might be grouped)
 
     def test_different_backends_prevent_grouping(self) -> None:
         """Optimizer does not group nodes with different backends."""
@@ -344,14 +345,12 @@ class TestCompositeNodeHooks:
         b = add(x=a)
         c = add(x=b)
 
-        # Evaluate with plugin
-        result = evaluate(c, plugins=[GroupHookPlugin()])
+        _ = evaluate(c, plugins=[GroupHookPlugin()])
 
-        # Check hooks were called
         assert len(hook_calls) == 2
         assert hook_calls[0][0] == "before_group"
-        assert hook_calls[0][1] == 3  # 3 nodes in the group
-        assert hook_calls[1] == ("after_group", 4)  # final result is 4
+        assert hook_calls[0][1] == 3
+        assert hook_calls[1] == ("after_group", 4)
 
 
 class TestOptimizationSettings:

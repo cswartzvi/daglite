@@ -353,7 +353,6 @@ class CompositeTaskNode(BaseGraphNode):
         hook = get_plugin_manager().hook
         reporter = get_reporter()
 
-        # Prepare group metadata for hooks
         group_metadata = [node.to_metadata() for node in self.nodes]
 
         hook.before_group_execute(
@@ -366,19 +365,14 @@ class CompositeTaskNode(BaseGraphNode):
         completed: dict[UUID, Any] = {}
 
         try:
-            # Execute each node in sequence
             current_inputs = resolved_inputs
             result = None
 
             for i, node in enumerate(self.nodes):
-                # For subsequent nodes, resolve inputs using completed results
                 if i > 0:
                     current_inputs = node.resolve_inputs(completed)
 
-                # Execute the node
                 result = node.run(current_inputs)
-
-                # Store result for subsequent nodes
                 completed[node.id] = result
 
             duration = time.time() - start_time
@@ -486,9 +480,9 @@ class CompositeMapTaskNode(BaseGraphNode):
     def __post_init__(self) -> None:
         super().__post_init__()
         assert len(self.nodes) > 0, "CompositeMapTaskNode must contain at least one node"
-        assert isinstance(
-            self.nodes[0], MapTaskNode
-        ), "First node in CompositeMapTaskNode must be a MapTaskNode"
+        assert isinstance(self.nodes[0], MapTaskNode), (
+            "First node in CompositeMapTaskNode must be a MapTaskNode"
+        )
 
     @override
     def dependencies(self) -> set[UUID]:

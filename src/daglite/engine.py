@@ -307,7 +307,7 @@ class Engine:
         # (the optimizer returns the same dict if no optimization occurred)
         root_id = root.id
         for node_id, node in nodes.items():
-            if hasattr(node, 'nodes'):
+            if hasattr(node, "nodes"):
                 # Check if this composite contains the original root
                 if any(child.id == root.id for child in node.nodes):
                     root_id = node_id
@@ -338,7 +338,7 @@ class Engine:
         # (the optimizer returns the same dict if no optimization occurred)
         root_id = root.id
         for node_id, node in nodes.items():
-            if hasattr(node, 'nodes'):
+            if hasattr(node, "nodes"):
                 # Check if this composite contains the original root
                 if any(child.id == root.id for child in node.nodes):
                     root_id = node_id
@@ -541,7 +541,8 @@ class Engine:
         Returns:
             Wrapper containing future(s) and context for later collection.
         """
-        from daglite.graph.nodes import CompositeMapTaskNode, MapTaskNode
+        from daglite.graph.nodes import CompositeMapTaskNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         resolved_inputs = node.resolve_inputs(state.completed_nodes)
@@ -619,7 +620,8 @@ class Engine:
         """
         from asyncio import wrap_future
 
-        from daglite.graph.nodes import CompositeMapTaskNode, MapTaskNode
+        from daglite.graph.nodes import CompositeMapTaskNode
+        from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
         completed_nodes = state.completed_nodes
