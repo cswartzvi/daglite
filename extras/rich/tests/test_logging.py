@@ -50,36 +50,41 @@ class TestRichLifecycleLoggingPlugin:
         # Config should have been applied
         assert plugin._logger is not None
 
-    def test_loads_rich_yaml_config(self):
-        """Test that plugin loads rich-specific logging.yml configuration."""
-        # Mock the YAML file
-        yaml_content = """
-version: 1
-formatters:
-  rich:
-    format: "%(message)s"
-handlers:
-  rich:
-    class: rich.logging.RichHandler
-    level: INFO
-    formatter: rich
-loggers:
-  daglite.lifecycle:
-    level: INFO
-    handlers:
-      - rich
-    propagate: false
-"""
+    def test_loads_rich_json_config(self):
+        """Test that plugin loads rich-specific logging.json configuration."""
+        # Mock the JSON file
+        json_content = """{
+  "version": 1,
+  "formatters": {
+    "rich": {
+      "format": "%(message)s"
+    }
+  },
+  "handlers": {
+    "rich": {
+      "class": "rich.logging.RichHandler",
+      "level": "INFO",
+      "formatter": "rich"
+    }
+  },
+  "loggers": {
+    "daglite.lifecycle": {
+      "level": "INFO",
+      "handlers": ["rich"],
+      "propagate": false
+    }
+  }
+}"""
         with patch("pathlib.Path.exists", return_value=True):
-            with patch("builtins.open", mock_open(read_data=yaml_content)):
+            with patch("builtins.open", mock_open(read_data=json_content)):
                 plugin = RichLifecycleLoggingPlugin()
 
                 # Plugin should be initialized with loaded config
                 assert plugin._logger is not None
 
-    def test_yaml_config_not_found(self):
-        """Test plugin behavior when logging.yml doesn't exist."""
-        # When yaml file doesn't exist, it should work with base class default config
+    def test_json_config_not_found(self):
+        """Test plugin behavior when logging.json doesn't exist."""
+        # When json file doesn't exist, it should work with base class default config
         plugin = RichLifecycleLoggingPlugin()
 
         # Should still initialize successfully
