@@ -1,6 +1,6 @@
 """Daglite: Lightweight Python framework for building static DAGs with explicit bindings."""
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 from . import backends
 from . import futures
