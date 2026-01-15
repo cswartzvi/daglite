@@ -81,7 +81,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
         self._progress.start()
         self._total_tasks = node_count
-        self._root_task_id = self._progress.add_task("Evaluating", total=self._total_tasks)
+        self._root_task_id = self._progress.add_task("Evaluating futures", total=self._total_tasks)
 
     @hook_impl(trylast=True)
     def after_node_execute(
