@@ -208,7 +208,7 @@ attr = "daglite.__version__"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"daglite" = ["py.typed"]
+"daglite" = ["py.typed", "plugins/builtin/logging.json"]
 
 # --- tool.ty ---  # currently only used in CI for type checking
 
