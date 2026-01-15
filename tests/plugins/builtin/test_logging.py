@@ -548,11 +548,11 @@ class TestLifecycleLoggingPlugin:
         # Logger level should be set
         assert plugin._logger.logger.level == logging.DEBUG
 
-    def test_loads_yaml_config(self):
-        """Test that plugin loads logging.yml configuration."""
+    def test_loads_json_config(self):
+        """Test that plugin loads logging.json configuration."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
-        # Create plugin instance to trigger YAML config loading
+        # Create plugin instance to trigger JSON config loading
         _ = LifecycleLoggingPlugin()
 
         # Config should be loaded (handler names should exist)

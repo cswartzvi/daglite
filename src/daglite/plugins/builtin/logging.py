@@ -6,6 +6,7 @@ This module provides logging that works seamlessly across different execution ba
 send log records from workers back to the coordinator/main process.
 """
 
+import json
 import logging
 import logging.config
 import threading
@@ -13,7 +14,6 @@ from pathlib import Path
 from typing import Any, MutableMapping
 from uuid import UUID
 
-import yaml
 from typing_extensions import override
 
 from daglite.backends.context import get_current_task
@@ -253,11 +253,11 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         self._apply_logging_config(config)
 
     def _load_default_config(self) -> dict[str, Any]:
-        """Load default logging configuration from logging.yml."""
-        config_path = Path(__file__).parent / "logging.yml"
+        """Load default logging configuration from logging.json."""
+        config_path = Path(__file__).parent / "logging.json"
         if config_path.exists():
             with open(config_path) as f:
-                return yaml.safe_load(f)
+                return json.load(f)
         else:  # pragma: no cover
             raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
 

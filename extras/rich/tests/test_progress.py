@@ -90,7 +90,7 @@ class TestRichProgressPlugin:
 
         assert plugin._total_tasks == 5
         plugin._progress.start.assert_called_once()
-        plugin._progress.add_task.assert_called_once_with("Evaluating", total=5)
+        plugin._progress.add_task.assert_called_once_with("Evaluating futures", total=5)
 
     def test_after_node_execute_with_reporter(self):
         """Test after_node_execute with reporter present."""

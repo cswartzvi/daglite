@@ -77,13 +77,13 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def from_config(cls, config: dict[str, Any]) -> "RichProgressPlugin":
         return cls()  # Create new instance with defaults
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
         self._progress.start()
         self._total_tasks = node_count
-        self._root_task_id = self._progress.add_task("Evaluating", total=self._total_tasks)
+        self._root_task_id = self._progress.add_task("Evaluating futures", total=self._total_tasks)
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def after_node_execute(
         self,
         metadata: GraphMetadata,
@@ -98,7 +98,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def on_cache_hit(
         self,
         func: Any,
@@ -113,7 +113,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def on_node_error(
         self,
         metadata: GraphMetadata,
@@ -128,7 +128,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             # Fallback if no reporter is available
             self._handle_node_update({"node_id": metadata.id})
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def before_mapped_node_execute(
         self,
         metadata: GraphMetadata,
@@ -140,7 +140,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         )
         self._id_to_task[metadata.id] = map_task_id
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def after_mapped_node_execute(
         self,
         metadata: GraphMetadata,
@@ -156,7 +156,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         assert self._root_task_id is not None
         self._progress.advance(task_id=self._root_task_id)
 
-    @hook_impl
+    @hook_impl(trylast=True)
     def after_graph_execute(
         self, root_id: UUID, result: Any, duration: float, is_async: bool
     ) -> None:

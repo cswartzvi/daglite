@@ -1,8 +1,8 @@
+import json
 import logging
 from pathlib import Path
 from typing import Any
 
-import yaml
 from typing_extensions import override
 
 from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
@@ -31,7 +31,7 @@ class RichLifecycleLoggingPlugin(LifecycleLoggingPlugin):
 
     @override
     def _load_default_config(self) -> dict[str, Any]:
-        """Load rich-specific logging configuration from logging.yml."""
-        config_path = Path(__file__).parent / "logging.yml"
+        """Load rich-specific logging configuration from logging.json."""
+        config_path = Path(__file__).parent / "logging.json"
         with open(config_path) as f:
-            return yaml.safe_load(f)
+            return json.load(f)

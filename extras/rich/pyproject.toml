@@ -22,4 +22,4 @@ attr = "daglite_rich.__version__"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"daglite_rich" = ["py.typed"]
+"daglite_rich" = ["py.typed", "logging.json"]
