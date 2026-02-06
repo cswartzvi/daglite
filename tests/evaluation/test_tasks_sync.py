@@ -579,32 +579,32 @@ class TestComplexPathEvaluation:
 
 
 class TestAsyncTasksWithEvaluate:
-    """Tests that async tasks raise errors when evaluated with evaluate (synchronous execution)."""
+    """Tests that async tasks work through evaluate() via the async-first engine."""
 
-    def test_async_task_raises_error(self) -> None:
-        """Async tasks cannot be evaluated synchronously."""
+    def test_async_task_works(self) -> None:
+        """Async tasks are evaluated through the async-first engine."""
 
         @task
         async def async_add(x: int, y: int) -> int:
             await asyncio.sleep(0.001)
             return x + y
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(async_add(x=5, y=10))  # type: ignore
+        result = evaluate(async_add(x=5, y=10))  # type: ignore
+        assert result == 15
 
-    def test_async_map_task_raises_error(self) -> None:
-        """Async map tasks cannot be evaluated synchronously."""
+    def test_async_map_task_works(self) -> None:
+        """Async map tasks are evaluated through the async-first engine."""
 
         @task
         async def async_square(x: int) -> int:
             await asyncio.sleep(0.001)
             return x * x
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(async_square.product(x=[1, 2, 3, 4]))
+        result = evaluate(async_square.product(x=[1, 2, 3, 4]))
+        assert result == [1, 4, 9, 16]
 
-    def test_mixed_graph_with_async_raises_error(self) -> None:
-        """Graphs containing any async tasks raise error in sync evaluation."""
+    def test_mixed_graph_with_async_works(self) -> None:
+        """Graphs containing both sync and async tasks work through evaluate()."""
 
         @task
         def sync_task(x: int) -> int:
@@ -619,13 +619,12 @@ class TestAsyncTasksWithEvaluate:
         def combine(a: int, b: int) -> int:
             return a + b
 
-        # Even one async task in the graph causes error
         start = sync_task(x=10)
         async_result = async_double(x=start)
         combined = combine(a=start, b=async_result)
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(combined)
+        result = evaluate(combined)
+        assert result == 33  # sync_task(10)=11, async_double(11)=22, combine(11,22)=33
 
 
 class TestGeneratorMaterialization:
@@ -795,8 +794,8 @@ class TestGeneratorMaterialization:
         assert len(iter_result) == 4
         assert len(gen_result) == 4
 
-    def test_async_generator_materialization_sync_raises_error(self) -> None:
-        """Async generators raise error in sync evaluation."""
+    def test_async_generator_materialization_sync_mode(self) -> None:
+        """Async generators are materialized properly through evaluate()."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -815,8 +814,8 @@ class TestGeneratorMaterialization:
         nums = async_generate_numbers(n=5)
         total = sum_values(values=nums)
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(total)
+        result = evaluate(total)
+        assert result == 10  # 0 + 1 + 2 + 3 + 4
 
     def test_async_generator_materialization_async_mode(self) -> None:
         """Async generators are materialized properly in async evaluation."""
@@ -846,8 +845,8 @@ class TestGeneratorMaterialization:
         result = asyncio.run(run_async())
         assert result == 10  # 0 + 1 + 2 + 3 + 4
 
-    def test_async_generator_map_materialization_sync_raises_error(self) -> None:
-        """Map tasks with async generators raise error in sync evaluation."""
+    def test_async_generator_map_materialization_sync_mode(self) -> None:
+        """Map tasks with async generators are materialized properly through evaluate()."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -866,8 +865,8 @@ class TestGeneratorMaterialization:
         ranges = async_get_range.product(n=[3, 4, 5])
         total = sum_all_ranges(ranges=ranges)
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(total)
+        result = evaluate(total)
+        assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
     def test_async_generator_map_materialization_async_mode(self) -> None:
         """Map tasks that return async generators are materialized properly in async mode."""
@@ -898,8 +897,8 @@ class TestGeneratorMaterialization:
         result = asyncio.run(run_async())
         assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
-    def test_async_generator_with_thread_backend_sync_raises_error(self) -> None:
-        """Async generators with ThreadBackend raise error in sync evaluation."""
+    def test_async_generator_with_thread_backend_sync_mode(self) -> None:
+        """Async generators with ThreadBackend work through evaluate()."""
         from collections.abc import AsyncGenerator
 
         @task(backend_name="threading")
@@ -918,8 +917,8 @@ class TestGeneratorMaterialization:
         nums = async_generate(n=5)
         total = sum_values(values=nums)
 
-        with pytest.raises(ValueError, match="Cannot execute async task"):
-            evaluate(total)
+        result = evaluate(total)
+        assert result == 20  # 0 + 2 + 4 + 6 + 8
 
     def test_async_generator_with_thread_backend_async_mode(self) -> None:
         """Async generators work with ThreadBackend in async mode."""
@@ -1059,3 +1058,39 @@ class TestSiblingParallelism:
         # PIDs should be different if truly parallel (may be same if sequential)
         # Just verify we got valid PIDs
         assert all(pid > 0 for pid in result["pids"])
+
+
+class TestEvaluateGuards:
+    """Tests for evaluate() entry-point guards (loop detection, nested call prevention)."""
+
+    def test_evaluate_rejects_running_loop(self) -> None:
+        """evaluate() raises RuntimeError when called from async context."""
+
+        async def inner():
+            evaluate(task(lambda: 1)())
+
+        with pytest.raises(RuntimeError, match="Cannot call evaluate"):
+            asyncio.run(inner())
+
+    def test_evaluate_async_rejects_nested_call(self) -> None:
+        """evaluate_async() raises RuntimeError when called from within a task."""
+        from daglite import evaluate_async
+
+        @task
+        async def outer() -> int:
+            inner_task = task(lambda: 1)
+            return await evaluate_async(inner_task())
+
+        with pytest.raises(RuntimeError, match="Cannot call evaluate.*from within a task"):
+            asyncio.run(evaluate_async(outer()))
+
+    def test_evaluate_rejects_nested_call(self) -> None:
+        """evaluate() raises RuntimeError when called from within a task."""
+
+        @task
+        def outer() -> int:
+            inner_task = task(lambda: 1)
+            return evaluate(inner_task())
+
+        with pytest.raises(RuntimeError, match="Cannot call evaluate"):
+            evaluate(outer())
