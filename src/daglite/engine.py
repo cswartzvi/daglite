@@ -364,26 +364,24 @@ class Engine:
                     for nid in ready
                 }
 
-                # Wait for any sibling to complete
-                done, _ = await asyncio.wait(tasks.keys())
+                # Wait for completion, returning early on first exception for fail-fast
+                done, pending = await asyncio.wait(
+                    tasks.keys(), return_when=asyncio.FIRST_EXCEPTION
+                )
 
                 # Collect results and mark complete
                 ready = []
-                for task in done:
-                    nid = tasks[task]
-                    try:
+                try:
+                    for task in done:
+                        nid = tasks[task]
                         result = task.result()
                         ready.extend(state.mark_complete(nid, result))
-                    except Exception:
-                        # Cancel all remaining tasks before propagating
-                        for t in tasks.keys():
-                            if not t.done():  # pragma: no cover
-                                # Defensive: Cancels concurrent siblings on error. Requires
-                                # contrived timing to test where one task fails while others still
-                                # running
-                                t.cancel()
-                        await asyncio.gather(*tasks.keys(), return_exceptions=True)
-                        raise
+                except Exception:
+                    # Cancel pending siblings and propagate the failure
+                    for t in pending:
+                        t.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    raise
 
             state.check_complete()
             result = state.completed_nodes[root_id]
