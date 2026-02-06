@@ -375,7 +375,7 @@ class Engine:
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=False
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes)
         )
 
         start_time = time.perf_counter()
@@ -413,14 +413,14 @@ class Engine:
 
             event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
-                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=False
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration
             )
             raise
         finally:
@@ -436,7 +436,7 @@ class Engine:
         backend_manager = BackendManager(plugin_manager, event_processor)
 
         plugin_manager.hook.before_graph_execute(
-            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=True
+            graph_id=graph_id, root_id=root_id, node_count=len(nodes)
         )
 
         start_time = time.perf_counter()
@@ -482,14 +482,14 @@ class Engine:
 
             event_processor.flush()  # Drain event queue before after_graph_execute
             plugin_manager.hook.after_graph_execute(
-                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, result=result, duration=duration
             )
 
             return result
         except Exception as e:
             duration = time.perf_counter() - start_time
             plugin_manager.hook.on_graph_error(
-                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=True
+                graph_id=graph_id, root_id=root_id, error=e, duration=duration
             )
             raise
         finally:

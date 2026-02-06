@@ -487,7 +487,7 @@ class ProgressTracker:
         self.total = 0
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         self.total = node_count
         self.completed = 0
         print(f"Starting: 0/{self.total}")

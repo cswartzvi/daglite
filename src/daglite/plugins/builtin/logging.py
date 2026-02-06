@@ -297,10 +297,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         graph_id: UUID,
         root_id: UUID,
         node_count: int,
-        is_async: bool,
     ) -> None:
-        eval_type = "async evaluation" if is_async else "evaluation"
-        self._logger.info(f"Starting {eval_type} {graph_id}")
+        self._logger.info(f"Starting evaluation {graph_id}")
         self._logger.debug(f"Evaluation {graph_id}: Computing {node_count} tasks total")
         self._logger.debug(f"Evaluation {graph_id}: Root task ID is {root_id}")
 
@@ -311,11 +309,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         root_id: UUID,
         result: Any,
         duration: float,
-        is_async: bool,
     ) -> None:
-        eval_type = "async evaluation" if is_async else "evaluation"
         self._logger.info(
-            f"Completed {eval_type} {graph_id} successfully in {_format_duration(duration)}"
+            f"Completed evaluation {graph_id} successfully in {_format_duration(duration)}"
         )
 
     @hook_impl
@@ -325,12 +321,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         root_id: UUID,
         error: Exception,
         duration: float,
-        is_async: bool,
     ) -> None:
-        eval_type = "async evaluation" if is_async else "evaluation"
         self._logger.error(
-            f"{eval_type.capitalize()} {graph_id} failed after {_format_duration(duration)} with "
-            f"error: {error}"
+            f"Evaluation {graph_id} failed after {_format_duration(duration)} with error: {error}"
         )
 
     @hook_impl

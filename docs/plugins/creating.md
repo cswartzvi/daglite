@@ -141,7 +141,6 @@ def before_graph_execute(
     self,
     root_id: UUID,         # UUID of root node
     node_count: int,       # Total nodes in graph
-    is_async: bool,        # True for async execution
 ) -> None:
     ...
 ```
@@ -155,7 +154,6 @@ def after_graph_execute(
     root_id: UUID,
     result: Any,           # Final result
     duration: float,       # Total execution time
-    is_async: bool,
 ) -> None:
     ...
 ```
@@ -169,7 +167,6 @@ def on_graph_error(
     root_id: UUID,
     error: Exception,
     duration: float,
-    is_async: bool,
 ) -> None:
     ...
 ```
@@ -197,7 +194,7 @@ class TimingPlugin:
         self.timings[metadata.name] = duration
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         print("\nExecution Times:")
         for task_name, task_duration in sorted(
             self.timings.items(),
@@ -223,7 +220,7 @@ class ProgressPlugin:
         self.completed = 0
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         self.total = node_count
         self.completed = 0
         print(f"Starting execution: 0/{self.total} tasks")
@@ -235,7 +232,7 @@ class ProgressPlugin:
         print(f"Progress: {self.completed}/{self.total} ({pct:.0f}%)")
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         print(f"Completed: {self.total}/{self.total} tasks in {duration:.2f}s")
 ```
 

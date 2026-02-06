@@ -86,7 +86,7 @@ class TestRichProgressPlugin:
         root_id = uuid4()
         node_count = 5
 
-        plugin.before_graph_execute(root_id, node_count, is_async=False)
+        plugin.before_graph_execute(root_id, node_count)
 
         assert plugin._total_tasks == 5
         plugin._progress.start.assert_called_once()
@@ -204,7 +204,7 @@ class TestRichProgressPlugin:
         result = 42
         duration = 1.5
 
-        plugin.after_graph_execute(root_id, result, duration, is_async=False)
+        plugin.after_graph_execute(root_id, result, duration)
 
         plugin._progress.update.assert_called_once_with(task_id=plugin._root_task_id, completed=5)
         plugin._progress.refresh.assert_called_once()
