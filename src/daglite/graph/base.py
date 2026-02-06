@@ -152,23 +152,6 @@ class BaseGraphNode(abc.ABC):
         return resolved_extras_list
 
     @abc.abstractmethod
-    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        """
-        Execute this node synchronously with resolved inputs.
-
-        This method runs in the worker context where plugin_manager and reporter
-        are available via execution context (see daglite.backends.context).
-
-        Args:
-            resolved_inputs: Pre-resolved parameter inputs for this node.
-            **kwargs: Additional backend-specific execution parameters.
-
-        Returns:
-            Node execution result. May be a coroutine, generator, or regular value.
-        """
-        ...
-
-    @abc.abstractmethod
     async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         """
         Execute this node asynchronously with resolved inputs.
