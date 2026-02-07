@@ -22,7 +22,7 @@ Command-line interface for running pipelines from the terminal.
 
 - Run pipelines with `daglite run`
 - Pass parameters via command line
-- Choose execution backends (Inline, threading, multiprocessing)
+- Choose execution backends (inline, threading, multiprocessing)
 - Enable async execution for parallel task execution
 
 [→ Learn more about daglite-cli](cli.md)

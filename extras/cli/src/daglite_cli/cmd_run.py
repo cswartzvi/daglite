@@ -29,7 +29,7 @@ from daglite_cli.utils import parse_param_value
     "--backend",
     "-b",
     default="inline",
-    help="Backend to use for execution (e.g., 'Inline', 'threading').",
+    help="Backend to use for execution (e.g., 'inline', 'threading').",
 )
 @click.option(
     "--async",
