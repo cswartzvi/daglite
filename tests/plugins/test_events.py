@@ -4,8 +4,8 @@ import time
 from queue import Queue
 from typing import Any
 
-from daglite.plugins.events import EventProcessor
-from daglite.plugins.events import EventRegistry
+from daglite.plugins.processor import EventProcessor
+from daglite.plugins.registry import EventRegistry
 
 
 class TestEventRegistry:

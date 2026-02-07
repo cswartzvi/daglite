@@ -4,7 +4,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from typing_extensions import TypeIs
 
-from daglite.plugins.events import EventRegistry
+from daglite.plugins.registry import EventRegistry
 
 
 @runtime_checkable

@@ -17,9 +17,9 @@ from daglite.backends.base import Backend
 from daglite.backends.context import set_execution_context
 from daglite.plugins.manager import deserialize_plugin_manager
 from daglite.plugins.manager import serialize_plugin_manager
-from daglite.plugins.reporters import DirectReporter
+from daglite.plugins.reporters import DirectEventReporter
 from daglite.plugins.reporters import EventReporter
-from daglite.plugins.reporters import ProcessReporter
+from daglite.plugins.reporters import ProcessEventReporter
 from daglite.settings import get_global_settings
 
 
@@ -35,8 +35,8 @@ class InlineBackend(Backend):
     _timeout_executor: ThreadPoolExecutor
 
     @override
-    def _get_reporter(self) -> DirectReporter:
-        return DirectReporter(self.event_processor.dispatch)
+    def _get_reporter(self) -> DirectEventReporter:
+        return DirectEventReporter(self.event_processor.dispatch)
 
     @override
     def _start(self) -> None:
@@ -104,9 +104,9 @@ class ThreadBackend(Backend):
     _timeout_executor: ThreadPoolExecutor
 
     @override
-    def _get_reporter(self) -> DirectReporter:
+    def _get_reporter(self) -> DirectEventReporter:
         # Threads run in same process - use DirectReporter with dispatcher
-        return DirectReporter(self.event_processor.dispatch)
+        return DirectEventReporter(self.event_processor.dispatch)
 
     @override
     def _start(self) -> None:
@@ -155,7 +155,7 @@ class ProcessBackend(Backend):
     _mp_context: Any  # BaseContext, but we can't import it at class level
 
     @override
-    def _get_reporter(self) -> ProcessReporter:
+    def _get_reporter(self) -> ProcessEventReporter:
         from multiprocessing import Queue
         from multiprocessing import get_context
 
@@ -184,7 +184,7 @@ class ProcessBackend(Backend):
 
         # We need to defer Queue creation until we know the context
         queue: Queue[Any] = self._mp_context.Queue()
-        return ProcessReporter(queue)
+        return ProcessEventReporter(queue)
 
     @override
     def _start(self) -> None:
@@ -192,7 +192,7 @@ class ProcessBackend(Backend):
         max_workers = settings.max_parallel_processes
         max_timeout_workers = settings.max_timeout_workers
 
-        assert isinstance(self.reporter, ProcessReporter)
+        assert isinstance(self.reporter, ProcessEventReporter)
         self._reporter_id = self.event_processor.add_source(self.reporter.queue)
         serialized_pm = serialize_plugin_manager(self.plugin_manager)
         self._executor = ProcessPoolExecutor(
@@ -215,7 +215,7 @@ class ProcessBackend(Backend):
         self.event_processor.flush()  # Before removing source
         self.event_processor.remove_source(self._reporter_id)
 
-        assert isinstance(self.reporter, ProcessReporter)
+        assert isinstance(self.reporter, ProcessEventReporter)
         self.reporter.queue.close()
 
     @override
@@ -284,5 +284,5 @@ def _thread_initializer(plugin_manager: PluginManager, reporter: EventReporter) 
 def _process_initializer(serialized_plugin_manager: dict, queue) -> None:  # pragma: no cover
     """Initializer for process pool workers to set execution context."""
     plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
-    reporter = ProcessReporter(queue)
+    reporter = ProcessEventReporter(queue)
     set_execution_context(plugin_manager, reporter)

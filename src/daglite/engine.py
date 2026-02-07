@@ -18,7 +18,7 @@ from uuid import uuid4
 from pluggy import PluginManager
 
 if TYPE_CHECKING:
-    from daglite.plugins.events import EventProcessor
+    from daglite.plugins.processor import EventProcessor
 else:
     EventProcessor = Any
 
@@ -406,9 +406,9 @@ def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProces
     Returns:
         Tuple of (PluginManager, EventProcessor) initialized with the appropriate registry.
     """
-    from daglite.plugins.events import EventProcessor
-    from daglite.plugins.events import EventRegistry
     from daglite.plugins.manager import build_plugin_manager
+    from daglite.plugins.processor import EventProcessor
+    from daglite.plugins.registry import EventRegistry
 
     registry = EventRegistry()
     plugin_manager = build_plugin_manager(plugins or [], registry)

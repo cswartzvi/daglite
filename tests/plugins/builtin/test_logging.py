@@ -17,8 +17,8 @@ from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import _ReporterHandler
 from daglite.plugins.builtin.logging import _TaskLoggerAdapter
 from daglite.plugins.builtin.logging import get_logger
-from daglite.plugins.reporters import DirectReporter
-from daglite.plugins.reporters import ProcessReporter
+from daglite.plugins.reporters import DirectEventReporter
+from daglite.plugins.reporters import ProcessEventReporter
 
 
 @pytest.fixture(autouse=True)
@@ -65,10 +65,10 @@ class TestGetLoggerUnit:
 
             assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
 
-    def test_get_logger_with_non_remote_reporter(self):
-        """Test get_logger with DirectReporter (non-remote)."""
+    def test_get_logger_with_direct_reporter(self):
+        """Test get_logger with DirectReporter."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = False
+        mock_reporter.is_direct = True
 
         with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger = get_logger("test.direct.reporter")
@@ -77,10 +77,10 @@ class TestGetLoggerUnit:
             # Should NOT have ReporterHandler (DirectReporter uses normal logging)
             assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
 
-    def test_get_logger_with_remote_reporter(self):
-        """Test get_logger with ProcessReporter (remote)."""
+    def test_get_logger_with_process_reporter(self):
+        """Test get_logger with ProcessReporter."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
         with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger = get_logger("test.process.reporter")
@@ -93,10 +93,10 @@ class TestGetLoggerUnit:
             # Should disable propagation
             assert base_logger.propagate is False
 
-    def test_get_logger_with_remote_reporter_already_debug(self):
+    def test_get_logger_with_reporter_already_debug(self):
         """Test get_logger doesn't change level if already DEBUG or lower."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
         # Pre-configure logger to DEBUG
         test_logger = logging.getLogger("test.already.debug")
@@ -113,7 +113,7 @@ class TestGetLoggerUnit:
     def test_get_logger_no_duplicate_handlers(self):
         """Test that calling get_logger twice doesn't add duplicate handlers."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
         with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
             logger1 = get_logger("test.dedupe")
@@ -365,10 +365,9 @@ class TestReporterImplementations:
     def test_direct_reporter_report(self):
         """Test DirectReporter.report calls callback."""
         callback = Mock()
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
 
-        # Verify is_remote is False
-        assert reporter.is_remote is False
+        assert reporter.is_direct is True
 
         # Report an event
         reporter.report("test_event", {"key": "value"})
@@ -384,7 +383,7 @@ class TestReporterImplementations:
         import threading
 
         callback = Mock()
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
         results = []
 
         def report_event(i):
@@ -409,7 +408,7 @@ class TestReporterImplementations:
     def test_direct_reporter_error_handling(self):
         """Test DirectReporter handles callback errors gracefully."""
         callback = Mock(side_effect=RuntimeError("Callback error"))
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
 
         # Should not raise, should log error instead
         reporter.report("test_event", {"key": "value"})
@@ -420,10 +419,9 @@ class TestReporterImplementations:
     def test_process_reporter_report(self):
         """Test ProcessReporter.report puts event on queue."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
-        # Verify is_remote is True
-        assert reporter.is_remote is True
+        assert reporter.is_direct is False
 
         # Report an event
         reporter.report("test_event", {"key": "value"})
@@ -438,7 +436,7 @@ class TestReporterImplementations:
     def test_process_reporter_queue_property(self):
         """Test ProcessReporter.queue property."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         assert reporter.queue is queue
 
@@ -447,7 +445,7 @@ class TestReporterImplementations:
     def test_process_reporter_close(self):
         """Test ProcessReporter.close() closes the queue."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         # Close should not raise
         reporter.close()
@@ -460,7 +458,7 @@ class TestReporterImplementations:
         queue = Mock()
         queue.put.side_effect = RuntimeError("Queue error")
 
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         # Should not raise, should log error instead
         reporter.report("test_event", {"key": "value"})

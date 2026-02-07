@@ -1,7 +1,7 @@
 from pluggy import PluginManager
 
 from daglite.backends.base import Backend
-from daglite.plugins.events import EventProcessor
+from daglite.plugins.processor import EventProcessor
 
 
 class BackendManager:

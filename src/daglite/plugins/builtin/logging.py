@@ -21,8 +21,8 @@ from daglite.backends.context import get_reporter
 from daglite.graph.base import GraphMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
-from daglite.plugins.events import EventRegistry
 from daglite.plugins.hooks.markers import hook_impl
+from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
@@ -87,9 +87,9 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     base_logger = logging.getLogger(name)
 
-    # Add ReporterHandler only for remote reporters
+    # Add ReporterHandler only for all non-direct reporters to route logs to coordinator.
     reporter = get_reporter()
-    if reporter and reporter.is_remote:  # pragma: no branch
+    if reporter and not reporter.is_direct:
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
                 # In worker processes, remove all existing handlers and only use ReporterHandler

@@ -7,7 +7,7 @@ from pluggy import PluginManager
 from typing_extensions import final
 
 if TYPE_CHECKING:
-    from daglite.plugins.events import EventProcessor
+    from daglite.plugins.processor import EventProcessor
     from daglite.plugins.reporters import EventReporter
 else:
     EventProcessor = object
