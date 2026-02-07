@@ -278,7 +278,7 @@ async def evaluate_async(expr: Any, *, plugins: list[Any] | None = None) -> Any:
             "Cannot call evaluate()/evaluate_async() from within a task. Compose tasks using the "
             "fluent API instead."
         )
-    engine = Engine(plugins=plugins)
+    engine = _Engine(plugins=plugins)
     return await engine.evaluate_async(expr)
 
 
@@ -286,7 +286,7 @@ async def evaluate_async(expr: Any, *, plugins: list[Any] | None = None) -> Any:
 
 
 @dataclass
-class Engine:
+class _Engine:
     """
     Engine to evaluate a `GraphBuilder` (or more commonly, a `TaskFuture`).
 
@@ -445,17 +445,18 @@ class Engine:
         from daglite.graph.nodes import MapTaskNode
 
         backend = backend_manager.get(node.backend_name)
+        plugin_manager = backend.plugin_manager
         completed_nodes = state.completed_nodes
         resolved_inputs = node.resolve_inputs(completed_nodes)
         resolved_output_extras = node.resolve_output_extras(completed_nodes)
 
-        # Determine how to submit to backend based on node type
         if isinstance(node, MapTaskNode):
+            # Submit multiple calls for map tasks, one per iteration, and gather results
             futures = []
             mapped_inputs = node.build_iteration_calls(resolved_inputs)
 
             start_time = time.perf_counter()
-            backend.plugin_manager.hook.before_mapped_node_execute(
+            plugin_manager.hook.before_mapped_node_execute(
                 metadata=node.to_metadata(), inputs_list=mapped_inputs
             )
 
@@ -469,13 +470,14 @@ class Engine:
             result = await asyncio.gather(*futures)
             duration = time.perf_counter() - start_time
 
-            backend.plugin_manager.hook.after_mapped_node_execute(
+            plugin_manager.hook.after_mapped_node_execute(
                 metadata=node.to_metadata(),
                 inputs_list=mapped_inputs,
                 results=result,
                 duration=duration,
             )
         else:
+            # Submit a single call for regular tasks
             future = wrap_future(
                 backend.submit(
                     node.run_async,
@@ -489,6 +491,23 @@ class Engine:
         result = await _materialize_async(result)
 
         return result
+
+
+async def _materialize_async(result: Any) -> Any:
+    """Materialize coroutines and generators in asynchronous execution context."""
+    if isinstance(result, list):  # From map tasks
+        return await asyncio.gather(*[_materialize_async(item) for item in result])
+
+    if isinstance(result, (AsyncGenerator, AsyncIterator)):
+        items = []
+        async for item in result:
+            items.append(item)
+        return items
+
+    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
+        return list(result)
+
+    return result
 
 
 # region State
@@ -582,23 +601,3 @@ class _ExecutionState:
                 f"dependencies and cannot execute. This indicates a circular dependency. "
                 f"Remaining node IDs: {remaining[:5]}{'...' if len(remaining) > 5 else ''}"
             )
-
-
-# region Helpers
-
-
-async def _materialize_async(result: Any) -> Any:
-    """Materialize coroutines and generators in asynchronous execution context."""
-    if isinstance(result, list):  # From map tasks
-        return await asyncio.gather(*[_materialize_async(item) for item in result])
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-        items = []
-        async for item in result:
-            items.append(item)
-        return items
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-
-    return result
