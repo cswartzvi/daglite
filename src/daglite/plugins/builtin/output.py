@@ -17,7 +17,7 @@ class OutputPlugin:
     """
     Automatically saves outputs based on OutputConfig.
 
-    Intercepts after_node_execute and saves outputs for .save() and .checkpoint() calls.
+    Intercepts after_node_execute and saves outputs for `.save()` calls.
     """
 
     def __init__(self, store: OutputStore | str | None = None) -> None:

@@ -61,17 +61,28 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str, store: OutputStore | str | None = None, **extras: Any) -> Self:
+    def save(
+        self,
+        key: str,
+        *,
+        checkpoint: str | bool | None = None,
+        store: OutputStore | str | None = None,
+        **extras: Any,
+    ) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
         The output will be stored with the given key after task execution completes.
-        This does NOT mark the task as a resumption point - use .checkpoint() for that.
         Can be called multiple times to save to multiple keys.
 
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
+            checkpoint: If provided, marks this save as a resumption point for
+                evaluate(from_=name). Can be:
+                - None: No checkpoint (default, just saves output)
+                - True: Use the key as the checkpoint name
+                - str: Explicit checkpoint name
             store: Output store override for this specific save. If not provided, uses the
                 task's default store, then falls back to global settings.
             **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
@@ -88,6 +99,8 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             ... def process(data_id: str) -> Result: ...
             >>> @task
             ... def get_version() -> str: ...
+
+            Simple save (no checkpoint):
             >>> process(data_id="abc123").save(
             ...     "processed_{data_id}", extra=get_version()
             ... )  # doctest: +ELLIPSIS
@@ -97,59 +110,16 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future = process(data_id="abc")
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
-        """
-        if isinstance(store, str):
-            from daglite.outputs.store import FileOutputStore
 
-            resolved_store: OutputStore | None = FileOutputStore(store)
-        else:
-            resolved_store = store or self.task_store
+            Save with checkpoint (using key as name):
+            >>> process(data_id="abc").save("output", checkpoint=True)  # doctest: +ELLIPSIS
+            TaskFuture(...)
 
-        config = _FutureOutput(
-            key=key,
-            name=None,
-            store=resolved_store,
-            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
-        )
-        new_configs = self._future_outputs + (config,)
-
-        new_future = replace(self)
-        object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_future_outputs", new_configs)
-        return new_future
-
-    def checkpoint(
-        self, name: str, key: str, store: OutputStore | str | None = None, **extras: Any
-    ) -> Self:
-        """
-        Save task output and mark as a resumption point.
-
-        Creates a named checkpoint that can be used with evaluate(from_=name) to
-        resume execution from this point. The output is also saved with the given key.
-        Can be called multiple times to create multiple checkpoints.
-
-        Args:
-            name: Explicit name for this checkpoint (used for graph resumption)
-            key: Storage key for the output. Can use {param} format strings which
-                will be auto-resolved from task parameters.
-            store: Output store override for this specific checkpoint. If not provided, uses the
-                task's default store, then falls back to global settings.
-            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
-
-        Returns:
-            Self for method chaining
-
-        Raises:
-            ValueError: If no store is configured at any level (explicit, task, or global).
-
-        Examples:
-            >>> from daglite import task
+            Save with explicit checkpoint name:
             >>> @task
             ... def train_model(model_type: str) -> Model: ...
-            >>> @task
-            ... def get_version() -> str: ...
-            >>> train_model(model_type="linear").checkpoint(
-            ...     name="trained_model", key="model_{model_type}", version=get_version()
+            >>> train_model(model_type="linear").save(
+            ...     "model_{model_type}", checkpoint="trained_model"
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
@@ -160,9 +130,17 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         else:
             resolved_store = store or self.task_store
 
+        # Determine checkpoint name
+        if checkpoint is True:
+            checkpoint_name = key
+        elif checkpoint:
+            checkpoint_name = checkpoint
+        else:
+            checkpoint_name = None
+
         config = _FutureOutput(
             key=key,
-            name=name,
+            name=checkpoint_name,
             store=resolved_store,
             extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
         )

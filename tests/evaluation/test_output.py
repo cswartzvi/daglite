@@ -1,6 +1,6 @@
 """Integration tests for output functionality with evaluate().
 
-Tests the complete output pipeline including .save(), .checkpoint(), and OutputPlugin.
+Tests the complete output pipeline including .save() (with optional checkpoint) and OutputPlugin.
 """
 
 import tempfile
@@ -76,15 +76,15 @@ class TestOutputPluginIntegration:
             assert output == 20
             assert FileOutputStore(tmpdir).load("output_abc123", int) == 20
 
-    def test_checkpoint_creates_named_output(self):
-        """Test .checkpoint() saves output with name."""
+    def test_save_with_checkpoint_creates_named_output(self):
+        """Test .save(checkpoint=...) saves output with name."""
         with tempfile.TemporaryDirectory() as tmpdir:
 
             @task
             def train(model: str) -> str:
                 return f"trained_{model}"
 
-            result = train(model="linear").checkpoint("model_v1", "checkpoint")
+            result = train(model="linear").save("checkpoint", checkpoint="model_v1")
             output = evaluate(result, plugins=[OutputPlugin(store=tmpdir)])
 
             assert output == "trained_linear"
@@ -226,23 +226,37 @@ class TestOutputPluginStringShortcuts:
             assert output == 10
             assert FileOutputStore(tmpdir).load("output", int) == 10
 
-    def test_checkpoint_method_string_shortcut(self):
-        """Test that .checkpoint(store=...) converts string to FileOutputStore."""
+    def test_save_with_checkpoint_string_shortcut(self):
+        """Test that .save(checkpoint=..., store=...) converts string to FileOutputStore."""
         with tempfile.TemporaryDirectory() as tmpdir:
 
             @task
             def process(x: int) -> int:
                 return x * 2
 
-            result = process(x=5).checkpoint("step1", "output", store=tmpdir)
+            result = process(x=5).save("output", checkpoint="step1", store=tmpdir)
             output = evaluate(result, plugins=[OutputPlugin()])
 
             assert output == 10
             assert FileOutputStore(tmpdir).load("output", int) == 10
 
+    def test_save_with_checkpoint_true_uses_key_as_name(self):
+        """Test that .save(checkpoint=True) uses the key as checkpoint name."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+
+            @task
+            def process(x: int) -> int:
+                return x * 2
+
+            result = process(x=5).save("my_checkpoint", checkpoint=True, store=tmpdir)
+            output = evaluate(result, plugins=[OutputPlugin()])
+
+            assert output == 10
+            assert FileOutputStore(tmpdir).load("my_checkpoint", int) == 10
+
 
 class TestMapTaskFutureOutputs:
-    """Tests for MapTaskFuture with .save() and .checkpoint()."""
+    """Tests for MapTaskFuture with .save() (with optional checkpoint)."""
 
     def test_map_task_with_save(self):
         """Test MapTaskFuture.save() works correctly."""
@@ -276,15 +290,15 @@ class TestMapTaskFutureOutputs:
             # MapTask saves the last individual result
             assert FileOutputStore(tmpdir).load("results", int) == 6
 
-    def test_map_task_with_checkpoint(self):
-        """Test MapTaskFuture.checkpoint() works correctly."""
+    def test_map_task_with_save_checkpoint(self):
+        """Test MapTaskFuture.save(checkpoint=...) works correctly."""
         with tempfile.TemporaryDirectory() as tmpdir:
 
             @task
             def double(x: int) -> int:
                 return x * 2
 
-            result = double.product(x=[1, 2, 3]).checkpoint("processing", "doubled")
+            result = double.product(x=[1, 2, 3]).save("doubled", checkpoint="processing")
             output = evaluate(result, plugins=[OutputPlugin(store=tmpdir)])
 
             assert output == [2, 4, 6]
@@ -381,8 +395,8 @@ class TestOutputWithExternalTaskFutureRefs:
             assert output == 25
             assert FileOutputStore(tmpdir).load("calculation", int) == 25
 
-    def test_checkpoint_with_external_version_ref(self):
-        """Test .checkpoint() with external version task."""
+    def test_save_checkpoint_with_external_version_ref(self):
+        """Test .save(checkpoint=...) with external version task."""
         with tempfile.TemporaryDirectory() as tmpdir:
 
             @task
@@ -394,8 +408,8 @@ class TestOutputWithExternalTaskFutureRefs:
                 return data.upper()
 
             schema_version = get_schema_version()
-            result = validate(data="test").checkpoint(
-                "validation", "validated_data", schema=schema_version
+            result = validate(data="test").save(
+                "validated_data", checkpoint="validation", schema=schema_version
             )
             output = evaluate(result, plugins=[OutputPlugin(store=tmpdir)])
 

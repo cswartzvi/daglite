@@ -86,7 +86,7 @@ def task(  # noqa: D417
             Defaults to False.
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
-        store: Default output store for all .save() and .checkpoint() calls on this task.
+        store: Default output store for all `.save()` calls on this task.
             Can be an OutputStore instance or a string path (which will be converted to
             FileOutputStore). If not provided, uses OutputPlugin's default store.
 
@@ -187,7 +187,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
     """Time-to-live for cached results in seconds. If None, cached results never expire."""
 
     store: OutputStore | None = field(default=None, kw_only=True)
-    """Default output store for .save() and .checkpoint() calls on this task."""
+    """Default output store for `.save()` calls on this task."""
 
     def __post_init__(self) -> None:
         if self.retries < 0:
