@@ -418,7 +418,7 @@ def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProces
 
 async def _materialize_result(result: Any) -> Any:
     """
-    Materialize mapped tasks, coroutines, and generators in asynchronous execution context.
+    Materialize mapped tasks, and async/sync generators to concrete results.
 
     Args:
         result: The raw result from a node execution, which may be a list of mapped results, a
