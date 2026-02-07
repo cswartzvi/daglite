@@ -92,7 +92,7 @@ class TaskNode(BaseGraphNode):
             metadata=metadata,
             resolved_inputs=resolved_inputs,
             output_config=self.output_configs,
-            resolved_output_extras=resolved_output_extras,
+            output_extras=resolved_output_extras,
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
@@ -240,7 +240,7 @@ class MapTaskNode(BaseGraphNode):
             metadata=metadata,
             resolved_inputs=resolved_inputs,
             output_config=self.output_configs,
-            resolved_output_extras=resolved_output_extras,
+            output_extras=resolved_output_extras,
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
@@ -255,7 +255,7 @@ async def _run_implementation(
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
     output_config: tuple,
-    resolved_output_extras: list[dict[str, Any]],
+    output_extras: list[dict[str, Any]],
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
@@ -268,7 +268,7 @@ async def _run_implementation(
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
         output_config: Output configuration tuple for this node.
-        resolved_output_extras: Pre-resolved extras for each output config.
+        output_extras: Pre-resolved extras for each output config.
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds (None = no expiration).
@@ -305,13 +305,7 @@ async def _run_implementation(
         reset_current_task(token)
         return result
 
-    hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        output_config=output_config,
-        output_extras=resolved_output_extras,
-        reporter=reporter,
-    )
+    hook.before_node_execute(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -327,8 +321,6 @@ async def _run_implementation(
                     hook.before_node_retry(
                         metadata=metadata,
                         inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
                         reporter=reporter,
                         attempt=attempt,
                         last_error=last_error,
@@ -346,8 +338,6 @@ async def _run_implementation(
                     hook.after_node_retry(
                         metadata=metadata,
                         inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
                         reporter=reporter,
                         attempt=attempt,
                         succeeded=True,
@@ -356,8 +346,6 @@ async def _run_implementation(
                     metadata=metadata,
                     inputs=resolved_inputs,
                     result=result,
-                    output_config=output_config,
-                    output_extras=resolved_output_extras,
                     duration=duration,
                     reporter=reporter,
                 )
@@ -380,8 +368,6 @@ async def _run_implementation(
                     hook.after_node_retry(
                         metadata=metadata,
                         inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
                         reporter=reporter,
                         attempt=attempt,
                         succeeded=False,
@@ -396,8 +382,6 @@ async def _run_implementation(
         hook.on_node_error(
             metadata=metadata,
             inputs=resolved_inputs,
-            output_config=output_config,
-            output_extras=resolved_output_extras,
             reporter=reporter,
             error=last_error,
             duration=duration,
