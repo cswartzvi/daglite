@@ -78,7 +78,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         return cls()  # Create new instance with defaults
 
     @hook_impl(trylast=True)
-    def before_graph_execute(self, root_id: UUID, node_count: int, is_async: bool) -> None:
+    def before_graph_execute(self, root_id: UUID, node_count: int) -> None:
         self._progress.start()
         self._total_tasks = node_count
         self._root_task_id = self._progress.add_task("Evaluating futures", total=self._total_tasks)
@@ -157,9 +157,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
         self._progress.advance(task_id=self._root_task_id)
 
     @hook_impl(trylast=True)
-    def after_graph_execute(
-        self, root_id: UUID, result: Any, duration: float, is_async: bool
-    ) -> None:
+    def after_graph_execute(self, root_id: UUID, result: Any, duration: float) -> None:
         assert self._root_task_id is not None
         self._progress.update(task_id=self._root_task_id, completed=self._total_tasks)
         self._progress.refresh()

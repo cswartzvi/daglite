@@ -40,12 +40,12 @@ class CounterPlugin:
         self.on_error_count = 0
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         """Count before_graph_execute invocations."""
         self.before_graph_count += 1
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         """Count after_graph_execute invocations."""
         self.after_graph_count += 1
 
@@ -89,25 +89,23 @@ class ParameterCapturePlugin:
         self.node_errors = []
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         """Capture graph start parameters."""
         self.graph_starts.append(
             {
                 "root_id": root_id,
                 "node_count": node_count,
-                "is_async": is_async,
             }
         )
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         """Capture graph end parameters."""
         self.graph_ends.append(
             {
                 "root_id": root_id,
                 "result": result,
                 "duration": duration,
-                "is_async": is_async,
             }
         )
 
@@ -172,12 +170,12 @@ class OrderTrackingPlugin:
         self.call_order = []
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         """Record before_graph call."""
         self.call_order.append("before_graph")
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         """Record after_graph call."""
         self.call_order.append("after_graph")
 
@@ -226,13 +224,13 @@ class ErrorRaisingPlugin:
         self.raise_in = raise_in
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count, is_async):
+    def before_graph_execute(self, root_id, node_count):
         """Raise error if configured."""
         if self.raise_in == "before_graph":
             raise RuntimeError("Test error in before_graph_execute")
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         """Raise error if configured."""
         if self.raise_in == "after_graph":
             raise RuntimeError("Test error in after_graph_execute")

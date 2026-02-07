@@ -21,6 +21,8 @@ from daglite.graph.base import ParamInput
 
 T_co = TypeVar("T_co", covariant=True)
 
+# region Nodes
+
 
 @dataclass(frozen=True)
 class TaskNode(BaseGraphNode):
@@ -79,31 +81,13 @@ class TaskNode(BaseGraphNode):
         )
 
     @override
-    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
         metadata = replace(self.to_metadata(), key=self.name)
         resolved_output_extras = kwargs.get("resolved_output_extras", [])
 
-        return _run_sync_impl(
-            func=self.func,
-            metadata=metadata,
-            resolved_inputs=resolved_inputs,
-            output_config=self.output_configs,
-            resolved_output_extras=resolved_output_extras,
-            retries=self.retries,
-            cache_enabled=self.cache,
-            cache_ttl=self.cache_ttl,
-        )
-
-    @override
-    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from dataclasses import replace
-
-        metadata = replace(self.to_metadata(), key=self.name)
-        resolved_output_extras = kwargs.get("resolved_output_extras", [])
-
-        return await _run_async_impl(
+        return await _run_implementation(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
@@ -242,7 +226,7 @@ class MapTaskNode(BaseGraphNode):
         )
 
     @override
-    def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
         iteration_index = kwargs["iteration_index"]
@@ -251,28 +235,7 @@ class MapTaskNode(BaseGraphNode):
         node_key = f"{self.name}[{iteration_index}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
-        return _run_sync_impl(
-            func=self.func,
-            metadata=metadata,
-            resolved_inputs=resolved_inputs,
-            output_config=self.output_configs,
-            resolved_output_extras=resolved_output_extras,
-            retries=self.retries,
-            cache_enabled=self.cache,
-            cache_ttl=self.cache_ttl,
-        )
-
-    @override
-    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from dataclasses import replace
-
-        iteration_index = kwargs["iteration_index"]
-        resolved_output_extras = kwargs.get("resolved_output_extras", [])
-
-        node_key = f"{self.name}[{iteration_index}]"
-        metadata = replace(self.to_metadata(), key=node_key)
-
-        return await _run_async_impl(
+        return await _run_implementation(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
@@ -284,10 +247,10 @@ class MapTaskNode(BaseGraphNode):
         )
 
 
-# region Helpers
+# region Run
 
 
-def _run_sync_impl(
+async def _run_implementation(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
@@ -298,157 +261,7 @@ def _run_sync_impl(
     cache_ttl: int | None = None,
 ) -> Any:
     """
-    Synchronous implementation for running a node with context setup and retries.
-
-    Args:
-        func: Synchronous function to execute.
-        metadata: Metadata for the node being executed.
-        resolved_inputs: Pre-resolved parameter inputs for this node.
-        output_config: Output configuration tuple for this node.
-        resolved_output_extras: Pre-resolved extras for each output config.
-        retries: Number of times to retry on failure.
-        cache_enabled: Whether caching is enabled for this node.
-        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
-
-    Returns:
-        Result of the function execution.
-    """
-
-    token = set_current_task(metadata)
-    hook = get_plugin_manager().hook
-    reporter = get_reporter()
-
-    cached_result = hook.check_cache(
-        func=func,
-        metadata=metadata,
-        inputs=resolved_inputs,
-        cache_enabled=cache_enabled,
-        cache_ttl=cache_ttl,
-    )
-    if cached_result is not None:
-        result = (
-            cached_result["value"]
-            if isinstance(cached_result, dict) and "value" in cached_result
-            else cached_result
-        )
-        hook.on_cache_hit(
-            func=func,
-            metadata=metadata,
-            inputs=resolved_inputs,
-            result=result,
-            reporter=reporter,
-        )
-        reset_current_task(token)
-        return result
-
-    hook.before_node_execute(
-        metadata=metadata,
-        inputs=resolved_inputs,
-        output_config=output_config,
-        output_extras=resolved_output_extras,
-        reporter=reporter,
-    )
-
-    last_error: Exception | None = None
-    attempt, max_attempts = 0, retries + 1
-    start_time = time.time()
-
-    try:
-        while attempt < max_attempts:  # pragma: no branch
-            attempt += 1
-            try:
-                if attempt > 1:
-                    assert last_error is not None
-                    hook.before_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
-                        reporter=reporter,
-                        attempt=attempt,
-                        last_error=last_error,
-                    )
-
-                result = func(**resolved_inputs)
-                duration = time.time() - start_time
-
-                if attempt > 1:
-                    hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
-                        reporter=reporter,
-                        attempt=attempt,
-                        succeeded=True,
-                    )
-                hook.after_node_execute(
-                    metadata=metadata,
-                    inputs=resolved_inputs,
-                    result=result,
-                    output_config=output_config,
-                    output_extras=resolved_output_extras,
-                    duration=duration,
-                    reporter=reporter,
-                )
-                hook.update_cache(
-                    func=func,
-                    metadata=metadata,
-                    inputs=resolved_inputs,
-                    result=result,
-                    cache_enabled=cache_enabled,
-                    cache_ttl=cache_ttl,
-                )
-
-                return result
-
-            except Exception as error:
-                last_error = error
-
-                if attempt > 1:
-                    hook.after_node_retry(
-                        metadata=metadata,
-                        inputs=resolved_inputs,
-                        output_config=output_config,
-                        output_extras=resolved_output_extras,
-                        reporter=reporter,
-                        attempt=attempt,
-                        succeeded=False,
-                    )
-
-                if attempt >= max_attempts:
-                    break  # No more retries left
-
-        # All attempts exhausted
-        duration = time.time() - start_time
-        assert last_error is not None
-        hook.on_node_error(
-            metadata=metadata,
-            inputs=resolved_inputs,
-            output_config=output_config,
-            output_extras=resolved_output_extras,
-            reporter=reporter,
-            error=last_error,
-            duration=duration,
-        )
-        raise last_error
-
-    finally:
-        reset_current_task(token)
-
-
-async def _run_async_impl(
-    func: Callable[..., Any],
-    metadata: GraphMetadata,
-    resolved_inputs: dict[str, Any],
-    output_config: tuple,
-    resolved_output_extras: list[dict[str, Any]],
-    retries: int = 0,
-    cache_enabled: bool = False,
-    cache_ttl: int | None = None,
-) -> Any:
-    """
-    Async implementation for running a node with context setup and retries.
+    Private implementation for running a node with context setup and retries.
 
     Args:
         func: Async function to execute.
@@ -468,6 +281,7 @@ async def _run_async_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
+    # Check cache before execution and return cached result if available
     cached_result = hook.check_cache(
         func=func,
         metadata=metadata,
@@ -504,6 +318,7 @@ async def _run_async_impl(
     start_time = time.time()
 
     try:
+        # Main execution loop with retry handling
         while attempt < max_attempts:  # pragma: no branch
             attempt += 1
             try:
@@ -519,10 +334,12 @@ async def _run_async_impl(
                         last_error=last_error,
                     )
 
+                # Synchronous/asynchronous function handling
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
                 else:
                     result = func(**resolved_inputs)
+
                 duration = time.time() - start_time
 
                 if attempt > 1:
@@ -556,6 +373,7 @@ async def _run_async_impl(
                 return result
 
             except Exception as error:
+                # Determine if a retry is available
                 last_error = error
 
                 if attempt > 1:

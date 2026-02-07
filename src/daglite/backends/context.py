@@ -1,4 +1,4 @@
-"""Execution context for worker threads/processes."""
+"""Execution context utilities for task workers."""
 
 from contextvars import ContextVar
 from contextvars import Token
@@ -54,32 +54,14 @@ def get_reporter() -> EventReporter | None:
     Get event reporter for current execution context.
 
     Returns:
-        EventReporter instance if set, None otherwise (e.g., for SequentialBackend).
+        EventReporter instance if set, None otherwise (e.g., for InlineBackend).
     """
     return _event_reporter.get()
 
 
-def reset_execution_context(  # pragma: no cover
-    pm_token: Token[PluginManager | None],
-    reporter_token: Token[EventReporter | None],
-) -> None:
+def reset_execution_context() -> None:  # pragma: no cover
     """
-    Reset execution context to previous state.
-
-    Useful for cleaning up after a worker is done executing tasks. Typically called
-    in a finally block to ensure context is restored.
-
-    Args:
-        pm_token: Token returned by set_execution_context() for plugin manager.
-        reporter_token: Token returned by set_execution_context() for event reporter.
-    """
-    _plugin_manager.reset(pm_token)
-    _event_reporter.reset(reporter_token)
-
-
-def clear_execution_context() -> None:  # pragma: no cover
-    """
-    Clear execution context.
+    Resets the execution context by clearing all context variables.
 
     Useful for testing or explicit cleanup. Not typically needed in production
     as context vars are thread/task-local.

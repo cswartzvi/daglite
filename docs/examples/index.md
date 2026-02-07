@@ -9,7 +9,7 @@ Real-world examples demonstrating how to use Daglite for common computational wo
 Build data extraction, transformation, and loading pipelines with Pandas.
 
 **Learn about:**
-- Sequential task chaining
+- Inline task chaining
 - Working with DataFrames
 - Error handling in pipelines
 - Async execution for I/O-bound tasks

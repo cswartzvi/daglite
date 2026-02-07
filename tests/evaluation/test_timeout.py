@@ -161,10 +161,10 @@ class TestAsyncTimeout:
         # Should only attempt once - timeouts are not retried
         assert len(attempts) == 1
 
-    def test_async_timeout_with_sequential_backend(self) -> None:
-        """Async tasks can use timeout even with SequentialBackend."""
+    def test_async_timeout_with_Inline_backend(self) -> None:
+        """Async tasks can use timeout even with InlineBackend."""
 
-        @task(timeout=0.05)  # No backend_name = SequentialBackend (default)
+        @task(timeout=0.05)  # No backend_name = InlineBackend (default)
         async def slow_task(x: int) -> int:
             await asyncio.sleep(0.2)  # 4x timeout value for CI stability
             return x * 2
@@ -176,24 +176,30 @@ class TestAsyncTimeout:
             asyncio.run(run())
 
 
-class TestSequentialBackendTimeout:
-    """Tests for SequentialBackend timeout handling with sync tasks."""
+class TestInlineBackendTimeout:
+    """Tests for InlineBackend timeout handling with sync tasks."""
 
-    def test_sequential_backend_sync_timeout_enforced(self) -> None:
-        """SequentialBackend enforces timeout on sync tasks and raises TimeoutError."""
+    def test_Inline_backend_sync_timeout(self) -> None:
+        """Inline backend raises TimeoutError for sync tasks that exceed timeout.
 
-        @task(timeout=0.05)  # Default backend is SequentialBackend
+        Note that the task will still run to completion on the worker thread, but the timeout will
+        be enforced and a TimeoutError will be raised in the main thread after the timeout duration
+        has elapsed.
+        """
+
+        @task(timeout=0.05)  # Default backend is InlineBackend
         def slow_task(x: int) -> int:
-            time.sleep(0.2)  # 4x timeout value for CI stability
+            time.sleep(0.2)  # Exceeds timeout, but can't be interrupted
             return x * 2
 
+        # Timeout is now enforced (task runs in thread pool)
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             evaluate(slow_task(x=5))
 
-    def test_sequential_backend_sync_timeout_success(self) -> None:
-        """SequentialBackend allows sync tasks that complete within timeout."""
+    def test_Inline_backend_sync_timeout_success(self) -> None:
+        """InlineBackend allows sync tasks that complete within timeout."""
 
-        @task(timeout=5.0)  # Default backend is SequentialBackend
+        @task(timeout=5.0)  # Default backend is InlineBackend
         def fast_task(x: int) -> int:
             # No sleep - completes immediately, well within timeout
             return x * 2

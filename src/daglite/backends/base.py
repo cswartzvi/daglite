@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import abc
-from concurrent.futures import Future as ConcurrentFuture
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
 
 from pluggy import PluginManager
 from typing_extensions import final
@@ -81,7 +80,7 @@ class Backend(abc.ABC):
         inputs: dict[str, Any],
         timeout: float | None = None,
         **kwargs: Any,
-    ) -> ConcurrentFuture[Any]:
+    ) -> Awaitable[Any]:
         """
         Submit a callable for execution in the backend.
 
@@ -92,6 +91,6 @@ class Backend(abc.ABC):
             **kwargs: Additional backend-specific execution parameters
 
         Returns:
-            Future representing the execution
+            An awaitable that resolves to the result of the callable.
         """
         raise NotImplementedError()

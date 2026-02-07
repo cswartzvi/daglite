@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import time
 from collections.abc import AsyncGenerator
 from collections.abc import AsyncIterator
@@ -11,7 +10,6 @@ from collections.abc import Coroutine
 from collections.abc import Generator
 from collections.abc import Iterator
 from dataclasses import dataclass
-from dataclasses import field
 from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from uuid import UUID
@@ -21,18 +19,14 @@ from pluggy import PluginManager
 
 if TYPE_CHECKING:
     from daglite.plugins.events import EventProcessor
-    from daglite.plugins.events import EventRegistry
 else:
     EventProcessor = Any
-    EventRegistry = Any
 
 
 from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
 from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import GraphBuilder
 from daglite.graph.builder import build_graph
-from daglite.tasks import BaseTaskFuture
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -41,12 +35,51 @@ R = TypeVar("R")
 T = TypeVar("T")
 
 
-# region API
+# region Evaluation
+
+
+# NOTE: Due to limitations in Python's type system, we need to repeat all overloads for both
+# evaluate_sync() and evaluate_async(). Changes to overloads in one function should be mirrored in
+# the other.
+
+
+# Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload
+def evaluate(
+    future: TaskFuture[CoroutineType[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
 
 
 @overload
 def evaluate(
-    expr: TaskFuture[Generator[T, Any, Any]],
+    future: TaskFuture[Coroutine[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
+
+
+@overload
+def evaluate(
+    future: TaskFuture[AsyncGenerator[T, Any]],
+    *,
+    plugins: list[Any] | None = None,
+) -> list[T]: ...
+
+
+@overload
+async def evaluate(
+    future: TaskFuture[AsyncIterator[T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> list[T]: ...
+
+
+# Overloads for Generators and iterators are materialized to lists
+@overload
+def evaluate(
+    future: TaskFuture[Generator[T, Any, Any]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -54,7 +87,7 @@ def evaluate(
 
 @overload
 def evaluate(
-    expr: TaskFuture[Iterator[T]],
+    future: TaskFuture[Iterator[T]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -63,45 +96,38 @@ def evaluate(
 # General overloads
 @overload
 def evaluate(
-    expr: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    expr: MapTaskFuture[T],
+    future: MapTaskFuture[T],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
+@overload
 def evaluate(
-    expr: BaseTaskFuture[Any],
+    future: TaskFuture[T],
     *,
     plugins: list[Any] | None = None,
-) -> Any:
+) -> T: ...
+
+
+def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
-    Evaluate the results of a task future via synchronous execution.
+    Evaluate the results of a task future synchronously.
 
-    Sibling tasks (tasks at the same level of the DAG) are submitted concurrently when using
-    non-sequential backends (e.g., `threading`, `processes`). This enables parallel execution
-    without requiring async/await syntax.
-
-    **Important**: Async tasks (defined with `async def`) cannot be executed with `evaluate()`.
-    Use `evaluate_async()` for async tasks.
+    **NOTE**: This is a convenience wrapper around `evaluate_async()` that creates an event loop
+    internally via `asyncio.run()`. Because of this, it **cannot** be called from within an async
+    context (e.g., inside an `async def` or running event loop). In those cases, use
+    `evaluate_async()` directly.
 
     Args:
-        expr: Task graph object to evaluate, typically a `TaskFuture` or `MapTaskFuture`.
-        plugins: Optional list of plugin implementations for this execution only.
-            These are combined with any globally registered plugins.
+        future: Task future that will be evaluated.
+        plugins: Additional plugins to included with globally registered plugins.
 
     Returns:
         The result of evaluating the root task
 
     Raises:
-        ValueError: If async tasks are used with synchronous evaluation
+        RuntimeError: If called from within an async context with a running event loop
 
     Examples:
         >>> from daglite import task, evaluate
@@ -130,14 +156,21 @@ def evaluate(
         >>> evaluate(combine(a=t1, b=t2))  # t1 and t2 run in parallel
         6
     """
-    engine = Engine(plugins=plugins)
-    return engine.evaluate(expr)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # No loop running, safe to proceed
+    else:
+        raise RuntimeError(
+            "Cannot call evaluate() from an async context. Use evaluate_async() instead."
+        )
+    return asyncio.run(evaluate_async(future, plugins=plugins))
 
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload  # some type checkers need this overload for compatibility
+@overload
 async def evaluate_async(
-    expr: TaskFuture[CoroutineType[Any, Any, T]],
+    future: TaskFuture[CoroutineType[Any, Any, T]],
     *,
     plugins: list[Any] | None = None,
 ) -> T: ...
@@ -145,7 +178,7 @@ async def evaluate_async(
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Coroutine[Any, Any, T]],
+    future: TaskFuture[Coroutine[Any, Any, T]],
     *,
     plugins: list[Any] | None = None,
 ) -> T: ...
@@ -153,7 +186,7 @@ async def evaluate_async(
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[AsyncGenerator[T, Any]],
+    future: TaskFuture[AsyncGenerator[T, Any]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -161,7 +194,16 @@ async def evaluate_async(
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[AsyncIterator[T]],
+    future: TaskFuture[AsyncIterator[T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> list[T]: ...
+
+
+# Overloads for Generators and iterators are materialized to lists
+@overload
+async def evaluate_async(
+    future: TaskFuture[Generator[T, Any, Any]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -169,15 +211,7 @@ async def evaluate_async(
 
 @overload
 async def evaluate_async(
-    expr: TaskFuture[Generator[T, Any, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    expr: TaskFuture[Iterator[T]],
+    future: TaskFuture[Iterator[T]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -186,51 +220,36 @@ async def evaluate_async(
 # General overloads
 @overload
 async def evaluate_async(
-    expr: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    expr: MapTaskFuture[T],
+    future: MapTaskFuture[T],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
+@overload
 async def evaluate_async(
-    expr: BaseTaskFuture[Any],
+    future: TaskFuture[T],
     *,
     plugins: list[Any] | None = None,
-) -> Any:
+) -> T: ...
+
+
+async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future via asynchronous execution.
 
-    This function is designed for async contexts and async tasks. Sibling tasks execute
-    concurrently using asyncio. Use this when:
-    - Your tasks are async (defined with `async def`)
-    - You need to integrate with existing async code
-    - You want to avoid blocking the event loop
-
-    For synchronous tasks with parallel execution, `evaluate()` with a threading/processes
-    backend is often simpler.
-
-    **Important**: Synchronous tasks cannot be executed with the `sequential` backend in
-    `evaluate_async()`. Use `threading` or `processes` backend for parallel execution, or
-    `evaluate()` for synchronous evaluation.
+    The future to be evaluated can contain any combination of sync and async task futures, and the
+    engine will execute them in an async-first manner. This means that sibling tasks (tasks nodes
+    at the same level of the DAG) can be executed concurrently if they are defined with an async
+    coroutine function and/or if their backend supports async execution (e.g., threading or
+    process). Tasks defined with synchronous functions are executed in a blocking manner.
 
     Args:
-        expr: Task graph to evaluate, typically a `TaskFuture` or `MapTaskFuture`.
-        plugins: Optional list of plugin implementations for this execution only. These are
-            combined with any globally registered plugins.
+        future: Task future that will be evaluated.
+        plugins: Additional plugins to included with globally registered plugins.
 
     Returns:
         The result of evaluating the root task
-
-    Raises:
-        ValueError: If synchronous tasks are used with the sequential backend
 
     Examples:
         >>> import asyncio
@@ -250,409 +269,174 @@ async def evaluate_async(
         >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
         3
     """
-    engine = Engine(plugins=plugins)
-    return await engine.evaluate_async(expr)
+    from daglite.backends.context import get_current_task
 
+    if get_current_task():
+        raise RuntimeError("Cannot call evaluate()/evaluate_async() from within another task.")
 
-# region Engine
+    graph_id = uuid4()
+    nodes = build_graph(future)
+    state = _ExecutionState.from_nodes(nodes)
 
+    plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
+    backend_manager = BackendManager(plugin_manager, event_processor)
 
-@dataclass
-class Engine:
-    """
-    Engine to evaluate a `GraphBuilder` (or more commonly, a `TaskFuture`).
+    hook_ids = {"graph_id": graph_id, "root_id": future.id}
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(nodes))
 
-    The Engine compiles a `GraphBuilder` into a `GraphNode` dict, then executes it in topological
-    order in either synchronous or asynchronous mode. Individual nodes are executed via backends
-    managed by a `BackendManager`.
+    start_time = time.perf_counter()
+    try:
+        backend_manager.start()
+        event_processor.start()
 
-    Sibling tasks (tasks at the same level of the DAG) execute concurrently in both sync and async
-    modes when using appropriate backends:
-    - **Sync mode**: Siblings using `threading` or `processes` backends run in parallel
-    - **Async mode**: All sibling tasks run concurrently via asyncio
+        nodes_to_process = state.get_source_nodes()
 
-    **Backend compatibility**:
-    - Async mode (`evaluate_async()`): Sequential backend cannot be used with synchronous tasks;
-      use threading/processes backend instead, or use sync mode (`evaluate()`).
-    """
+        while nodes_to_process:
+            # Submit all ready siblings
+            tasks: dict[asyncio.Task[Any], UUID] = {
+                asyncio.create_task(_submit_node(state.nodes[nid], state, backend_manager)): nid
+                for nid in nodes_to_process
+            }
 
-    plugins: list[Any] | None = None
-    """Optional list of plugins implementations to be used during execution."""
+            # Wait for completion, returning early on first exception for fail-fast
+            done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_EXCEPTION)
 
-    _registry: EventRegistry | None = field(default=None, init=False, repr=False)
-    _backend_manager: BackendManager | None = field(default=None, init=False, repr=False)
-    _plugin_manager: PluginManager | None = field(default=None, init=False, repr=False)
-    _event_processor: EventProcessor | None = field(default=None, init=False, repr=False)
-
-    def evaluate(self, root: GraphBuilder) -> Any:
-        """
-        Builds and evaluates a graph using synchronous execution.
-
-        Args:
-            root: Root `GraphBuilder` to evaluate, typically a `TaskFuture`.
-
-        Returns:
-            The result of evaluating the root node.
-        """
-        nodes = build_graph(root)
-        return self._run_sequential(nodes, root.id)
-
-    async def evaluate_async(self, root: GraphBuilder) -> Any:
-        """
-        Builds and evaluates a graph using asynchronous execution.
-
-        Args:
-            root: Root `GraphBuilder` to evaluate, typically a `TaskFuture`.
-
-        Returns:
-            The result of evaluating the root node.
-        """
-        nodes = build_graph(root)
-        return await self._run_async(nodes, root.id)
-
-    def _setup_plugin_system(self) -> tuple[PluginManager, EventProcessor]:
-        """Sets up plugin system (manager, processor, registry) for this engine."""
-        from daglite.plugins.events import EventProcessor
-        from daglite.plugins.events import EventRegistry
-        from daglite.plugins.manager import build_plugin_manager
-
-        if self._registry is None:  # pragma: no branch
-            self._registry = EventRegistry()
-
-        if self._plugin_manager is None:  # pragma: no branch
-            self._plugin_manager = build_plugin_manager(self.plugins or [], self._registry)
-
-        if self._event_processor is None:  # pragma: no branch
-            self._event_processor = EventProcessor(self._registry)
-
-        return self._plugin_manager, self._event_processor
-
-    def _validate_sync_compatibility(self, nodes: dict[UUID, BaseGraphNode]) -> None:
-        """
-        Validate that nodes are compatible with synchronous execution.
-
-        Raises ValueError if any node has an async task function.
-        """
-        from daglite.graph.nodes import MapTaskNode
-        from daglite.graph.nodes import TaskNode
-
-        for node in nodes.values():
-            if isinstance(node, (TaskNode, MapTaskNode)):  # pragma: no branch
-                if inspect.iscoroutinefunction(node.func):  # pragma: no branch
-                    raise ValueError(
-                        f"Cannot execute async task '{node.name}' with evaluate(). "
-                        "Use evaluate_async() for async tasks."
-                    )
-
-    def _validate_async_compatibility(self, nodes: dict[UUID, BaseGraphNode]) -> None:
-        """
-        Validate that nodes are compatible with async execution.
-
-        Raises ValueError if any node uses sequential backend with a synchronous task function.
-        """
-        from daglite.graph.nodes import MapTaskNode
-        from daglite.graph.nodes import TaskNode
-
-        for node in nodes.values():
-            if node.backend_name == "sequential":
-                if isinstance(node, (TaskNode, MapTaskNode)):  # pragma: no branch
-                    if not inspect.iscoroutinefunction(node.func):  # pragma: no branch
-                        raise ValueError(
-                            f"Sequential backend cannot execute synchronous task '{node.name}' "
-                            "with evaluate_async(). Use threading/processes backend for parallel "
-                            "execution, or evaluate() for sync tasks."
-                        )
-
-    def _run_sequential(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
-        """Sequential blocking execution."""
-        from concurrent.futures import wait
-
-        # Validate that async tasks are not used with sync evaluation
-        self._validate_sync_compatibility(nodes)
-
-        graph_id = uuid4()
-        plugin_manager, event_processor = self._setup_plugin_system()
-        backend_manager = BackendManager(plugin_manager, event_processor)
-
-        plugin_manager.hook.before_graph_execute(
-            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=False
-        )
-
-        start_time = time.perf_counter()
-        try:
-            backend_manager.start()
-            event_processor.start()
-            state = _ExecutionState.from_nodes(nodes)
-            ready = state.get_ready()
-
-            while ready:
-                # Submit all ready siblings (non-blocking)
-                wrappers_map: dict[UUID, _NodeFutureWrapper | _MapFutureWrapper] = {
-                    nid: self._submit_node_sync(state.nodes[nid], state, backend_manager)
-                    for nid in ready
-                }
-
-                # Wait for all ready siblings to complete (blocking)
-                all_futures = []
-                for wrapper in wrappers_map.values():
-                    if isinstance(wrapper, _MapFutureWrapper):
-                        all_futures.extend(wrapper.futures)
-                    else:
-                        all_futures.append(wrapper.future)
-                wait(all_futures)
-
-                # Collect results and mark complete
-                ready = []
-                for nid, wrapper in wrappers_map.items():
-                    result = self._collect_result_sync(wrapper)
-                    ready.extend(state.mark_complete(nid, result))
-
-            state.check_complete()
-            result = state.completed_nodes[root_id]
-            duration = time.perf_counter() - start_time
-
-            event_processor.flush()  # Drain event queue before after_graph_execute
-            plugin_manager.hook.after_graph_execute(
-                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=False
-            )
-
-            return result
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            plugin_manager.hook.on_graph_error(
-                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=False
-            )
-            raise
-        finally:
-            event_processor.stop()
-            backend_manager.stop()
-
-    async def _run_async(self, nodes: dict[UUID, BaseGraphNode], root_id: UUID) -> Any:
-        """Async execution with sibling parallelism."""
-        self._validate_async_compatibility(nodes)
-
-        graph_id = uuid4()
-        plugin_manager, event_processor = self._setup_plugin_system()
-        backend_manager = BackendManager(plugin_manager, event_processor)
-
-        plugin_manager.hook.before_graph_execute(
-            graph_id=graph_id, root_id=root_id, node_count=len(nodes), is_async=True
-        )
-
-        start_time = time.perf_counter()
-        try:
-            backend_manager.start()
-            event_processor.start()
-            state = _ExecutionState.from_nodes(nodes)
-            ready = state.get_ready()
-
-            while ready:
-                # Submit all ready siblings
-                tasks: dict[asyncio.Task[Any], UUID] = {
-                    asyncio.create_task(
-                        self._execute_node_async(state.nodes[nid], state, backend_manager)
-                    ): nid
-                    for nid in ready
-                }
-
-                # Wait for any sibling to complete
-                done, _ = await asyncio.wait(tasks.keys())
-
-                # Collect results and mark complete
-                ready = []
+            # Collect results and mark complete; cancel pending tasks on exception
+            nodes_to_process = []
+            try:
                 for task in done:
                     nid = tasks[task]
-                    try:
-                        result = task.result()
-                        ready.extend(state.mark_complete(nid, result))
-                    except Exception:
-                        # Cancel all remaining tasks before propagating
-                        for t in tasks.keys():
-                            if not t.done():  # pragma: no cover
-                                # Defensive: Cancels concurrent siblings on error. Requires
-                                # contrived timing to test where one task fails while others still
-                                # running
-                                t.cancel()
-                        await asyncio.gather(*tasks.keys(), return_exceptions=True)
-                        raise
+                    result = task.result()
+                    nodes_to_process.extend(state.mark_complete(nid, result))
+            except Exception:
+                for t in pending:  # pragma: no cover
+                    t.cancel()
+                await asyncio.gather(*tasks.keys(), return_exceptions=True)
+                raise
 
-            state.check_complete()
-            result = state.completed_nodes[root_id]
-            duration = time.perf_counter() - start_time
+        state.check_complete()
+        result = state.completed_nodes[future.id]
+        duration = time.perf_counter() - start_time
 
-            event_processor.flush()  # Drain event queue before after_graph_execute
-            plugin_manager.hook.after_graph_execute(
-                graph_id=graph_id, root_id=root_id, result=result, duration=duration, is_async=True
-            )
+        event_processor.flush()  # Drain event queue before after_graph_execute
+        plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)
 
-            return result
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            plugin_manager.hook.on_graph_error(
-                graph_id=graph_id, root_id=root_id, error=e, duration=duration, is_async=True
-            )
-            raise
-        finally:
-            event_processor.stop()
-            backend_manager.stop()
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        plugin_manager.hook.on_graph_error(**hook_ids, error=e, duration=duration)
+        raise
 
-    def _submit_node_sync(
-        self, node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
-    ) -> _NodeFutureWrapper | _MapFutureWrapper:
-        """
-        Submit a node for execution without blocking.
+    finally:
+        event_processor.stop()
+        backend_manager.stop()
 
-        Returns:
-            Wrapper containing future(s) and context for later collection.
-        """
-        from daglite.graph.nodes import MapTaskNode
-
-        backend = backend_manager.get(node.backend_name)
-        resolved_inputs = node.resolve_inputs(state.completed_nodes)
-        resolved_output_extras = node.resolve_output_extras(state.completed_nodes)
-
-        if isinstance(node, MapTaskNode):
-            # For mapped nodes, submit each iteration separately
-            mapped_inputs = node.build_iteration_calls(resolved_inputs)
-            start_time = time.perf_counter()
-
-            # Hook fires before submission
-            backend.plugin_manager.hook.before_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=mapped_inputs
-            )
-
-            # Submit all iterations (non-blocking)
-            futures = []
-            for idx, call in enumerate(mapped_inputs):
-                kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
-                future = backend.submit(node.run, call, node.timeout, **kwargs)
-                futures.append(future)
-
-            return _MapFutureWrapper(
-                futures=futures,
-                node=node,
-                calls=mapped_inputs,
-                start_time=start_time,
-                backend=backend,
-            )
-        else:
-            future = backend.submit(
-                node.run,
-                resolved_inputs,
-                node.timeout,
-                resolved_output_extras=resolved_output_extras,
-            )
-            return _NodeFutureWrapper(future=future, node=node)
-
-    def _collect_result_sync(self, wrapper: _NodeFutureWrapper | _MapFutureWrapper) -> Any:
-        """
-        Wait for node completion, fire after hooks, and materialize result.
-
-        Returns:
-            The node's execution result (single value or list).
-        """
-        if isinstance(wrapper, _MapFutureWrapper):
-            # Wait for all iterations (blocking here)
-            results = [future.result() for future in wrapper.futures]
-            duration = time.perf_counter() - wrapper.start_time
-
-            # Hook fires after all iterations complete
-            wrapper.backend.plugin_manager.hook.after_mapped_node_execute(
-                metadata=wrapper.node.to_metadata(),
-                inputs_list=wrapper.calls,
-                results=results,
-                duration=duration,
-            )
-
-            return _materialize_sync(results)
-        else:
-            result = wrapper.future.result()
-            return _materialize_sync(result)
-
-    async def _execute_node_async(
-        self, node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
-    ) -> Any:
-        """
-        Execute a node asynchronously and return its result.
-
-        Wraps backend futures as asyncio-compatible futures to enable concurrent
-        execution of independent nodes.
-
-        Returns:
-            The node's execution result (single value or list)
-        """
-        from asyncio import wrap_future
-
-        from daglite.graph.nodes import MapTaskNode
-
-        backend = backend_manager.get(node.backend_name)
-        completed_nodes = state.completed_nodes
-        resolved_inputs = node.resolve_inputs(completed_nodes)
-        resolved_output_extras = node.resolve_output_extras(completed_nodes)
-
-        # Determine how to submit to backend based on node type
-        if isinstance(node, MapTaskNode):
-            # For mapped nodes, submit each iteration separately
-            futures = []
-            mapped_inputs = node.build_iteration_calls(resolved_inputs)
-
-            start_time = time.perf_counter()
-            backend.plugin_manager.hook.before_mapped_node_execute(
-                metadata=node.to_metadata(), inputs_list=mapped_inputs
-            )
-
-            for idx, call in enumerate(mapped_inputs):
-                kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
-                future = wrap_future(
-                    backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
-                )
-                futures.append(future)
-
-            result = await asyncio.gather(*futures)
-            duration = time.perf_counter() - start_time
-
-            backend.plugin_manager.hook.after_mapped_node_execute(
-                metadata=node.to_metadata(),
-                inputs_list=mapped_inputs,
-                results=result,
-                duration=duration,
-            )
-        else:
-            future = wrap_future(
-                backend.submit(
-                    node.run_async,
-                    resolved_inputs,
-                    timeout=node.timeout,
-                    resolved_output_extras=resolved_output_extras,
-                )
-            )
-            result = await future
-
-        result = await _materialize_async(result)
-
-        return result
+    return result
 
 
-# region Wrappers
+async def _submit_node(
+    node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
+) -> Any:
+    """
+    Submits a node for execution on its designated backend and returns the result.
+
+    Args:
+        node: The graph node to be executed.
+        state: Current execution state, used to resolve inputs and track completed nodes.
+        backend_manager: Manager for submitting tasks to backends.
+
+    Returns:
+        The result of executing the node, with mapped tasks and generators materialized to lists.
+    """
+
+    from daglite.graph.nodes import MapTaskNode
+
+    backend = backend_manager.get(node.backend_name)
+    plugin_manager = backend.plugin_manager
+    completed_nodes = state.completed_nodes
+    resolved_inputs = node.resolve_inputs(completed_nodes)
+    resolved_output_extras = node.resolve_output_extras(completed_nodes)
+
+    if isinstance(node, MapTaskNode):
+        # Submit multiple calls for map tasks, one per iteration, and gather results
+        futures = []
+        mapped_inputs = node.build_iteration_calls(resolved_inputs)
+
+        start_time = time.perf_counter()
+        plugin_manager.hook.before_mapped_node_execute(
+            metadata=node.to_metadata(), inputs_list=mapped_inputs
+        )
+
+        for idx, call in enumerate(mapped_inputs):
+            kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
+            future = backend.submit(node.run, call, timeout=node.timeout, **kwargs)
+            futures.append(future)
+
+        result = await asyncio.gather(*futures)
+        duration = time.perf_counter() - start_time
+
+        plugin_manager.hook.after_mapped_node_execute(
+            metadata=node.to_metadata(),
+            inputs_list=mapped_inputs,
+            results=result,
+            duration=duration,
+        )
+    else:
+        # Submit a single call for regular tasks
+        future = backend.submit(
+            node.run,
+            resolved_inputs,
+            timeout=node.timeout,
+            resolved_output_extras=resolved_output_extras,
+        )
+        result = await future
+
+    result = await _materialize_result(result)
+
+    return result
 
 
-@dataclass
-class _NodeFutureWrapper:
-    """Wrapper for a single node's backend future."""
+def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProcessor]:
+    """
+    Sets up plugin system (manager, processor, registry) for this engine.
 
-    future: Any  # concurrent.futures.Future
-    node: BaseGraphNode
+    Args:
+        plugins: List of plugin implementations to use for this execution. These are combined
+            with any globally registered plugins.
+
+    Returns:
+        Tuple of (PluginManager, EventProcessor) initialized with the appropriate registry.
+    """
+    from daglite.plugins.events import EventProcessor
+    from daglite.plugins.events import EventRegistry
+    from daglite.plugins.manager import build_plugin_manager
+
+    registry = EventRegistry()
+    plugin_manager = build_plugin_manager(plugins or [], registry)
+    event_processor = EventProcessor(registry)
+    return plugin_manager, event_processor
 
 
-@dataclass
-class _MapFutureWrapper:
-    """Wrapper for a mapped node's multiple backend futures."""
+async def _materialize_result(result: Any) -> Any:
+    """
+    Materialize mapped tasks, and async/sync generators to concrete results.
 
-    futures: list[Any]  # list[concurrent.futures.Future]
-    node: BaseGraphNode  # MapTaskNode
-    calls: list[dict[str, Any]]
-    start_time: float
-    backend: Any  # Backend instance
+    Args:
+        result: The raw result from a node execution, which may be a list of mapped results, a
+            function, coroutine, or a sync/async generator.
+    """
+    if isinstance(result, list):  # From map tasks
+        return await asyncio.gather(*[_materialize_result(item) for item in result])
+
+    if isinstance(result, (AsyncGenerator, AsyncIterator)):
+        items = []
+        async for item in result:
+            items.append(item)
+        return items
+
+    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
+        return list(result)
+
+    return result
 
 
 # region State
@@ -703,10 +487,15 @@ class _ExecutionState:
                 indegree[nid] += 1
                 successors[dep].add(nid)
 
-        return cls(nodes=nodes, indegree=indegree, successors=dict(successors), completed_nodes={})
+        return cls(
+            nodes=nodes,
+            indegree=indegree,
+            successors=dict(successors),
+            completed_nodes={},
+        )
 
-    def get_ready(self) -> list[UUID]:
-        """Get all nodes with no remaining dependencies."""
+    def get_source_nodes(self) -> list[UUID]:
+        """Gets all nodes with no remaining dependencies (source nodes)."""
         return [nid for nid, deg in self.indegree.items() if deg == 0]
 
     def mark_complete(self, nid: UUID, result: Any) -> list[UUID]:
@@ -746,39 +535,3 @@ class _ExecutionState:
                 f"dependencies and cannot execute. This indicates a circular dependency. "
                 f"Remaining node IDs: {remaining[:5]}{'...' if len(remaining) > 5 else ''}"
             )
-
-
-# region Helpers
-
-
-def _materialize_sync(result: Any) -> Any:
-    """
-    Materialize generators in synchronous execution context.
-
-    Note: Async results (coroutines, async generators) should never reach this function
-    due to early validation in _validate_sync_compatibility(). The checks remain as
-    defensive code.
-    """
-    if isinstance(result, list):  # From map tasks
-        return [_materialize_sync(item) for item in result]
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-    return result
-
-
-async def _materialize_async(result: Any) -> Any:
-    """Materialize coroutines and generators in asynchronous execution context."""
-    if isinstance(result, list):  # From map tasks
-        return await asyncio.gather(*[_materialize_async(item) for item in result])
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-        items = []
-        async for item in result:
-            items.append(item)
-        return items
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-
-    return result

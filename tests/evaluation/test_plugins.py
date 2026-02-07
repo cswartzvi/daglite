@@ -182,12 +182,10 @@ class TestHookParameters:
         # Verify graph-level hooks
         assert len(capture.graph_starts) == 1
         assert capture.graph_starts[0]["node_count"] == 1
-        assert capture.graph_starts[0]["is_async"] is False
 
         assert len(capture.graph_ends) == 1
         assert capture.graph_ends[0]["result"] == 5
         assert capture.graph_ends[0]["duration"] >= 0
-        assert capture.graph_ends[0]["is_async"] is False
 
         # Verify node-level hooks
         assert len(capture.node_executions) == 1
@@ -244,7 +242,7 @@ class TestGlobalPluginRegistration:
                 self.called = False
 
             @hook_impl
-            def before_graph_execute(self, root_id, node_count, is_async):
+            def before_graph_execute(self, root_id, node_count):
                 self.called = True
 
         custom_hook = CustomHook()

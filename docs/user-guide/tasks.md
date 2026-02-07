@@ -37,7 +37,7 @@ def add(x: int, y: int) -> int:
 
 - `name` - Custom task name (default: function name)
 - `description` - Task description (default: docstring)
-- `backend` - Execution backend: `"sequential"`, `"threading"`, or `"multiprocessing"`
+- `backend` - Execution backend: `"inline"`, `"threading"`, or `"multiprocessing"`
 
 ---
 
@@ -159,12 +159,12 @@ result = evaluate(doubled)  # 84
 
 ## Execution Backends
 
-### Sequential (Default)
+### Inline (Default)
 
 Tasks run one at a time in the main thread:
 
 ```python
-@task  # backend="sequential" by default
+@task  # backend="inline" by default
 def task1() -> int:
     return 42
 ```

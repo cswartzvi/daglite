@@ -28,8 +28,8 @@ from daglite_cli.utils import parse_param_value
 @click.option(
     "--backend",
     "-b",
-    default="sequential",
-    help="Backend to use for execution (e.g., 'sequential', 'threading').",
+    default="inline",
+    help="Backend to use for execution (e.g., 'inline', 'threading').",
 )
 @click.option(
     "--async",
@@ -166,7 +166,7 @@ def run(
             # Use async execution with sibling parallelism
             result = asyncio.run(evaluate_async(graph))
         else:
-            # Sync sequential execution
+            # Sync Inline execution
             result = evaluate(graph)
         click.echo("\nPipeline completed successfully!")
         click.echo(f"Result: {result}")

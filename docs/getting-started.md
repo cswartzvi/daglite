@@ -290,7 +290,7 @@ Now that you understand the basics:
 
 ## Common Patterns
 
-### Sequential Pipeline
+### Inline Pipeline
 
 ```python
 result = (

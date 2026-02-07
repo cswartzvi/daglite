@@ -14,7 +14,7 @@ Daglite's fluent API makes it easy to chain these operations while maintaining t
 
 ## Basic ETL Pipeline
 
-### Simple Sequential Pipeline
+### Simple Inline Pipeline
 
 ```python
 from daglite import task, evaluate

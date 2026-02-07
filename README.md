@@ -104,7 +104,7 @@ Daglite complements these excellent tools. Think of it like Flask vs Django—we
 
 - **Async Execution** - Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
 
-- **Composable Patterns** - Mix and match patterns: sequential pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
+- **Composable Patterns** - Mix and match patterns: Inline pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
 
 - **Testable** - Pure functions make DAGs easy to test and debug. No mocking infrastructure or database connections.
 
@@ -141,7 +141,7 @@ result = evaluate(future)
 
 | Pattern | Method | Use Case |
 |---------|--------|----------|
-| Sequential | `()` + `.then()` | Chain dependent operations |
+| Inline | `()` + `.then()` | Chain dependent operations |
 | Cartesian | `.product()` | Parameter sweeps, all combinations |
 | Pairwise | `.zip()` | Element-wise operations |
 | Transform | `.map()` | Apply function to each element |
@@ -152,7 +152,7 @@ result = evaluate(future)
 
 ## Common Patterns
 
-### Sequential Pipeline
+### Inline Pipeline
 
 ```python
 @task

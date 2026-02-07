@@ -243,7 +243,6 @@ class GraphSpec:
         graph_id: UUID,
         root_id: UUID,
         node_count: int,
-        is_async: bool,
     ) -> None:
         """
         Called before graph execution begins.
@@ -252,7 +251,6 @@ class GraphSpec:
             graph_id: UUID of the entire graph execution
             root_id: UUID of the root node
             node_count: Total number of nodes in the graph
-            is_async: True for async execution, False for sequential
         """
 
     @hook_spec
@@ -262,7 +260,6 @@ class GraphSpec:
         root_id: UUID,
         result: Any,
         duration: float,
-        is_async: bool,
     ) -> None:
         """
         Called after graph execution completes successfully.
@@ -272,7 +269,6 @@ class GraphSpec:
             root_id: UUID of the root node
             result: Final result of the graph execution
             duration: Total time taken to execute in seconds
-            is_async: True for async execution, False for sequential
         """
 
     @hook_spec
@@ -282,7 +278,6 @@ class GraphSpec:
         root_id: UUID,
         error: Exception,
         duration: float,
-        is_async: bool,
     ) -> None:
         """
         Called when graph execution fails.
@@ -292,5 +287,4 @@ class GraphSpec:
             root_id: UUID of the root node
             error: The exception that was raised
             duration: Time taken before failure in seconds
-            is_async: True for async execution, False for sequential
         """
