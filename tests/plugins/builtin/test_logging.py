@@ -56,7 +56,7 @@ class TestGetLoggerUnit:
 
     def test_get_logger_no_reporter(self):
         """Test get_logger when no reporter is available."""
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=None):
+        with patch("daglite.plugins.builtin.logging.get_event_reporter", return_value=None):
             logger = get_logger("test.no.reporter")
             base_logger = logger.logger
 
@@ -70,7 +70,9 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_direct = True
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.direct.reporter")
             base_logger = logger.logger
 
@@ -82,7 +84,9 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_direct = False
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.process.reporter")
             base_logger = logger.logger
 
@@ -103,7 +107,9 @@ class TestGetLoggerUnit:
         test_logger.setLevel(logging.DEBUG)
         original_level = test_logger.level
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.already.debug")
             base_logger = logger.logger
 
@@ -115,7 +121,9 @@ class TestGetLoggerUnit:
         mock_reporter = Mock()
         mock_reporter.is_direct = False
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger1 = get_logger("test.dedupe")
             _ = get_logger("test.dedupe")
 
