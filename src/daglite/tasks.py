@@ -21,7 +21,7 @@ from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 
 if TYPE_CHECKING:
-    from daglite.outputs.base import OutputStore
+    from daglite.datasets.store import DatasetStore
 else:
     OutputStore = object
 
@@ -47,7 +47,7 @@ def task(
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
-    store: OutputStore | str | None = None,
+    store: DatasetStore | str | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
 
@@ -61,7 +61,7 @@ def task(  # noqa: D417
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
-    store: OutputStore | str | None = None,
+    store: DatasetStore | str | None = None,
 ) -> Any:
     """
     Decorator to convert a Python function into a daglite `Task`.
@@ -86,9 +86,9 @@ def task(  # noqa: D417
             Defaults to False.
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
-        store: Default output store for all `.save()` calls on this task.
-            Can be an OutputStore instance or a string path (which will be converted to
-            FileOutputStore). If not provided, uses OutputPlugin's default store.
+        store: Default output store for all `.save()` calls on this task. Can be an DatasetStore
+            instance or a string path (e.g., directory) to be used for to create a dataset store.
+            If None, the default store will be used.
 
     Returns:
         Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
@@ -115,6 +115,7 @@ def task(  # noqa: D417
         >>> double.name
         'double'
     """
+    from daglite.datasets.store import DatasetStore
 
     def decorator(fn: Any) -> Any:
         if inspect.isclass(fn) or not callable(fn):
@@ -130,11 +131,9 @@ def task(  # noqa: D417
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
-        actual_store: OutputStore | None
+        actual_store: DatasetStore | None
         if isinstance(store, str):
-            from daglite.outputs.store import FileOutputStore
-
-            actual_store = FileOutputStore(store)
+            actual_store = DatasetStore(store)
         else:
             actual_store = store
 
@@ -186,8 +185,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
     cache_ttl: int | None = field(default=None, kw_only=True)
     """Time-to-live for cached results in seconds. If None, cached results never expire."""
 
-    store: OutputStore | None = field(default=None, kw_only=True)
-    """Default output store for `.save()` calls on this task."""
+    store: DatasetStore | None = field(default=None, kw_only=True)
+    """Default dataset store for `.save()` calls on this task."""
 
     def __post_init__(self) -> None:
         if self.retries < 0:
@@ -219,7 +218,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         timeout: float | None = None,
         cache: bool | None = None,
         cache_ttl: int | None = None,
-        store: OutputStore | None = None,
+        store: DatasetStore | None = None,
     ) -> Self:
         """
         Create a new task with updated options.
@@ -232,7 +231,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             timeout: New timeout for the task. If `None`, keeps the existing timeout.
             cache: Whether to enable caching for the task. If `None`, keeps the existing setting.
             cache_ttl: Time-to-live for cached results. If `None`, keeps the existing cache_ttl.
-            store: Default output store for the task. If `None`, keeps the existing store.
+            store: Default dataset store for the task. If `None`, keeps the existing store.
 
         Returns:
             A new `BaseTask` instance with updated options.

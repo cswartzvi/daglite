@@ -13,11 +13,11 @@ from uuid import uuid4
 
 from typing_extensions import Self, override
 
+from daglite.datasets.store import DatasetStore
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
-from daglite.outputs.base import OutputStore
 
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
@@ -55,7 +55,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     # Configurations for future outputs to be saved after task execution
     _future_outputs: tuple[_FutureOutput, ...] = field(init=False, repr=False, default=())
 
-    task_store: OutputStore | None = field(default=None, kw_only=True)
+    task_store: DatasetStore | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
@@ -72,7 +72,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         key: str,
         *,
         checkpoint: str | bool | None = None,
-        store: OutputStore | str | None = None,
+        store: DatasetStore | str | None = None,
         **extras: Any,
     ) -> Self:
         """
@@ -89,7 +89,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
                 - None: No checkpoint (default, just saves output)
                 - True: Use the key as the checkpoint name
                 - str: Explicit checkpoint name
-            store: Output store override for this specific save. If not provided, uses the
+            store: Dataset store override for this specific save. If not provided, uses the
                 task's default store, then falls back to global settings.
             **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
 
@@ -130,9 +130,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             TaskFuture(...)
         """
         if isinstance(store, str):
-            from daglite.outputs.store import FileOutputStore
-
-            resolved_store: OutputStore | None = FileOutputStore(store)
+            resolved_store = DatasetStore(store)
         else:
             resolved_store = store or self.task_store
 
@@ -792,7 +790,7 @@ class _FutureOutput:
 
     key: str
     name: str | None
-    store: OutputStore | None
+    store: DatasetStore | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
 
 
