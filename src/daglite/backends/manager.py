@@ -19,11 +19,14 @@ class BackendManager:
         self._cached_backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
             "inline": InlineBackend,
+            "sequential": InlineBackend,  # alias
             "synchronous": InlineBackend,  # alias
             "threading": ThreadBackend,
+            "thread": ThreadBackend,  # alias
             "threads": ThreadBackend,  # alias
             "multiprocessing": ProcessBackend,
             "processes": ProcessBackend,  # alias
+            "process": ProcessBackend,  # alias
         }
 
         # TODO : dynamic discovery of backends from entry points
