@@ -45,7 +45,7 @@ T = TypeVar("T")
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
 @overload
-async def evaluate(
+def evaluate(
     future: TaskFuture[CoroutineType[Any, Any, T]],
     *,
     plugins: list[Any] | None = None,
@@ -53,7 +53,7 @@ async def evaluate(
 
 
 @overload
-async def evaluate(
+def evaluate(
     future: TaskFuture[Coroutine[Any, Any, T]],
     *,
     plugins: list[Any] | None = None,
@@ -61,7 +61,7 @@ async def evaluate(
 
 
 @overload
-async def evaluate(
+def evaluate(
     future: TaskFuture[AsyncGenerator[T, Any]],
     *,
     plugins: list[Any] | None = None,
