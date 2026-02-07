@@ -61,23 +61,31 @@ class SequentialBackend(Backend):
         timeout: float | None = None,
         **kwargs: Any,
     ) -> Awaitable[Any]:
-        concurrent_future: Future[Any] = Future()
-
         # Set execution context for immediate execution (runs in main thread)
         # Context cleanup happens when backend stops, not per-task
         set_execution_context(self.plugin_manager, self.reporter)
 
-        coro = func(inputs, **kwargs)
-
+        # Use thread pool for timeout enforcement. Note that if the timeout is hit, an exception
+        # will be raise in the main thread, but the task will continue running in a worker thread
+        # until completion. This is a limitation of Python's concurrency model as there is no
+        # safe way to kill a thread.
         if timeout is not None:
-            coro = asyncio.wait_for(coro, timeout=timeout)
+            executor_future = self._timeout_executor.submit(
+                _run_coro_in_worker, func, inputs, **kwargs
+            )
+            timed_future: Future[Any] = Future()
+            self._timeout_executor.submit(
+                _wait_with_timeout, executor_future, timed_future, timeout
+            )
+            return asyncio.wrap_future(timed_future)
+
+        # No timeout path - execute inline
+        concurrent_future: Future[Any] = Future()
+        coro = func(inputs, **kwargs)
 
         def _on_done(f):
             try:
                 concurrent_future.set_result(f.result())
-            except asyncio.TimeoutError:
-                exception = TimeoutError(f"Task exceeded timeout of {timeout}s")
-                concurrent_future.set_exception(exception)
             except Exception as e:
                 concurrent_future.set_exception(e)
 
