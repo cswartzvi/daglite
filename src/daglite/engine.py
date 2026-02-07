@@ -32,7 +32,6 @@ from daglite.exceptions import ExecutionError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphBuilder
 from daglite.graph.builder import build_graph
-from daglite.tasks import BaseTaskFuture
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -46,6 +45,40 @@ _IN_EVALUATION: ContextVar[bool] = ContextVar("in_evaluation", default=False)
 # region API
 
 
+# Coroutine/Generator/Iterator overloads must come first (most specific)
+@overload  # some type checkers need this overload for compatibility
+async def evaluate_async(
+    expr: TaskFuture[CoroutineType[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[Coroutine[Any, Any, T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> T: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[AsyncGenerator[T, Any]],
+    *,
+    plugins: list[Any] | None = None,
+) -> list[T]: ...
+
+
+@overload
+async def evaluate_async(
+    expr: TaskFuture[AsyncIterator[T]],
+    *,
+    plugins: list[Any] | None = None,
+) -> list[T]: ...
+
+
+# Overloads for Generators and iterators are materialized to lists
 @overload
 def evaluate(
     expr: TaskFuture[Generator[T, Any, Any]],
@@ -79,11 +112,7 @@ def evaluate(
 ) -> list[T]: ...
 
 
-def evaluate(
-    expr: BaseTaskFuture[Any],
-    *,
-    plugins: list[Any] | None = None,
-) -> Any:
+def evaluate(expr: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
@@ -140,12 +169,11 @@ def evaluate(
         raise RuntimeError(
             "Cannot call evaluate() from an async context. Use evaluate_async() instead."
         )
-    engine = Engine(plugins=plugins)
-    return engine.evaluate(expr)
+    return asyncio.run(evaluate_async(expr, plugins=plugins))
 
 
 # Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload  # some type checkers need this overload for compatibility
+@overload  # Some type checkers need this overload for compatibility
 async def evaluate_async(
     expr: TaskFuture[CoroutineType[Any, Any, T]],
     *,
@@ -177,6 +205,7 @@ async def evaluate_async(
 ) -> list[T]: ...
 
 
+# Overloads for Generators and iterators are materialized to lists
 @overload
 async def evaluate_async(
     expr: TaskFuture[Generator[T, Any, Any]],
@@ -210,23 +239,13 @@ async def evaluate_async(
 ) -> list[T]: ...
 
 
-async def evaluate_async(
-    expr: BaseTaskFuture[Any],
-    *,
-    plugins: list[Any] | None = None,
-) -> Any:
+async def evaluate_async(expr: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future via asynchronous execution.
 
     Sibling tasks execute concurrently using asyncio. Both sync and async task functions
     are supported — sync functions are called directly within the async execution context.
-
-    Use this when:
-    - Your tasks are async (defined with `async def`)
-    - You need to integrate with existing async code
-    - You want to avoid blocking the event loop
-
-    For synchronous callers, `evaluate()` provides a simpler interface that wraps this
+    However, for synchronous callers, `evaluate()` provides a simpler interface that wraps this
     function with `asyncio.run()`.
 
     Args:
