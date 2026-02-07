@@ -1,8 +1,4 @@
-"""
-Backend implementations for local execution (direct, threading, multiprocessing).
-
-Warning: This module is intended for internal use only.
-"""
+"""Backend implementations for local execution (inline, threading, multiprocessing)."""
 
 import asyncio
 import os
