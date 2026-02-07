@@ -337,13 +337,15 @@ async def _submit_node(
     node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
 ) -> Any:
     """
-    Execute a node asynchronously and return its result.
+    Submits a node for execution on its designated backend and returns the result.
 
-    Wraps backend futures as asyncio-compatible futures to enable concurrent
-    execution of independent nodes.
+    Args:
+        node: The graph node to be executed.
+        state: Current execution state, used to resolve inputs and track completed nodes.
+        backend_manager: Manager for submitting tasks to backends.
 
     Returns:
-        The node's execution result (single value or list)
+        The result of executing the node, with mapped tasks and generators materialized to lists.
     """
 
     from daglite.graph.nodes import MapTaskNode
