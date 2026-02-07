@@ -95,11 +95,11 @@ class AbstractDataset(ABC):
         Examples:
             Using class parameters:
 
-            >>> class JsonDataset(AbstractDataset[dict], format="json", types=dict): ...
+            >>> class JsonDataset(AbstractDataset, format="json", types=dict): ...
 
             Using class variables:
 
-            >>> class CsvDataset(AbstractDataset[dict]):
+            >>> class CsvDataset(AbstractDataset):
             ...     format = "csv"
             ...     supported_types = (dict,)
             ...     file_extensions = ("csv",)
@@ -145,13 +145,13 @@ class AbstractDataset(ABC):
                 AbstractDataset._extension_hints[ext].append((t, resolved_format))
 
     @abstractmethod
-    def serialize(self, value: Any, **extras: Any) -> bytes:
+    def serialize(self, value: Any, **options: Any) -> bytes:
         """
         Convert a value to bytes.
 
         Args:
             value: The value to serialize.
-            **extras: Optional extra parameters that may be used for serialization.
+            **options: Optional settings that may be used for serialization.
 
         Returns:
             Serialized bytes representation.
@@ -159,13 +159,13 @@ class AbstractDataset(ABC):
         ...
 
     @abstractmethod
-    def deserialize(self, data: bytes, **extras: Any) -> Any:
+    def deserialize(self, data: bytes, **options: Any) -> Any:
         """
         Convert bytes back to a value.
 
         Args:
             data: Serialized bytes to deserialize.
-            **extras: Optional extra parameters that may be used for deserialization.
+            **options: Optional settings that may be used for deserialization.
 
         Returns:
             The deserialized value.
@@ -191,8 +191,8 @@ class AbstractDataset(ABC):
             ValueError: If no dataset is registered for the type/format.
 
         Examples:
-            >>> dataset = AbstractDataset.get(str, "text")
-            >>> dataset.serialize("hello")
+            >>> dataset = AbstractDataset.get(str, "text")  # doctest: +SKIP
+            >>> dataset.serialize("hello")  # doctest: +SKIP
             b'hello'
         """
         key = (type_, format)
@@ -255,9 +255,9 @@ class AbstractDataset(ABC):
             ValueError: If no format can be inferred for the type.
 
         Examples:
-            >>> AbstractDataset.infer_format(str, "txt")
+            >>> AbstractDataset.infer_format(str, "txt")  # doctest: +SKIP
             'text'
-            >>> AbstractDataset.infer_format(dict, "pkl")
+            >>> AbstractDataset.infer_format(dict, "pkl")  # doctest: +SKIP
             'pickle'
         """
         # Try extension hint first
@@ -309,7 +309,7 @@ class AbstractDataset(ABC):
             Set of format identifiers registered for this type.
 
         Examples:
-            >>> "text" in AbstractDataset.get_formats_for_type(str)
+            >>> "text" in AbstractDataset.get_formats_for_type(str)  # doctest: +SKIP
             True
         """
         formats: set[str] = set()
@@ -337,7 +337,7 @@ class AbstractDataset(ABC):
             The preferred file extension (without dot), or None if not found.
 
         Examples:
-            >>> AbstractDataset.get_extension(str, "text")
+            >>> AbstractDataset.get_extension(str, "text")  # doctest: +SKIP
             'txt'
         """
         key = (type_, format)

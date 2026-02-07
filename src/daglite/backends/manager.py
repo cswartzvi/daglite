@@ -1,13 +1,25 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from pluggy import PluginManager
 
 from daglite.backends.base import Backend
 from daglite.plugins.processor import EventProcessor
 
+if TYPE_CHECKING:
+    from daglite.datasets.processor import DatasetProcessor
+
 
 class BackendManager:
     """Manages global backend instance."""
 
-    def __init__(self, plugin_manager: PluginManager, event_processor: EventProcessor) -> None:
+    def __init__(
+        self,
+        plugin_manager: PluginManager,
+        event_processor: EventProcessor,
+        dataset_processor: DatasetProcessor,
+    ) -> None:
         from daglite.backends.impl.local import InlineBackend
         from daglite.backends.impl.local import ProcessBackend
         from daglite.backends.impl.local import ThreadBackend
@@ -15,6 +27,7 @@ class BackendManager:
         self._started = False
         self._plugin_manager = plugin_manager
         self._event_processor = event_processor
+        self._dataset_processor = dataset_processor
 
         self._cached_backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
@@ -66,7 +79,9 @@ class BackendManager:
                 ) from None
 
             backend_instance = backend_class()
-            backend_instance.start(self._plugin_manager, self._event_processor)
+            backend_instance.start(
+                self._plugin_manager, self._event_processor, self._dataset_processor
+            )
             self._cached_backends[backend_name] = backend_instance
 
         return self._cached_backends[backend_name]

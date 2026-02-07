@@ -7,9 +7,13 @@ from pluggy import PluginManager
 from typing_extensions import final
 
 if TYPE_CHECKING:
+    from daglite.datasets.processor import DatasetProcessor
+    from daglite.datasets.reporters import DatasetReporter
     from daglite.plugins.processor import EventProcessor
     from daglite.plugins.reporters import EventReporter
 else:
+    DatasetProcessor = object
+    DatasetReporter = object
     EventProcessor = object
     EventReporter = object
 
@@ -21,27 +25,42 @@ class Backend(abc.ABC):
 
     plugin_manager: PluginManager
     event_processor: EventProcessor
-    reporter: EventReporter
+    event_reporter: EventReporter
+    dataset_processor: DatasetProcessor
+    dataset_reporter: DatasetReporter | None
 
     @abc.abstractmethod
-    def _get_reporter(self) -> EventReporter:
+    def _get_event_reporter(self) -> EventReporter:
         """Gets the event reporter for this backend."""
         raise NotImplementedError()
 
+    @abc.abstractmethod
+    def _get_dataset_reporter(self) -> DatasetReporter | None:
+        """Gets the dataset reporter for this backend."""
+        return None
+
     @final
-    def start(self, plugin_manager: PluginManager, event_processor: EventProcessor) -> None:
+    def start(
+        self,
+        plugin_manager: PluginManager,
+        event_processor: EventProcessor,
+        dataset_processor: DatasetProcessor,
+    ) -> None:
         """
         Start any global backend resources.
 
-        Subclasses should NOT override this method. Instead, override `_start()`.
+        Subclasses should NOT override this method. Instead, override ``_start()``.
 
         Args:
             plugin_manager: Plugin manager for hook execution
             event_processor: Event processor for event handling
+            dataset_processor: Dataset processor for persisting outputs
         """
         self.plugin_manager = plugin_manager
         self.event_processor = event_processor
-        self.reporter = self._get_reporter()
+        self.dataset_processor = dataset_processor
+        self.event_reporter = self._get_event_reporter()
+        self.dataset_reporter = self._get_dataset_reporter()
         self._start()
 
     def _start(self) -> None:
@@ -57,13 +76,16 @@ class Backend(abc.ABC):
         """
         Clean up any global backend resources.
 
-        Subclasses should NOT override this method. Instead, override `_stop()`.
+        Subclasses should NOT override this method. Instead, override ``_stop()``.
         """
         self._stop()
         delattr(self, "plugin_manager")
         delattr(self, "event_processor")
-        if hasattr(self, "reporter"):  # pragma: no branch
-            del self.reporter
+        if hasattr(self, "event_reporter"):  # pragma: no branch
+            del self.event_reporter
+        delattr(self, "dataset_processor")
+        if hasattr(self, "dataset_reporter"):
+            del self.dataset_reporter
 
     def _stop(self) -> None:
         """
@@ -88,7 +110,7 @@ class Backend(abc.ABC):
             func: Callable to execute
             inputs: Pre-resolved parameter inputs
             timeout: Maximum execution time in seconds. If None, no timeout is enforced.
-            **kwargs: Additional backend-specific execution parameters
+            **kwargs: Additional key
 
         Returns:
             An awaitable that resolves to the result of the callable.

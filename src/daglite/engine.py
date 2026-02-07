@@ -18,8 +18,10 @@ from uuid import uuid4
 from pluggy import PluginManager
 
 if TYPE_CHECKING:
+    from daglite.datasets.processor import DatasetProcessor
     from daglite.plugins.processor import EventProcessor
 else:
+    DatasetProcessor = Any
     EventProcessor = Any
 
 
@@ -279,7 +281,8 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     state = _ExecutionState.from_nodes(nodes)
 
     plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
-    backend_manager = BackendManager(plugin_manager, event_processor)
+    dataset_processor = _setup_dataset_processor()
+    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
 
     hook_ids = {"graph_id": graph_id, "root_id": future.id}
     plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(nodes))
@@ -288,6 +291,7 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     try:
         backend_manager.start()
         event_processor.start()
+        dataset_processor.start()
 
         nodes_to_process = state.get_source_nodes()
 
@@ -319,6 +323,7 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         duration = time.perf_counter() - start_time
 
         event_processor.flush()  # Drain event queue before after_graph_execute
+        dataset_processor.flush()
         plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)
 
     except Exception as e:
@@ -328,6 +333,7 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
 
     finally:
         event_processor.stop()
+        dataset_processor.stop()
         backend_manager.stop()
 
     return result
@@ -354,7 +360,7 @@ async def _submit_node(
     plugin_manager = backend.plugin_manager
     completed_nodes = state.completed_nodes
     resolved_inputs = node.resolve_inputs(completed_nodes)
-    resolved_output_extras = node.resolve_output_extras(completed_nodes)
+    resolved_output_deps = node.resolve_output_deps(completed_nodes)
 
     if isinstance(node, MapTaskNode):
         # Submit multiple calls for map tasks, one per iteration, and gather results
@@ -367,7 +373,7 @@ async def _submit_node(
         )
 
         for idx, call in enumerate(mapped_inputs):
-            kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
+            kwargs = {"iteration_index": idx, "resolved_output_deps": resolved_output_deps}
             future = backend.submit(node.run, call, timeout=node.timeout, **kwargs)
             futures.append(future)
 
@@ -386,7 +392,7 @@ async def _submit_node(
             node.run,
             resolved_inputs,
             timeout=node.timeout,
-            resolved_output_extras=resolved_output_extras,
+            resolved_output_extras=resolved_output_deps,
         )
         result = await future
 
@@ -414,6 +420,22 @@ def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProces
     plugin_manager = build_plugin_manager(plugins or [], registry)
     event_processor = EventProcessor(registry)
     return plugin_manager, event_processor
+
+
+def _setup_dataset_processor() -> "DatasetProcessor":
+    """
+    Create a ``DatasetProcessor`` for draining queue-based dataset saves.
+
+    Always created regardless of whether any nodes have output configs.
+    An idle processor is just a sleeping daemon thread with zero overhead,
+    matching how the ``EventProcessor`` is unconditionally started.
+
+    Returns:
+        A ``DatasetProcessor`` instance.
+    """
+    from daglite.datasets.processor import DatasetProcessor
+
+    return DatasetProcessor()
 
 
 async def _materialize_result(result: Any) -> Any:

@@ -59,6 +59,19 @@ class Driver(ABC):
         """List all stored keys."""
         ...
 
+    @property
+    def is_local(self) -> bool:
+        """
+        Whether this driver accesses local storage.
+
+        Returns ``True`` for drivers that persist to the local filesystem (or
+        other resources only reachable from the coordinator), ``False`` for
+        remote/network storage (S3, GCS, …) accessible from any worker.
+
+        Subclasses for remote drivers should override this to return ``False``.
+        """
+        return True
+
     def get_format_hint(self, key: str) -> str | None:  # pragma: no cover
         """
         Return a format hint for the given key, or None if unknown.

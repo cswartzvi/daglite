@@ -130,9 +130,9 @@ class BaseGraphNode(abc.ABC):
         """
         ...
 
-    def resolve_output_extras(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
+    def resolve_output_deps(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
         """
-        Resolve output configuration extras to concrete values.
+        Resolve output dependencies to concrete values.
 
         Resolves ParamInput extras in output_configs to actual values from completed nodes.
         Returns parallel list to output_configs containing only the resolved extras dicts.
@@ -143,13 +143,11 @@ class BaseGraphNode(abc.ABC):
         Returns:
             List of resolved extras dictionaries, parallel to self.output_configs.
         """
-        resolved_extras_list = []
+        resolved_deps_list = []
         for config in self.output_configs:
-            resolved_extras = {
-                name: param.resolve(completed_nodes) for name, param in config.extras.items()
-            }
-            resolved_extras_list.append(resolved_extras)
-        return resolved_extras_list
+            resolved_deps = {n: p.resolve(completed_nodes) for n, p in config.dependencies.items()}
+            resolved_deps_list.append(resolved_deps)
+        return resolved_deps_list
 
     @abc.abstractmethod
     async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
@@ -161,7 +159,7 @@ class BaseGraphNode(abc.ABC):
 
         Args:
             resolved_inputs: Pre-resolved parameter inputs for this node.
-            **kwargs: Additional backend-specific execution parameters.
+            **kwargs: Additional runtime-specific execution parameters.
 
         Returns:
             Node execution result. May be an async generator or regular value.
@@ -279,5 +277,11 @@ class OutputConfig:
     name: str | None = None
     """Optional checkpoint name for graph resumption via evaluate(from_={name: key})."""
 
-    extras: Mapping[str, ParamInput] = field(default_factory=dict)
-    """Extra parameters for key formatting or storage metadata (values or refs)."""
+    format: str | None = None
+    """Optional serialization format hint (e.g., 'pickle', 'json', etc.)."""
+
+    dependencies: Mapping[str, ParamInput] = field(default_factory=dict)
+    """Parameter dependencies for this output, used for key formatting"""
+
+    options: dict[str, Any] = field(default_factory=dict)
+    """Additional options passed to the Dataset's save method."""

@@ -9,6 +9,7 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite.backends.context import get_dataset_reporter
 from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
 from daglite.backends.context import reset_current_task
@@ -17,6 +18,7 @@ from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphMetadata
+from daglite.graph.base import OutputConfig
 from daglite.graph.base import ParamInput
 
 T_co = TypeVar("T_co", covariant=True)
@@ -53,7 +55,7 @@ class TaskNode(BaseGraphNode):
     def dependencies(self) -> set[UUID]:
         deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
         for config in self.output_configs:
-            for param in config.extras.values():
+            for param in config.dependencies.values():
                 if param.is_ref and param.ref is not None:
                     deps.add(param.ref)
         return deps
@@ -85,17 +87,18 @@ class TaskNode(BaseGraphNode):
         from dataclasses import replace
 
         metadata = replace(self.to_metadata(), key=self.name)
-        resolved_output_extras = kwargs.get("resolved_output_extras", [])
+        resolved_output_extras = kwargs.get("resolved_output_deps", [])
 
         return await _run_implementation(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
             output_config=self.output_configs,
-            output_extras=resolved_output_extras,
+            output_deps=resolved_output_extras,
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
+            key_extras={},
         )
 
 
@@ -140,7 +143,7 @@ class MapTaskNode(BaseGraphNode):
             if param.is_ref and param.ref is not None:
                 deps.add(param.ref)
         for config in self.output_configs:
-            for param in config.extras.values():
+            for param in config.dependencies.values():
                 if param.is_ref and param.ref is not None:
                     deps.add(param.ref)
         return deps
@@ -230,7 +233,7 @@ class MapTaskNode(BaseGraphNode):
         from dataclasses import replace
 
         iteration_index = kwargs["iteration_index"]
-        resolved_output_extras = kwargs.get("resolved_output_extras", [])
+        resolved_output_deps = kwargs.get("resolved_output_deps", [])
 
         node_key = f"{self.name}[{iteration_index}]"
         metadata = replace(self.to_metadata(), key=node_key)
@@ -240,10 +243,11 @@ class MapTaskNode(BaseGraphNode):
             metadata=metadata,
             resolved_inputs=resolved_inputs,
             output_config=self.output_configs,
-            output_extras=resolved_output_extras,
+            output_deps=resolved_output_deps,
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
+            key_extras={"iteration_index": iteration_index},
         )
 
 
@@ -254,11 +258,12 @@ async def _run_implementation(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
-    output_config: tuple,
-    output_extras: list[dict[str, Any]],
+    output_config: tuple[OutputConfig, ...],
+    output_deps: list[dict[str, Any]],
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
+    key_extras: dict[str, Any] | None = None,
 ) -> Any:
     """
     Private implementation for running a node with context setup and retries.
@@ -268,10 +273,11 @@ async def _run_implementation(
         metadata: Metadata for the node being executed.
         resolved_inputs: Pre-resolved parameter inputs for this node.
         output_config: Output configuration tuple for this node.
-        output_extras: Pre-resolved extras for each output config.
+        output_deps: List of resolved output dependencies for each output config.
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
-        cache_ttl: Time-to-live for cache in seconds (None = no expiration).
+        cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        key_extras: Additional variables for key formatting.
 
     Returns:
         Result of the function execution.
@@ -358,6 +364,15 @@ async def _run_implementation(
                     cache_ttl=cache_ttl,
                 )
 
+                # Save outputs via dataset reporter if configured
+                _save_outputs(
+                    result=result,
+                    resolved_inputs=resolved_inputs,
+                    output_config=output_config,
+                    output_deps=output_deps,
+                    key_extras=key_extras or {},
+                )
+
                 return result
 
             except Exception as error:
@@ -390,3 +405,77 @@ async def _run_implementation(
 
     finally:
         reset_current_task(token)
+
+
+def _save_outputs(
+    result: Any,
+    resolved_inputs: dict[str, Any],
+    output_config: tuple[OutputConfig, ...],
+    output_deps: list[dict[str, Any]],
+    key_extras: dict[str, Any] | None = None,
+) -> None:
+    """
+    Save task outputs via the dataset reporter or directly.
+
+    For each output config the store is resolved (explicit store on the config,
+    or the settings-level default).  Routing then depends on the driver's
+    locality:
+
+    * **Local drivers** (filesystem, SQLite) – save through the
+      ``DatasetReporter`` so that the coordinator process performs the write.
+    * **Remote drivers** (S3, GCS, …) – save directly from the worker since
+      the remote store is accessible everywhere.
+
+    Exceptions are **not** caught – a failed save fails the task.
+
+    Args:
+        result: The task execution result to save.
+        metadata: Metadata for the executed node (used for key formatting).
+        resolved_inputs: Resolved inputs for key formatting.
+        output_config: Output configuration tuple for this node.
+        output_deps: List of resolved output dependencies for each output config.
+        key_extras: Additional variables for key formatting.
+    """
+    from daglite.graph.base import OutputConfig
+    from daglite.settings import get_global_settings
+
+    if not output_config:
+        return
+
+    dataset_reporter = get_dataset_reporter()
+
+    for idx, config in enumerate(output_config):
+        if not isinstance(config, OutputConfig):  # pragma: no cover
+            continue
+
+        # Resolve the target store: explicit config → settings default
+        store = config.store
+        if store is None:
+            settings = get_global_settings()
+            store_or_path = settings.datastore_store
+            if isinstance(store_or_path, str):
+                from daglite.datasets.store import DatasetStore
+
+                store = DatasetStore(store_or_path)
+            else:
+                store = store_or_path
+
+        # Build the storage key by formatting with extras and metadata
+        key_extras = key_extras or {}
+        format_vars = {**resolved_inputs, **output_deps[idx], **key_extras}
+        try:
+            key = config.key.format(**format_vars)
+        except KeyError as e:
+            available = sorted(format_vars.keys())
+            raise ValueError(
+                f"Output key template '{config.key}' references {e} which is not available.\n"
+                f"Available variables: {', '.join(available)}\n"
+                f"These come from: task inputs, extra dependencies passed to .save(), "
+                f"and internal key extras."
+            ) from e
+
+        # Route: local drivers go through the reporter, remote drivers save directly
+        if store.is_local and dataset_reporter is not None:
+            dataset_reporter.save(key, result, store, format=config.format, options=config.options)
+        else:
+            store.save(key, result, format=config.format, options=config.options)

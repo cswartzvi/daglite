@@ -71,8 +71,10 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         self,
         key: str,
         *,
-        checkpoint: str | bool | None = None,
-        store: DatasetStore | str | None = None,
+        save_format: str | None = None,
+        save_checkpoint: str | bool | None = None,
+        save_store: DatasetStore | str | None = None,
+        save_options: dict[str, Any] | None = None,
         **extras: Any,
     ) -> Self:
         """
@@ -84,17 +86,20 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
-            checkpoint: If provided, marks this save as a resumption point for
+            save_checkpoint: If provided, marks this save as a resumption point for
                 evaluate(from_=name). Can be:
                 - None: No checkpoint (default, just saves output)
                 - True: Use the key as the checkpoint name
                 - str: Explicit checkpoint name
-            store: Dataset store override for this specific save. If not provided, uses the
+            save_format: Optional serialization format hint (e.g. "pickle"). If not provided,
+                inferred from value type and/or driver hints.
+            save_store: Dataset store override for this specific save. If not provided, uses the
                 task's default store, then falls back to global settings.
-            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
+            save_options: Additional options passed to the Dataset's save method.
+            **extras: Extra values for key formatting or storage metadata (can include TaskFutures).
 
         Returns:
-            Self for method chaining
+            Self for method chaining.
 
         Raises:
             ValueError: If no store is configured at any level (explicit, task, or global).
@@ -108,7 +113,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
 
             Simple save (no checkpoint):
             >>> process(data_id="abc123").save(
-            ...     "processed_{data_id}", extra=get_version()
+            ...     "processed_{data_id}_{extra}", extra=get_version()
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
 
@@ -118,35 +123,40 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             TaskFuture(...)
 
             Save with checkpoint (using key as name):
-            >>> process(data_id="abc").save("output", checkpoint=True)  # doctest: +ELLIPSIS
+            >>> process(data_id="abc").save("output", save_checkpoint=True)  # doctest: +ELLIPSIS
             TaskFuture(...)
 
             Save with explicit checkpoint name:
             >>> @task
             ... def train_model(model_type: str) -> Model: ...
             >>> train_model(model_type="linear").save(
-            ...     "model_{model_type}", checkpoint="trained_model"
+            ...     "model_{model_type}", save_checkpoint="trained_model"
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        if isinstance(store, str):
-            resolved_store = DatasetStore(store)
+        # Validate key template syntax upfront
+        _validate_key_template(key)
+
+        if isinstance(save_store, str):
+            resolved_store = DatasetStore(save_store)
         else:
-            resolved_store = store or self.task_store
+            resolved_store = save_store or self.task_store
 
         # Determine checkpoint name
-        if checkpoint is True:
+        if save_checkpoint is True:
             checkpoint_name = key
-        elif checkpoint:
-            checkpoint_name = checkpoint
+        elif save_checkpoint:
+            checkpoint_name = save_checkpoint
         else:
             checkpoint_name = None
 
         config = _FutureOutput(
             key=key,
             name=checkpoint_name,
+            format=save_format,
             store=resolved_store,
-            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
+            options=save_options or {},
+            extras=dict(extras),
         )
         new_configs = self._future_outputs + (config,)
 
@@ -530,17 +540,22 @@ class TaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for future_output in self._future_outputs:
-            extras = {}
+            available_names = set(self.kwargs.keys()) | set(future_output.extras.keys())
+            _validate_key_placeholders(future_output.key, available_names)
+
+            output_dependencies = {}
             for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    extras[name] = ParamInput.from_ref(value.id)
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
                 else:
-                    extras[name] = ParamInput.from_value(value)
+                    output_dependencies[name] = ParamInput.from_value(value)
             output_config = OutputConfig(
                 key=future_output.key,
                 name=future_output.name,
+                format=future_output.format,
                 store=future_output.store,
-                extras=extras,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
             )
             output_configs.append(output_config)
 
@@ -750,17 +765,27 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for future_output in self._future_outputs:
-            extras = {}
+            available_names = (
+                set(self.fixed_kwargs.keys())
+                | set(self.mapped_kwargs.keys())
+                | set(future_output.extras.keys())
+                | {"iteration_index"}  # Special variable available in mapped task outputs
+            )
+            _validate_key_placeholders(future_output.key, available_names)
+
+            output_dependencies = {}
             for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    extras[name] = ParamInput.from_ref(value.id)
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
                 else:
-                    extras[name] = ParamInput.from_value(value)
+                    output_dependencies[name] = ParamInput.from_value(value)
             output_config = OutputConfig(
                 key=future_output.key,
                 name=future_output.name,
+                format=future_output.format,
                 store=future_output.store,
-                extras=extras,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
             )
             output_configs.append(output_config)
 
@@ -790,8 +815,63 @@ class _FutureOutput:
 
     key: str
     name: str | None
+    format: str | None
     store: DatasetStore | None
+    options: dict[str, Any] | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
+
+
+def _validate_key_template(key: str) -> None:
+    """Validate a key template string for well-formed {placeholder} syntax."""
+    import string
+
+    try:
+        parsed = list(string.Formatter().parse(key))
+    except (ValueError, IndexError) as e:
+        raise ValueError(
+            f"Invalid key template '{key}': {e}. "
+            f"Key templates use {{name}} placeholders for parameter substitution."
+        ) from e
+
+    for _, field_name, _, _ in parsed:
+        if field_name is None:
+            continue
+        if field_name == "":
+            raise ValueError(
+                f"Invalid key template '{key}': empty placeholder '{{}}' is not allowed. "
+                f"Use named placeholders like '{{param_name}}' instead."
+            )
+
+
+def _validate_key_placeholders(key: str, available: set[str]) -> None:
+    """
+    Validate that all key template placeholders match available format variables.
+
+    Called during graph construction (``to_graph``) where the full set of
+    parameter names and output-dependency names is known.
+
+    Args:
+        key: The key template string (e.g. ``"output_{data_id}_{version}"``).
+        available: Set of variable names that will be present at format time
+            (task kwargs + save extras + any runtime key-extras).
+
+    Raises:
+        ValueError: If any placeholder in *key* is not in *available*.
+    """
+    import string
+
+    placeholders = {
+        field_name
+        for _, field_name, _, _ in string.Formatter().parse(key)
+        if field_name is not None
+    }
+    missing = placeholders - available
+    if missing:
+        raise ValueError(
+            f"Key template '{key}' references {missing} which won't be available "
+            f"at runtime. Available variables: {sorted(available)}. "
+            f"These come from task parameters and extra dependencies passed to .save()."
+        )
 
 
 def _infer_tuple_size(task_func: Any) -> int | None:

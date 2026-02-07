@@ -52,12 +52,17 @@ class DatasetStore:
         """Get base path (for FileDriver compatibility)."""
         return getattr(self._driver, "base_path", "")
 
+    @property
+    def is_local(self) -> bool:
+        """Whether the underlying driver accesses local storage."""
+        return getattr(self._driver, "is_local", True)
+
     def save(
         self,
         key: str,
         value: Any,
         format: str | None = None,
-        **extras: Any,
+        options: dict[str, Any] | None = None,
     ) -> str:
         """
         Save a value using Dataset serialization.
@@ -66,7 +71,7 @@ class DatasetStore:
             key: Storage key/path. Format hint from driver (e.g., extension).
             value: Value to serialize and save.
             format: Serialization format. If None, inferred from type and/or driver hint.
-            **extras: Additional keyword arguments passed to the Dataset's save method.
+            options: Additional options passed to the Dataset's save method.
 
         Returns:
             The actual path where data was stored.
@@ -78,17 +83,23 @@ class DatasetStore:
             format = AbstractDataset.infer_format(value_type, hint)
 
         dataset = AbstractDataset.get(value_type, format)
-        data = dataset.serialize(value)
+        options = options or {}
+        data = dataset.serialize(value, **options)
         return self._driver.save(key, data)
 
-    def load(self, key: str, return_type: type[T] | None = None, **extras: Any) -> T:
+    def load(
+        self,
+        key: str,
+        return_type: type[T] | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> T:
         """
         Load a value using Dataset deserialization.
 
         Args:
             key: Storage key/path. Format hint from driver (e.g., extension).
             return_type: Expected return type. If None, uses pickle format.
-            **extras: Additional keyword arguments passed to the Dataset's load method.
+            options: Additional options passed to the Dataset's save method.
 
         Returns:
             The deserialized value.
@@ -104,7 +115,8 @@ class DatasetStore:
         hint = self._driver.get_format_hint(key)
         format = AbstractDataset.infer_format(return_type, hint)
         dataset = AbstractDataset.get(return_type, format)
-        return cast(T, dataset.deserialize(data))
+        options = options or {}
+        return cast(T, dataset.deserialize(data, **options))
 
     def exists(self, key: str) -> bool:
         """Check if a key exists."""
