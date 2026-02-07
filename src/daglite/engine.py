@@ -366,7 +366,7 @@ async def _submit_node(
 
         for idx, call in enumerate(mapped_inputs):
             kwargs = {"iteration_index": idx, "resolved_output_extras": resolved_output_extras}
-            future = backend.submit(node.run_async, call, timeout=node.timeout, **kwargs)
+            future = backend.submit(node.run, call, timeout=node.timeout, **kwargs)
             futures.append(future)
 
         result = await asyncio.gather(*futures)
@@ -381,7 +381,7 @@ async def _submit_node(
     else:
         # Submit a single call for regular tasks
         future = backend.submit(
-            node.run_async,
+            node.run,
             resolved_inputs,
             timeout=node.timeout,
             resolved_output_extras=resolved_output_extras,

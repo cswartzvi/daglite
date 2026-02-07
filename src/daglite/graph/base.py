@@ -152,7 +152,7 @@ class BaseGraphNode(abc.ABC):
         return resolved_extras_list
 
     @abc.abstractmethod
-    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         """
         Execute this node asynchronously with resolved inputs.
 

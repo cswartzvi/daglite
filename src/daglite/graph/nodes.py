@@ -21,6 +21,8 @@ from daglite.graph.base import ParamInput
 
 T_co = TypeVar("T_co", covariant=True)
 
+# region Nodes
+
 
 @dataclass(frozen=True)
 class TaskNode(BaseGraphNode):
@@ -79,13 +81,13 @@ class TaskNode(BaseGraphNode):
         )
 
     @override
-    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
         metadata = replace(self.to_metadata(), key=self.name)
         resolved_output_extras = kwargs.get("resolved_output_extras", [])
 
-        return await _run_async_impl(
+        return await _run_implementation(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
@@ -224,7 +226,7 @@ class MapTaskNode(BaseGraphNode):
         )
 
     @override
-    async def run_async(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
         from dataclasses import replace
 
         iteration_index = kwargs["iteration_index"]
@@ -233,7 +235,7 @@ class MapTaskNode(BaseGraphNode):
         node_key = f"{self.name}[{iteration_index}]"
         metadata = replace(self.to_metadata(), key=node_key)
 
-        return await _run_async_impl(
+        return await _run_implementation(
             func=self.func,
             metadata=metadata,
             resolved_inputs=resolved_inputs,
@@ -245,10 +247,10 @@ class MapTaskNode(BaseGraphNode):
         )
 
 
-# region Helpers
+# region Run
 
 
-async def _run_async_impl(
+async def _run_implementation(
     func: Callable[..., Any],
     metadata: GraphMetadata,
     resolved_inputs: dict[str, Any],
@@ -259,7 +261,7 @@ async def _run_async_impl(
     cache_ttl: int | None = None,
 ) -> Any:
     """
-    Async implementation for running a node with context setup and retries.
+    Private implementation for running a node with context setup and retries.
 
     Args:
         func: Async function to execute.
@@ -279,6 +281,7 @@ async def _run_async_impl(
     hook = get_plugin_manager().hook
     reporter = get_reporter()
 
+    # Check cache before execution and return cached result if available
     cached_result = hook.check_cache(
         func=func,
         metadata=metadata,
@@ -315,6 +318,7 @@ async def _run_async_impl(
     start_time = time.time()
 
     try:
+        # Main execution loop with retry handling
         while attempt < max_attempts:  # pragma: no branch
             attempt += 1
             try:
@@ -330,10 +334,12 @@ async def _run_async_impl(
                         last_error=last_error,
                     )
 
+                # Synchronous/asynchronous function handling
                 if inspect.iscoroutinefunction(func):
                     result = await func(**resolved_inputs)
                 else:
                     result = func(**resolved_inputs)
+
                 duration = time.time() - start_time
 
                 if attempt > 1:
@@ -367,6 +373,7 @@ async def _run_async_impl(
                 return result
 
             except Exception as error:
+                # Determine if a retry is available
                 last_error = error
 
                 if attempt > 1:
