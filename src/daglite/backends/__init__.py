@@ -18,7 +18,7 @@ class BackendManager:
 
         self._cached_backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
-            "Inline": InlineBackend,
+            "inline": InlineBackend,
             "synchronous": InlineBackend,  # alias
             "threading": ThreadBackend,
             "threads": ThreadBackend,  # alias

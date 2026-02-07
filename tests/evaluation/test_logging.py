@@ -278,13 +278,13 @@ class TestCentralizedLoggingIntegration:
 class TestCentralizedLoggingDirectReporter:
     """Test centralized logging with DirectReporter backends (Inline, threads)."""
 
-    @pytest.mark.parametrize("backend_name", ["Inline", "threads"])
+    @pytest.mark.parametrize("backend_name", ["inline", "threads"])
     def test_contextual_logging(self, backend_name, caplog):
         """Test that get_logger() without name uses daglite.tasks logger."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        # Use Inline backend when backend_name is "Inline" (default behavior)
-        if backend_name == "Inline":
+        # Use Inline backend when backend_name is "inline" (default behavior)
+        if backend_name == "inline":
             task_with_backend = contextual_logging_task
         else:
             task_with_backend = contextual_logging_task.with_options(backend_name=backend_name)
@@ -339,7 +339,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
         captured = capsys.readouterr()
         log_text = captured.out
         assert "Starting evaluation" in log_text
-        assert "Task 'add' - Starting task using Inline backend" in log_text
+        assert "Task 'add' - Starting task using inline backend" in log_text
         assert "Task 'add' - Completed task successfully in" in log_text
         assert "Completed evaluation" in log_text and "successfully in" in log_text
 
@@ -527,7 +527,7 @@ class TestLifecycleLoggingWithMappedTasks:
         # Check mapped task logging
         assert "Task 'square' - Starting task with 4 iterations" in log_text
         assert "Task 'square' - Completed task successfully in" in log_text
-        assert "Inline backend" in log_text
+        assert "inline backend" in log_text
 
     def test_logs_mapped_task_with_threads_backend(self, capsys):
         """Test that mapped task backend is logged correctly."""

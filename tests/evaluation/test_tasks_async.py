@@ -203,7 +203,7 @@ class TestSyncTasksWithEvaluateAsync:
     def test_Inline_backend_with_sync_tasks(self) -> None:
         """Inline backend with sync tasks works in evaluate_async()."""
 
-        @task(backend_name="Inline")
+        @task(backend_name="inline")
         def add(x: int, y: int) -> int:
             return x + y
 
@@ -217,7 +217,7 @@ class TestSyncTasksWithEvaluateAsync:
     def test_Inline_backend_with_sync_map_tasks(self) -> None:
         """Inline backend with sync map tasks works in evaluate_async()."""
 
-        @task(backend_name="Inline")
+        @task(backend_name="inline")
         def double(x: int) -> int:
             return x * 2
 

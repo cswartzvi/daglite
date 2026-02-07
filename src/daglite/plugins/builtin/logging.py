@@ -336,7 +336,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         # Coordinator-side hooks need manual task context since get_current_task() returns None.
         # This enables format strings like %(daglite_task_name)s to work in log output.
         node_key = metadata.key or metadata.name
-        backend_name = metadata.backend_name or "Inline"
+        backend_name = metadata.backend_name or "inline"
         self._logger.info(
             f"Task '{node_key}' - Starting task with {len(inputs_list)} iterations using "
             f"{backend_name} backend",
@@ -469,7 +469,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]
-        backend_name = event.get("backend_name") or "Inline"
+        backend_name = event.get("backend_name") or "inline"
         if node_id in self._mapped_nodes:
             self._logger.debug(
                 f"Task '{node_key}' - Starting iteration using {backend_name} backend"

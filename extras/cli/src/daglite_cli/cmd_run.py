@@ -28,7 +28,7 @@ from daglite_cli.utils import parse_param_value
 @click.option(
     "--backend",
     "-b",
-    default="Inline",
+    default="inline",
     help="Backend to use for execution (e.g., 'Inline', 'threading').",
 )
 @click.option(

@@ -80,7 +80,7 @@ class TestBackendIntegration:
     @pytest.mark.parametrize(
         "backend,x,y,expected",
         [
-            ("Inline", 5, 10, 15),
+            ("inline", 5, 10, 15),
             ("threading", 6, 7, 13),
             ("processes", 8, 9, 17),
         ],
@@ -91,7 +91,7 @@ class TestBackendIntegration:
         result = evaluate(task_with_backend(x=x, y=y))
         assert result == expected
 
-    @pytest.mark.parametrize("backend", ["Inline", "threading", "processes"])
+    @pytest.mark.parametrize("backend", ["inline", "threading", "processes"])
     def test_map_operation(self, backend: str) -> None:
         """Different backends handle map operations correctly."""
         task_with_backend = double.with_options(backend_name=backend)
@@ -101,9 +101,9 @@ class TestBackendIntegration:
 
     def test_mixed_backends_in_pipeline(self) -> None:
         """Different backends can be mixed in same pipeline."""
-        fetch = fetch_data.with_options(backend_name="Inline")
+        fetch = fetch_data.with_options(backend_name="inline")
         process = square.with_options(backend_name="processes")
-        sum_task = sum_values.with_options(backend_name="Inline")
+        sum_task = sum_values.with_options(backend_name="inline")
 
         data = fetch()
         processed = process.zip(x=data)
@@ -186,7 +186,7 @@ class TestBackendPickleRequirements:
         lambda_task = task(lambda x: x * 3, name="triple")  # type: ignore
 
         # Should work with Inline backend
-        result = evaluate(lambda_task.with_options(backend_name="Inline")(x=7))
+        result = evaluate(lambda_task.with_options(backend_name="inline")(x=7))
         assert result == 21
 
         # Should work with threading backend
@@ -208,7 +208,7 @@ class TestBackendPickleRequirements:
         mult_task = task(multiplier, name="multiplier")  # type: ignore
 
         # Should work with Inline backend (no pickling needed)
-        result = evaluate(mult_task.with_options(backend_name="Inline")(x=4))
+        result = evaluate(mult_task.with_options(backend_name="inline")(x=4))
         assert result == 20
 
         # Should work with threading backend (pickle not strictly required)
