@@ -15,7 +15,7 @@ _current_task: ContextVar["GraphMetadata | None"] = ContextVar("current_task", d
 
 
 def set_execution_context(
-    plugin_manager: PluginManager, reporter: EventReporter
+    plugin_manager: PluginManager, event_reporter: EventReporter
 ) -> tuple[Token[PluginManager | None], Token[EventReporter | None]]:
     """
     Set execution context for current worker (thread/process/machine).
@@ -25,9 +25,9 @@ def set_execution_context(
 
     Args:
         plugin_manager: Plugin manager instance for hook execution.
-        reporter: Event reporter for worker → coordinator communication.
+        event_reporter: Event reporter for worker → coordinator communication.
     """
-    return _plugin_manager.set(plugin_manager), _event_reporter.set(reporter)
+    return _plugin_manager.set(plugin_manager), _event_reporter.set(event_reporter)
 
 
 def get_plugin_manager() -> PluginManager:
@@ -49,7 +49,7 @@ def get_plugin_manager() -> PluginManager:
     return pm
 
 
-def get_reporter() -> EventReporter | None:
+def get_event_reporter() -> EventReporter | None:
     """
     Get event reporter for current execution context.
 

@@ -17,7 +17,7 @@ from uuid import UUID
 from typing_extensions import override
 
 from daglite.backends.context import get_current_task
-from daglite.backends.context import get_reporter
+from daglite.backends.context import get_event_reporter
 from daglite.graph.base import GraphMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
@@ -88,7 +88,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     base_logger = logging.getLogger(name)
 
     # Add ReporterHandler only for all non-direct reporters to route logs to coordinator.
-    reporter = get_reporter()
+    reporter = get_event_reporter()
     if reporter and not reporter.is_direct:
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):

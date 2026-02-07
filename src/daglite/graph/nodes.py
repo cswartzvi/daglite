@@ -9,8 +9,8 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
-from daglite.backends.context import get_reporter
 from daglite.backends.context import reset_current_task
 from daglite.backends.context import set_current_task
 from daglite.exceptions import ExecutionError
@@ -279,7 +279,7 @@ async def _run_implementation(
 
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
-    reporter = get_reporter()
+    reporter = get_event_reporter()
 
     # Check cache before execution and return cached result if available
     cached_result = hook.check_cache(
