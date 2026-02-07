@@ -9,7 +9,6 @@ from collections.abc import AsyncIterator
 from collections.abc import Coroutine
 from collections.abc import Generator
 from collections.abc import Iterator
-from contextvars import ContextVar
 from dataclasses import dataclass
 from dataclasses import field
 from types import CoroutineType
@@ -38,8 +37,6 @@ from daglite.tasks import TaskFuture
 P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
-
-_IN_EVALUATION: ContextVar[bool] = ContextVar("in_evaluation", default=False)
 
 
 # region API
@@ -274,17 +271,15 @@ async def evaluate_async(expr: Any, *, plugins: list[Any] | None = None) -> Any:
         >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
         3
     """
-    if _IN_EVALUATION.get():
+    from daglite.backends.context import get_current_task
+
+    if get_current_task():
         raise RuntimeError(
-            "Cannot call evaluate()/evaluate_async() from within a task. "
-            "Compose tasks using the fluent API instead."
+            "Cannot call evaluate()/evaluate_async() from within a task. Compose tasks using the "
+            "fluent API instead."
         )
-    token = _IN_EVALUATION.set(True)
-    try:
-        engine = Engine(plugins=plugins)
-        return await engine.evaluate_async(expr)
-    finally:
-        _IN_EVALUATION.reset(token)
+    engine = Engine(plugins=plugins)
+    return await engine.evaluate_async(expr)
 
 
 # region Engine
