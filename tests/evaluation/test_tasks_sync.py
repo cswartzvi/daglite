@@ -1081,7 +1081,7 @@ class TestEvaluateGuards:
             inner_task = task(lambda: 1)
             return await evaluate_async(inner_task())
 
-        with pytest.raises(RuntimeError, match="Cannot call evaluate.*from within a task"):
+        with pytest.raises(RuntimeError, match="Cannot call evaluate.*from within another task"):
             asyncio.run(evaluate_async(outer()))
 
     def test_evaluate_rejects_nested_call(self) -> None:
