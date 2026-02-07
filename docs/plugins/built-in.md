@@ -77,7 +77,7 @@ Get a logger instance that works across process/thread/machine boundaries.
   - `daglite_task_id` - Unique ID for the task instance
   - `daglite_task_key` - Node key in the DAG
 - Routes logs through the reporter system when available
-- Falls back to standard Python logging for sequential execution
+- Falls back to standard Python logging for Inline execution
 
 **Example:**
 
@@ -305,7 +305,7 @@ def task_with_debug_logs():
 
 ### Overhead
 
-- **Sequential execution**: Negligible overhead (standard Python logging)
+- **Inline execution**: Negligible overhead (standard Python logging)
 - **Threading**: Minimal overhead from thread-safe queue
 - **Multiprocessing**: Small serialization overhead per log record
 - **Distributed**: Network latency for log events

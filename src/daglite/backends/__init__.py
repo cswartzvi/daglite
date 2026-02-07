@@ -8,8 +8,8 @@ class BackendManager:
     """Manages global backend instance."""
 
     def __init__(self, plugin_manager: PluginManager, event_processor: EventProcessor) -> None:
+        from daglite.backends.local import InlineBackend
         from daglite.backends.local import ProcessBackend
-        from daglite.backends.local import SequentialBackend
         from daglite.backends.local import ThreadBackend
 
         self._started = False
@@ -18,8 +18,8 @@ class BackendManager:
 
         self._cached_backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
-            "sequential": SequentialBackend,
-            "synchronous": SequentialBackend,  # alias
+            "Inline": InlineBackend,
+            "synchronous": InlineBackend,  # alias
             "threading": ThreadBackend,
             "threads": ThreadBackend,  # alias
             "multiprocessing": ProcessBackend,

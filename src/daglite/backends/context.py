@@ -54,7 +54,7 @@ def get_reporter() -> EventReporter | None:
     Get event reporter for current execution context.
 
     Returns:
-        EventReporter instance if set, None otherwise (e.g., for SequentialBackend).
+        EventReporter instance if set, None otherwise (e.g., for InlineBackend).
     """
     return _event_reporter.get()
 

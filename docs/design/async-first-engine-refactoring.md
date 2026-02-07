@@ -34,12 +34,12 @@ def evaluate(self, root: GraphBuilder) -> Any:
     return asyncio.run(self.evaluate_async(root))
 ```
 
-### 2. Remove `_run_sequential` and all sync-only execution code
+### 2. Remove `_run_Inline` and all sync-only execution code
 
 Only keep `_run_async` as the execution path. This removes:
 
 **engine.py:**
-- `_run_sequential` (line 366) — sync execution loop
+- `_run_Inline` (line 366) — sync execution loop
 - `_submit_node_sync` (line 499) — sync node submission
 - `_collect_result_sync` (line 547) — sync result collection
 - `_NodeFutureWrapper` (line 640) — sync future wrapper
@@ -59,7 +59,7 @@ Only keep `_run_async` as the execution path. This removes:
 
 - **`_validate_sync_compatibility`** (line 330): No longer needed because `evaluate()` now delegates to the async path, which handles both sync and async task functions via `_run_async_impl`.
 
-- **`_validate_async_compatibility`** (line 347): Sync functions on the sequential backend are suboptimal (they block the event loop) but not incorrect. Removing this validation simplifies the API — users no longer need to think about backend/function compatibility. If performance matters, they can switch backends.
+- **`_validate_async_compatibility`** (line 347): Sync functions on the Inline backend are suboptimal (they block the event loop) but not incorrect. Removing this validation simplifies the API — users no longer need to think about backend/function compatibility. If performance matters, they can switch backends.
 
 ### 4. `_run_async_impl` already handles sync functions (nodes.py line 522)
 
@@ -198,7 +198,7 @@ The only scenario where this matters is a micro-benchmark with hundreds of trivi
 
 1. Add nested call guard (`ContextVar`) to `evaluate()` and `evaluate_async()`
 2. Rewrite `Engine.evaluate()` to wrap `Engine.evaluate_async()` with loop detection
-3. Remove `_run_sequential` and all sync-only code paths from `engine.py`
+3. Remove `_run_Inline` and all sync-only code paths from `engine.py`
 4. Remove `_run_sync_impl`, `TaskNode.run()`, `MapTaskNode.run()` from `nodes.py`
 5. Remove `_validate_sync_compatibility` and `_validate_async_compatibility`
 6. Switch `_run_async` to use `FIRST_EXCEPTION` in `asyncio.wait()`

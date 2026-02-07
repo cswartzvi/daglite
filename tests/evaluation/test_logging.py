@@ -276,15 +276,15 @@ class TestCentralizedLoggingIntegration:
 
 
 class TestCentralizedLoggingDirectReporter:
-    """Test centralized logging with DirectReporter backends (sequential, threads)."""
+    """Test centralized logging with DirectReporter backends (Inline, threads)."""
 
-    @pytest.mark.parametrize("backend_name", ["sequential", "threads"])
+    @pytest.mark.parametrize("backend_name", ["Inline", "threads"])
     def test_contextual_logging(self, backend_name, caplog):
         """Test that get_logger() without name uses daglite.tasks logger."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        # Use sequential backend when backend_name is "sequential" (default behavior)
-        if backend_name == "sequential":
+        # Use Inline backend when backend_name is "Inline" (default behavior)
+        if backend_name == "Inline":
             task_with_backend = contextual_logging_task
         else:
             task_with_backend = contextual_logging_task.with_options(backend_name=backend_name)
@@ -316,8 +316,8 @@ class TestCentralizedLoggingProcessBackend:
         assert "Test 42" in caplog.text
 
 
-class TestLifecycleLoggingWithSequentialEvaluation:
-    """Test LifecycleLoggingPlugin with sequential backend evaluation."""
+class TestLifecycleLoggingWithInlineEvaluation:
+    """Test LifecycleLoggingPlugin with Inline backend evaluation."""
 
     def test_logs_simple_task_execution(self, capsys):
         """Test that simple task execution is logged correctly."""
@@ -339,7 +339,7 @@ class TestLifecycleLoggingWithSequentialEvaluation:
         captured = capsys.readouterr()
         log_text = captured.out
         assert "Starting evaluation" in log_text
-        assert "Task 'add' - Starting task using sequential backend" in log_text
+        assert "Task 'add' - Starting task using Inline backend" in log_text
         assert "Task 'add' - Completed task successfully in" in log_text
         assert "Completed evaluation" in log_text and "successfully in" in log_text
 
@@ -527,7 +527,7 @@ class TestLifecycleLoggingWithMappedTasks:
         # Check mapped task logging
         assert "Task 'square' - Starting task with 4 iterations" in log_text
         assert "Task 'square' - Completed task successfully in" in log_text
-        assert "sequential backend" in log_text
+        assert "Inline backend" in log_text
 
     def test_logs_mapped_task_with_threads_backend(self, capsys):
         """Test that mapped task backend is logged correctly."""

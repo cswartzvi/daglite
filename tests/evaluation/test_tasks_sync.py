@@ -1035,10 +1035,10 @@ class TestSiblingParallelism:
         start_times = [t[1] for t in execution_order]
         time_range = max(start_times) - min(start_times)
 
-        # If sequential with 0.01s sleep each, would be ~0.02s between first and last
+        # If running inline with 0.01s sleep each, would be ~0.02s between first and last
         # If parallel, should start within ~0.001s of each other
         assert time_range < 0.015, (
-            f"Tasks appear to have run sequentially. "
+            f"Tasks appear to have run sequentially (not in parallel). "
             f"Time range between first and last start: {time_range:.4f}s"
         )
 
@@ -1055,7 +1055,7 @@ class TestSiblingParallelism:
         # Verify results
         assert result["sum"] == 30
 
-        # PIDs should be different if truly parallel (may be same if sequential)
+        # PIDs should be different if truly parallel (may be same if Inline)
         # Just verify we got valid PIDs
         assert all(pid > 0 for pid in result["pids"])
 

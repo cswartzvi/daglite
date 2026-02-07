@@ -27,8 +27,14 @@ from daglite.plugins.reporters import ProcessReporter
 from daglite.settings import get_global_settings
 
 
-class SequentialBackend(Backend):
-    """Executes immediately in current thread/process, returns completed futures."""
+class InlineBackend(Backend):
+    """
+    Executes tasks inline in the event loop without parallelism.
+
+    Tasks run directly in the main event loop thread, making this the simplest backend.
+    When timeouts are specified, a thread pool is used for enforcement only - the task
+    still runs to completion in the worker thread even if the timeout expires.
+    """
 
     _timeout_executor: ThreadPoolExecutor
 

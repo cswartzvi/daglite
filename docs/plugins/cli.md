@@ -78,7 +78,7 @@ daglite run [OPTIONS] PIPELINE
 **Options:**
 
 - `--param NAME=VALUE`, `-p NAME=VALUE` - Pipeline parameter (can be specified multiple times)
-- `--backend NAME`, `-b NAME` - Execution backend (`sequential`, `threading`, `processes`)
+- `--backend NAME`, `-b NAME` - Execution backend (`Inline`, `threading`, `processes`)
 - `--async` - Use async evaluation (for async tasks or event loop integration)
 - `--settings NAME=VALUE`, `-s NAME=VALUE` - Override global settings (can be specified multiple times)
 

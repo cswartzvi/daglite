@@ -2,7 +2,7 @@
 
 *This page is under construction. You can add detailed documentation about:*
 
-- `.then()` - Sequential chaining
+- `.then()` - Inline chaining
 - `.map()` - Transform each element in a sequence
 - `.join()` - Reduce a sequence to a single value
 - Inline kwargs

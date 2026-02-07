@@ -200,10 +200,10 @@ class TestSyncTasksWithEvaluateAsync:
         result = asyncio.run(run())
         assert result == 9
 
-    def test_sequential_backend_with_sync_tasks(self) -> None:
-        """Sequential backend with sync tasks works in evaluate_async()."""
+    def test_Inline_backend_with_sync_tasks(self) -> None:
+        """Inline backend with sync tasks works in evaluate_async()."""
 
-        @task(backend_name="sequential")
+        @task(backend_name="Inline")
         def add(x: int, y: int) -> int:
             return x + y
 
@@ -214,10 +214,10 @@ class TestSyncTasksWithEvaluateAsync:
 
         assert asyncio.run(run()) == 30
 
-    def test_sequential_backend_with_sync_map_tasks(self) -> None:
-        """Sequential backend with sync map tasks works in evaluate_async()."""
+    def test_Inline_backend_with_sync_map_tasks(self) -> None:
+        """Inline backend with sync map tasks works in evaluate_async()."""
 
-        @task(backend_name="sequential")
+        @task(backend_name="Inline")
         def double(x: int) -> int:
             return x * 2
 

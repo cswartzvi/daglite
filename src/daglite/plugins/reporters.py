@@ -34,7 +34,7 @@ class EventReporter(Protocol):
 
 class DirectReporter:
     """
-    Direct function call reporter for sequential and threaded execution.
+    Direct function call reporter for Inline and threaded execution.
 
     No serialization needed since everything runs in the same process.
     Events are dispatched immediately via callback. Thread-safe for use
