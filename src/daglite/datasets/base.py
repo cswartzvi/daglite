@@ -191,8 +191,8 @@ class AbstractDataset(ABC):
             ValueError: If no dataset is registered for the type/format.
 
         Examples:
-            >>> dataset = AbstractDataset.get(str, "text")  # doctest: +SKIP
-            >>> dataset.serialize("hello")  # doctest: +SKIP
+            >>> dataset = AbstractDataset.get(str, "text")
+            >>> dataset.serialize("hello")
             b'hello'
         """
         key = (type_, format)
@@ -255,9 +255,9 @@ class AbstractDataset(ABC):
             ValueError: If no format can be inferred for the type.
 
         Examples:
-            >>> AbstractDataset.infer_format(str, "txt")  # doctest: +SKIP
+            >>> AbstractDataset.infer_format(str, "txt")
             'text'
-            >>> AbstractDataset.infer_format(dict, "pkl")  # doctest: +SKIP
+            >>> AbstractDataset.infer_format(dict, "pkl")
             'pickle'
         """
         # Try extension hint first
@@ -309,7 +309,7 @@ class AbstractDataset(ABC):
             Set of format identifiers registered for this type.
 
         Examples:
-            >>> "text" in AbstractDataset.get_formats_for_type(str)  # doctest: +SKIP
+            >>> "text" in AbstractDataset.get_formats_for_type(str)
             True
         """
         formats: set[str] = set()
@@ -337,7 +337,7 @@ class AbstractDataset(ABC):
             The preferred file extension (without dot), or None if not found.
 
         Examples:
-            >>> AbstractDataset.get_extension(str, "text")  # doctest: +SKIP
+            >>> AbstractDataset.get_extension(str, "text")
             'txt'
         """
         key = (type_, format)
@@ -361,15 +361,15 @@ class AbstractDataset(ABC):
         Examples:
             Load specific plugins:
 
-            >>> AbstractDataset.load_plugins("pandas", "numpy")  # doctest: +SKIP
+            >>> AbstractDataset.load_plugins("pandas", "numpy")
 
             Load all installed plugins:
 
-            >>> AbstractDataset.load_plugins()  # doctest: +SKIP
+            >>> AbstractDataset.load_plugins()
 
             Disable auto-discovery (strict mode):
 
-            >>> AbstractDataset.load_plugins("pandas", auto_discover=False)  # doctest: +SKIP
+            >>> AbstractDataset.load_plugins("pandas", auto_discover=False)
         """
         if auto_discover is not None:
             cls._auto_discover = auto_discover
