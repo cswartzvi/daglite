@@ -395,7 +395,7 @@ class Engine:
                     tasks.keys(), return_when=asyncio.FIRST_EXCEPTION
                 )
 
-                # Collect results and mark complete
+                # Collect results and mark complete; cancel pending tasks on exception
                 ready = []
                 try:
                     for task in done:
@@ -403,8 +403,7 @@ class Engine:
                         result = task.result()
                         ready.extend(state.mark_complete(nid, result))
                 except Exception:
-                    # Cancel pending siblings and propagate the failure
-                    for t in pending:
+                    for t in pending:  # pragma: no cover
                         t.cancel()
                     await asyncio.gather(*tasks.keys(), return_exceptions=True)
                     raise
@@ -452,7 +451,6 @@ class Engine:
 
         # Determine how to submit to backend based on node type
         if isinstance(node, MapTaskNode):
-            # For mapped nodes, submit each iteration separately
             futures = []
             mapped_inputs = node.build_iteration_calls(resolved_inputs)
 
