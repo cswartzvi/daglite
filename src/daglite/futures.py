@@ -42,11 +42,17 @@ S5 = TypeVar("S5")
 S6 = TypeVar("S6")
 
 
+# region Futures
+
+
 @dataclass(frozen=True)
 class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
+    # Internal unique ID for this future
     _id: UUID = field(init=False, repr=False)
+
+    # Configurations for future outputs to be saved after task execution
     _future_outputs: tuple[_FutureOutput, ...] = field(init=False, repr=False, default=())
 
     task_store: OutputStore | None = field(default=None, kw_only=True)
