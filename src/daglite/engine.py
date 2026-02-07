@@ -406,7 +406,7 @@ class Engine:
                     # Cancel pending siblings and propagate the failure
                     for t in pending:
                         t.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
+                    await asyncio.gather(*tasks.keys(), return_exceptions=True)
                     raise
 
             state.check_complete()
