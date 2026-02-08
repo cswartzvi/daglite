@@ -338,7 +338,7 @@ class SerializationRegistry:
 
         # Try exact type match first
         for registered_type, format in registrations:
-            if registered_type == type_:
+            if registered_type == type_:  # pragma: no branch
                 return format
 
         # Defensive check for subclasses

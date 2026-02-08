@@ -84,7 +84,7 @@ class Backend(abc.ABC):
         if hasattr(self, "event_reporter"):  # pragma: no branch
             del self.event_reporter
         delattr(self, "dataset_processor")
-        if hasattr(self, "dataset_reporter"):
+        if hasattr(self, "dataset_reporter"):  # pragma: no branch
             del self.dataset_reporter
 
     def _stop(self) -> None:

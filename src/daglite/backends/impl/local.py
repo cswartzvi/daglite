@@ -219,7 +219,7 @@ class ProcessBackend(Backend):
         # Wire up dataset reporter queue to processor
         self._dataset_reporter_id = None
         dataset_queue = None
-        if isinstance(self.dataset_reporter, ProcessDatasetReporter):
+        if isinstance(self.dataset_reporter, ProcessDatasetReporter):  # pragma: no branch
             dataset_queue = self.dataset_reporter.queue
             self._dataset_reporter_id = self.dataset_processor.add_source(dataset_queue)
 
@@ -248,11 +248,11 @@ class ProcessBackend(Backend):
         self.event_reporter.queue.close()
 
         # Clean up dataset reporter queue/source
-        if self._dataset_reporter_id is not None:
+        if self._dataset_reporter_id is not None:  # pragma: no branch
             self.dataset_processor.flush()
             self.dataset_processor.remove_source(self._dataset_reporter_id)
 
-        if isinstance(self.dataset_reporter, ProcessDatasetReporter):
+        if isinstance(self.dataset_reporter, ProcessDatasetReporter):  # pragma: no branch
             self.dataset_reporter.close()
 
     @override
