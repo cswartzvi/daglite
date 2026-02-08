@@ -106,9 +106,9 @@ class FileDriver(Driver):
             if self.fs.isdir(f):
                 continue  # Skip directories
 
-            if isinstance(f, str):  # pragma: no branch
+            if isinstance(f, str):  # pragma: no branch - defensive check
                 normalized_f = f.replace("\\", "/")
-                if normalized_f.startswith(normalized_base):
+                if normalized_f.startswith(normalized_base):  # pragma: no branch - defensive check
                     key = normalized_f[prefix_len:]
                     if key:  # pragma: no branch - defensive check
                         keys.append(key)
