@@ -100,7 +100,7 @@ class EventProcessor:
             has_events = False
 
             # Poll all sources for remaining events
-            for source in self._sources.values():
+            for source in list(self._sources.values()):
                 event = self._get_event(source)
                 if event:
                     self._registry.dispatch(event)
@@ -135,7 +135,7 @@ class EventProcessor:
             has_events = False
 
             # Poll all sources for events
-            for source in self._sources.values():
+            for source in list(self._sources.values()):
                 event = self._get_event(source)
                 if event:
                     self._registry.dispatch(event)

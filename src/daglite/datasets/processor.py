@@ -94,7 +94,7 @@ class DatasetProcessor:
         while time.time() - start_time < timeout:  # pragma: no branch
             has_requests = False
 
-            for source in self._sources.values():
+            for source in list(self._sources.values()):
                 request = self._get_request(source)
                 if request is not None:
                     self._handle_request(request)
@@ -128,7 +128,7 @@ class DatasetProcessor:
         while self._running:
             has_requests = False
 
-            for source in self._sources.values():
+            for source in list(self._sources.values()):
                 request = self._get_request(source)
                 if request is not None:
                     self._handle_request(request)
