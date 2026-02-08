@@ -392,7 +392,7 @@ async def _submit_node(
             node.run,
             resolved_inputs,
             timeout=node.timeout,
-            resolved_output_extras=resolved_output_deps,
+            resolved_output_deps=resolved_output_deps,
         )
         result = await future
 
