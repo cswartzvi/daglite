@@ -211,7 +211,7 @@ class AbstractDataset(ABC):
                     continue
 
         # Slow path: try discovering plugins for this type
-        if cls._auto_discover:
+        if cls._auto_discover:  # pragma: no branch - defensive
             cls._discover_for_type(type_)
 
             if key in cls._registry:
@@ -222,7 +222,7 @@ class AbstractDataset(ABC):
                     try:
                         if issubclass(type_, reg_type):
                             return dataset_cls()
-                    except TypeError:
+                    except TypeError:  # pragma: no branch - defensive
                         continue
 
         module = type_.__module__.split(".")[0]
@@ -271,7 +271,7 @@ class AbstractDataset(ABC):
                 try:
                     if issubclass(type_, hint_type):
                         return hint_format
-                except TypeError:
+                except TypeError:  # pragma: no cover - defensive
                     continue
 
         # Fall back to first registered format for this type
@@ -284,7 +284,7 @@ class AbstractDataset(ABC):
             try:
                 if issubclass(type_, reg_type):
                     return reg_format
-            except TypeError:
+            except TypeError:  # pragma: no cover - defensive
                 continue
 
         # Try auto-discovery
@@ -382,7 +382,7 @@ class AbstractDataset(ABC):
             eps = all_eps.get("daglite.datasets", [])  # type: ignore[assignment]
 
         for ep in eps:
-            if not names or ep.name in names:
+            if not names or ep.name in names:  # pragma: no cover - requires plugins
                 try:
                     ep.load()  # Imports module, triggers __init_subclass__
                     cls._discovered.add(ep.name)
@@ -412,7 +412,7 @@ class AbstractDataset(ABC):
             eps = all_eps.get("daglite.datasets", [])  # type: ignore[assignment]
 
         for ep in eps:
-            if ep.name == module_name:
+            if ep.name == module_name:  # pragma: no cover - requires plugins
                 try:
                     ep.load()
                 except Exception:  # pragma: no cover
