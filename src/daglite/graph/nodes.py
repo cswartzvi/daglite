@@ -430,7 +430,6 @@ def _save_outputs(
 
     Args:
         result: The task execution result to save.
-        metadata: Metadata for the executed node (used for key formatting).
         resolved_inputs: Resolved inputs for key formatting.
         output_config: Output configuration tuple for this node.
         output_deps: List of resolved output dependencies for each output config.
