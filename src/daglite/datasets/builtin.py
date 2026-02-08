@@ -14,34 +14,6 @@ from typing_extensions import override
 from daglite.datasets.base import AbstractDataset
 
 
-class PickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=(object,),
-    extensions=("pkl", "pickle"),
-):
-    """
-    General-purpose pickle serialization.
-
-    This is the fallback dataset for types without a specific handler.
-    Works with most Python objects but produces binary, non-human-readable output.
-
-    Examples:
-        >>> dataset = PickleDataset()
-        >>> data = dataset.serialize({"key": [1, 2, 3]})
-        >>> dataset.deserialize(data)
-        {'key': [1, 2, 3]}
-    """
-
-    @override
-    def serialize(self, value: Any, **options) -> bytes:
-        return pickle.dumps(value)
-
-    @override
-    def deserialize(self, data: bytes, **options) -> Any:
-        return pickle.loads(data)
-
-
 class TextDataset(AbstractDataset, format="text", types=str, extensions="txt"):
     """
     UTF-8 text serialization for strings.
@@ -57,11 +29,11 @@ class TextDataset(AbstractDataset, format="text", types=str, extensions="txt"):
     """
 
     @override
-    def serialize(self, value: str, **options) -> bytes:
-        return value.encode("utf-8")
+    def serialize(self, obj: str) -> bytes:
+        return obj.encode("utf-8")
 
     @override
-    def deserialize(self, data: bytes, **options) -> str:
+    def deserialize(self, data: bytes) -> str:
         return data.decode("utf-8")
 
 
@@ -80,98 +52,56 @@ class BytesDataset(AbstractDataset, format="raw", types=bytes, extensions="bin")
     """
 
     @override
-    def serialize(self, value: bytes, **options) -> bytes:
-        return value
+    def serialize(self, obj: bytes) -> bytes:
+        return obj
 
     @override
-    def deserialize(self, data: bytes, **options) -> bytes:
+    def deserialize(self, data: bytes) -> bytes:
         return data
 
 
-# Register pickle format for common collection types
-# These get their own registrations so they're found before the generic `object` fallback
+class PickleDataset(AbstractDataset, format="pickle", types=object, extensions=("pkl", "pickle")):
+    """
+    General-purpose pickle serialization.
+
+    This is the fallback dataset for types without a specific handler.
+    Works with most Python objects but produces binary, non-human-readable output.
+
+    Examples:
+        >>> dataset = PickleDataset()
+        >>> data = dataset.serialize({"key": [1, 2, 3]})
+        >>> dataset.deserialize(data)
+        {'key': [1, 2, 3]}
+    """
+
+    def __init__(self, protocol: int | None = None, encoding: str = "ASCII") -> None:
+        self.protocol = protocol
+        self.encoding = encoding
+
+    @override
+    def serialize(self, obj: Any) -> bytes:
+        return pickle.dumps(obj, protocol=self.protocol)
+
+    @override
+    def deserialize(self, data: bytes) -> Any:
+        return pickle.loads(data, encoding=self.encoding)
 
 
-class DictPickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=dict,
-    extensions=("pkl", "pickle"),
-):
+class DictPickleDataset(PickleDataset, types=dict):
     """Pickle serialization for dictionaries."""
 
-    @override
-    def serialize(self, value: dict, **options) -> bytes:
-        return pickle.dumps(value)
 
-    @override
-    def deserialize(self, data: bytes, **options) -> dict:
-        return pickle.loads(data)
-
-
-class ListPickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=list,
-    extensions=("pkl", "pickle"),
-):
+class ListPickleDataset(PickleDataset, types=list):
     """Pickle serialization for lists."""
 
-    @override
-    def serialize(self, value: list, **options) -> bytes:
-        return pickle.dumps(value)
 
-    @override
-    def deserialize(self, data: bytes, **options) -> list:
-        return pickle.loads(data)
-
-
-class TuplePickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=tuple,
-    extensions=("pkl", "pickle"),
-):
+class TuplePickleDataset(PickleDataset, types=tuple):
     """Pickle serialization for tuples."""
 
-    @override
-    def serialize(self, value: tuple, **options) -> bytes:
-        return pickle.dumps(value)
 
-    @override
-    def deserialize(self, data: bytes, **options) -> tuple:
-        return pickle.loads(data)
-
-
-class SetPickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=set,
-    extensions=("pkl", "pickle"),
-):
+class SetPickleDataset(PickleDataset, types=set):
     """Pickle serialization for sets."""
 
-    @override
-    def serialize(self, value: set, **options) -> bytes:
-        return pickle.dumps(value)
 
-    @override
-    def deserialize(self, data: bytes, **options) -> set:
-        return pickle.loads(data)
-
-
-class FrozenSetPickleDataset(
-    AbstractDataset,
-    format="pickle",
-    types=frozenset,
-    extensions=("pkl", "pickle"),
-):
+class FrozenSetPickleDataset(PickleDataset, types=frozenset):
     """Pickle serialization for frozensets."""
-
-    @override
-    def serialize(self, value: frozenset, **options) -> bytes:
-        return pickle.dumps(value)
-
-    @override
-    def deserialize(self, data: bytes, **options) -> frozenset:
-        return pickle.loads(data)

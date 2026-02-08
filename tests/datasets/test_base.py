@@ -3,6 +3,7 @@
 import pytest
 
 from daglite.datasets.base import AbstractDataset
+from daglite.exceptions import DatasetError
 
 
 class _Marker:
@@ -17,6 +18,24 @@ class _MarkerChild(_Marker):
     pass
 
 
+@pytest.fixture(autouse=True)
+def _clean_registry():
+    """Snapshot and restore the AbstractDataset class-level state around every test."""
+    saved_registry = dict(AbstractDataset._registry)
+    saved_hints = {k: list(v) for k, v in AbstractDataset._extension_hints.items()}
+    saved_discovered = set(AbstractDataset._discovered)
+    saved_auto = AbstractDataset._auto_discover
+
+    yield
+
+    AbstractDataset._registry.clear()
+    AbstractDataset._registry.update(saved_registry)
+    AbstractDataset._extension_hints.clear()
+    AbstractDataset._extension_hints.update(saved_hints)
+    AbstractDataset._discovered = saved_discovered
+    AbstractDataset._auto_discover = saved_auto
+
+
 class TestInitSubclassRegistration:
     """Tests for the auto-registration via __init_subclass__."""
 
@@ -29,18 +48,14 @@ class TestInitSubclassRegistration:
             types=_Marker,
             extensions="mrk",
         ):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return _Marker()
 
-        try:
-            assert (_Marker, "marker_fmt") in AbstractDataset._registry
-            assert AbstractDataset._registry[(_Marker, "marker_fmt")] is MarkerDS
-        finally:
-            AbstractDataset._registry.pop((_Marker, "marker_fmt"), None)
-            AbstractDataset._extension_hints.pop("mrk", None)
+        assert (_Marker, "marker_fmt") in AbstractDataset._registry
+        assert AbstractDataset._registry[(_Marker, "marker_fmt")] is MarkerDS
 
     def test_register_with_class_variables(self):
         """Subclass using class-variable style is registered."""
@@ -50,27 +65,23 @@ class TestInitSubclassRegistration:
             types = (_Marker,)
             extensions = ("mrkv",)
 
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return _Marker()
 
-        try:
-            assert (_Marker, "marker_cv") in AbstractDataset._registry
-        finally:
-            AbstractDataset._registry.pop((_Marker, "marker_cv"), None)
-            AbstractDataset._extension_hints.pop("mrkv", None)
+        assert (_Marker, "marker_cv") in AbstractDataset._registry
 
     def test_abstract_intermediate_skips_registration(self):
         """Subclass without format acts as abstract intermediate (not registered)."""
         registry_before = dict(AbstractDataset._registry)
 
         class Intermediate(AbstractDataset):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return None
 
         assert AbstractDataset._registry == registry_before
@@ -84,19 +95,14 @@ class TestInitSubclassRegistration:
             types=(int, float),
             extensions="mlt",
         ):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return 0
 
-        try:
-            assert (int, "multi_fmt") in AbstractDataset._registry
-            assert (float, "multi_fmt") in AbstractDataset._registry
-        finally:
-            AbstractDataset._registry.pop((int, "multi_fmt"), None)
-            AbstractDataset._registry.pop((float, "multi_fmt"), None)
-            AbstractDataset._extension_hints.pop("mlt", None)
+        assert (int, "multi_fmt") in AbstractDataset._registry
+        assert (float, "multi_fmt") in AbstractDataset._registry
 
     def test_extension_hints_populated(self):
         """Extension hints are populated when extensions are provided."""
@@ -107,19 +113,73 @@ class TestInitSubclassRegistration:
             types=_Marker,
             extensions=("ext1", "ext2"),
         ):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return _Marker()
 
-        try:
-            assert (_Marker, "ext_fmt") in AbstractDataset._extension_hints.get("ext1", [])
-            assert (_Marker, "ext_fmt") in AbstractDataset._extension_hints.get("ext2", [])
-        finally:
-            AbstractDataset._registry.pop((_Marker, "ext_fmt"), None)
-            AbstractDataset._extension_hints.pop("ext1", None)
-            AbstractDataset._extension_hints.pop("ext2", None)
+        assert (_Marker, "ext_fmt") in AbstractDataset._extension_hints.get("ext1", [])
+        assert (_Marker, "ext_fmt") in AbstractDataset._extension_hints.get("ext2", [])
+
+    def test_extension_hints_shared_extension(self):
+        """Two datasets sharing the same extension both appear in hints."""
+
+        class MarkerDS1(
+            AbstractDataset,
+            format="shared1",
+            types=_Marker,
+            extensions="shx",
+        ):
+            def serialize(self, obj):  # pragma: no cover
+                return b""
+
+            def deserialize(self, data):  # pragma: no cover
+                return _Marker()
+
+        class MarkerDS2(
+            AbstractDataset,
+            format="shared2",
+            types=_Marker,
+            extensions="shx",
+        ):
+            def serialize(self, obj):  # pragma: no cover
+                return b""
+
+            def deserialize(self, data):  # pragma: no cover
+                return _Marker()
+
+        hints = AbstractDataset._extension_hints["shx"]
+        assert (_Marker, "shared1") in hints
+        assert (_Marker, "shared2") in hints
+
+    def test_error_on_missing_types(self):
+        """Raises DatasetError if neither class variable nor parameter provides types."""
+
+        with pytest.raises(DatasetError):
+
+            class BadDS(AbstractDataset, format="bad_fmt"):
+                def serialize(self, obj):  # pragma: no cover
+                    return b""
+
+                def deserialize(self, data):  # pragma: no cover
+                    return None
+
+    def test_error_on_unrecognized_init_args(self):
+        """Raises ValueError if unexpected args/kwargs are passed to constructor."""
+
+        class NoArgsDS(AbstractDataset, format="noargs_fmt", types=_Marker):
+            def serialize(self, obj):  # pragma: no cover
+                return b""
+
+            def deserialize(self, data):  # pragma: no cover
+                return _Marker()
+
+        with pytest.raises(ValueError, match="does not accept parameters"):
+            NoArgsDS("unexpected_arg")
+
+        with pytest.raises(ValueError, match="does not accept parameters"):
+            NoArgsDS(unexpected_kwarg=123)
 
 
 class TestGet:
@@ -127,7 +187,7 @@ class TestGet:
 
     def test_exact_match(self):
         """Exact (type, format) match returns correct dataset."""
-        ds = AbstractDataset.get(str, "text")
+        ds = AbstractDataset.get(str, "text")()
         assert ds.serialize("hello") == b"hello"
 
     def test_subclass_match(self):
@@ -136,12 +196,12 @@ class TestGet:
         class MyStr(str):
             pass
 
-        ds = AbstractDataset.get(MyStr, "text")
+        ds = AbstractDataset.get(MyStr, "text")()
         assert ds.deserialize(b"hi") == "hi"
 
     def test_object_fallback_for_pickle(self):
         """Pickle format with object registration covers arbitrary types."""
-        ds = AbstractDataset.get(object, "pickle")
+        ds = AbstractDataset.get(object, "pickle")()
         data = ds.serialize({"a": 1})
         assert ds.deserialize(data) == {"a": 1}
 
@@ -154,37 +214,52 @@ class TestGet:
         """Raises ValueError with pip install hint when type is truly unknown."""
         # _Marker inherits from object which has pickle; use a type that
         # bypasses the object fallback by temporarily removing it.
-        original = AbstractDataset._registry.pop((object, "pickle"), None)
-        try:
-            with pytest.raises(ValueError, match="pip install"):
-                AbstractDataset.get(_Marker, "nonexistent_format_xyz")
-        finally:
-            if original is not None:
-                AbstractDataset._registry[(object, "pickle")] = original
+        AbstractDataset._registry.pop((object, "pickle"), None)
+
+        with pytest.raises(ValueError, match="No dataset registered"):
+            AbstractDataset.get(_Marker, "nonexistent_format_xyz")
+
+    def test_subclass_match_skips_non_matching_type(self):
+        """get() skips format-matched entries where issubclass is False."""
+
+        class _TypeA:
+            pass
+
+        class _TypeB:
+            pass
+
+        class _TypeBChild(_TypeB):
+            pass
+
+        class DS_A(AbstractDataset, format="shared_fmt", types=_TypeA):
+            def serialize(self, obj):  # pragma: no cover
+                return b"a"
+
+            def deserialize(self, data):  # pragma: no cover
+                return _TypeA()
+
+        class DS_B(AbstractDataset, format="shared_fmt", types=_TypeB):
+            def serialize(self, obj):
+                return b"b"
+
+            def deserialize(self, data):
+                return _TypeB()
+
+        # _TypeBChild is not _TypeA, so the loop skips DS_A, then finds DS_B
+        ds = AbstractDataset.get(_TypeBChild, "shared_fmt")()
+        assert ds.serialize(None) == b"b"
 
     def test_subclass_match_with_issubclass_type_error(self):
         """get() handles non-class types gracefully without crashing."""
-        # Registering with a non-class type that makes issubclass raise TypeError
-        # This exercises the `except TypeError: continue` branch
-        original = dict(AbstractDataset._registry)
-        # Add a key with a non-class to trigger TypeError in issubclass
-        AbstractDataset._registry[("not_a_class", "fake_fmt")] = type(  # type: ignore[assignment]
-            "FakeDS",
-            (AbstractDataset,),
-            {
-                "format": "fake_fmt",
-                "supported_types": (),
-                "file_extensions": (),
-                "serialize": lambda self, v, **o: b"",
-                "deserialize": lambda self, d, **o: None,
-            },
-        )
-        try:
-            with pytest.raises(ValueError):
-                AbstractDataset.get(_Marker, "fake_fmt")
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original)
+        # Inject a non-class key directly to trigger TypeError in issubclass.
+        # Remove (object, "pickle") so _Marker can't match via object fallback,
+        # forcing the loop to iterate all entries and hit the bad one,
+        # exercising the `except TypeError: continue` branch.
+        AbstractDataset._registry.pop((object, "pickle"), None)
+        AbstractDataset._registry[("not_a_class", "fake_fmt")] = AbstractDataset  # type: ignore[assignment]
+
+        with pytest.raises(ValueError):
+            AbstractDataset.get(_Marker, "fake_fmt")
 
 
 class TestInferFormat:
@@ -220,31 +295,21 @@ class TestInferFormat:
 
     def test_infer_unknown_type_raises(self):
         """Raises ValueError for a completely unknown type."""
-        # Remove the object→pickle fallback so _Marker has no format
-        original = AbstractDataset._registry.pop((object, "pickle"), None)
-        try:
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_Marker)
-        finally:
-            if original is not None:
-                AbstractDataset._registry[(object, "pickle")] = original
+        # Remove the object->pickle fallback so _Marker has no format
+        AbstractDataset._registry.pop((object, "pickle"), None)
+
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_Marker)
 
     def test_infer_with_issubclass_type_error(self):
         """infer_format handles non-class types in extension hints gracefully."""
-        original_hints = dict(AbstractDataset._extension_hints)
-        original_registry = dict(AbstractDataset._registry)
         AbstractDataset._extension_hints["badext"] = [("not_a_class", "badfmt")]  # type: ignore[list-item]
-        # Remove object→pickle so _Marker truly has no format
+        # Remove object->pickle so _Marker truly has no format
         AbstractDataset._registry.pop((object, "pickle"), None)
-        try:
-            # Should not crash, just skip the bad entry and raise
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_Marker, "badext")
-        finally:
-            AbstractDataset._extension_hints.clear()
-            AbstractDataset._extension_hints.update(original_hints)
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
+
+        # Should not crash, just skip the bad entry and raise
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_Marker, "badext")
 
 
 class TestGetFormatsForType:
@@ -272,36 +337,19 @@ class TestGetFormatsForType:
 
     def test_truly_unknown_type_empty(self):
         """Returns empty set when object fallback is removed."""
-        original = dict(AbstractDataset._registry)
         AbstractDataset._registry.pop((object, "pickle"), None)
-        try:
-            formats = AbstractDataset.get_formats_for_type(_Marker)
-            assert len(formats) == 0
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original)
+
+        formats = AbstractDataset.get_formats_for_type(_Marker)
+        assert len(formats) == 0
 
     def test_non_class_type_in_registry(self):
         """Handles TypeError from issubclass gracefully."""
-        original = dict(AbstractDataset._registry)
-        AbstractDataset._registry[("not_a_class", "bad_fmt")] = type(  # type: ignore[assignment]
-            "FakeDS2",
-            (AbstractDataset,),
-            {
-                "format": "bad_fmt",
-                "supported_types": (),
-                "file_extensions": (),
-                "serialize": lambda self, v, **o: b"",
-                "deserialize": lambda self, d, **o: None,
-            },
-        )
-        try:
-            # Should not raise, just skip the bad entry
-            formats = AbstractDataset.get_formats_for_type(_Marker)
-            assert isinstance(formats, set)
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original)
+        # Inject a non-class key directly to trigger TypeError in issubclass
+        AbstractDataset._registry[("not_a_class", "bad_fmt")] = AbstractDataset  # type: ignore[assignment]
+
+        # Should not raise, just skip the bad entry
+        formats = AbstractDataset.get_formats_for_type(_Marker)
+        assert isinstance(formats, set)
 
 
 class TestGetExtension:
@@ -325,17 +373,14 @@ class TestGetExtension:
             format="noext_fmt",
             types=_Marker,
         ):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):  # pragma: no cover
+            def deserialize(self, data):  # pragma: no cover
                 return _Marker()
 
-        try:
-            ext = AbstractDataset.get_extension(_Marker, "noext_fmt")
-            assert ext is None
-        finally:
-            AbstractDataset._registry.pop((_Marker, "noext_fmt"), None)
+        ext = AbstractDataset.get_extension(_Marker, "noext_fmt")
+        assert ext is None
 
 
 class TestLoadPlugins:
@@ -343,14 +388,10 @@ class TestLoadPlugins:
 
     def test_load_plugins_sets_auto_discover(self):
         """load_plugins(auto_discover=...) updates the class flag."""
-        original = AbstractDataset._auto_discover
-        try:
-            AbstractDataset.load_plugins(auto_discover=False)
-            assert AbstractDataset._auto_discover is False
-            AbstractDataset.load_plugins(auto_discover=True)
-            assert AbstractDataset._auto_discover is True
-        finally:
-            AbstractDataset._auto_discover = original
+        AbstractDataset.load_plugins(auto_discover=False)
+        assert AbstractDataset._auto_discover is False
+        AbstractDataset.load_plugins(auto_discover=True)
+        assert AbstractDataset._auto_discover is True
 
     def test_load_plugins_no_names_loads_all(self):
         """Calling load_plugins() without names doesn't crash."""
@@ -362,13 +403,9 @@ class TestLoadPlugins:
 
     def test_discover_for_type_no_op_when_already_discovered(self):
         """Once a module is discovered, _discover_for_type is a no-op."""
-        original = set(AbstractDataset._discovered)
-        try:
-            AbstractDataset._discovered.add("builtins")
-            # Should be a no-op on second call
-            AbstractDataset._discover_for_type(int)
-        finally:
-            AbstractDataset._discovered = original
+        AbstractDataset._discovered.add("builtins")
+        # Should be a no-op on second call
+        AbstractDataset._discover_for_type(int)
 
     def test_auto_discover_on_get(self):
         """Auto-discover is triggered on get() for unknown types."""
@@ -379,67 +416,46 @@ class TestLoadPlugins:
 
     def test_auto_discover_on_infer_format(self):
         """Auto-discover is triggered on infer_format() for unknown types."""
-        original_discovered = set(AbstractDataset._discovered)
-        original_registry = dict(AbstractDataset._registry)
-        # Remove object→pickle so _Marker truly has no format
+        # Remove object->pickle so _Marker truly has no format
         AbstractDataset._registry.pop((object, "pickle"), None)
-        try:
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_Marker)
-        finally:
-            AbstractDataset._discovered = original_discovered
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
+
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_Marker)
 
     def test_infer_format_after_discovery_finds_type(self):
         """After _discover_for_type adds a registration, infer_format returns it."""
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = set(AbstractDataset._discovered)
-        try:
-            # Pre-register _Marker during the discovery path
-            AbstractDataset._registry[(_Marker, "discovered_fmt")] = type(
-                "DiscoveredDS",
-                (AbstractDataset,),
-                {
-                    "format": "discovered_fmt",
-                    "supported_types": (_Marker,),
-                    "file_extensions": (),
-                    "serialize": lambda self, v, **o: b"",
-                    "deserialize": lambda self, d, **o: _Marker(),
-                },
-            )
-            # Clear discovered so infer_format falls through to the "after discovery" path
-            AbstractDataset._discovered.discard(_Marker.__module__.split(".")[0])
-            fmt = AbstractDataset.infer_format(_Marker)
-            assert fmt == "discovered_fmt"
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            AbstractDataset._discovered = original_discovered
+        # Pre-register _Marker during the discovery path
+        AbstractDataset._registry[(_Marker, "discovered_fmt")] = type(
+            "DiscoveredDS",
+            (AbstractDataset,),
+            {
+                "format": "discovered_fmt",
+                "types": (_Marker,),
+                "extensions": (),
+                "serialize": lambda self, v: b"",
+                "deserialize": lambda self, d: _Marker(),
+            },
+        )
+        # Clear discovered so infer_format falls through to the "after discovery" path
+        AbstractDataset._discovered.discard(_Marker.__module__.split(".")[0])
+        fmt = AbstractDataset.infer_format(_Marker)
+        assert fmt == "discovered_fmt"
 
     def test_get_after_discovery_via_subclass(self):
         """get() finds a subclass match after auto-discovery."""
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = set(AbstractDataset._discovered)
 
         class DiscoveredDS(AbstractDataset, format="disc_sub", types=_Marker, extensions="dsc"):
-            def serialize(self, value, **opts):  # pragma: no cover
+            def serialize(self, obj):  # pragma: no cover
                 return b""
 
-            def deserialize(self, data, **opts):
+            def deserialize(self, data):
                 return _MarkerChild()
 
-        try:
-            # Clear discovered so get() triggers auto-discovery path
-            AbstractDataset._discovered.discard(_MarkerChild.__module__.split(".")[0])
-            ds = AbstractDataset.get(_MarkerChild, "disc_sub")
-            result = ds.deserialize(b"")
-            assert isinstance(result, _MarkerChild)
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            AbstractDataset._extension_hints.pop("dsc", None)
-            AbstractDataset._discovered = original_discovered
+        # Clear discovered so get() triggers auto-discovery path
+        AbstractDataset._discovered.discard(_MarkerChild.__module__.split(".")[0])
+        ds = AbstractDataset.get(_MarkerChild, "disc_sub")()
+        result = ds.deserialize(b"")
+        assert isinstance(result, _MarkerChild)
 
     def test_infer_format_subclass_no_extension_fallback(self):
         """infer_format falls back to subclass check in registry when no extension."""
@@ -453,28 +469,17 @@ class TestLoadPlugins:
 
     def test_infer_format_extension_hint_subclass_no_match(self):
         """infer_format tries extension hint subclass check, finds no match, falls through."""
-        original_hints = dict(AbstractDataset._extension_hints)
 
         class _Unrelated:
             pass
 
-        # Add a hint for an unrelated type — issubclass(str, _Unrelated) is False
-        AbstractDataset._extension_hints.setdefault("txt", []).append((_Unrelated, "nope"))
+        # Use a fresh extension with only an unrelated type
+        AbstractDataset._extension_hints["xtest"] = [(_Unrelated, "nope")]
 
-        try:
-            # str has an exact hint for "txt" → "text" which matches first,
-            # but let's use a type that won't match the exact check
-            # We need a type where the extension hints only have the subclass path
-            # Use a fresh extension
-            AbstractDataset._extension_hints["xtest"] = [(_Unrelated, "nope")]
-
-            # query for int with extension "xtest" — issubclass(int, _Unrelated) is False
-            # Falls through to registry check, int→pickle via object subclass
-            fmt = AbstractDataset.infer_format(int, "xtest")
-            assert fmt == "pickle"
-        finally:
-            AbstractDataset._extension_hints.clear()
-            AbstractDataset._extension_hints.update(original_hints)
+        # query for int with extension "xtest" -- issubclass(int, _Unrelated) is False
+        # Falls through to registry check, int->pickle via object subclass
+        fmt = AbstractDataset.infer_format(int, "xtest")
+        assert fmt == "pickle"
 
 
 class TestGetAutoDiscoverSlowPath:
@@ -482,17 +487,15 @@ class TestGetAutoDiscoverSlowPath:
 
     def test_exact_key_match_after_auto_discover(self):
         """get() finds exact key match after auto-discover registers a dataset."""
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = AbstractDataset._discovered.copy()
 
         class _DiscType:
             pass
 
         class _DiscDataset(AbstractDataset, types=_DiscType, format="disc"):
-            def serialize(self, value, **options):
+            def serialize(self, obj):
                 return b"disc"
 
-            def deserialize(self, data, **options):
+            def deserialize(self, data):
                 return _DiscType()
 
         # Remove the registration so the fast path won't find it
@@ -506,17 +509,14 @@ class TestGetAutoDiscoverSlowPath:
         def fake_discover(cls, type_):
             cls._registry[key] = saved_cls
 
-        try:
-            AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
-            AbstractDataset._discovered.discard(_DiscType.__module__.split(".")[0])
+        AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
+        AbstractDataset._discovered.discard(_DiscType.__module__.split(".")[0])
 
-            ds = AbstractDataset.get(_DiscType, "disc")
-            assert ds.serialize(None) == b"disc"
-        finally:
-            AbstractDataset._discover_for_type = orig_discover
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            AbstractDataset._discovered = original_discovered
+        ds = AbstractDataset.get(_DiscType, "disc")()
+        assert ds.serialize(None) == b"disc"
+
+        # Restore original discover method (fixture handles registry/discovered)
+        AbstractDataset._discover_for_type = orig_discover
 
     def test_subclass_match_after_auto_discover(self):
         """get() finds subclass match after auto-discover registers a parent dataset."""
@@ -527,14 +527,11 @@ class TestGetAutoDiscoverSlowPath:
         class _DiscChild(_DiscParent):
             pass
 
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = AbstractDataset._discovered.copy()
-
         class _DiscParentDataset(AbstractDataset, types=_DiscParent, format="discfmt"):
-            def serialize(self, value, **options):
+            def serialize(self, obj):
                 return b"parent"
 
-            def deserialize(self, data, **options):
+            def deserialize(self, data):
                 return _DiscParent()
 
         # Remove the registration so subclass check pre-discover won't find it
@@ -547,17 +544,13 @@ class TestGetAutoDiscoverSlowPath:
         def fake_discover(cls, type_):
             cls._registry[key] = saved_cls
 
-        try:
-            AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
-            AbstractDataset._discovered.discard(_DiscChild.__module__.split(".")[0])
+        AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
+        AbstractDataset._discovered.discard(_DiscChild.__module__.split(".")[0])
 
-            ds = AbstractDataset.get(_DiscChild, "discfmt")
-            assert ds.serialize(None) == b"parent"
-        finally:
-            AbstractDataset._discover_for_type = orig_discover
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            AbstractDataset._discovered = original_discovered
+        ds = AbstractDataset.get(_DiscChild, "discfmt")()
+        assert ds.serialize(None) == b"parent"
+
+        AbstractDataset._discover_for_type = orig_discover
 
 
 class TestInferFormatAutoDiscoverSlowPath:
@@ -569,14 +562,11 @@ class TestInferFormatAutoDiscoverSlowPath:
         class _InferType:
             pass
 
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = AbstractDataset._discovered.copy()
-
         class _InferDataset(AbstractDataset, types=_InferType, format="inferfmt"):
-            def serialize(self, value, **options):
+            def serialize(self, obj):
                 return b""
 
-            def deserialize(self, data, **options):
+            def deserialize(self, data):
                 return _InferType()
 
         # Remove registration so pre-discover path won't find it
@@ -589,24 +579,16 @@ class TestInferFormatAutoDiscoverSlowPath:
         def fake_discover(cls, type_):
             cls._registry[key] = saved_cls
 
-        pickle_cls, pickle_key = None, None
-        try:
-            AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
-            AbstractDataset._discovered.discard(_InferType.__module__.split(".")[0])
+        AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
+        AbstractDataset._discovered.discard(_InferType.__module__.split(".")[0])
 
-            # Remove (object, "pickle") so subclass fallback doesn't match first
-            pickle_key = (object, "pickle")
-            pickle_cls = AbstractDataset._registry.pop(pickle_key, None)
+        # Remove (object, "pickle") so subclass fallback doesn't match first
+        AbstractDataset._registry.pop((object, "pickle"), None)
 
-            fmt = AbstractDataset.infer_format(_InferType)
-            assert fmt == "inferfmt"
-        finally:
-            AbstractDataset._discover_for_type = orig_discover
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            if pickle_cls is not None and pickle_key is not None:
-                AbstractDataset._registry[pickle_key] = pickle_cls
-            AbstractDataset._discovered = original_discovered
+        fmt = AbstractDataset.infer_format(_InferType)
+        assert fmt == "inferfmt"
+
+        AbstractDataset._discover_for_type = orig_discover
 
 
 class TestTypeErrorBranches:
@@ -614,8 +596,6 @@ class TestTypeErrorBranches:
 
     def test_get_subclass_type_error_in_post_discover_loop(self):
         """get() handles TypeError from issubclass in post-discover slow path."""
-        original_registry = dict(AbstractDataset._registry)
-        original_discovered = AbstractDataset._discovered.copy()
 
         class _BadMeta(type):
             def __subclasscheck__(cls, subclass):
@@ -629,10 +609,10 @@ class TestTypeErrorBranches:
             pass
 
         class _BadDataset(AbstractDataset, types=_BadParent, format="badfmt"):
-            def serialize(self, value, **options):
+            def serialize(self, obj):
                 return b""
 
-            def deserialize(self, data, **options):
+            def deserialize(self, data):
                 return None
 
         # Remove the registration so fast path and normal subclass fail
@@ -646,22 +626,17 @@ class TestTypeErrorBranches:
             # Re-add it so the post-discover loop finds it
             cls._registry[key] = saved_cls
 
-        try:
-            AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
-            AbstractDataset._discovered.discard("tests")
+        AbstractDataset._discover_for_type = fake_discover  # type: ignore[method-assign]
+        AbstractDataset._discovered.discard("tests")
 
-            # This should trigger the TypeError in issubclass in the post-discover loop
-            with pytest.raises(ValueError, match="No dataset registered"):
-                AbstractDataset.get(_BadType, "badfmt")
-        finally:
-            AbstractDataset._discover_for_type = orig_discover
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            AbstractDataset._discovered = original_discovered
+        # This should trigger the TypeError in issubclass in the post-discover loop
+        with pytest.raises(ValueError, match="No dataset registered"):
+            AbstractDataset.get(_BadType, "badfmt")
+
+        AbstractDataset._discover_for_type = orig_discover
 
     def test_infer_format_subclass_type_error(self):
         """infer_format handles TypeError from issubclass in the subclass loop."""
-        original_registry = dict(AbstractDataset._registry)
 
         class _BadMeta(type):
             def __subclasscheck__(cls, subclass):
@@ -671,22 +646,13 @@ class TestTypeErrorBranches:
             pass
 
         # Remove (object, "pickle") to prevent it catching all types
-        pickle_key = (object, "pickle")
-        pickle_cls = AbstractDataset._registry.pop(pickle_key, None)
+        AbstractDataset._registry.pop((object, "pickle"), None)
 
-        try:
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_BadType2)
-        finally:
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            if pickle_cls is not None:
-                AbstractDataset._registry[pickle_key] = pickle_cls
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_BadType2)
 
     def test_infer_format_extension_subclass_type_error(self):
         """infer_format handles TypeError from issubclass in the extension hints loop."""
-        original_hints = dict(AbstractDataset._extension_hints)
-        original_registry = dict(AbstractDataset._registry)
 
         class _HintParent:
             pass
@@ -704,23 +670,14 @@ class TestTypeErrorBranches:
             pass
 
         # _BadHintType as hint type, but query type is _HintParent.
-        # issubclass(_HintParent, _BadHintType) calls _BadMeta.__subclasscheck__  → TypeError
+        # issubclass(_HintParent, _BadHintType) calls _BadMeta.__subclasscheck__ -> TypeError
         AbstractDataset._extension_hints["badext"] = [(_BadHintType, "badfmt")]
 
         # Remove (object, "pickle") so fallback doesn't match
-        pickle_key = (object, "pickle")
-        pickle_cls = AbstractDataset._registry.pop(pickle_key, None)
+        AbstractDataset._registry.pop((object, "pickle"), None)
 
-        try:
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_HintParent, "badext")
-        finally:
-            AbstractDataset._extension_hints.clear()
-            AbstractDataset._extension_hints.update(original_hints)
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            if pickle_cls is not None:
-                AbstractDataset._registry[pickle_key] = pickle_cls
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_HintParent, "badext")
 
 
 class TestInferFormatAutoDiscoverDisabled:
@@ -728,23 +685,13 @@ class TestInferFormatAutoDiscoverDisabled:
 
     def test_infer_format_no_auto_discover_raises(self):
         """When auto_discover=False, infer_format doesn't try discovery."""
-        original_auto = AbstractDataset._auto_discover
-        original_registry = dict(AbstractDataset._registry)
 
         class _NoDiscType:
             pass
 
         # Remove (object, "pickle") so no fallback
-        pickle_key = (object, "pickle")
-        pickle_cls = AbstractDataset._registry.pop(pickle_key, None)
+        AbstractDataset._registry.pop((object, "pickle"), None)
+        AbstractDataset._auto_discover = False
 
-        try:
-            AbstractDataset._auto_discover = False
-            with pytest.raises(ValueError, match="No default format"):
-                AbstractDataset.infer_format(_NoDiscType)
-        finally:
-            AbstractDataset._auto_discover = original_auto
-            AbstractDataset._registry.clear()
-            AbstractDataset._registry.update(original_registry)
-            if pickle_cls is not None:
-                AbstractDataset._registry[pickle_key] = pickle_cls
+        with pytest.raises(ValueError, match="No default format"):
+            AbstractDataset.infer_format(_NoDiscType)

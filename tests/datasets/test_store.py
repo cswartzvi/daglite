@@ -162,7 +162,7 @@ class TestDatasetStoreLoad:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             store.save("data.pkl", [1, 2, 3])
-            result = store.load("data.pkl", return_type=list, options={"extra": True})
+            result = store.load("data.pkl", return_type=list, options={"encoding": "ASCII"})
             assert result == [1, 2, 3]
 
 

@@ -12,6 +12,8 @@ from abc import ABC
 from abc import abstractmethod
 from typing import Any, ClassVar
 
+from daglite.exceptions import DatasetError
+
 
 class AbstractDataset(ABC):
     """
@@ -24,10 +26,10 @@ class AbstractDataset(ABC):
         Create a custom dataset using class parameters:
 
         >>> class JsonDataset(AbstractDataset, format="json", types=dict, extensions="json"):
-        ...     def serialize(self, value: dict) -> bytes:
+        ...     def serialize(self, obj: dict) -> bytes:
         ...         import json
         ...
-        ...         return json.dumps(value).encode("utf-8")
+        ...         return json.dumps(obj).encode("utf-8")
         ...
         ...     def deserialize(self, data: bytes) -> dict:
         ...         import json
@@ -41,12 +43,13 @@ class AbstractDataset(ABC):
         ...     types = (dict,)
         ...     extensions = ("yaml", "yml")
         ...
-        ...     def serialize(self, value: dict) -> bytes: ...
+        ...     def serialize(self, obj: dict) -> bytes: ...
         ...     def deserialize(self, data: bytes) -> dict: ...
 
         The dataset is now registered and can be retrieved:
 
-        >>> dataset = AbstractDataset.get(dict, "json")
+        >>> dataset_class = AbstractDataset.get(dict, "json")
+        >>> dataset = dataset_class()
         >>> dataset.serialize({"key": "value"})
         b'{"key": "value"}'
     """
@@ -65,8 +68,8 @@ class AbstractDataset(ABC):
 
     # Defined by subclasses via __init_subclass__ or as class variables
     format: ClassVar[str]
-    types: ClassVar[tuple[type, ...]]
-    extensions: ClassVar[tuple[str, ...]]
+    types: ClassVar[tuple[type, ...] | Any]
+    extensions: ClassVar[tuple[str, ...] | str | None]
 
     def __init_subclass__(
         cls,
@@ -116,18 +119,18 @@ class AbstractDataset(ABC):
             return
 
         # Resolve types: parameter > class variable > empty
-        resolved_types: tuple[type, ...]
-        if types is not None:
-            resolved_types = (types,) if isinstance(types, type) else types
-        else:
-            resolved_types = getattr(cls, "types", ())
+        types = getattr(cls, "types", ()) if types is None else types
+        if not types:
+            raise DatasetError(
+                f"Dataset class {cls.__name__} must specify 'types' either as a class parameter "
+                f"or class variable"
+            )
+        resolved_types = (types,) if isinstance(types, type) else types
 
         # Resolve extensions: parameter > class variable > empty
-        resolved_extensions: tuple[str, ...]
-        if extensions is not None:
-            resolved_extensions = (extensions,) if isinstance(extensions, str) else extensions
-        else:
-            resolved_extensions = getattr(cls, "extensions", ())
+        extensions = getattr(cls, "extensions", ()) if extensions is None else extensions
+        extensions = () if extensions is None else extensions
+        resolved_extensions = (extensions,) if isinstance(extensions, str) else extensions
 
         cls.format = resolved_format
         cls.supported_types = resolved_types
@@ -144,14 +147,24 @@ class AbstractDataset(ABC):
             for t in resolved_types:
                 AbstractDataset._extension_hints[ext].append((t, resolved_format))
 
+    def __init__(self, *args, **kwargs) -> None:
+        # NOTE: Subclasses can define their own __init__ with specific parameters. The base
+        # implementation allows arbitrary args/kwargs for inheritance, but raises an error if any
+        # are provided to prevent silent bugs from unrecognized parameters.
+        if args or kwargs:
+            name = self.__class__.__name__
+            raise ValueError(
+                f"{name} does not accept parameters in its constructor, but got args={args} "
+                f"kwargs={kwargs}"
+            )
+
     @abstractmethod
-    def serialize(self, value: Any, **options: Any) -> bytes:
+    def serialize(self, obj: Any) -> bytes:
         """
-        Convert a value to bytes.
+        Convert a Python object to bytes.
 
         Args:
-            value: The value to serialize.
-            **options: Optional settings that may be used for serialization.
+            obj: Python object to serialize.
 
         Returns:
             Serialized bytes representation.
@@ -159,13 +172,12 @@ class AbstractDataset(ABC):
         ...
 
     @abstractmethod
-    def deserialize(self, data: bytes, **options: Any) -> Any:
+    def deserialize(self, data: bytes) -> Any:
         """
         Convert bytes back to a value.
 
         Args:
             data: Serialized bytes to deserialize.
-            **options: Optional settings that may be used for deserialization.
 
         Returns:
             The deserialized value.
@@ -173,9 +185,9 @@ class AbstractDataset(ABC):
         ...
 
     @classmethod
-    def get(cls, type_: type, format: str) -> AbstractDataset:
+    def get(cls, type_: type, format: str) -> type[AbstractDataset]:
         """
-        Look up and instantiate the Dataset for a type/format combination.
+        Look up and return the Dataset type for a type/format combination.
 
         Supports lazy plugin discovery - if the combination isn't found,
         attempts to load relevant entry points before failing.
@@ -191,7 +203,8 @@ class AbstractDataset(ABC):
             ValueError: If no dataset is registered for the type/format.
 
         Examples:
-            >>> dataset = AbstractDataset.get(str, "text")
+            >>> dataset_cls = AbstractDataset.get(str, "text")
+            >>> dataset = dataset_cls()
             >>> dataset.serialize("hello")
             b'hello'
         """
@@ -199,14 +212,14 @@ class AbstractDataset(ABC):
 
         # Fast path: exact match in registry
         if key in cls._registry:
-            return cls._registry[key]()
+            return cls._registry[key]
 
         # Check for subclass matches (e.g., custom dict subclass → dict handler)
         for (reg_type, reg_format), dataset_cls in cls._registry.items():
             if reg_format == format:
                 try:
                     if issubclass(type_, reg_type):
-                        return dataset_cls()
+                        return dataset_cls
                 except TypeError:
                     continue
 
@@ -215,13 +228,13 @@ class AbstractDataset(ABC):
             cls._discover_for_type(type_)
 
             if key in cls._registry:
-                return cls._registry[key]()
+                return cls._registry[key]
 
             for (reg_type, reg_format), dataset_cls in cls._registry.items():
                 if reg_format == format:
                     try:
                         if issubclass(type_, reg_type):
-                            return dataset_cls()
+                            return dataset_cls
                     except TypeError:  # pragma: no branch - defensive
                         continue
 

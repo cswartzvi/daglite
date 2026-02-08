@@ -135,7 +135,7 @@ class TestGetViaBuiltins:
     @pytest.mark.parametrize("python_type,fmt,value,expected_bytes", _GET_BUILTIN_CASES)
     def test_get_roundtrip(self, python_type, fmt, value, expected_bytes):
         """get() returns a working dataset for each built-in type/format pair."""
-        ds = AbstractDataset.get(python_type, fmt)
+        ds = AbstractDataset.get(python_type, fmt)()
         data = ds.serialize(value)
         if expected_bytes is not None:
             assert data == expected_bytes

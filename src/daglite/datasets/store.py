@@ -82,9 +82,10 @@ class DatasetStore:
             hint = self._driver.get_format_hint(key)
             format = AbstractDataset.infer_format(value_type, hint)
 
-        dataset = AbstractDataset.get(value_type, format)
+        dataset_cls = AbstractDataset.get(value_type, format)
         options = options or {}
-        data = dataset.serialize(value, **options)
+        dataset = dataset_cls(**options)
+        data = dataset.serialize(value)
         return self._driver.save(key, data)
 
     def load(
@@ -114,9 +115,10 @@ class DatasetStore:
 
         hint = self._driver.get_format_hint(key)
         format = AbstractDataset.infer_format(return_type, hint)
-        dataset = AbstractDataset.get(return_type, format)
+        dataset_cls = AbstractDataset.get(return_type, format)
         options = options or {}
-        return cast(T, dataset.deserialize(data, **options))
+        dataset = dataset_cls(**options)
+        return cast(T, dataset.deserialize(data))
 
     def exists(self, key: str) -> bool:
         """Check if a key exists."""
