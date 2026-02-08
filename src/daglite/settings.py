@@ -54,7 +54,7 @@ class DagliteSettings:
     """
 
     datastore_store: str | DatasetStore = field(
-        default_factory=lambda: os.getenv("DAGLITE_DATASTORE_STORE") or DatasetStore(".")
+        default_factory=lambda: os.getenv("DAGLITE_DATASTORE_STORE") or "."
     )
     """
     Default dataset store for saving and loading datasets.
