@@ -101,8 +101,8 @@ class AbstractDataset(ABC):
 
             >>> class CsvDataset(AbstractDataset):
             ...     format = "csv"
-            ...     supported_types = (dict,)
-            ...     file_extensions = ("csv",)
+            ...     types = (dict,)
+            ...     extensions = ("csv",)
             ...     ...
         """
         super().__init_subclass__(**kwargs)
