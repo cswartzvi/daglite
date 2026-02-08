@@ -131,11 +131,7 @@ def task(  # noqa: D417
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
-        actual_store: DatasetStore | None
-        if isinstance(store, str):
-            actual_store = DatasetStore(store)
-        else:
-            actual_store = store
+        actual_store = DatasetStore(store) if isinstance(store, str) else store
 
         return Task(
             func=fn,
