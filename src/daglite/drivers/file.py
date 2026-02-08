@@ -95,16 +95,23 @@ class FileDriver(Driver):
     def list_keys(self) -> list[str]:
         all_files = self.fs.glob(f"{self.base_path}/**", detail=False)
 
+        # Normalize base_path to forward slashes for comparison; on Windows
+        # self.base_path may use backslashes while fsspec glob returns
+        # forward-slash paths, causing startswith() to fail.
+        normalized_base = self.base_path.replace("\\", "/")
+        prefix_len = len(normalized_base) + 1  # +1 for the trailing slash
+
         keys = []
-        prefix_len = len(self.base_path) + 1  # +1 for the trailing slash
         for f in all_files:
             if self.fs.isdir(f):
                 continue  # Skip directories
 
-            if isinstance(f, str) and f.startswith(self.base_path):  # pragma: no branch
-                key = f[prefix_len:]
-                if key:  # pragma: no branch - defensive check
-                    keys.append(key)
+            if isinstance(f, str):  # pragma: no branch
+                normalized_f = f.replace("\\", "/")
+                if normalized_f.startswith(normalized_base):
+                    key = normalized_f[prefix_len:]
+                    if key:  # pragma: no branch - defensive check
+                        keys.append(key)
 
         return sorted(keys)
 
