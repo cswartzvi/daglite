@@ -2,6 +2,8 @@
 
 __version__ = "0.7.0"
 
+import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
+
 from . import backends
 from . import futures
 from . import settings
