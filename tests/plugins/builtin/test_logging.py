@@ -638,35 +638,25 @@ class TestLifecycleLoggingPluginOnCacheHit:
         # we can't easily capture with caplog. Just verify it doesn't raise.
 
 
-class TestLifecycleLoggingPluginOutputSaved:
-    """Tests for LifecycleLoggingPlugin output_saved event handling."""
+class TestLifecycleLoggingPluginDatasetSaveHooks:
+    """Tests for LifecycleLoggingPlugin before/after_dataset_save hooks."""
 
-    def test_handle_output_saved_with_checkpoint_name(self):
-        """Test that output_saved event logs checkpoint saves."""
+    def test_before_dataset_save(self):
+        """before_dataset_save logs a debug message."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
-        event = {
-            "key": "output.pkl",
-            "checkpoint_name": "my_checkpoint",
-            "node_name": "test_task",
-        }
-
         # Should not raise
-        plugin._handle_output_saved(event)
+        plugin.before_dataset_save(
+            key="output.pkl", value={"data": 1}, format="pickle", options=None
+        )
 
-    def test_handle_output_saved_without_checkpoint_name(self):
-        """Test that output_saved event logs regular saves."""
+    def test_after_dataset_save(self):
+        """after_dataset_save logs an info message."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
-        event = {
-            "key": "result.pkl",
-            "checkpoint_name": None,
-            "node_name": "test_task",
-        }
-
         # Should not raise
-        plugin._handle_output_saved(event)
+        plugin.after_dataset_save(key="result.pkl", value="hello", format="text", options=None)

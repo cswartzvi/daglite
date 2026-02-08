@@ -30,12 +30,18 @@ class DatasetProcessor:
     ``DatasetStore``.  Each save request arriving through the queue carries its
     own store reference, so different output configs can target different stores
     without ambiguity.
+
+    Args:
+        hook: Optional pluggy `HookRelay` for firing `before_dataset_save`
+            and ``after_dataset_save`` hooks.  Passed from the engine since the
+            processor's daemon thread does not inherit the worker's context vars.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, hook: Any | None = None) -> None:
         self._sources: dict[UUID, Any] = {}
         self._running = False
         self._thread: Thread | None = None
+        self._hook = hook
 
     def add_source(self, source: Any) -> UUID:
         """
@@ -154,12 +160,17 @@ class DatasetProcessor:
         """
         try:
             store = request["store"]
-            store.save(
-                request["key"],
-                request["value"],
-                format=request.get("format"),
-                options=request.get("options"),
-            )
+            key = request["key"]
+            value = request["value"]
+            fmt = request.get("format")
+            options = request.get("options")
+
+            hook_kwargs = dict(key=key, value=value, format=fmt, options=options)
+            if self._hook:
+                self._hook.before_dataset_save(**hook_kwargs)
+            store.save(key, value, format=fmt, options=options)
+            if self._hook:
+                self._hook.after_dataset_save(**hook_kwargs)
         except Exception as e:
             logger.exception(f"Error processing dataset save request: {e}")
 

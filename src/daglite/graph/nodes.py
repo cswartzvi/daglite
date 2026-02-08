@@ -14,12 +14,15 @@ from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
 from daglite.backends.context import reset_current_task
 from daglite.backends.context import set_current_task
+from daglite.datasets.reporters import DirectDatasetReporter
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphMetadata
 from daglite.graph.base import OutputConfig
 from daglite.graph.base import ParamInput
+
+_DIRECT_REPORTER = DirectDatasetReporter()
 
 T_co = TypeVar("T_co", covariant=True)
 
@@ -473,8 +476,6 @@ def _save_outputs(
                 f"and internal key extras."
             ) from e
 
-        # Route: local drivers go through the reporter, remote drivers save directly
-        if store.is_local and dataset_reporter is not None:
-            dataset_reporter.save(key, result, store, format=config.format, options=config.options)
-        else:
-            store.save(key, result, format=config.format, options=config.options)
+        # Replace the reporter if the store is remote since the worker can write directly
+        reporter = dataset_reporter if dataset_reporter and store.is_local else _DIRECT_REPORTER
+        reporter.save(key, result, store, format=config.format, options=config.options)

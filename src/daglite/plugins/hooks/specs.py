@@ -176,6 +176,48 @@ class WorkerSideNodeSpecs:
             cache_ttl: Time-to-live for cache in seconds (None = no expiration).
         """
 
+    @hook_spec
+    def before_dataset_save(
+        self,
+        key: str,
+        value: Any,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        """
+        Called immediately before a dataset output is written to storage.
+
+        Fires wherever the actual write occurs: on the worker for direct/thread
+        backends and remote stores, on the coordinator for process backends.
+
+        Args:
+            key: Storage key/path for the output.
+            value: The Python object about to be serialized and saved.
+            format: Serialization format (e.g. ``"pickle"``, ``"text"``).
+            options: Additional options passed to the Dataset constructor.
+        """
+
+    @hook_spec
+    def after_dataset_save(
+        self,
+        key: str,
+        value: Any,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        """
+        Called immediately after a dataset output has been written to storage.
+
+        Fires wherever the actual write occurs: on the worker for direct/thread
+        backends and remote stores, on the coordinator for process backends.
+
+        Args:
+            key: Storage key/path for the output.
+            value: The Python object that was serialized and saved.
+            format: Serialization format (e.g. ``"pickle"``, ``"text"``).
+            options: Additional options passed to the Dataset constructor.
+        """
+
 
 class CoordinatorSideNodeSpecs:
     """Hook specifications for node-level execution events on the **coordinator**."""

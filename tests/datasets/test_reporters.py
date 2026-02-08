@@ -4,6 +4,7 @@ import tempfile
 import threading
 from multiprocessing import Queue as MpQueue
 from unittest.mock import MagicMock
+from unittest.mock import patch
 
 from daglite.datasets.reporters import DirectDatasetReporter
 from daglite.datasets.reporters import ProcessDatasetReporter
@@ -55,6 +56,57 @@ class TestDirectDatasetReporter:
 
         assert len(results) == 10
         assert store.save.call_count == 10
+
+
+class TestDirectDatasetReporterHooks:
+    """Tests for hook firing in DirectDatasetReporter."""
+
+    def test_fires_before_and_after_hooks(self):
+        """Hooks are called around store.save() when plugin manager is available."""
+        reporter = DirectDatasetReporter()
+        store = MagicMock()
+        mock_hook = MagicMock()
+
+        with patch.object(reporter, "_get_hook", return_value=mock_hook):
+            reporter.save("k.pkl", {"v": 1}, store, format="pickle", options={"x": 1})
+
+        mock_hook.before_dataset_save.assert_called_once_with(
+            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}
+        )
+        mock_hook.after_dataset_save.assert_called_once_with(
+            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}
+        )
+
+    def test_hooks_bracket_store_save(self):
+        """before fires before store.save, after fires after."""
+        reporter = DirectDatasetReporter()
+        store = MagicMock()
+        mock_hook = MagicMock()
+        order: list[str] = []
+
+        mock_hook.before_dataset_save.side_effect = lambda **kw: order.append("before")
+        store.save.side_effect = lambda *a, **kw: order.append("save")
+        mock_hook.after_dataset_save.side_effect = lambda **kw: order.append("after")
+
+        with patch.object(reporter, "_get_hook", return_value=mock_hook):
+            reporter.save("k", "v", store)
+
+        assert order == ["before", "save", "after"]
+
+    def test_no_hooks_when_no_plugin_manager(self):
+        """When _get_hook returns None, save still works without hooks."""
+        reporter = DirectDatasetReporter()
+        store = MagicMock()
+
+        with patch.object(reporter, "_get_hook", return_value=None):
+            reporter.save("k", "v", store, format="text")
+
+        store.save.assert_called_once()
+
+    def test_get_hook_returns_none_outside_context(self):
+        """_get_hook returns None when no execution context is set."""
+        reporter = DirectDatasetReporter()
+        assert reporter._get_hook() is None
 
 
 class TestProcessDatasetReporter:

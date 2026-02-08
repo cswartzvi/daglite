@@ -28,6 +28,8 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 if TYPE_CHECKING:
+    from pluggy import HookRelay
+
     from daglite.datasets.store import DatasetStore
 
 logger = logging.getLogger(__name__)
@@ -99,8 +101,23 @@ class DirectDatasetReporter(DatasetReporter):
         format: str | None = None,
         options: dict[str, Any] | None = None,
     ) -> None:
+        hook = self._get_hook()
         with self._lock:
+            if hook:
+                hook.before_dataset_save(key=key, value=value, format=format, options=options)
             store.save(key, value, format=format, options=options)
+            if hook:
+                hook.after_dataset_save(key=key, value=value, format=format, options=options)
+
+    @staticmethod
+    def _get_hook() -> HookRelay | None:
+        """Attempt to retrieve the plugin hook from the execution context."""
+        try:
+            from daglite.backends.context import get_plugin_manager
+
+            return get_plugin_manager().hook
+        except RuntimeError:
+            return None
 
 
 class ProcessDatasetReporter(DatasetReporter):

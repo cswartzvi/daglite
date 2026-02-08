@@ -281,7 +281,7 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     state = _ExecutionState.from_nodes(nodes)
 
     plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
-    dataset_processor = _setup_dataset_processor()
+    dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
     backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
 
     hook_ids = {"graph_id": graph_id, "root_id": future.id}
@@ -422,7 +422,7 @@ def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProces
     return plugin_manager, event_processor
 
 
-def _setup_dataset_processor() -> "DatasetProcessor":
+def _setup_dataset_processor(hook: Any = None) -> "DatasetProcessor":
     """
     Create a ``DatasetProcessor`` for draining queue-based dataset saves.
 
@@ -430,12 +430,17 @@ def _setup_dataset_processor() -> "DatasetProcessor":
     An idle processor is just a sleeping daemon thread with zero overhead,
     matching how the ``EventProcessor`` is unconditionally started.
 
+    Args:
+        hook: Optional pluggy ``HookRelay`` forwarded to the processor so
+            that ``before_dataset_save`` / ``after_dataset_save`` hooks can
+            fire on the coordinator's daemon thread.
+
     Returns:
         A ``DatasetProcessor`` instance.
     """
     from daglite.datasets.processor import DatasetProcessor
 
-    return DatasetProcessor()
+    return DatasetProcessor(hook=hook)
 
 
 async def _materialize_result(result: Any) -> Any:

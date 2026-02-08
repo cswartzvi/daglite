@@ -255,3 +255,60 @@ class TestDatasetProcessorBackgroundProcessing:
         proc.stop()
 
         assert store.save.call_count == 5
+
+
+class TestDatasetProcessorHooks:
+    """Tests for before/after dataset save hooks in DatasetProcessor."""
+
+    def test_fires_hooks_around_save(self):
+        """_handle_request fires before and after hooks when hook is set."""
+        mock_hook = MagicMock()
+        proc = DatasetProcessor(hook=mock_hook)
+        store = MagicMock()
+
+        proc._handle_request(
+            {"key": "out.pkl", "value": 42, "store": store, "format": "pickle", "options": {"x": 1}}
+        )
+
+        mock_hook.before_dataset_save.assert_called_once_with(
+            key="out.pkl", value=42, format="pickle", options={"x": 1}
+        )
+        mock_hook.after_dataset_save.assert_called_once_with(
+            key="out.pkl", value=42, format="pickle", options={"x": 1}
+        )
+
+    def test_hooks_bracket_store_save(self):
+        """before fires before store.save, after fires after."""
+        mock_hook = MagicMock()
+        proc = DatasetProcessor(hook=mock_hook)
+        store = MagicMock()
+        order: list[str] = []
+
+        mock_hook.before_dataset_save.side_effect = lambda **kw: order.append("before")
+        store.save.side_effect = lambda *a, **kw: order.append("save")
+        mock_hook.after_dataset_save.side_effect = lambda **kw: order.append("after")
+
+        proc._handle_request({"key": "k", "value": "v", "store": store})
+
+        assert order == ["before", "save", "after"]
+
+    def test_no_hooks_when_hook_is_none(self):
+        """When no hook is passed, _handle_request just saves."""
+        proc = DatasetProcessor()
+        store = MagicMock()
+
+        proc._handle_request({"key": "k", "value": "v", "store": store})
+
+        store.save.assert_called_once()
+
+    def test_after_hook_not_called_on_save_error(self):
+        """If store.save raises, after hook should not fire."""
+        mock_hook = MagicMock()
+        proc = DatasetProcessor(hook=mock_hook)
+        store = MagicMock()
+        store.save.side_effect = RuntimeError("write failed")
+
+        proc._handle_request({"key": "k", "value": "v", "store": store})
+
+        mock_hook.before_dataset_save.assert_called_once()
+        mock_hook.after_dataset_save.assert_not_called()
