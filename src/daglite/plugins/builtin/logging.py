@@ -473,7 +473,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         format: str | None,
         options: dict[str, Any] | None,
     ) -> None:
-        self._logger.debug(f"Saving dataset to '{key}' (format={format})")
+        suffix = f" (format={format})" if format else ""
+        self._logger.debug(f"Saving dataset to '{key}'{suffix}")
 
     @hook_impl
     def after_dataset_save(
@@ -483,7 +484,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         format: str | None,
         options: dict[str, Any] | None,
     ) -> None:
-        self._logger.info(f"Saved dataset to '{key}' (format={format})")
+        suffix = f" (format={format})" if format else ""
+        self._logger.info(f"Saved dataset to '{key}'{suffix}")
 
     def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]

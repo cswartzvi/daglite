@@ -641,22 +641,56 @@ class TestLifecycleLoggingPluginOnCacheHit:
 class TestLifecycleLoggingPluginDatasetSaveHooks:
     """Tests for LifecycleLoggingPlugin before/after_dataset_save hooks."""
 
-    def test_before_dataset_save(self):
-        """before_dataset_save logs a debug message."""
+    def test_before_dataset_save_with_format(self):
+        """before_dataset_save includes format in message when provided."""
+        from unittest.mock import patch
+
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "debug") as mock_debug:
+            plugin.before_dataset_save(
+                key="output.pkl", value={"data": 1}, format="pickle", options=None
+            )
+        mock_debug.assert_called_once()
+        msg = mock_debug.call_args[0][0]
+        assert "output.pkl" in msg
+        assert "(format=pickle)" in msg
 
-        # Should not raise
-        plugin.before_dataset_save(
-            key="output.pkl", value={"data": 1}, format="pickle", options=None
+    def test_before_dataset_save_without_format(self):
+        """before_dataset_save omits format portion when None."""
+        from unittest.mock import patch
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "debug") as mock_debug:
+            plugin.before_dataset_save(
+                key="output.pkl", value={"data": 1}, format=None, options=None
+            )
+        mock_debug.assert_called_once()
+        msg = mock_debug.call_args[0][0]
+        assert "output.pkl" in msg
+        assert "format=" not in msg
+
+    def test_after_dataset_save_with_format(self, capsys):
+        """after_dataset_save includes format in message when provided."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        plugin.after_dataset_save(
+            key="result.csv", value="hello", format="pandas/csv", options=None
         )
+        out = capsys.readouterr().out
+        assert "result.csv" in out
+        assert "(format=pandas/csv)" in out
 
-    def test_after_dataset_save(self):
-        """after_dataset_save logs an info message."""
+    def test_after_dataset_save_without_format(self, capsys):
+        """after_dataset_save omits format portion when None."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
-
-        # Should not raise
-        plugin.after_dataset_save(key="result.pkl", value="hello", format="text", options=None)
+        plugin.after_dataset_save(key="result.pkl", value="hello", format=None, options=None)
+        out = capsys.readouterr().out
+        assert "result.pkl" in out
+        assert "format=" not in out
