@@ -98,8 +98,6 @@ class TestBytesDataset:
         assert "bin" in ds_cls.file_extensions
 
 
-# ── Parameterized typed-pickle dataset tests ──────────────────────────
-
 _TYPED_PICKLE_CASES = [
     pytest.param(DictPickleDataset, dict, {"a": 1, "b": [2, 3]}, id="dict"),
     pytest.param(ListPickleDataset, list, [1, "two", 3.0], id="list"),
@@ -121,8 +119,6 @@ class TestTypedPickleDatasets:
     def test_registered(self, ds_cls, python_type, value):
         assert (python_type, "pickle") in AbstractDataset._registry
 
-
-# ── Parameterized AbstractDataset.get() tests ────────────────────────
 
 _GET_BUILTIN_CASES = [
     pytest.param(str, "text", "hi", b"hi", id="str-text"),
