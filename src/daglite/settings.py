@@ -5,6 +5,8 @@ import threading
 from dataclasses import dataclass
 from dataclasses import field
 
+from daglite.datasets.store import DatasetStore
+
 _GLOBAL_DAGLITE_SETTINGS: DagliteSettings | None = None
 _SETTINGS_LOCK = threading.RLock()
 
@@ -49,6 +51,15 @@ class DagliteSettings:
     arguments, and return values. Useful for debugging plugin behavior but can be verbose.
 
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
+    """
+
+    datastore_store: str | DatasetStore = field(
+        default_factory=lambda: os.getenv("DAGLITE_DATASTORE_STORE") or "."
+    )
+    """
+    Default dataset store for saving and loading datasets.
+
+    Can be a string path or a DatasetStore instance.
     """
 
 

@@ -17,12 +17,12 @@ from uuid import UUID
 from typing_extensions import override
 
 from daglite.backends.context import get_current_task
-from daglite.backends.context import get_reporter
+from daglite.backends.context import get_event_reporter
 from daglite.graph.base import GraphMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
-from daglite.plugins.events import EventRegistry
 from daglite.plugins.hooks.markers import hook_impl
+from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
@@ -87,9 +87,9 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     base_logger = logging.getLogger(name)
 
-    # Add ReporterHandler only for remote reporters
-    reporter = get_reporter()
-    if reporter and reporter.is_remote:  # pragma: no branch
+    # Add ReporterHandler only for all non-direct reporters to route logs to coordinator.
+    reporter = get_event_reporter()
+    if reporter and not reporter.is_direct:
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
                 # In worker processes, remove all existing handlers and only use ReporterHandler
@@ -289,7 +289,6 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         registry.register("daglite-logging-node-fail", self._handle_task_fail)
         registry.register("daglite-logging-node-retry", self._handle_node_retry)
         registry.register("daglite-logging-node-retry-result", self._handle_node_retry_result)
-        registry.register("daglite-output-saved", self._handle_output_saved)
 
     @hook_impl
     def before_graph_execute(
@@ -466,6 +465,52 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
+    @hook_impl
+    def before_dataset_save(
+        self,
+        key: str,
+        value: Any,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.debug(f"Saving dataset to '{key}'{suffix}")
+
+    @hook_impl
+    def after_dataset_save(
+        self,
+        key: str,
+        value: Any,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.info(f"Saved dataset to '{key}'{suffix}")
+
+    @hook_impl
+    def before_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.debug(f"Loading dataset from '{key}'{suffix}")
+
+    @hook_impl
+    def after_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+        result: Any,
+        duration: float,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.info(f"Loaded dataset from '{key}'{suffix} in {_format_duration(duration)}")
+
     def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]
@@ -525,19 +570,6 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             self._logger.info(f"Task '{node_key}' - Retry succeeded on attempt {attempt}")
         else:
             self._logger.debug(f"Task '{node_key}' - Retry attempt {attempt} failed")
-
-    def _handle_output_saved(self, event: dict[str, Any]) -> None:
-        """Handle daglite-output-saved event from OutputPlugin."""
-        key = event.get("key")
-        checkpoint_name = event.get("checkpoint_name")
-        node_name = event.get("node_name")
-
-        if checkpoint_name:
-            self._logger.info(
-                f"Task '{node_name}' - Saved checkpoint '{checkpoint_name}' to '{key}'"
-            )
-        else:
-            self._logger.info(f"Task '{node_name}' - Saved output to '{key}'")
 
 
 class _ReporterHandler(logging.Handler):

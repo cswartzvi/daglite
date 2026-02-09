@@ -13,11 +13,12 @@ from uuid import uuid4
 
 from typing_extensions import Self, override
 
+from daglite.datasets.store import DatasetStore
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
+from daglite.graph.nodes import DatasetNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
-from daglite.outputs.base import OutputStore
 
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
@@ -42,14 +43,20 @@ S5 = TypeVar("S5")
 S6 = TypeVar("S6")
 
 
+# region Future Types
+
+
 @dataclass(frozen=True)
 class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
+    # Internal unique ID for this future
     _id: UUID = field(init=False, repr=False)
+
+    # Configurations for future outputs to be saved after task execution
     _future_outputs: tuple[_FutureOutput, ...] = field(init=False, repr=False, default=())
 
-    task_store: OutputStore | None = field(default=None, kw_only=True)
+    task_store: DatasetStore | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
@@ -61,23 +68,39 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def id(self) -> UUID:
         return self._id
 
-    def save(self, key: str, store: OutputStore | str | None = None, **extras: Any) -> Self:
+    def save(
+        self,
+        key: str,
+        *,
+        save_format: str | None = None,
+        save_checkpoint: str | bool | None = None,
+        save_store: DatasetStore | str | None = None,
+        save_options: dict[str, Any] | None = None,
+        **extras: Any,
+    ) -> Self:
         """
         Save task output for inspection (non-blocking side effect).
 
         The output will be stored with the given key after task execution completes.
-        This does NOT mark the task as a resumption point - use .checkpoint() for that.
         Can be called multiple times to save to multiple keys.
 
         Args:
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
-            store: Output store override for this specific save. If not provided, uses the
+            save_checkpoint: If provided, marks this save as a resumption point for
+                evaluate(from_=name). Can be:
+                - None: No checkpoint (default, just saves output)
+                - True: Use the key as the checkpoint name
+                - str: Explicit checkpoint name
+            save_format: Optional serialization format hint (e.g. "pickle"). If not provided,
+                inferred from value type and/or driver hints.
+            save_store: Dataset store override for this specific save. If not provided, uses the
                 task's default store, then falls back to global settings.
-            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
+            save_options: Additional options passed to the Dataset's save method.
+            **extras: Extra values for key formatting or storage metadata (can include TaskFutures).
 
         Returns:
-            Self for method chaining
+            Self for method chaining.
 
         Raises:
             ValueError: If no store is configured at any level (explicit, task, or global).
@@ -88,8 +111,10 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             ... def process(data_id: str) -> Result: ...
             >>> @task
             ... def get_version() -> str: ...
+
+            Simple save (no checkpoint):
             >>> process(data_id="abc123").save(
-            ...     "processed_{data_id}", extra=get_version()
+            ...     "processed_{data_id}_{extra}", extra=get_version()
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
 
@@ -97,74 +122,42 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             >>> future = process(data_id="abc")
             >>> future.save("v1_{data_id}").save("v2_{data_id}")  # doctest: +ELLIPSIS
             TaskFuture(...)
-        """
-        if isinstance(store, str):
-            from daglite.outputs.store import FileOutputStore
 
-            resolved_store: OutputStore | None = FileOutputStore(store)
-        else:
-            resolved_store = store or self.task_store
+            Save with checkpoint (using key as name):
+            >>> process(data_id="abc").save("output", save_checkpoint=True)  # doctest: +ELLIPSIS
+            TaskFuture(...)
 
-        config = _FutureOutput(
-            key=key,
-            name=None,
-            store=resolved_store,
-            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
-        )
-        new_configs = self._future_outputs + (config,)
-
-        new_future = replace(self)
-        object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_future_outputs", new_configs)
-        return new_future
-
-    def checkpoint(
-        self, name: str, key: str, store: OutputStore | str | None = None, **extras: Any
-    ) -> Self:
-        """
-        Save task output and mark as a resumption point.
-
-        Creates a named checkpoint that can be used with evaluate(from_=name) to
-        resume execution from this point. The output is also saved with the given key.
-        Can be called multiple times to create multiple checkpoints.
-
-        Args:
-            name: Explicit name for this checkpoint (used for graph resumption)
-            key: Storage key for the output. Can use {param} format strings which
-                will be auto-resolved from task parameters.
-            store: Output store override for this specific checkpoint. If not provided, uses the
-                task's default store, then falls back to global settings.
-            **extras: Extra values for key formatting or storage metadata (can include TaskFutures)
-
-        Returns:
-            Self for method chaining
-
-        Raises:
-            ValueError: If no store is configured at any level (explicit, task, or global).
-
-        Examples:
-            >>> from daglite import task
+            Save with explicit checkpoint name:
             >>> @task
             ... def train_model(model_type: str) -> Model: ...
-            >>> @task
-            ... def get_version() -> str: ...
-            >>> train_model(model_type="linear").checkpoint(
-            ...     name="trained_model", key="model_{model_type}", version=get_version()
+            >>> train_model(model_type="linear").save(
+            ...     "model_{model_type}", save_checkpoint="trained_model"
             ... )  # doctest: +ELLIPSIS
             TaskFuture(...)
         """
-        if isinstance(store, str):
-            from daglite.outputs.store import FileOutputStore
+        # Validate key template syntax upfront
+        _validate_key_template(key)
 
-            resolved_store: OutputStore | None = FileOutputStore(store)
+        if isinstance(save_store, str):
+            resolved_store = DatasetStore(save_store)
         else:
-            resolved_store = store or self.task_store
+            resolved_store = save_store or self.task_store
+
+        # Determine checkpoint name
+        if save_checkpoint is True:
+            checkpoint_name = key
+        elif save_checkpoint:
+            checkpoint_name = save_checkpoint
+        else:
+            checkpoint_name = None
 
         config = _FutureOutput(
             key=key,
-            name=name,
+            name=checkpoint_name,
+            format=save_format,
             store=resolved_store,
-            extras=dict(extras),  # Store raw extras (scalars or TaskFutures)
+            options=save_options or {},
+            extras=dict(extras),
         )
         new_configs = self._future_outputs + (config,)
 
@@ -250,7 +243,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
-    ) -> MapTaskFuture[T]:
+    ) -> "MapTaskFuture[T]":
         """
         Fan out this future as input to another task by creating a Cartesian product.
 
@@ -325,7 +318,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
-    ) -> MapTaskFuture[T]:
+    ) -> "MapTaskFuture[T]":
         """
         Fan out this future as input to another task by zipping with other sequences.
 
@@ -548,17 +541,22 @@ class TaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for future_output in self._future_outputs:
-            extras = {}
+            available_names = set(self.kwargs.keys()) | set(future_output.extras.keys())
+            _validate_key_placeholders(future_output.key, available_names)
+
+            output_dependencies = {}
             for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    extras[name] = ParamInput.from_ref(value.id)
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
                 else:
-                    extras[name] = ParamInput.from_value(value)
+                    output_dependencies[name] = ParamInput.from_value(value)
             output_config = OutputConfig(
                 key=future_output.key,
                 name=future_output.name,
+                format=future_output.format,
                 store=future_output.store,
-                extras=extras,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
             )
             output_configs.append(output_config)
 
@@ -768,17 +766,27 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
         output_configs: list[OutputConfig] = []
         for future_output in self._future_outputs:
-            extras = {}
+            available_names = (
+                set(self.fixed_kwargs.keys())
+                | set(self.mapped_kwargs.keys())
+                | set(future_output.extras.keys())
+                | {"iteration_index"}  # Special variable available in mapped task outputs
+            )
+            _validate_key_placeholders(future_output.key, available_names)
+
+            output_dependencies = {}
             for name, value in future_output.extras.items():
                 if isinstance(value, BaseTaskFuture):
-                    extras[name] = ParamInput.from_ref(value.id)
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
                 else:
-                    extras[name] = ParamInput.from_value(value)
+                    output_dependencies[name] = ParamInput.from_value(value)
             output_config = OutputConfig(
                 key=future_output.key,
                 name=future_output.name,
+                format=future_output.format,
                 store=future_output.store,
-                extras=extras,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
             )
             output_configs.append(output_config)
 
@@ -799,6 +807,150 @@ class MapTaskFuture(BaseTaskFuture[R]):
         )
 
 
+@dataclass(frozen=True)
+class DatasetFuture(TaskFuture[R]):
+    """Represents a lazy dataset load that will produce a value of type R when evaluated."""
+
+    load_key: str
+    """Storage key template (may contain `{param}` placeholders)."""
+
+    load_store: DatasetStore | None
+    """Explicit store override.  Falls back to global settings when `None`."""
+
+    load_type: type[R] | None
+    """Expected Python type for deserialization dispatch."""
+
+    load_format: str | None
+    """Explicit serialization format hint."""
+
+    load_options: dict[str, Any]
+    """Additional options forwarded to the `Dataset` constructor."""
+
+    @override
+    def to_graph(self) -> DatasetNode:  # type: ignore[override]
+        from daglite.graph.base import OutputConfig
+        from daglite.graph.base import ParamInput
+
+        kwargs: dict[str, ParamInput] = {}
+        for name, value in self.kwargs.items():
+            if isinstance(value, BaseTaskFuture):
+                kwargs[name] = ParamInput.from_ref(value.id)
+            else:
+                kwargs[name] = ParamInput.from_value(value)
+
+        available_names = set(self.kwargs.keys())
+        _validate_key_placeholders(self.load_key, available_names)
+
+        # Build output configs (from .save() calls)
+        output_configs: list[OutputConfig] = []
+        for future_output in self._future_outputs:
+            output_available = available_names | set(future_output.extras.keys())
+            _validate_key_placeholders(future_output.key, output_available)
+
+            output_dependencies = {}
+            for name, value in future_output.extras.items():
+                if isinstance(value, BaseTaskFuture):
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
+                else:
+                    output_dependencies[name] = ParamInput.from_value(value)
+            output_config = OutputConfig(
+                key=future_output.key,
+                name=future_output.name,
+                format=future_output.format,
+                store=future_output.store,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
+            )
+            output_configs.append(output_config)
+
+        return DatasetNode(
+            id=self.id,
+            name=f"load({self.load_key})",
+            store=self.load_store or self._resolve_default_store(),
+            load_key=self.load_key,
+            return_type=self.load_type,
+            load_format=self.load_format,
+            load_options=self.load_options or {},
+            kwargs=kwargs,
+            output_configs=tuple(output_configs),
+        )
+
+    @staticmethod
+    def _resolve_default_store() -> DatasetStore:
+        """Fall back to the global settings datastore."""
+        from daglite.settings import get_global_settings
+
+        store_or_path = get_global_settings().datastore_store
+        if isinstance(store_or_path, str):
+            return DatasetStore(store_or_path)
+        return store_or_path
+
+
+# region Future Functions
+
+
+def load_dataset(
+    key: str,
+    *,
+    load_type: type[R] | None = None,
+    load_format: str | None = None,
+    load_store: DatasetStore | str | None = None,
+    load_options: dict[str, Any] | None = None,
+    **extras: Any,
+) -> DatasetFuture[R]:
+    """
+    Creates a lazy dataset load that will be resolved during graph evaluation.
+
+    The returned `DatasetFuture` participates in the DAG just like a `TaskFuture` — it can be
+    chained with with all other methods of the fluent API, including.
+
+    Args:
+        key: Storage key (or template with `{param}` placeholders).
+        load_type: Expected Python return type for deserialization dispatch.
+        load_format: Explicit serialization format hint (e.g. `"pickle"`).
+        load_store: `DatasetStore` or path string.  Falls back to global settings.
+        load_options: Extra options forwarded to the `Dataset` constructor.
+        **extras: Values (or futures) for key-template formatting.
+
+    Returns:
+        A `DatasetFuture` that produces the loaded value when evaluated.
+
+    Examples:
+        >>> from daglite import load_dataset, evaluate, task
+        >>> @task
+        ... def process(data: dict) -> str:
+        ...     return str(data)
+        >>> future = load_dataset("input.pkl").then(process)
+        >>> evaluate(future)  # doctest: +SKIP
+    """
+    from daglite.tasks import Task as _Task
+
+    _validate_key_template(key)
+
+    if isinstance(load_store, str):
+        resolved_store: DatasetStore | None = DatasetStore(load_store)
+    else:
+        resolved_store = load_store
+
+    stub_task = _Task(
+        func=_dataset_load_stub,
+        name=f"load({key})",
+        description="Dataset load stub",
+        backend_name=None,
+    )
+
+    return DatasetFuture(
+        task=stub_task,
+        kwargs=dict(extras),
+        backend_name=None,
+        load_key=key,
+        load_store=resolved_store,
+        load_type=load_type,
+        load_format=load_format,
+        load_options=load_options or {},
+    )
+
+
 # region Helpers
 
 
@@ -808,8 +960,63 @@ class _FutureOutput:
 
     key: str
     name: str | None
-    store: OutputStore | None
+    format: str | None
+    store: DatasetStore | None
+    options: dict[str, Any] | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
+
+
+def _validate_key_template(key: str) -> None:
+    """Validate a key template string for well-formed {placeholder} syntax."""
+    import string
+
+    try:
+        parsed = list(string.Formatter().parse(key))
+    except (ValueError, IndexError) as e:
+        raise ValueError(
+            f"Invalid key template '{key}': {e}. "
+            f"Key templates use {{name}} placeholders for parameter substitution."
+        ) from e
+
+    for _, field_name, _, _ in parsed:
+        if field_name is None:
+            continue
+        if field_name == "":
+            raise ValueError(
+                f"Invalid key template '{key}': empty placeholder '{{}}' is not allowed. "
+                f"Use named placeholders like '{{param_name}}' instead."
+            )
+
+
+def _validate_key_placeholders(key: str, available: set[str]) -> None:
+    """
+    Validate that all key template placeholders match available format variables.
+
+    Called during graph construction (``to_graph``) where the full set of
+    parameter names and output-dependency names is known.
+
+    Args:
+        key: The key template string (e.g. ``"output_{data_id}_{version}"``).
+        available: Set of variable names that will be present at format time
+            (task kwargs + save extras + any runtime key-extras).
+
+    Raises:
+        ValueError: If any placeholder in *key* is not in *available*.
+    """
+    import string
+
+    placeholders = {
+        field_name
+        for _, field_name, _, _ in string.Formatter().parse(key)
+        if field_name is not None
+    }
+    missing = placeholders - available
+    if missing:
+        raise ValueError(
+            f"Key template '{key}' references {missing} which won't be available "
+            f"at runtime. Available variables: {sorted(available)}. "
+            f"These come from task parameters and extra dependencies passed to .save()."
+        )
 
 
 def _infer_tuple_size(task_func: Any) -> int | None:
@@ -829,3 +1036,8 @@ def _infer_tuple_size(task_func: Any) -> int | None:
     if args and (len(args) < 2 or args[-1] is not Ellipsis):  # Skip tuple[int, ...]
         return len(args)
     return None
+
+
+def _dataset_load_stub() -> Any:
+    """Placeholder performs the actual load at runtime."""
+    raise AssertionError("_dataset_load_stub should never be called directly")

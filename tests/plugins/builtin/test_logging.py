@@ -17,8 +17,8 @@ from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import _ReporterHandler
 from daglite.plugins.builtin.logging import _TaskLoggerAdapter
 from daglite.plugins.builtin.logging import get_logger
-from daglite.plugins.reporters import DirectReporter
-from daglite.plugins.reporters import ProcessReporter
+from daglite.plugins.reporters import DirectEventReporter
+from daglite.plugins.reporters import ProcessEventReporter
 
 
 @pytest.fixture(autouse=True)
@@ -56,7 +56,7 @@ class TestGetLoggerUnit:
 
     def test_get_logger_no_reporter(self):
         """Test get_logger when no reporter is available."""
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=None):
+        with patch("daglite.plugins.builtin.logging.get_event_reporter", return_value=None):
             logger = get_logger("test.no.reporter")
             base_logger = logger.logger
 
@@ -65,24 +65,28 @@ class TestGetLoggerUnit:
 
             assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
 
-    def test_get_logger_with_non_remote_reporter(self):
-        """Test get_logger with DirectReporter (non-remote)."""
+    def test_get_logger_with_direct_reporter(self):
+        """Test get_logger with DirectReporter."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = False
+        mock_reporter.is_direct = True
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.direct.reporter")
             base_logger = logger.logger
 
             # Should NOT have ReporterHandler (DirectReporter uses normal logging)
             assert not any(isinstance(h, _ReporterHandler) for h in base_logger.handlers)
 
-    def test_get_logger_with_remote_reporter(self):
-        """Test get_logger with ProcessReporter (remote)."""
+    def test_get_logger_with_process_reporter(self):
+        """Test get_logger with ProcessReporter."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.process.reporter")
             base_logger = logger.logger
 
@@ -93,17 +97,19 @@ class TestGetLoggerUnit:
             # Should disable propagation
             assert base_logger.propagate is False
 
-    def test_get_logger_with_remote_reporter_already_debug(self):
+    def test_get_logger_with_reporter_already_debug(self):
         """Test get_logger doesn't change level if already DEBUG or lower."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
         # Pre-configure logger to DEBUG
         test_logger = logging.getLogger("test.already.debug")
         test_logger.setLevel(logging.DEBUG)
         original_level = test_logger.level
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger = get_logger("test.already.debug")
             base_logger = logger.logger
 
@@ -113,9 +119,11 @@ class TestGetLoggerUnit:
     def test_get_logger_no_duplicate_handlers(self):
         """Test that calling get_logger twice doesn't add duplicate handlers."""
         mock_reporter = Mock()
-        mock_reporter.is_remote = True
+        mock_reporter.is_direct = False
 
-        with patch("daglite.plugins.builtin.logging.get_reporter", return_value=mock_reporter):
+        with patch(
+            "daglite.plugins.builtin.logging.get_event_reporter", return_value=mock_reporter
+        ):
             logger1 = get_logger("test.dedupe")
             _ = get_logger("test.dedupe")
 
@@ -365,10 +373,9 @@ class TestReporterImplementations:
     def test_direct_reporter_report(self):
         """Test DirectReporter.report calls callback."""
         callback = Mock()
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
 
-        # Verify is_remote is False
-        assert reporter.is_remote is False
+        assert reporter.is_direct is True
 
         # Report an event
         reporter.report("test_event", {"key": "value"})
@@ -384,7 +391,7 @@ class TestReporterImplementations:
         import threading
 
         callback = Mock()
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
         results = []
 
         def report_event(i):
@@ -409,7 +416,7 @@ class TestReporterImplementations:
     def test_direct_reporter_error_handling(self):
         """Test DirectReporter handles callback errors gracefully."""
         callback = Mock(side_effect=RuntimeError("Callback error"))
-        reporter = DirectReporter(callback)
+        reporter = DirectEventReporter(callback)
 
         # Should not raise, should log error instead
         reporter.report("test_event", {"key": "value"})
@@ -420,10 +427,9 @@ class TestReporterImplementations:
     def test_process_reporter_report(self):
         """Test ProcessReporter.report puts event on queue."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
-        # Verify is_remote is True
-        assert reporter.is_remote is True
+        assert reporter.is_direct is False
 
         # Report an event
         reporter.report("test_event", {"key": "value"})
@@ -438,7 +444,7 @@ class TestReporterImplementations:
     def test_process_reporter_queue_property(self):
         """Test ProcessReporter.queue property."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         assert reporter.queue is queue
 
@@ -447,7 +453,7 @@ class TestReporterImplementations:
     def test_process_reporter_close(self):
         """Test ProcessReporter.close() closes the queue."""
         queue = MultiprocessingQueue()
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         # Close should not raise
         reporter.close()
@@ -460,7 +466,7 @@ class TestReporterImplementations:
         queue = Mock()
         queue.put.side_effect = RuntimeError("Queue error")
 
-        reporter = ProcessReporter(queue)
+        reporter = ProcessEventReporter(queue)
 
         # Should not raise, should log error instead
         reporter.report("test_event", {"key": "value"})
@@ -632,35 +638,59 @@ class TestLifecycleLoggingPluginOnCacheHit:
         # we can't easily capture with caplog. Just verify it doesn't raise.
 
 
-class TestLifecycleLoggingPluginOutputSaved:
-    """Tests for LifecycleLoggingPlugin output_saved event handling."""
+class TestLifecycleLoggingPluginDatasetSaveHooks:
+    """Tests for LifecycleLoggingPlugin before/after_dataset_save hooks."""
 
-    def test_handle_output_saved_with_checkpoint_name(self):
-        """Test that output_saved event logs checkpoint saves."""
+    def test_before_dataset_save_with_format(self):
+        """before_dataset_save includes format in message when provided."""
+        from unittest.mock import patch
+
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "debug") as mock_debug:
+            plugin.before_dataset_save(
+                key="output.pkl", value={"data": 1}, format="pickle", options=None
+            )
+        mock_debug.assert_called_once()
+        msg = mock_debug.call_args[0][0]
+        assert "output.pkl" in msg
+        assert "(format=pickle)" in msg
 
-        event = {
-            "key": "output.pkl",
-            "checkpoint_name": "my_checkpoint",
-            "node_name": "test_task",
-        }
+    def test_before_dataset_save_without_format(self):
+        """before_dataset_save omits format portion when None."""
+        from unittest.mock import patch
 
-        # Should not raise
-        plugin._handle_output_saved(event)
-
-    def test_handle_output_saved_without_checkpoint_name(self):
-        """Test that output_saved event logs regular saves."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "debug") as mock_debug:
+            plugin.before_dataset_save(
+                key="output.pkl", value={"data": 1}, format=None, options=None
+            )
+        mock_debug.assert_called_once()
+        msg = mock_debug.call_args[0][0]
+        assert "output.pkl" in msg
+        assert "format=" not in msg
 
-        event = {
-            "key": "result.pkl",
-            "checkpoint_name": None,
-            "node_name": "test_task",
-        }
+    def test_after_dataset_save_with_format(self, capsys):
+        """after_dataset_save includes format in message when provided."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
-        # Should not raise
-        plugin._handle_output_saved(event)
+        plugin = LifecycleLoggingPlugin()
+        plugin.after_dataset_save(
+            key="result.csv", value="hello", format="pandas/csv", options=None
+        )
+        out = capsys.readouterr().out
+        assert "result.csv" in out
+        assert "(format=pandas/csv)" in out
+
+    def test_after_dataset_save_without_format(self, capsys):
+        """after_dataset_save omits format portion when None."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        plugin.after_dataset_save(key="result.pkl", value="hello", format=None, options=None)
+        out = capsys.readouterr().out
+        assert "result.pkl" in out
+        assert "format=" not in out

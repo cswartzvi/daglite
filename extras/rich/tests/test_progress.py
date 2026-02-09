@@ -12,7 +12,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 
 from daglite.graph.base import GraphMetadata
-from daglite.plugins.events import EventRegistry
+from daglite.plugins.registry import EventRegistry
 
 
 class TestRichProgressPlugin:

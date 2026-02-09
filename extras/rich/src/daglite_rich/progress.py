@@ -11,8 +11,8 @@ from typing_extensions import override
 from daglite.graph.base import GraphMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
-from daglite.plugins.events import EventRegistry
 from daglite.plugins.hooks.markers import hook_impl
+from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
 
 if TYPE_CHECKING:
