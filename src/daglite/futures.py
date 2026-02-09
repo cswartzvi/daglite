@@ -933,7 +933,7 @@ def load_dataset(
         resolved_store = load_store
 
     stub_task = _Task(
-        func=lambda: _dataset_load_stub(),
+        func=_dataset_load_stub,
         name=f"load({key})",
         description="Dataset load stub",
         backend_name=None,
