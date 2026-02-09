@@ -487,6 +487,30 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         suffix = f" (format={format})" if format else ""
         self._logger.info(f"Saved dataset to '{key}'{suffix}")
 
+    @hook_impl
+    def before_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.debug(f"Loading dataset from '{key}'{suffix}")
+
+    @hook_impl
+    def after_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+        result: Any,
+        duration: float,
+    ) -> None:
+        suffix = f" (format={format})" if format else ""
+        self._logger.info(f"Loaded dataset from '{key}'{suffix} in {_format_duration(duration)}")
+
     def _handle_node_start(self, event: dict[str, Any]) -> None:
         node_id = event["node_id"]
         node_key = event["node_key"]

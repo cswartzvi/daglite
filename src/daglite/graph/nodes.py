@@ -4,6 +4,7 @@ import inspect
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any, Callable, TypeVar
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from daglite.backends.context import get_plugin_manager
 from daglite.backends.context import reset_current_task
 from daglite.backends.context import set_current_task
 from daglite.datasets.reporters import DirectDatasetReporter
+from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
@@ -26,7 +28,7 @@ _DIRECT_REPORTER = DirectDatasetReporter()
 
 T_co = TypeVar("T_co", covariant=True)
 
-# region Nodes
+# region Standard Nodes
 
 
 @dataclass(frozen=True)
@@ -254,7 +256,124 @@ class MapTaskNode(BaseGraphNode):
         )
 
 
-# region Run
+# region Special Nodes
+
+
+@dataclass(frozen=True)
+class DatasetNode(BaseGraphNode):
+    """
+    Dataset load node representation within the graph IR.
+
+    Unlike task nodes, this node does not execute a user function.  Instead it
+    loads a previously-saved dataset from a :class:`DatasetStore` and returns
+    the deserialized value.
+
+    The storage *key* may contain ``{placeholder}`` templates that are resolved
+    from dependency values at runtime (exactly like output-save keys).
+    """
+
+    store: DatasetStore
+    """The dataset store to load from."""
+
+    load_key: str
+    """Storage key template (may contain ``{param}`` placeholders)."""
+
+    return_type: type | None = None
+    """Expected Python type for deserialization dispatch."""
+
+    load_format: str | None = None
+    """Explicit serialization format hint (e.g. ``'pickle'``, ``'pandas/csv'``)."""
+
+    load_options: dict[str, Any] = field(default_factory=dict)
+    """Additional options forwarded to the ``Dataset`` constructor."""
+
+    kwargs: Mapping[str, ParamInput] = field(default_factory=dict)
+    """Keyword parameters used for key-template formatting."""
+
+    @override
+    def dependencies(self) -> set[UUID]:
+        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        for config in self.output_configs:
+            for param in config.dependencies.values():
+                if param.is_ref and param.ref is not None:
+                    deps.add(param.ref)
+        return deps
+
+    @override
+    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
+        return {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
+
+    @override
+    def to_metadata(self) -> GraphMetadata:
+        return GraphMetadata(
+            id=self.id,
+            name=self.name,
+            kind="dataset",
+            description=self.description,
+            backend_name=self.backend_name,
+            key=self.key,
+        )
+
+    @override
+    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
+        from dataclasses import replace as dc_replace
+
+        # Format the key template with resolved dependency values
+        try:
+            key = self.load_key.format(**resolved_inputs)
+        except KeyError as e:
+            available = sorted(resolved_inputs.keys())
+            raise ValueError(
+                f"Dataset key template '{self.load_key}' references {e} "
+                f"which is not available.\n"
+                f"Available variables: {', '.join(available)}"
+            ) from e
+
+        metadata = dc_replace(self.to_metadata(), key=self.name)
+        token = set_current_task(metadata)
+
+        try:
+            hook = get_plugin_manager().hook
+            hook.before_dataset_load(
+                key=key,
+                return_type=self.return_type,
+                format=self.load_format,
+                options=self.load_options or None,
+            )
+
+            start_time = time.time()
+            result = self.store.load(
+                key,
+                return_type=self.return_type,
+                format=self.load_format,
+                options=self.load_options or None,
+            )
+            duration = time.time() - start_time
+
+            hook.after_dataset_load(
+                key=key,
+                return_type=self.return_type,
+                format=self.load_format,
+                options=self.load_options or None,
+                result=result,
+                duration=duration,
+            )
+
+            # Save outputs if chained via .save()
+            resolved_output_deps = kwargs.get("resolved_output_deps", [])
+            _save_outputs(
+                result=result,
+                resolved_inputs=resolved_inputs,
+                output_config=self.output_configs,
+                output_deps=resolved_output_deps,
+            )
+
+            return result
+        finally:
+            reset_current_task(token)
+
+
+# region Common Run
 
 
 async def _run_implementation(

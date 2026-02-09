@@ -1,10 +1,14 @@
 """Integration tests for dataset saving via evaluate()."""
 
 import tempfile
+from uuid import uuid4
+
+import pytest
 
 from daglite import evaluate
 from daglite import task
 from daglite.datasets.store import DatasetStore
+from daglite.futures import load_dataset
 
 
 class TestSaveWithEvaluate:
@@ -314,3 +318,147 @@ class TestSaveWithMapTaskFutureExtras:
             assert result == [3, 6]
             assert store.exists("batch_0.pkl")
             assert store.exists("batch_1.pkl")
+
+
+class TestLoadDataset:
+    """Tests for DatasetNode.run() execution."""
+
+    def test_load_simple_value(self):
+        """DatasetNode loads a value from the store."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("data.pkl", {"key": "value"})
+
+            future = load_dataset("data.pkl", load_store=store, load_type=dict)
+            result = evaluate(future)
+            assert result == {"key": "value"}
+
+    def test_load_string_value(self):
+        """DatasetNode loads a string using text format."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("hello.txt", "hello world", format="text")
+
+            future = load_dataset("hello.txt", load_store=store, load_type=str)
+            result = evaluate(future)
+            assert result == "hello world"
+
+    def test_load_with_key_template(self):
+        """Key templates are resolved from extras at runtime."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("data_v1.pkl", [1, 2, 3])
+
+            future = load_dataset(
+                "data_{version}.pkl", load_store=store, load_type=list, version="v1"
+            )
+            result = evaluate(future)
+            assert result == [1, 2, 3]
+
+    def test_load_with_future_extra(self):
+        """Key template extras can be other task futures."""
+
+        @task
+        def get_version() -> str:
+            return "v2"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("data_v2.pkl", {"version": 2})
+
+            future = load_dataset(
+                "data_{version}.pkl",
+                load_store=store,
+                load_type=dict,
+                version=get_version(),
+            )
+            result = evaluate(future)
+            assert result == {"version": 2}
+
+    def test_load_then_process(self):
+        """DatasetFuture can be chained with .then()."""
+
+        @task
+        def double(values: list) -> list:
+            return [v * 2 for v in values]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("input.pkl", [1, 2, 3])
+
+            future = load_dataset("input.pkl", load_store=store, load_type=list).then(double)
+            result = evaluate(future)
+            assert result == [2, 4, 6]
+
+    def test_load_then_save(self):
+        """DatasetFuture can chain .save() to re-save loaded data."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("input.pkl", {"data": 42})
+
+            future = load_dataset("input.pkl", load_store=store, load_type=dict).save(
+                "output.pkl", save_store=store
+            )
+            result = evaluate(future)
+
+            assert result == {"data": 42}
+            assert store.exists("output.pkl")
+            assert store.load("output.pkl", dict) == {"data": 42}
+
+    def test_load_with_format(self):
+        """Explicit load_format is threaded through to store.load()."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("data.txt", "hello", format="text")
+
+            future = load_dataset("data.txt", load_store=store, load_type=str, load_format="text")
+            result = evaluate(future)
+            assert result == "hello"
+
+    def test_bad_key_template_raises_at_runtime(self):
+        """Missing key template variable raises ValueError at runtime."""
+        from daglite.graph.nodes import DatasetNode
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            node = DatasetNode(
+                id=uuid4(),
+                name="test",
+                store=store,
+                load_key="data_{missing}.pkl",
+                kwargs={},
+            )
+            import asyncio
+
+            with pytest.raises(ValueError, match="missing"):
+                asyncio.run(node.run({}))
+
+
+class TestLoadDatasetHooks:
+    """Tests for before/after_dataset_load hook firing."""
+
+    def test_hooks_fire_during_load(self):
+        """Both before and after hooks fire when a DatasetNode executes."""
+        from daglite.plugins.hooks.markers import hook_impl
+
+        hook_calls: list[str] = []
+
+        class HookTracker:
+            @hook_impl
+            def before_dataset_load(self, **kwargs):
+                hook_calls.append("before")
+
+            @hook_impl
+            def after_dataset_load(self, **kwargs):
+                hook_calls.append("after")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            store.save("data.pkl", {"ok": True})
+
+            future = load_dataset("data.pkl", load_store=store, load_type=dict)
+            result = evaluate(future, plugins=[HookTracker()])
+
+            assert result == {"ok": True}
+            assert "before" in hook_calls
+            assert "after" in hook_calls

@@ -16,6 +16,7 @@ from typing_extensions import Self, override
 from daglite.datasets.store import DatasetStore
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import ParamInput
+from daglite.graph.nodes import DatasetNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 
@@ -42,7 +43,7 @@ S5 = TypeVar("S5")
 S6 = TypeVar("S6")
 
 
-# region Futures
+# region Future Types
 
 
 @dataclass(frozen=True)
@@ -242,7 +243,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
-    ) -> MapTaskFuture[T]:
+    ) -> "MapTaskFuture[T]":
         """
         Fan out this future as input to another task by creating a Cartesian product.
 
@@ -317,7 +318,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
         **mapped_kwargs: Any,
-    ) -> MapTaskFuture[T]:
+    ) -> "MapTaskFuture[T]":
         """
         Fan out this future as input to another task by zipping with other sequences.
 
@@ -806,6 +807,150 @@ class MapTaskFuture(BaseTaskFuture[R]):
         )
 
 
+@dataclass(frozen=True)
+class DatasetFuture(TaskFuture[R]):
+    """Represents a lazy dataset load that will produce a value of type R when evaluated."""
+
+    load_key: str
+    """Storage key template (may contain `{param}` placeholders)."""
+
+    load_store: DatasetStore | None
+    """Explicit store override.  Falls back to global settings when `None`."""
+
+    load_type: type[R] | None
+    """Expected Python type for deserialization dispatch."""
+
+    load_format: str | None
+    """Explicit serialization format hint."""
+
+    load_options: dict[str, Any]
+    """Additional options forwarded to the `Dataset` constructor."""
+
+    @override
+    def to_graph(self) -> DatasetNode:  # type: ignore[override]
+        from daglite.graph.base import OutputConfig
+        from daglite.graph.base import ParamInput
+
+        kwargs: dict[str, ParamInput] = {}
+        for name, value in self.kwargs.items():
+            if isinstance(value, BaseTaskFuture):
+                kwargs[name] = ParamInput.from_ref(value.id)
+            else:
+                kwargs[name] = ParamInput.from_value(value)
+
+        available_names = set(self.kwargs.keys())
+        _validate_key_placeholders(self.load_key, available_names)
+
+        # Build output configs (from .save() calls)
+        output_configs: list[OutputConfig] = []
+        for future_output in self._future_outputs:
+            output_available = available_names | set(future_output.extras.keys())
+            _validate_key_placeholders(future_output.key, output_available)
+
+            output_dependencies = {}
+            for name, value in future_output.extras.items():
+                if isinstance(value, BaseTaskFuture):
+                    output_dependencies[name] = ParamInput.from_ref(value.id)
+                else:
+                    output_dependencies[name] = ParamInput.from_value(value)
+            output_config = OutputConfig(
+                key=future_output.key,
+                name=future_output.name,
+                format=future_output.format,
+                store=future_output.store,
+                dependencies=output_dependencies,
+                options=future_output.options or {},
+            )
+            output_configs.append(output_config)
+
+        return DatasetNode(
+            id=self.id,
+            name=f"load({self.load_key})",
+            store=self.load_store or self._resolve_default_store(),
+            load_key=self.load_key,
+            return_type=self.load_type,
+            load_format=self.load_format,
+            load_options=self.load_options or {},
+            kwargs=kwargs,
+            output_configs=tuple(output_configs),
+        )
+
+    @staticmethod
+    def _resolve_default_store() -> DatasetStore:
+        """Fall back to the global settings datastore."""
+        from daglite.settings import get_global_settings
+
+        store_or_path = get_global_settings().datastore_store
+        if isinstance(store_or_path, str):
+            return DatasetStore(store_or_path)
+        return store_or_path
+
+
+# region Future Functions
+
+
+def load_dataset(
+    key: str,
+    *,
+    load_type: type[R] | None = None,
+    load_format: str | None = None,
+    load_store: DatasetStore | str | None = None,
+    load_options: dict[str, Any] | None = None,
+    **extras: Any,
+) -> DatasetFuture[R]:
+    """
+    Creates a lazy dataset load that will be resolved during graph evaluation.
+
+    The returned `DatasetFuture` participates in the DAG just like a `TaskFuture` — it can be
+    chained with with all other methods of the fluent API, including.
+
+    Args:
+        key: Storage key (or template with `{param}` placeholders).
+        load_type: Expected Python return type for deserialization dispatch.
+        load_format: Explicit serialization format hint (e.g. `"pickle"`).
+        load_store: `DatasetStore` or path string.  Falls back to global settings.
+        load_options: Extra options forwarded to the `Dataset` constructor.
+        **extras: Values (or futures) for key-template formatting.
+
+    Returns:
+        A `DatasetFuture` that produces the loaded value when evaluated.
+
+    Examples:
+        >>> from daglite import load_dataset, evaluate, task
+        >>> @task
+        ... def process(data: dict) -> str:
+        ...     return str(data)
+        >>> future = load_dataset("input.pkl").then(process)
+        >>> evaluate(future)  # doctest: +SKIP
+    """
+    from daglite.tasks import Task as _Task
+
+    _validate_key_template(key)
+
+    if isinstance(load_store, str):
+        resolved_store: DatasetStore | None = DatasetStore(load_store)
+    else:
+        resolved_store = load_store
+
+    stub_task = _Task(
+        func=lambda: _dataset_load_stub(),
+        name=f"load({key})",
+        description="Dataset load stub",
+        backend_name=None,
+    )
+
+    return DatasetFuture(
+        task=stub_task,
+        kwargs=dict(extras),
+        backend_name=None,
+        load_key=key,
+        load_store=resolved_store,
+        load_type=load_type,
+        load_format=load_format,
+        load_options=load_options or {},
+    )
+
+
 # region Helpers
 
 
@@ -891,3 +1036,8 @@ def _infer_tuple_size(task_func: Any) -> int | None:
     if args and (len(args) < 2 or args[-1] is not Ellipsis):  # Skip tuple[int, ...]
         return len(args)
     return None
+
+
+def _dataset_load_stub() -> Any:
+    """Placeholder performs the actual load at runtime."""
+    raise AssertionError("_dataset_load_stub should never be called directly")

@@ -92,6 +92,7 @@ class DatasetStore:
         self,
         key: str,
         return_type: type[T] | None = None,
+        format: str | None = None,
         options: dict[str, Any] | None = None,
     ) -> T:
         """
@@ -100,7 +101,8 @@ class DatasetStore:
         Args:
             key: Storage key/path. Format hint from driver (e.g., extension).
             return_type: Expected return type. If None, uses pickle format.
-            options: Additional options passed to the Dataset's save method.
+            format: Serialization format. If None, inferred from type and/or driver hint.
+            options: Additional options passed to the Dataset's load method.
 
         Returns:
             The deserialized value.
@@ -110,11 +112,13 @@ class DatasetStore:
         """
         data = self._driver.load(key)
 
-        if return_type is None:
-            return pickle.loads(data)  # No type hint - assume pickle
+        if return_type is None and format is None:
+            return pickle.loads(data)  # No type hint or format - assume pickle
 
         hint = self._driver.get_format_hint(key)
-        format = AbstractDataset.infer_format(return_type, hint)
+        assert return_type is not None
+        if format is None:
+            format = AbstractDataset.infer_format(return_type, hint)
         dataset_cls = AbstractDataset.get(return_type, format)
         options = options or {}
         dataset = dataset_cls(**options)

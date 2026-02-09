@@ -218,6 +218,50 @@ class WorkerSideNodeSpecs:
             options: Additional options passed to the Dataset constructor.
         """
 
+    @hook_spec
+    def before_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+    ) -> None:
+        """
+        Called immediately before a dataset is loaded from storage.
+
+        Fires on the backend worker where the ``DatasetNode`` runs.
+
+        Args:
+            key: Storage key/path being loaded.
+            return_type: Expected Python type for deserialization dispatch.
+            format: Serialization format hint (e.g. ``"pickle"``, ``"pandas/csv"``).
+            options: Additional options passed to the Dataset constructor.
+        """
+
+    @hook_spec
+    def after_dataset_load(
+        self,
+        key: str,
+        return_type: type | None,
+        format: str | None,
+        options: dict[str, Any] | None,
+        result: Any,
+        duration: float,
+    ) -> None:
+        """
+        Called immediately after a dataset has been loaded from storage.
+
+        Fires on the backend worker where the ``DatasetNode`` runs.
+
+        Args:
+            key: Storage key/path that was loaded.
+            return_type: Expected Python type for deserialization dispatch.
+            format: Serialization format hint (e.g. ``"pickle"``, ``"pandas/csv"``).
+            options: Additional options passed to the Dataset constructor.
+            result: The deserialized Python object.
+            duration: Time taken to load in seconds.
+        """
+
 
 class CoordinatorSideNodeSpecs:
     """Hook specifications for node-level execution events on the **coordinator**."""
