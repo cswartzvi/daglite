@@ -110,7 +110,7 @@ class Backend(abc.ABC):
             func: Callable to execute
             inputs: Pre-resolved parameter inputs
             timeout: Maximum execution time in seconds. If None, no timeout is enforced.
-            **kwargs: Additional key
+            **kwargs: Additional execution options.
 
         Returns:
             An awaitable that resolves to the result of the callable.

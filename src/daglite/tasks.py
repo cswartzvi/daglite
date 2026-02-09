@@ -86,7 +86,7 @@ def task(  # noqa: D417
             Defaults to False.
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
-        store: Default output store for all `.save()` calls on this task. Can be an DatasetStore
+        store: Default output store for all `.save()` calls on this task. Can be a DatasetStore
             instance or a string path (e.g., directory) to be used for to create a dataset store.
             If None, the default store will be used.
 
