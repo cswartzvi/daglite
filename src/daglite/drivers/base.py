@@ -70,7 +70,7 @@ class Driver(ABC):
 
         Subclasses for remote drivers should override this to return ``False``.
         """
-        return True
+        return True  # pragma: no cover
 
     def get_format_hint(self, key: str) -> str | None:  # pragma: no cover
         """

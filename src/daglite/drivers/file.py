@@ -44,13 +44,25 @@ class FileDriver(Driver):
         from fsspec.utils import get_protocol
 
         self.base_path = base_path.rstrip("/")
+        self._protocol = get_protocol(base_path)
 
         if fs is None:
-            self.fs = filesystem(get_protocol(base_path))
+            self.fs = filesystem(self._protocol)
         else:
             self.fs = fs
 
         self.fs.mkdirs(self.base_path, exist_ok=True)
+
+    @property
+    @override
+    def is_local(self) -> bool:
+        """
+        Return True only for local file paths.
+
+        Plain paths (no protocol) and the ``file`` protocol are considered
+        local.  All other protocols (e.g. ``s3``, ``gcs``) are remote.
+        """
+        return self._protocol in ("", "file")
 
     def _full_path(self, key: str) -> str:
         """Get the full path for a key."""

@@ -241,3 +241,27 @@ class TestFileDriverFsspecSupport:
             driver.save("test_value.bin", b"\x01\x02\x03")
             data = driver.load("test_value.bin")
             assert data == b"\x01\x02\x03"
+
+
+class TestFileDriverIsLocal:
+    """Tests for FileDriver.is_local property."""
+
+    def test_local_path_is_local(self):
+        """Plain local path reports is_local=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            driver = FileDriver(tmpdir)
+            assert driver.is_local is True
+
+    def test_file_protocol_is_local(self):
+        """Explicit file:// protocol reports is_local=True."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            driver = FileDriver(f"file://{tmpdir}")
+            assert driver.is_local is True
+
+    def test_remote_protocol_is_not_local(self):
+        """Remote protocol (e.g. s3://) reports is_local=False."""
+        from unittest.mock import MagicMock
+
+        mock_fs = MagicMock()
+        driver = FileDriver("s3://my-bucket/prefix", fs=mock_fs)
+        assert driver.is_local is False
