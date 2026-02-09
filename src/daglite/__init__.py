@@ -1,6 +1,6 @@
 """Daglite: Lightweight Python framework for building static DAGs with explicit bindings."""
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 
 import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
 from daglite import backends
