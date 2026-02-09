@@ -116,7 +116,11 @@ class DatasetStore:
             return pickle.loads(data)  # No type hint or format - assume pickle
 
         hint = self._driver.get_format_hint(key)
-        assert return_type is not None
+        if return_type is None:  # pragma: no cover
+            raise ValueError(
+                "return_type must be provided when 'format' is specified; "
+                "omit 'format' and 'return_type' together to use pickle-based loading."
+            )
         if format is None:
             format = AbstractDataset.infer_format(return_type, hint)
         dataset_cls = AbstractDataset.get(return_type, format)
