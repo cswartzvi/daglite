@@ -14,6 +14,7 @@ from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
+from daglite.futures import load_dataset
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
 from daglite.tasks import task
@@ -267,6 +268,11 @@ class TestFutureRepr:
 
         assert isinstance(future, MapTaskFuture)
         assert repr(future) == "MapTaskFuture(scale, mode=product, factor=10, x=[1, 2, 3])"
+
+    def test_dataset_future_repr(self) -> None:
+        """DatasetFuture repr shows load key and kwargs."""
+        future = load_dataset("my_dataset", format="csv")
+        assert repr(future) == "DatasetFuture(key='my_dataset', format='csv')"
 
 
 class TestParameterValidation:
