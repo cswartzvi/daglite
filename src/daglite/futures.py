@@ -15,20 +15,17 @@ from typing_extensions import Self, override
 
 from daglite.datasets.store import DatasetStore
 from daglite.graph.base import GraphBuilder
+from daglite.graph.base import OutputConfig
 from daglite.graph.base import ParamInput
 from daglite.graph.nodes import DatasetNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 from daglite.utils import build_repr
 
-# NOTE: Import types only for type checking to avoid circular imports, if you need
-# to use them at runtime, import them within methods.
 if TYPE_CHECKING:
-    from daglite.graph.base import OutputConfig
     from daglite.tasks import PartialTask
     from daglite.tasks import Task
 else:
-    OutputConfig = object
     PartialTask = object
     Task = object
 
@@ -533,15 +530,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> TaskNode:
-        from daglite.graph.base import ParamInput
-
-        kwargs: dict[str, ParamInput] = {}
-        for name, value in self.kwargs.items():
-            if isinstance(value, BaseTaskFuture):
-                kwargs[name] = ParamInput.from_ref(value.id)
-            else:
-                kwargs[name] = ParamInput.from_value(value)
-
+        kwargs = _resolve_parameters(self.kwargs)
         available_names = set(self.kwargs.keys())
         output_configs = _build_output_configs(self._future_outputs, available_names)
 
@@ -736,13 +725,9 @@ class MapTaskFuture(BaseTaskFuture[R]):
     def to_graph(self) -> MapTaskNode:
         from daglite.graph.base import ParamInput
 
-        fixed_kwargs: dict[str, ParamInput] = {}
-        for name, value in self.fixed_kwargs.items():
-            if isinstance(value, BaseTaskFuture):
-                fixed_kwargs[name] = ParamInput.from_ref(value.id)
-            else:
-                fixed_kwargs[name] = ParamInput.from_value(value)
+        fixed_kwargs = _resolve_parameters(self.fixed_kwargs)
 
+        # Resolve mapped parameters
         mapped_kwargs: dict[str, ParamInput] = {}
         for name, seq in self.mapped_kwargs.items():
             if isinstance(seq, MapTaskFuture):
@@ -800,19 +785,10 @@ class DatasetFuture(TaskFuture[R]):
 
     @override
     def to_graph(self) -> DatasetNode:  # type: ignore[override]
-        from daglite.graph.base import ParamInput
-
-        kwargs: dict[str, ParamInput] = {}
-        for name, value in self.kwargs.items():
-            if isinstance(value, BaseTaskFuture):
-                kwargs[name] = ParamInput.from_ref(value.id)
-            else:
-                kwargs[name] = ParamInput.from_value(value)
-
+        kwargs = _resolve_parameters(self.kwargs)
         available_names = set(self.kwargs.keys())
         _validate_key_placeholders(self.load_key, available_names)
         output_configs = _build_output_configs(self._future_outputs, available_names)
-
         return DatasetNode(
             id=self.id,
             name=f"load({self.load_key})",
@@ -914,6 +890,19 @@ class _FutureOutput:
     store: DatasetStore | None
     options: dict[str, Any] | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
+
+
+def _resolve_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
+    """Resolves parameters for graph node conversion."""
+    from daglite.graph.base import ParamInput
+
+    resolved: dict[str, Any] = {}
+    for name, value in kwargs.items():
+        if isinstance(value, BaseTaskFuture):
+            resolved[name] = ParamInput.from_ref(value.id)
+        else:
+            resolved[name] = ParamInput.from_value(value)
+    return resolved
 
 
 def _build_output_configs(
