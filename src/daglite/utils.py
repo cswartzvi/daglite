@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import reprlib
 from collections.abc import Mapping
 from typing import Any
 
 
 def truncate_repr(value: Any, max_len: int = 50) -> str:
     """Return a truncated repr of *value*, appending '...' if it exceeds *max_len*."""
-    r = repr(value)
-    if len(r) > max_len:
-        return r[: max_len - 3] + "..."
-    return r
+    r = reprlib.Repr()
+    r.maxstring = max_len
+    r.maxother = max_len
+    return r.repr(value)
 
 
 def build_repr(class_name: str, *leading: str, kwargs: Mapping[str, Any] | None = None) -> str:
