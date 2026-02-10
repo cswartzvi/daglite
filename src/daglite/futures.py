@@ -533,7 +533,6 @@ class TaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> TaskNode:
-        from daglite.graph.base import OutputConfig
         from daglite.graph.base import ParamInput
 
         kwargs: dict[str, ParamInput] = {}
@@ -543,26 +542,8 @@ class TaskFuture(BaseTaskFuture[R]):
             else:
                 kwargs[name] = ParamInput.from_value(value)
 
-        output_configs: list[OutputConfig] = []
-        for future_output in self._future_outputs:
-            available_names = set(self.kwargs.keys()) | set(future_output.extras.keys())
-            _validate_key_placeholders(future_output.key, available_names)
-
-            output_dependencies = {}
-            for name, value in future_output.extras.items():
-                if isinstance(value, BaseTaskFuture):
-                    output_dependencies[name] = ParamInput.from_ref(value.id)
-                else:
-                    output_dependencies[name] = ParamInput.from_value(value)
-            output_config = OutputConfig(
-                key=future_output.key,
-                name=future_output.name,
-                format=future_output.format,
-                store=future_output.store,
-                dependencies=output_dependencies,
-                options=future_output.options or {},
-            )
-            output_configs.append(output_config)
+        available_names = set(self.kwargs.keys())
+        output_configs = _build_output_configs(self._future_outputs, available_names)
 
         return TaskNode(
             id=self.id,
@@ -753,18 +734,16 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> MapTaskNode:
-        from daglite.graph.base import OutputConfig
         from daglite.graph.base import ParamInput
 
         fixed_kwargs: dict[str, ParamInput] = {}
-        mapped_kwargs: dict[str, ParamInput] = {}
-
         for name, value in self.fixed_kwargs.items():
             if isinstance(value, BaseTaskFuture):
                 fixed_kwargs[name] = ParamInput.from_ref(value.id)
             else:
                 fixed_kwargs[name] = ParamInput.from_value(value)
 
+        mapped_kwargs: dict[str, ParamInput] = {}
         for name, seq in self.mapped_kwargs.items():
             if isinstance(seq, MapTaskFuture):
                 # MapTaskFuture produces a sequence - iterate over it
@@ -776,31 +755,9 @@ class MapTaskFuture(BaseTaskFuture[R]):
                 # Concrete sequence - iterate over it
                 mapped_kwargs[name] = ParamInput.from_sequence(seq)
 
-        output_configs: list[OutputConfig] = []
-        for future_output in self._future_outputs:
-            available_names = (
-                set(self.fixed_kwargs.keys())
-                | set(self.mapped_kwargs.keys())
-                | set(future_output.extras.keys())
-                | {"iteration_index"}  # Special variable available in mapped task outputs
-            )
-            _validate_key_placeholders(future_output.key, available_names)
-
-            output_dependencies = {}
-            for name, value in future_output.extras.items():
-                if isinstance(value, BaseTaskFuture):
-                    output_dependencies[name] = ParamInput.from_ref(value.id)
-                else:
-                    output_dependencies[name] = ParamInput.from_value(value)
-            output_config = OutputConfig(
-                key=future_output.key,
-                name=future_output.name,
-                format=future_output.format,
-                store=future_output.store,
-                dependencies=output_dependencies,
-                options=future_output.options or {},
-            )
-            output_configs.append(output_config)
+        kwargs = {**fixed_kwargs, **mapped_kwargs}
+        available_names = set(kwargs.keys()) | {"iteration_index"}
+        output_configs = _build_output_configs(self._future_outputs, available_names)
 
         return MapTaskNode(
             id=self.id,
@@ -843,7 +800,6 @@ class DatasetFuture(TaskFuture[R]):
 
     @override
     def to_graph(self) -> DatasetNode:  # type: ignore[override]
-        from daglite.graph.base import OutputConfig
         from daglite.graph.base import ParamInput
 
         kwargs: dict[str, ParamInput] = {}
@@ -855,28 +811,7 @@ class DatasetFuture(TaskFuture[R]):
 
         available_names = set(self.kwargs.keys())
         _validate_key_placeholders(self.load_key, available_names)
-
-        # Build output configs (from .save() calls)
-        output_configs: list[OutputConfig] = []
-        for future_output in self._future_outputs:
-            output_available = available_names | set(future_output.extras.keys())
-            _validate_key_placeholders(future_output.key, output_available)
-
-            output_dependencies = {}
-            for name, value in future_output.extras.items():
-                if isinstance(value, BaseTaskFuture):
-                    output_dependencies[name] = ParamInput.from_ref(value.id)
-                else:
-                    output_dependencies[name] = ParamInput.from_value(value)
-            output_config = OutputConfig(
-                key=future_output.key,
-                name=future_output.name,
-                format=future_output.format,
-                store=future_output.store,
-                dependencies=output_dependencies,
-                options=future_output.options or {},
-            )
-            output_configs.append(output_config)
+        output_configs = _build_output_configs(self._future_outputs, available_names)
 
         return DatasetNode(
             id=self.id,
@@ -979,6 +914,37 @@ class _FutureOutput:
     store: DatasetStore | None
     options: dict[str, Any] | None
     extras: dict[str, Any]  # Raw values - can be scalars or TaskFutures
+
+
+def _build_output_configs(
+    future_outputs: tuple[_FutureOutput, ...], root_available_names: set[str]
+) -> tuple[OutputConfig, ...]:
+    """Convert builder-level future outputs to graph IR OutputConfigs, validating placeholders."""
+    from daglite.graph.base import OutputConfig
+    from daglite.graph.base import ParamInput
+
+    output_configs: list[OutputConfig] = []
+    for future_output in future_outputs:
+        available_names = root_available_names | set(future_output.extras.keys())
+        _validate_key_placeholders(future_output.key, available_names)
+
+        output_dependencies = {}
+        for name, value in future_output.extras.items():
+            if isinstance(value, BaseTaskFuture):
+                output_dependencies[name] = ParamInput.from_ref(value.id)
+            else:
+                output_dependencies[name] = ParamInput.from_value(value)
+        output_config = OutputConfig(
+            key=future_output.key,
+            name=future_output.name,
+            format=future_output.format,
+            store=future_output.store,
+            dependencies=output_dependencies,
+            options=future_output.options or {},
+        )
+        output_configs.append(output_config)
+
+    return tuple(output_configs)
 
 
 def _validate_key_template(key: str) -> None:
