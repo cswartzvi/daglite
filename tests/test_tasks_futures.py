@@ -12,6 +12,7 @@ import pytest
 
 from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
+from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
@@ -141,6 +142,94 @@ class TestTaskDefinition:
             @task(cache_ttl=-10)
             def faulty_task(x: int) -> int:
                 return x
+
+
+class TestFutureRepr:
+    """Test __repr__ output for TaskFuture, MapTaskFuture, and DatasetFuture."""
+
+    def test_task_future_repr(self) -> None:
+        """TaskFuture repr shows task name and kwargs."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future = add(x=1, y=2)
+
+        assert repr(future) == "TaskFuture(add, x=1, y=2)"
+
+    def test_task_future_repr_no_kwargs(self) -> None:
+        """TaskFuture repr works for zero-parameter tasks."""
+
+        @task
+        def noop() -> None:  # pragma: no cover
+            pass
+
+        future = noop()
+
+        assert repr(future) == "TaskFuture(noop)"
+
+    def test_task_future_repr_with_custom_name(self) -> None:
+        """TaskFuture repr uses the task's custom name."""
+
+        @task(name="custom_add")
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future = add(x=1, y=2)
+
+        assert repr(future) == "TaskFuture(custom_add, x=1, y=2)"
+
+    def test_task_future_repr_truncates_long_values(self) -> None:
+        """TaskFuture repr truncates values exceeding 50 characters."""
+
+        @task
+        def process(data: str) -> str:  # pragma: no cover
+            return data
+
+        long_value = "a" * 100
+        future = process(data=long_value)
+
+        r = repr(future)
+        assert r.startswith("TaskFuture(process, data=")
+        assert "..." in r
+
+    def test_map_task_future_product_repr(self) -> None:
+        """MapTaskFuture repr shows task name, mode, and kwargs."""
+
+        @task
+        def double(x: int) -> int:  # pragma: no cover
+            return x * 2
+
+        future = double.product(x=[1, 2, 3])
+
+        assert isinstance(future, MapTaskFuture)
+        assert repr(future) == "MapTaskFuture(double, mode=product, x=[1, 2, 3])"
+
+    def test_map_task_future_zip_repr(self) -> None:
+        """MapTaskFuture repr shows zip mode."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future = add.zip(x=[1, 2], y=[3, 4])
+
+        assert isinstance(future, MapTaskFuture)
+        assert repr(future) == "MapTaskFuture(add, mode=zip, x=[1, 2], y=[3, 4])"
+
+    def test_map_task_future_repr_with_fixed_kwargs(self) -> None:
+        """MapTaskFuture repr includes both fixed and mapped kwargs."""
+
+        @task
+        def scale(x: int, factor: int) -> int:  # pragma: no cover
+            return x * factor
+
+        fixed = scale.partial(factor=10)
+        future = fixed.product(x=[1, 2, 3])
+
+        assert isinstance(future, MapTaskFuture)
+        assert repr(future) == "MapTaskFuture(scale, mode=product, factor=10, x=[1, 2, 3])"
 
 
 class TestParameterValidation:

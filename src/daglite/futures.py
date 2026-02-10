@@ -19,6 +19,7 @@ from daglite.graph.base import ParamInput
 from daglite.graph.nodes import DatasetNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.utils import build_repr
 
 # NOTE: Import types only for type checking to avoid circular imports, if you need
 # to use them at runtime, import them within methods.
@@ -192,6 +193,9 @@ class TaskFuture(BaseTaskFuture[R]):
 
     backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
+
+    def __repr__(self) -> str:
+        return build_repr("TaskFuture", self.task.name, kwargs=self.kwargs)
 
     def then(
         self,
@@ -611,6 +615,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
     backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
+    def __repr__(self) -> str:
+        return build_repr(
+            "MapTaskFuture",
+            self.task.name,
+            f"mode={self.mode}",
+            kwargs={**self.fixed_kwargs, **self.mapped_kwargs},
+        )
+
     def then(
         self, mapped_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
     ) -> MapTaskFuture[T]:
@@ -825,6 +837,9 @@ class DatasetFuture(TaskFuture[R]):
 
     load_options: dict[str, Any]
     """Additional options forwarded to the `Dataset` constructor."""
+
+    def __repr__(self) -> str:
+        return build_repr("DatasetFuture", f"key={self.load_key!r}", kwargs=self.kwargs)
 
     @override
     def to_graph(self) -> DatasetNode:  # type: ignore[override]
