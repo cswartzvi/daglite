@@ -19,6 +19,43 @@ from daglite.tasks import Task
 from daglite.tasks import task
 
 
+class TestBaseTaskFuture:
+    """Test core BaseTaskFuture behavior."""
+
+    def test_futures_have_unique_ids(self) -> None:
+        """Each future receives a unique identifier."""
+
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future1 = task(add)(x=1, y=2)
+        future2 = task(add)(x=1, y=2)
+
+        assert future1.id != future2.id
+
+    def test_future_len_raises_type_error(self) -> None:
+        """Unevaluated futures prevent accidental length operations."""
+
+        def multiply(x: int, y: int) -> int:  # pragma: no cover
+            return x * y
+
+        future = task(multiply)(x=3, y=4)
+
+        with pytest.raises(TypeError, match="do not support len()"):
+            len(future)
+
+    def test_future_bool_raises_type_error(self) -> None:
+        """Unevaluated futures prevent accidental boolean operations."""
+
+        def divide(x: int, y: int) -> float:  # pragma: no cover
+            return x / y
+
+        future = task(divide)(x=10, y=2)
+
+        with pytest.raises(TypeError, match="cannot be used in boolean context."):
+            bool(future)
+
+
 class TestTaskDefinition:
     """Test the @task decorator definition and metadata handling."""
 
@@ -770,43 +807,6 @@ class TestPartialTaskErrors:
         fixed_joining = joining.partial(c=10)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(fixed_joining)
-
-
-class TestBaseTaskFuture:
-    """Test core BaseTaskFuture behavior."""
-
-    def test_futures_have_unique_ids(self) -> None:
-        """Each future receives a unique identifier."""
-
-        def add(x: int, y: int) -> int:  # pragma: no cover
-            return x + y
-
-        future1 = task(add)(x=1, y=2)
-        future2 = task(add)(x=1, y=2)
-
-        assert future1.id != future2.id
-
-    def test_future_len_raises_type_error(self) -> None:
-        """Unevaluated futures prevent accidental length operations."""
-
-        def multiply(x: int, y: int) -> int:  # pragma: no cover
-            return x * y
-
-        future = task(multiply)(x=3, y=4)
-
-        with pytest.raises(TypeError, match="do not support len()"):
-            len(future)
-
-    def test_future_bool_raises_type_error(self) -> None:
-        """Unevaluated futures prevent accidental boolean operations."""
-
-        def divide(x: int, y: int) -> float:  # pragma: no cover
-            return x / y
-
-        future = task(divide)(x=10, y=2)
-
-        with pytest.raises(TypeError, match="cannot be used in boolean context."):
-            bool(future)
 
 
 class TestSplitMethod:
