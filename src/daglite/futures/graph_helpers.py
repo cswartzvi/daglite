@@ -5,13 +5,31 @@ from typing import Any, Mapping
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import FutureOutput
+from daglite.graph.base import GraphBuilder
 from daglite.graph.base import OutputConfig
 from daglite.graph.base import ParamInput
 
 
-def build_graph_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
+def collect_dependencies(
+    kwargs: Mapping[str, Any], outputs: tuple[FutureOutput, ...] | None = None
+) -> list[GraphBuilder]:
+    deps: list[GraphBuilder] = []
+
+    for value in kwargs.values():
+        if isinstance(value, BaseTaskFuture):
+            deps.append(value)
+
+    outputs = outputs if outputs else tuple()
+    for future_output in outputs:
+        for value in future_output.extras.values():
+            if isinstance(value, BaseTaskFuture):
+                deps.append(value)
+    return deps
+
+
+def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
     """
-    Builds graph IR parameters from the provided kwargs.
+    Builds graph IR parameters for task futures from the provided kwargs.
 
     Note converts task futures to reference parameters, and passes through concrete values as-is.
 
@@ -21,13 +39,40 @@ def build_graph_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
     Returns:
         A dictionary mapping parameter names to ParamInput instances for graph construction.
     """
-    resolved: dict[str, Any] = {}
+    params: dict[str, Any] = {}
     for name, value in kwargs.items():
         if isinstance(value, BaseTaskFuture):
-            resolved[name] = ParamInput.from_ref(value.id)
+            params[name] = ParamInput.from_ref(value.id)
         else:
-            resolved[name] = ParamInput.from_value(value)
-    return resolved
+            params[name] = ParamInput.from_value(value)
+    return params
+
+
+def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
+    """
+    Builds graph IR parameters for mapped task futures from the provided kwargs.
+
+    Note converts task futures to reference parameters, and passes through concrete values as-is.
+
+    Args:
+        kwargs: Keyword arguments to resolve into graph parameters.
+
+    Returns:
+        A dictionary mapping parameter names to ParamInput instances for graph construction.
+    """
+    from daglite.futures.map_future import MapTaskFuture
+    from daglite.futures.task_future import TaskFuture
+
+    params: dict[str, ParamInput] = {}
+    for name, seq in kwargs.items():
+        if isinstance(seq, MapTaskFuture):
+            params[name] = ParamInput.from_sequence_ref(seq.id)
+        elif isinstance(seq, TaskFuture):
+            params[name] = ParamInput.from_sequence_ref(seq.id)
+        else:
+            params[name] = ParamInput.from_sequence(seq)
+
+    return params
 
 
 def build_output_configs(
@@ -50,7 +95,7 @@ def build_output_configs(
         placeholders |= future_output.extras.keys()
         check_key_placeholders(future_output.key, placeholders)
 
-        dependencies = build_graph_parameters(future_output.extras)
+        dependencies = build_parameters(future_output.extras)
         output_config = OutputConfig(
             key=future_output.key,
             name=future_output.name,

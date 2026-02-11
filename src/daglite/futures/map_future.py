@@ -11,16 +11,17 @@ from typing_extensions import override
 from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.futures.base import BaseTaskFuture
-from daglite.futures.graph_helpers import build_graph_parameters
+from daglite.futures.graph_helpers import build_map_parameters
 from daglite.futures.graph_helpers import build_output_configs
+from daglite.futures.graph_helpers import build_parameters
+from daglite.futures.graph_helpers import collect_dependencies
 from daglite.graph.base import GraphBuilder
-from daglite.graph.base import ParamInput
 from daglite.graph.nodes import MapTaskNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
 from daglite.utils import build_repr
 
-# NOTE: To avoid circular imports, cross-referencing type should be imported within TYPE_CHECKING
+# NOTE: To avoid circular imports, cross-referencing types should be imported within TYPE_CHECKING
 # block. If runtime imports are needed, they should be done locally within methods. Be careful,
 # forgetting to import at runtime will lead to hard to debug errors.
 if TYPE_CHECKING:
@@ -70,12 +71,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
     """Engine backend override for this task, if `None`, uses the default engine backend."""
 
     def __repr__(self) -> str:
-        return build_repr(
-            "MapTaskFuture",
-            self.task.name,
-            f"mode={self.mode}",
-            kwargs={**self.fixed_kwargs, **self.mapped_kwargs},
-        )
+        kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
+        return build_repr("MapTaskFuture", self.task.name, f"mode={self.mode}", kwargs=kwargs)
 
     def then(
         self, mapped_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
@@ -186,39 +183,16 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
-        deps: list[GraphBuilder] = []
-        for value in self.fixed_kwargs.values():
-            if isinstance(value, BaseTaskFuture):
-                deps.append(value)
-        for seq in self.mapped_kwargs.values():
-            if isinstance(seq, BaseTaskFuture):
-                deps.append(seq)
-        for future_output in self._future_outputs:
-            for value in future_output.extras.values():
-                if isinstance(value, BaseTaskFuture):
-                    deps.append(value)
-        return deps
+        kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
+        return collect_dependencies(kwargs, self._future_outputs)
 
     @override
     def to_graph(self) -> MapTaskNode:
-        from daglite.futures.task_future import TaskFuture
-
-        fixed_kwargs = build_graph_parameters(self.fixed_kwargs)
-
-        # Resolve mapped parameters (mapped kwargs are validated to be sequences)
-        mapped_kwargs: dict[str, ParamInput] = {}
-        for name, seq in self.mapped_kwargs.items():
-            if isinstance(seq, MapTaskFuture):
-                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
-            elif isinstance(seq, TaskFuture):
-                mapped_kwargs[name] = ParamInput.from_sequence_ref(seq.id)
-            else:
-                mapped_kwargs[name] = ParamInput.from_sequence(seq)
-
+        fixed_kwargs = build_parameters(self.fixed_kwargs)
+        mapped_kwargs = build_map_parameters(self.mapped_kwargs)
         kwargs = {**fixed_kwargs, **mapped_kwargs}
-        available_names = set(kwargs.keys()) | {"iteration_index"}
-        output_configs = build_output_configs(self._future_outputs, available_names)
-
+        placeholders = set(kwargs.keys()) | {"iteration_index"}  # From map task nodes
+        output_configs = build_output_configs(self._future_outputs, placeholders)
         return MapTaskNode(
             id=self.id,
             name=self.task.name,
@@ -230,7 +204,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             backend_name=self.backend_name,
             retries=self.task.retries,
             timeout=self.task.timeout,
-            output_configs=tuple(output_configs),
+            output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
         )

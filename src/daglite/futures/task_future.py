@@ -15,16 +15,18 @@ from daglite._validation import get_unbound_param
 from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
 from daglite.futures.base import BaseTaskFuture
-from daglite.futures.graph_helpers import build_graph_parameters
 from daglite.futures.graph_helpers import build_output_configs
+from daglite.futures.graph_helpers import build_parameters
+from daglite.futures.graph_helpers import collect_dependencies
 from daglite.graph.base import GraphBuilder
 from daglite.graph.nodes import TaskNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
+from daglite.tasks import task
 from daglite.utils import build_repr
 from daglite.utils import infer_tuple_size
 
-# NOTE: To avoid circular imports, cross-referencing type should be imported within TYPE_CHECKING
+# NOTE: To avoid circular imports, cross-referencing types should be imported within TYPE_CHECKING
 # block. If runtime imports are needed, they should be done locally within methods. Be careful,
 # forgetting to import at runtime will lead to hard to debug errors.
 if TYPE_CHECKING:
@@ -352,8 +354,6 @@ class TaskFuture(BaseTaskFuture[R]):
             'Coordinates: (10, 20)'
 
         """
-        from daglite.tasks import task
-
         final_size = infer_tuple_size(self.task.func) if size is None else size
         if final_size is None:
             raise DagliteError(
@@ -371,19 +371,11 @@ class TaskFuture(BaseTaskFuture[R]):
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
-        deps: list[GraphBuilder] = []
-        for value in self.kwargs.values():
-            if isinstance(value, BaseTaskFuture):
-                deps.append(value)
-        for future_output in self._future_outputs:
-            for value in future_output.extras.values():
-                if isinstance(value, BaseTaskFuture):
-                    deps.append(value)
-        return deps
+        return collect_dependencies(self.kwargs, outputs=self._future_outputs)
 
     @override
     def to_graph(self) -> TaskNode:
-        kwargs = build_graph_parameters(self.kwargs)
+        kwargs = build_parameters(self.kwargs)
         placeholders = set(self.kwargs.keys())
         output_configs = build_output_configs(self._future_outputs, placeholders)
         return TaskNode(
