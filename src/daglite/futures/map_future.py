@@ -12,9 +12,9 @@ from daglite._validation import MapMode
 from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.futures.base import BaseTaskFuture
-from daglite.futures.graph_helpers import build_map_parameters
+from daglite.futures.graph_helpers import build_mapped_node_inputs
 from daglite.futures.graph_helpers import build_output_configs
-from daglite.futures.graph_helpers import build_parameters
+from daglite.futures.graph_helpers import build_node_inputs
 from daglite.futures.graph_helpers import collect_dependencies
 from daglite.graph.builder import GraphBuilder
 from daglite.graph.nodes import MapTaskNode
@@ -189,8 +189,8 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> MapTaskNode:
-        fixed_kwargs = build_parameters(self.fixed_kwargs)
-        mapped_kwargs = build_map_parameters(self.mapped_kwargs)
+        fixed_kwargs = build_node_inputs(self.fixed_kwargs)
+        mapped_kwargs = build_mapped_node_inputs(self.mapped_kwargs)
         kwargs = {**fixed_kwargs, **mapped_kwargs}
         placeholders = set(kwargs.keys()) | {"iteration_index"}  # From map task nodes
         output_configs = build_output_configs(self._output_futures, placeholders)

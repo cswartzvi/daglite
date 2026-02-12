@@ -20,7 +20,7 @@ from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import InputParam
+from daglite.graph.base import NodeInput
 from daglite.graph.base import NodeMetadata
 from daglite.graph.base import OutputConfig
 
@@ -38,8 +38,8 @@ class TaskNode(BaseGraphNode):
     func: Callable
     """Function to be executed for this task node."""
 
-    kwargs: Mapping[str, InputParam]
-    """Keyword parameters for the task function."""
+    kwargs: Mapping[str, NodeInput]
+    """Keyword parameters from the task function mapped to node inputs."""
 
     retries: int = 0
     """Number of times to retry the task on failure."""
@@ -111,11 +111,11 @@ class MapTaskNode(BaseGraphNode):
     mode: str
     """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
 
-    fixed_kwargs: Mapping[str, InputParam]
-    """Fixed keyword arguments for the mapped function."""
+    fixed_kwargs: Mapping[str, NodeInput]
+    """Fixed keyword parameters of the task function to node inputs."""
 
-    mapped_kwargs: Mapping[str, InputParam]
-    """Mapped keyword arguments for the mapped function."""
+    mapped_kwargs: Mapping[str, NodeInput]
+    """Mapped keyword parameters of the task function to node inputs."""
 
     retries: int = 0
     """Number of times to retry the task on failure."""
@@ -265,7 +265,7 @@ class DatasetNode(BaseGraphNode):
     load_options: dict[str, Any] = field(default_factory=dict)
     """Additional options forwarded to the ``Dataset`` constructor."""
 
-    kwargs: Mapping[str, InputParam] = field(default_factory=dict)
+    kwargs: Mapping[str, NodeInput] = field(default_factory=dict)
     """Keyword parameters used for key-template formatting."""
 
     @override

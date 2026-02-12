@@ -5,7 +5,7 @@ from typing import Any, Mapping
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import OutputFuture
-from daglite.graph.base import InputParam
+from daglite.graph.base import NodeInput
 from daglite.graph.base import OutputConfig
 from daglite.graph.builder import GraphBuilder
 
@@ -38,9 +38,9 @@ def collect_dependencies(
     return deps
 
 
-def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
+def build_node_inputs(kwargs: Mapping[str, Any]) -> dict[str, NodeInput]:
     """
-    Builds graph IR parameters for task futures from the provided kwargs.
+    Builds graph node inputs for task futures from the provided kwargs.
 
     Note converts task futures to reference parameters, and passes through concrete values as-is.
 
@@ -48,20 +48,20 @@ def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
         kwargs: Keyword arguments to resolve into graph parameters.
 
     Returns:
-        A dictionary mapping parameter names to InputParam instances for graph construction.
+        A dictionary mapping parameter names to NodeInput instances for graph construction.
     """
     params: dict[str, Any] = {}
     for name, value in kwargs.items():
         if isinstance(value, BaseTaskFuture):
-            params[name] = InputParam.from_ref(value.id)
+            params[name] = NodeInput.from_ref(value.id)
         else:
-            params[name] = InputParam.from_value(value)
+            params[name] = NodeInput.from_value(value)
     return params
 
 
-def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
+def build_mapped_node_inputs(kwargs: Mapping[str, Any]) -> dict[str, NodeInput]:
     """
-    Builds graph IR parameters for mapped task futures from the provided kwargs.
+    Builds graph node inputs for map task futures from the provided kwargs.
 
     Note converts task futures to reference parameters, and passes through concrete values as-is.
 
@@ -69,19 +69,19 @@ def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
         kwargs: Keyword arguments to resolve into graph parameters.
 
     Returns:
-        A dictionary mapping parameter names to InputParam instances for graph construction.
+        A dictionary mapping parameter names to NodeInput instances for graph construction.
     """
     from daglite.futures.map_future import MapTaskFuture
     from daglite.futures.task_future import BaseTaskFuture
 
-    params: dict[str, InputParam] = {}
+    params: dict[str, NodeInput] = {}
     for name, seq in kwargs.items():
         if isinstance(seq, MapTaskFuture):
-            params[name] = InputParam.from_sequence_ref(seq.id)
+            params[name] = NodeInput.from_sequence_ref(seq.id)
         elif isinstance(seq, BaseTaskFuture):
-            params[name] = InputParam.from_sequence_ref(seq.id)
+            params[name] = NodeInput.from_sequence_ref(seq.id)
         else:
-            params[name] = InputParam.from_sequence(seq)
+            params[name] = NodeInput.from_sequence(seq)
 
     return params
 
@@ -106,7 +106,7 @@ def build_output_configs(
         placeholders = base_placeholders | future_output.extras.keys()
         check_key_placeholders(future_output.key, placeholders)
 
-        dependencies = build_parameters(future_output.extras)
+        dependencies = build_node_inputs(future_output.extras)
         output_config = OutputConfig(
             key=future_output.key,
             name=future_output.name,

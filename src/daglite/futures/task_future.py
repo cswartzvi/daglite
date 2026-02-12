@@ -17,7 +17,7 @@ from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.graph_helpers import build_output_configs
-from daglite.futures.graph_helpers import build_parameters
+from daglite.futures.graph_helpers import build_node_inputs
 from daglite.futures.graph_helpers import collect_dependencies
 from daglite.graph.builder import GraphBuilder
 from daglite.graph.nodes import TaskNode
@@ -312,7 +312,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
     @override
     def to_graph(self) -> TaskNode:
-        kwargs = build_parameters(self.kwargs)
+        kwargs = build_node_inputs(self.kwargs)
         placeholders = set(self.kwargs.keys())
         output_configs = build_output_configs(self._output_futures, placeholders)
         return TaskNode(

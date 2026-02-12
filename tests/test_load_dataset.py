@@ -228,7 +228,7 @@ class TestDatasetNodeOutputDependencies:
 
     def test_output_config_future_deps_included(self):
         """Dependencies from output configs are included in DatasetNode.dependencies()."""
-        from daglite.graph.base import InputParam
+        from daglite.graph.base import NodeInput
         from daglite.graph.base import OutputConfig
         from daglite.graph.nodes import DatasetNode
 
@@ -240,9 +240,9 @@ class TestDatasetNodeOutputDependencies:
             format=None,
             store=None,
             dependencies={
-                "v": InputParam.from_ref(dep_id_1),
-                "w": InputParam.from_ref(dep_id_2),
-                "x": InputParam.from_value("static"),
+                "v": NodeInput.from_ref(dep_id_1),
+                "w": NodeInput.from_ref(dep_id_2),
+                "x": NodeInput.from_value("static"),
             },
             options={},
         )

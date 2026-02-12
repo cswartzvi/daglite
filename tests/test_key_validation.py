@@ -374,7 +374,7 @@ class TestToGraphValidation:
         assert node.output_configs[1].key == "out2_{x}"
 
     def test_to_graph_future_extra_becomes_dependency(self):
-        """TaskFuture extras become InputParam refs in output dependencies."""
+        """TaskFuture extras become NodeInput refs in output dependencies."""
 
         @task
         def work(x: int) -> int:

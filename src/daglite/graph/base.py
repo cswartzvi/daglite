@@ -24,29 +24,6 @@ NodeKind = Literal["task", "map", "dataset"]
 
 
 @dataclass(frozen=True)
-class NodeMetadata:
-    """Metadata for a compiled graph IR node."""
-
-    id: UUID
-    """Unique identifier of this graph IR node."""
-
-    name: str
-    """Human-readable name of this graph IR node."""
-
-    kind: NodeKind
-    """ (e.g., 'task', 'map', etc.)."""
-
-    description: str | None = field(default=None, kw_only=True)
-    """Optional human-readable description of this graph IR node."""
-
-    backend_name: str | None = field(default=None, kw_only=True)
-    """Name of backend used to execute this graph IR node."""
-
-    key: str | None = field(default=None, kw_only=True)
-    """Optional key identifying this specific node in the IR graph."""
-
-
-@dataclass(frozen=True)
 class BaseGraphNode(abc.ABC):
     """Represents a node in the compiled graph Intermediate Representation (IR)."""
 
@@ -81,7 +58,7 @@ class BaseGraphNode(abc.ABC):
         IDs of nodes that the current node depends on (its direct predecessors).
 
         Each node implementation determines its own dependencies based on its
-        internal structure (e.g., from InputParams, sub-graphs, etc.).
+        internal structure (e.g., from NodeInputs, sub-graphs, etc.).
         """
         ...
 
@@ -102,7 +79,7 @@ class BaseGraphNode(abc.ABC):
         """
         Resolve output dependencies to concrete values.
 
-        Resolves InputParam extras in output_configs to actual values from completed nodes.
+        Resolves NodeInput extras in output_configs to actual values from completed nodes.
         Returns parallel list to output_configs containing only the resolved extras dicts.
 
         Args:
@@ -141,8 +118,31 @@ class BaseGraphNode(abc.ABC):
 
 
 @dataclass(frozen=True)
-class InputParam:
-    """Input parameter representation for graph IR."""
+class NodeMetadata:
+    """Metadata for a compiled graph IR node."""
+
+    id: UUID
+    """Unique identifier of this graph IR node."""
+
+    name: str
+    """Human-readable name of this graph IR node."""
+
+    kind: NodeKind
+    """ (e.g., 'task', 'map', etc.)."""
+
+    description: str | None = field(default=None, kw_only=True)
+    """Optional human-readable description of this graph IR node."""
+
+    backend_name: str | None = field(default=None, kw_only=True)
+    """Name of backend used to execute this graph IR node."""
+
+    key: str | None = field(default=None, kw_only=True)
+    """Optional key identifying this specific node in the IR graph."""
+
+
+@dataclass(frozen=True)
+class NodeInput:
+    """Input parameter representation (scalar and referential) for nodes in the IR graph."""
 
     _kind: ParamKind
     """Kind of this parameter input, determining how it should be resolved."""
@@ -156,14 +156,14 @@ class InputParam:
     def __post_init__(self) -> None:
         if self._kind in ("value", "sequence"):
             if self.reference is not None:
-                raise GraphError(f"InputParam kind '{self._kind}' must not have a ref ID.")
+                raise GraphError(f"NodeInput kind '{self._kind}' must not have a ref ID.")
         elif self._kind in ("ref", "sequence_ref"):
             if self.reference is None:
-                raise GraphError(f"InputParam kind '{self._kind}' requires a ref ID.")
+                raise GraphError(f"NodeInput kind '{self._kind}' requires a ref ID.")
             if self.value is not None:
-                raise GraphError(f"InputParam kind '{self._kind}' must not have a value.")
+                raise GraphError(f"NodeInput kind '{self._kind}' must not have a value.")
         else:  # pragma no cover
-            raise GraphError(f"Unknown InputParam kind: '{self._kind}'.")
+            raise GraphError(f"Unknown NodeInput kind: '{self._kind}'.")
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
@@ -188,26 +188,26 @@ class InputParam:
                 assert self.reference is not None  # Checked by post_init
                 return list(completed_nodes[self.reference])
             case _:  # pragma no cover
-                raise GraphError(f"Unknown InputParam kind: '{self._kind}'. ")
+                raise GraphError(f"Unknown NodeInput kind: '{self._kind}'. ")
 
     @classmethod
-    def from_value(cls, v: Any) -> InputParam:
-        """Creates an InputParam from a concrete value."""
+    def from_value(cls, v: Any) -> NodeInput:
+        """Creates a NodeInput from a concrete value."""
         return cls(_kind="value", value=v)
 
     @classmethod
-    def from_ref(cls, node_id: UUID) -> InputParam:
-        """Creates an InputParam that references another node's output."""
+    def from_ref(cls, node_id: UUID) -> NodeInput:
+        """Creates a NodeInput that references another node's output."""
         return cls(_kind="ref", reference=node_id)
 
     @classmethod
-    def from_sequence(cls, vals: Sequence[Any]) -> InputParam:
-        """Creates an InputParam from a concrete sequence value."""
+    def from_sequence(cls, vals: Sequence[Any]) -> NodeInput:
+        """Creates a NodeInput from a concrete sequence value."""
         return cls(_kind="sequence", value=list(vals))
 
     @classmethod
-    def from_sequence_ref(cls, node_id: UUID) -> InputParam:
-        """Creates an InputParam that references another node's sequence output."""
+    def from_sequence_ref(cls, node_id: UUID) -> NodeInput:
+        """Creates an NodeInput that references another node's sequence output."""
         return cls(_kind="sequence_ref", reference=node_id)
 
 
@@ -217,7 +217,7 @@ class OutputConfig:
     Configuration for saving or checkpointing a task output.
 
     Outputs can be saved with a storage key and optional checkpoint name for resumption.
-    Extra parameters (as InputParams) can be included for formatting or metadata.
+    Extra parameters (as NodeInputs) can be included for formatting or metadata.
     """
 
     key: str
@@ -232,7 +232,7 @@ class OutputConfig:
     format: str | None = None
     """Optional serialization format hint (e.g., 'pickle', 'json', etc.)."""
 
-    dependencies: Mapping[str, InputParam] = field(default_factory=dict)
+    dependencies: Mapping[str, NodeInput] = field(default_factory=dict)
     """Parameter dependencies for this output, used for key formatting"""
 
     options: dict[str, Any] = field(default_factory=dict)

@@ -11,7 +11,7 @@ from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
 from daglite.futures.graph_helpers import build_output_configs
-from daglite.futures.graph_helpers import build_parameters
+from daglite.futures.graph_helpers import build_node_inputs
 from daglite.futures.task_future import TaskFuture
 from daglite.graph.nodes import DatasetNode
 from daglite.utils import build_repr
@@ -108,7 +108,7 @@ class DatasetFuture(TaskFuture[R]):
         available_names = set(self.kwargs.keys())
         check_key_placeholders(self.load_key, available_names)
 
-        kwargs = build_parameters(self.kwargs)
+        kwargs = build_node_inputs(self.kwargs)
         output_configs = build_output_configs(self._output_futures, available_names)
         return DatasetNode(
             id=self.id,
