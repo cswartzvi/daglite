@@ -107,7 +107,7 @@ class TestMapOperations:
         def identity(x: int) -> int:
             return x
 
-        result = evaluate(identity.product(x=[1, 2, 3]).then(scale, factor=2))
+        result = evaluate(identity.map(x=[1, 2, 3]).then(scale, factor=2))
         assert result == [2, 4, 6]  # Each element * 2
 
     def test_mapped_then_chain_with_kwargs(self) -> None:
@@ -126,7 +126,7 @@ class TestMapOperations:
             return x * factor
 
         # [1, 2, 3] -> add(y=10) -> [11, 12, 13] -> multiply(factor=2) -> [22, 24, 26]
-        result = evaluate(identity.product(x=[1, 2, 3]).then(add, y=10).then(multiply, factor=2))
+        result = evaluate(identity.map(x=[1, 2, 3]).then(add, y=10).then(multiply, factor=2))
         assert result == [22, 24, 26]
 
 
@@ -144,7 +144,7 @@ class TestJoinOperations:
         def weighted_sum(values: list[int], weight: float) -> float:
             return sum(values) * weight
 
-        result = evaluate(square.product(x=[1, 2, 3, 4]).join(weighted_sum, weight=2.0))
+        result = evaluate(square.map(x=[1, 2, 3, 4]).join(weighted_sum, weight=2.0))
         assert result == 60.0  # (1 + 4 + 9 + 16) * 2.0
 
     def test_map_join_combined_with_kwargs(self) -> None:
@@ -168,7 +168,7 @@ class TestJoinOperations:
 
         # [1, 2, 3] -> add(y=5) -> [6, 7, 8] -> multiply(factor=2) -> [12, 14, 16] -> sum+10 -> 52
         result = evaluate(
-            identity.product(x=[1, 2, 3])
+            identity.map(x=[1, 2, 3])
             .then(add, y=5)
             .then(multiply, factor=2)
             .join(reduce_with_offset, offset=10)
@@ -203,7 +203,7 @@ class TestComplexPipelines:
         # add 10: [12,14,16,18,13,16,19,22]
         # sum = 130, * 2 = 260
         result = evaluate(
-            scale.product(x=fetch_range(count=4), factor=[2, 3])
+            scale.map(x=fetch_range(count=4), factor=[2, 3], map_mode="product")
             .then(add_values, offset=10)
             .join(compute_total, multiplier=2)
         )
@@ -227,7 +227,7 @@ class TestComplexPipelines:
         # Use zip to avoid Cartesian product, fluent chain with pre-fixed task
         # [1,2,3] zip [2,3,4] -> [2, 6, 12] -> add 10 -> [12, 16, 22] -> sum*2 -> 100
         result = evaluate(
-            scale.zip(x=[1, 2, 3], factor=[2, 3, 4])
+            scale.map(x=[1, 2, 3], factor=[2, 3, 4])
             .then(add.partial(offset=10))
             .join(sum_with_multiplier, multiplier=2)
         )
@@ -265,7 +265,7 @@ class TestComplexPipelines:
         # -> sum + 100 -> 370
         list_future = start(x=5).then(increment, amount=3).then(transform_list)
         result = evaluate(
-            scale.product(x=list_future, factor=[2, 3])
+            scale.map(x=list_future, factor=[2, 3], map_mode="product")
             .then(add_offset, offset=10)
             .join(sum_with_bonus, bonus=100)
         )
@@ -303,7 +303,7 @@ class TestComplexPipelines:
         multipliers = fetch_multipliers(count=3)
 
         result = evaluate(
-            multiply.zip(x=base, factor=multipliers).then(add_offset, offset=5).join(product)
+            multiply.map(x=base, factor=multipliers).then(add_offset, offset=5).join(product)
         )
         assert result == 13125  # 15 * 25 * 35
 
@@ -688,7 +688,7 @@ class TestThenProductOperations:
             return x + y
 
         # Scalar result fans out with y=[10, 20, 30]
-        result = evaluate(prepare(n=5).then_product(combine, y=[10, 20, 30]))
+        result = evaluate(prepare(n=5).then_map(combine, y=[10, 20, 30]))
         assert result == [20, 30, 40]  # 10 + [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
@@ -703,7 +703,7 @@ class TestThenProductOperations:
             return x * y * z
 
         # x=1 fans out with y=[2, 3] and z=[10, 20]
-        result = evaluate(start().then_product(multiply, y=[2, 3], z=[10, 20]))
+        result = evaluate(start().then_map(multiply, y=[2, 3], z=[10, 20], map_mode="product"))
         assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
 
     def test_with_fixed_param(self) -> None:
@@ -718,7 +718,7 @@ class TestThenProductOperations:
             return x + y + z
 
         fixed_compute = compute.partial(z=100)
-        result = evaluate(prepare(n=3).then_product(fixed_compute, y=[1, 2, 3]))
+        result = evaluate(prepare(n=3).then_map(fixed_compute, y=[1, 2, 3]))
         assert result == [109, 110, 111]  # 8 + [1, 2, 3] + 100
 
 
@@ -737,7 +737,7 @@ class TestThenZipOperations:
             return x * y
 
         # Scalar 12 paired element-wise with y=[10, 20, 30]
-        result = evaluate(scalar().then_zip(multiply, y=[10, 20, 30]))
+        result = evaluate(scalar().then_map(multiply, y=[10, 20, 30]))
         assert result == [120, 240, 360]  # 12 * [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
@@ -752,7 +752,7 @@ class TestThenZipOperations:
             return x + y + z
 
         # x=2 zipped with y=[10, 20, 30] and z=[1, 2, 3]
-        result = evaluate(start().then_zip(compute, y=[10, 20, 30], z=[1, 2, 3]))
+        result = evaluate(start().then_map(compute, y=[10, 20, 30], z=[1, 2, 3]))
         assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
 
     def test_with_fixed_param(self) -> None:
@@ -767,7 +767,7 @@ class TestThenZipOperations:
             return x + y + offset
 
         fixed_combine = combine.partial(offset=100)
-        result = evaluate(prepare().then_zip(fixed_combine, y=[1, 2, 3]))
+        result = evaluate(prepare().then_map(fixed_combine, y=[1, 2, 3]))
         assert result == [106, 107, 108]  # 5 + [1, 2, 3] + 100
 
     def test_broadcasting_in_product(self) -> None:
@@ -782,5 +782,5 @@ class TestThenZipOperations:
             return x + y
 
         # prepare result is scalar, used as constant across all iterations
-        result = evaluate(prepare.product(n=[1, 2, 3]).then(combine.partial(y=10)))
+        result = evaluate(prepare.map(n=[1, 2, 3]).then(combine.partial(y=10)))
         assert result == [12, 14, 16]  # [2, 4, 6] + 10

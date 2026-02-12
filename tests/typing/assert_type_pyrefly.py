@@ -31,7 +31,7 @@ def test_async_task_basic() -> None:
 
 def test_async_task_with_product() -> None:
     """Async tasks work with product()."""
-    result = async_add.product(x=[1, 2, 3], y=[10, 20, 30])
+    result = async_add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode="product")
     assert_type(result, MapTaskFuture[Coroutine[Any, Any, int]])
 
 

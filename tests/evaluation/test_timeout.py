@@ -255,7 +255,7 @@ class TestMapTaskTimeout:
 
         # Should fail on first even number (2)
         with pytest.raises(TimeoutError):
-            evaluate(process_item.product(x=[1, 2, 3, 4]))
+            evaluate(process_item.map(x=[1, 2, 3, 4]))
 
         # Verify that x=1 succeeded before x=2 timed out
         assert 1 in attempts
@@ -274,7 +274,7 @@ class TestMapTaskTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(process_item.product(x=[1, 2, 3, 4]))
+            return await evaluate_async(process_item.map(x=[1, 2, 3, 4]))
 
         # Should fail on first even number (2)
         with pytest.raises(TimeoutError):

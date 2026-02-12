@@ -289,7 +289,9 @@ class TestToGraphValidation:
         def work(x: int, y: int) -> int:
             return x + y  # pragma: no cover
 
-        future = work.product(x=[1, 2], y=[3, 4]).save("out_{x}_{y}_{iteration_index}")
+        future = work.map(x=[1, 2], y=[3, 4], map_mode="product").save(
+            "out_{x}_{y}_{iteration_index}"
+        )
         node = future.to_graph()
         assert len(node.output_configs) == 1
 
@@ -300,7 +302,7 @@ class TestToGraphValidation:
         def work(x: int) -> int:
             return x  # pragma: no cover
 
-        future = work.product(x=[1, 2]).save("out_{x}_{missing}")
+        future = work.map(x=[1, 2]).save("out_{x}_{missing}")
         with pytest.raises(ValueError, match="won't be available"):
             future.to_graph()
 
@@ -311,7 +313,7 @@ class TestToGraphValidation:
         def work(x: int) -> int:
             return x  # pragma: no cover
 
-        future = work.product(x=[1, 2]).save("out_{iteration_index}")
+        future = work.map(x=[1, 2]).save("out_{iteration_index}")
         node = future.to_graph()
         assert len(node.output_configs) == 1
 

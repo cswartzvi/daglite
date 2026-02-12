@@ -239,10 +239,10 @@ class TestFutureRepr:
         def double(x: int) -> int:  # pragma: no cover
             return x * 2
 
-        future = double.product(x=[1, 2, 3])
+        future = double.map(x=[1, 2, 3])
 
         assert isinstance(future, MapTaskFuture)
-        assert repr(future) == "MapTaskFuture(double, mode=product, x=[1, 2, 3])"
+        assert repr(future) == "MapTaskFuture(double, mode=zip, x=[1, 2, 3])"
 
     def test_map_task_future_zip_repr(self) -> None:
         """MapTaskFuture repr shows zip mode."""
@@ -251,10 +251,10 @@ class TestFutureRepr:
         def add(x: int, y: int) -> int:  # pragma: no cover
             return x + y
 
-        future = add.zip(x=[1, 2], y=[3, 4])
+        future = add.map(x=[1, 2], y=[3, 4], map_mode="product")
 
         assert isinstance(future, MapTaskFuture)
-        assert repr(future) == "MapTaskFuture(add, mode=zip, x=[1, 2], y=[3, 4])"
+        assert repr(future) == "MapTaskFuture(add, mode=product, x=[1, 2], y=[3, 4])"
 
     def test_map_task_future_repr_with_fixed_kwargs(self) -> None:
         """MapTaskFuture repr includes both fixed and mapped kwargs."""
@@ -264,10 +264,10 @@ class TestFutureRepr:
             return x * factor
 
         fixed = scale.partial(factor=10)
-        future = fixed.product(x=[1, 2, 3])
+        future = fixed.map(x=[1, 2, 3])
 
         assert isinstance(future, MapTaskFuture)
-        assert repr(future) == "MapTaskFuture(scale, mode=product, factor=10, x=[1, 2, 3])"
+        assert repr(future) == "MapTaskFuture(scale, mode=zip, factor=10, x=[1, 2, 3])"
 
     def test_dataset_future_repr(self) -> None:
         """DatasetFuture repr shows load key and kwargs."""
@@ -332,7 +332,7 @@ class TestProductOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            add.product(x=20, y=5)
+            add.map(x=20, y=5, map_mode="product")
 
     def test_task_product_with_overlapping_params(self) -> None:
         """product() fails when attempting to re-bind partially-applied parameters."""
@@ -344,7 +344,7 @@ class TestProductOperationErrors:
         fixed = multiply.partial(x=3)
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            fixed.product(y=[1, 2, 3], x=[4, 5, 6])
+            fixed.map(y=[1, 2, 3], x=[4, 5, 6], map_mode="product")
 
     def test_task_product_invalid_params(self) -> None:
         """product() fails when given parameters that don't exist."""
@@ -354,7 +354,7 @@ class TestProductOperationErrors:
             return x - y
 
         with pytest.raises(ParameterError, match="Invalid parameters"):
-            subtract.product(z=[10, 2, 3])
+            subtract.map(z=[10, 2, 3])
 
     def test_task_product_missing_params(self) -> None:
         """product() fails when required parameters are omitted."""
@@ -366,7 +366,7 @@ class TestProductOperationErrors:
         fixed = power.partial(base=2)
 
         with pytest.raises(ParameterError, match="Missing parameters"):
-            fixed.product()
+            fixed.map()
 
     def test_then_product_with_invalid_params(self) -> None:
         """then_product() fails when given parameters that don't exist."""
@@ -380,7 +380,7 @@ class TestProductOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
-            start().then_product(combine, z=[1, 2, 3])
+            start().then_map(combine, z=[1, 2, 3])
 
     def test_then_product_with_non_iterable_params(self) -> None:
         """then_product() requires mapped parameters to be iterable."""
@@ -394,7 +394,7 @@ class TestProductOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            start().then_product(combine, y=10)
+            start().then_map(combine, y=10)
 
     def test_then_product_with_overlapping_params(self) -> None:
         """then_product() fails when trying to re-bind partially-applied parameters."""
@@ -410,7 +410,7 @@ class TestProductOperationErrors:
         fixed = combine.partial(y=10)
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            start().then_product(fixed, y=[1, 2, 3])
+            start().then_map(fixed, y=[1, 2, 3])
 
     def test_then_product_with_no_mapped_params(self) -> None:
         """then_product() fails when no mapped parameters are provided."""
@@ -424,7 +424,7 @@ class TestProductOperationErrors:
             return x
 
         with pytest.raises(ParameterError, match="At least one mapped parameter required"):
-            start().then_product(identity)
+            start().then_map(identity)
 
 
 class TestZipOperationErrors:
@@ -438,7 +438,7 @@ class TestZipOperationErrors:
             return x / y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            divide.zip(x=10, y=5)
+            divide.map(x=10, y=5)
 
     def test_task_zip_with_overlapping_params(self) -> None:
         """zip() fails when attempting to re-bind partially-applied parameters."""
@@ -450,7 +450,7 @@ class TestZipOperationErrors:
         fixed = add.partial(y=2)
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            fixed.zip(y=[3, 4, 5], x=[1, 2, 3])
+            fixed.map(y=[3, 4, 5], x=[1, 2, 3])
 
     def test_task_zip_invalid_params(self) -> None:
         """zip() fails when given parameters that don't exist."""
@@ -460,7 +460,7 @@ class TestZipOperationErrors:
             return x * y
 
         with pytest.raises(ParameterError, match="Invalid parameters"):
-            multiply.zip(z=[10, 2, 3])
+            multiply.map(z=[10, 2, 3])
 
     def test_task_zip_missing_params(self) -> None:
         """zip() fails when required parameters are omitted."""
@@ -472,7 +472,7 @@ class TestZipOperationErrors:
         fixed = subtract.partial(x=10)
 
         with pytest.raises(ParameterError, match="Missing parameters"):
-            fixed.zip()
+            fixed.map()
 
     def test_task_zip_with_mismatched_lengths(self) -> None:
         """zip() requires all iterable parameters to have the same length."""
@@ -482,7 +482,7 @@ class TestZipOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Mixed lengths for task 'add'"):
-            add.zip(x=[1, 2, 3], y=[4, 5])
+            add.map(x=[1, 2, 3], y=[4, 5])
 
     def test_then_zip_with_invalid_params(self) -> None:
         """then_zip() fails when given parameters that don't exist."""
@@ -496,7 +496,7 @@ class TestZipOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
-            start().then_zip(combine, z=[1, 2, 3])
+            start().then_map(combine, z=[1, 2, 3])
 
     def test_then_zip_with_non_iterable_params(self) -> None:
         """then_zip() requires mapped parameters to be iterable."""
@@ -510,7 +510,7 @@ class TestZipOperationErrors:
             return x + y
 
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
-            start().then_zip(combine, y=10)
+            start().then_map(combine, y=10)
 
     def test_then_zip_with_mismatched_lengths(self) -> None:
         """then_zip() fails when mapped parameter lengths don't match."""
@@ -524,7 +524,7 @@ class TestZipOperationErrors:
             return x + y + z
 
         with pytest.raises(ParameterError, match="Mixed lengths"):
-            start().then_zip(compute, y=[1, 2, 3], z=[10, 20])
+            start().then_map(compute, y=[1, 2, 3], z=[10, 20])
 
     def test_then_zip_with_overlapping_params(self) -> None:
         """then_zip() fails when trying to re-bind partially-applied parameters."""
@@ -540,7 +540,7 @@ class TestZipOperationErrors:
         fixed = combine.partial(y=10)
 
         with pytest.raises(ParameterError, match="Overlapping parameters"):
-            start().then_zip(fixed, y=[1, 2, 3])
+            start().then_map(fixed, y=[1, 2, 3])
 
     def test_then_zip_with_no_mapped_params(self) -> None:
         """then_zip() fails when no mapped parameters are provided."""
@@ -554,7 +554,7 @@ class TestZipOperationErrors:
             return x
 
         with pytest.raises(ParameterError, match="At least one mapped parameter required"):
-            start().then_zip(identity)
+            start().then_map(identity)
 
 
 class TestFluentAPIErrors:
@@ -604,7 +604,7 @@ class TestFluentAPIErrors:
         def mapping(a: int, b: int) -> int:  # pragma: no cover
             return a + b
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.then(mapping)
 
@@ -619,7 +619,7 @@ class TestFluentAPIErrors:
         def scale(x: int, factor: int) -> int:  # pragma: no cover
             return x * factor
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         # Should work with inline kwargs
         scaled = prepared.then(scale, factor=10)
         assert scaled is not None
@@ -635,7 +635,7 @@ class TestFluentAPIErrors:
         def add(x: int, y: int, z: int) -> int:  # pragma: no cover
             return x + y + z
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.then(add, z=5)
 
@@ -650,7 +650,7 @@ class TestFluentAPIErrors:
         def scale(x: int, factor: int) -> int:  # pragma: no cover
             return x * factor
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         fixed_scale = scale.partial(factor=10)
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             prepared.then(fixed_scale, factor=20)
@@ -666,7 +666,7 @@ class TestFluentAPIErrors:
         def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
             return sum(xs) * weight
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         # Should work with inline kwargs
         total = prepared.join(weighted_sum, weight=2.5)
         assert total is not None
@@ -686,7 +686,7 @@ class TestFluentAPIErrors:
         def joining(a: int, b: int) -> int:  # pragma: no cover
             return a * 2
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         mapped = prepared.then(mapping)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             mapped.join(joining)
@@ -702,7 +702,7 @@ class TestFluentAPIErrors:
         def reduce_three(xs: list[int], y: int, z: int) -> int:  # pragma: no cover
             return sum(xs) + y + z
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.join(reduce_three, z=5)
 
@@ -717,7 +717,7 @@ class TestFluentAPIErrors:
         def weighted_sum(xs: list[int], weight: float) -> float:  # pragma: no cover
             return sum(xs) * weight
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         fixed_sum = weighted_sum.partial(weight=1.5)
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             prepared.join(fixed_sum, weight=2.5)
@@ -788,7 +788,7 @@ class TestPartialTaskErrors:
         def mapping(a: int, b: int, c: int) -> int:  # pragma: no cover
             return a + b + c
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         fixed_mapping = mapping.partial(c=20)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
             prepared.then(fixed_mapping)
@@ -808,7 +808,7 @@ class TestPartialTaskErrors:
         def joining(a: int, b: int, c: int) -> int:  # pragma: no cover
             return a + b + c
 
-        prepared = prepare.product(data=[1, 2, 3])
+        prepared = prepare.map(data=[1, 2, 3])
         mapped = prepared.then(mapping)
         fixed_joining = joining.partial(c=10)
         with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):

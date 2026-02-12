@@ -209,7 +209,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = map_worker.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            future = task_with_backend.product(x=[1, 2, 3])
+            future = task_with_backend.map(x=[1, 2, 3])
             results = evaluate(future, plugins=[plugin])
             assert results == [2, 4, 6]
 
@@ -268,7 +268,7 @@ class TestCentralizedLoggingIntegration:
 
         with caplog.at_level(logging.INFO):
             with pytest.raises(ValueError, match="Failed on 2"):
-                future = task_with_backend.product(x=[1, 2, 3])
+                future = task_with_backend.map(x=[1, 2, 3])
                 evaluate(future, plugins=[plugin])
 
         # Verify error was logged before the exception was raised
@@ -516,7 +516,7 @@ class TestLifecycleLoggingWithMappedTasks:
             return x * x
 
         result = evaluate(
-            square.product(x=[1, 2, 3, 4]),
+            square.map(x=[1, 2, 3, 4]),
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -538,7 +538,7 @@ class TestLifecycleLoggingWithMappedTasks:
             return x * 2
 
         result = evaluate(
-            double.with_options(backend_name="threads").product(x=[1, 2, 3]),
+            double.with_options(backend_name="threads").map(x=[1, 2, 3]),
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -555,7 +555,7 @@ class TestLifecycleLoggingWithMappedTasks:
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         result = evaluate(
-            triple.with_options(backend_name="processes").product(x=[1, 2, 3]),
+            triple.with_options(backend_name="processes").map(x=[1, 2, 3]),
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -579,7 +579,7 @@ class TestLifecycleLoggingWithMappedTasks:
 
         with pytest.raises(ValueError, match="Failed on 2"):
             evaluate(
-                failing_square.product(x=[1, 2, 3]),
+                failing_square.map(x=[1, 2, 3]),
                 plugins=[LifecycleLoggingPlugin()],
             )
 
