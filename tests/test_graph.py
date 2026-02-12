@@ -293,7 +293,7 @@ class TestMapTaskNodes:
 
         resolved_inputs = node.resolve_inputs({})
         with pytest.raises(
-            ParameterError, match="Map task .* with `\\.zip\\(\\)` requires all sequences"
+            ParameterError, match="Map task .* in 'zip' mode requires all sequences"
         ):
             node.build_iteration_calls(resolved_inputs)
 

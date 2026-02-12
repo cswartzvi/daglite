@@ -190,32 +190,32 @@ def test_join_after_then_chain() -> None:
     assert_type(result, TaskFuture[int])
 
 
-# -- Fluent API: then_product() and then_zip() --
+# -- Fluent API: then_map() --
 
 
-def test_then_product_basic() -> None:
-    """Test then_product() on TaskFuture."""
+def test_then_map_product_basic() -> None:
+    """Test then_map() in product mode on TaskFuture."""
     prep = double(x=5)
-    result = prep.then_map(add, y=[10, 20, 30])
+    result = prep.then_map(add, y=[10, 20, 30], map_mode="product")
     assert_type(result, MapTaskFuture[int])
 
 
-def test_then_product_chaining() -> None:
-    """Test then_product() with then() and join()."""
+def test_then_map_product_chaining() -> None:
+    """Test then_map() in product mode  with then() and join()."""
     prep = double(x=5)
-    chained = prep.then_map(add, y=[10, 20]).then(double).join(sum_list)
+    chained = prep.then_map(add, y=[10, 20], map_mode="product").then(double).join(sum_list)
     assert_type(chained, TaskFuture[int])
 
 
-def test_then_zip_basic() -> None:
-    """Test then_zip() on TaskFuture."""
+def test_then_map_zip_basic() -> None:
+    """Test then_map() in zip mode on TaskFuture."""
     prep = double(x=5)
     result = prep.then_map(add, y=[10, 20, 30])
     assert_type(result, MapTaskFuture[int])
 
 
-def test_then_zip_chaining() -> None:
-    """Test then_zip() with then() and join()."""
+def test_then_mapchaining() -> None:
+    """Test then_map() in zip mode with then() and join()."""
     prep = double(x=5)
     chained = prep.then_map(add, y=[10, 20]).then(to_string).join(join_strings)
     assert_type(chained, TaskFuture[str])

@@ -674,10 +674,10 @@ class TestSplitOperations:
 
 
 class TestThenProductOperations:
-    """Tests for TaskFuture.then_product() method."""
+    """Tests for TaskFuture.then_map using map_mode="product"."""
 
     def test_basic(self) -> None:
-        """then_product() creates Cartesian product fan-out."""
+        """then_map() creates Cartesian product fan-out."""
 
         @task
         def prepare(n: int) -> int:
@@ -692,7 +692,7 @@ class TestThenProductOperations:
         assert result == [20, 30, 40]  # 10 + [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
-        """then_product() handles multiple mapped parameters via Cartesian product."""
+        """then_map() handles multiple mapped parameters via Cartesian product."""
 
         @task
         def start() -> int:
@@ -707,7 +707,7 @@ class TestThenProductOperations:
         assert result == [20, 40, 30, 60]  # 1*2*10, 1*2*20, 1*3*10, 1*3*20
 
     def test_with_fixed_param(self) -> None:
-        """then_product() works with pre-fixed tasks."""
+        """then_map() works with pre-fixed tasks."""
 
         @task
         def prepare(n: int) -> int:
@@ -723,10 +723,10 @@ class TestThenProductOperations:
 
 
 class TestThenZipOperations:
-    """Tests for TaskFuture.then_zip() method."""
+    """Tests for TaskFuture.then_map using map_mode="zip"."""
 
     def test_basic(self) -> None:
-        """then_zip() creates element-wise fan-out."""
+        """then_map() creates element-wise fan-out."""
 
         @task
         def scalar() -> int:
@@ -741,7 +741,7 @@ class TestThenZipOperations:
         assert result == [120, 240, 360]  # 12 * [10, 20, 30]
 
     def test_with_multiple_params(self) -> None:
-        """then_zip() handles multiple mapped parameters via zip."""
+        """then_map() handles multiple mapped parameters via zip."""
 
         @task
         def start() -> int:
@@ -756,7 +756,7 @@ class TestThenZipOperations:
         assert result == [13, 24, 35]  # 2+10+1, 2+20+2, 2+30+3
 
     def test_with_fixed_param(self) -> None:
-        """then_zip() works with pre-fixed tasks."""
+        """then_map() works with pre-fixed tasks."""
 
         @task
         def prepare() -> int:

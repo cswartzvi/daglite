@@ -86,7 +86,7 @@ class TestDatasetFutureThen:
         future = load_dataset("data.pkl").then(combine, suffix="!")
         assert isinstance(future, TaskFuture)
 
-    def test_then_product_returns_map_future(self):
+    def test_then_map_product_returns_map_future(self):
         @task
         def multiply(data: str, factor: int) -> str:
             return data * factor
@@ -94,7 +94,7 @@ class TestDatasetFutureThen:
         future = load_dataset("data.pkl").then_map(multiply, factor=[1, 2, 3])
         assert isinstance(future, MapTaskFuture)
 
-    def test_then_zip_returns_map_future(self):
+    def test_then_map_zip_returns_map_future(self):
         @task
         def annotate(data: str, label: str) -> str:
             return f"{label}: {data}"

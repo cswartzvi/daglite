@@ -322,10 +322,10 @@ class TestParameterValidation:
 
 
 class TestProductOperationErrors:
-    """Test error handling for product() and then_product() operations."""
+    """Test error handling for mapped operations in product mode."""
 
     def test_task_product_with_non_iterable_params(self) -> None:
-        """product() requires iterable parameters."""
+        """map() requires iterable parameters."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -335,7 +335,7 @@ class TestProductOperationErrors:
             add.map(x=20, y=5, map_mode="product")
 
     def test_task_product_with_overlapping_params(self) -> None:
-        """product() fails when attempting to re-bind partially-applied parameters."""
+        """map() fails when attempting to re-bind partially-applied parameters."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
@@ -347,7 +347,7 @@ class TestProductOperationErrors:
             fixed.map(y=[1, 2, 3], x=[4, 5, 6], map_mode="product")
 
     def test_task_product_invalid_params(self) -> None:
-        """product() fails when given parameters that don't exist."""
+        """map() fails when given parameters that don't exist."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
@@ -357,7 +357,7 @@ class TestProductOperationErrors:
             subtract.map(z=[10, 2, 3])
 
     def test_task_product_missing_params(self) -> None:
-        """product() fails when required parameters are omitted."""
+        """map() fails when required parameters are omitted."""
 
         @task
         def power(base: int, exponent: int) -> int:  # pragma: no cover
@@ -368,8 +368,8 @@ class TestProductOperationErrors:
         with pytest.raises(ParameterError, match="Missing parameters"):
             fixed.map()
 
-    def test_then_product_with_invalid_params(self) -> None:
-        """then_product() fails when given parameters that don't exist."""
+    def test_then_map_product_with_invalid_params(self) -> None:
+        """then_map() fails when given parameters that don't exist."""
 
         @task
         def start() -> int:
@@ -382,8 +382,8 @@ class TestProductOperationErrors:
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
             start().then_map(combine, z=[1, 2, 3])
 
-    def test_then_product_with_non_iterable_params(self) -> None:
-        """then_product() requires mapped parameters to be iterable."""
+    def test_then_map_product_with_non_iterable_params(self) -> None:
+        """then_map() requires mapped parameters to be iterable."""
 
         @task
         def start() -> int:
@@ -396,8 +396,8 @@ class TestProductOperationErrors:
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
             start().then_map(combine, y=10)
 
-    def test_then_product_with_overlapping_params(self) -> None:
-        """then_product() fails when trying to re-bind partially-applied parameters."""
+    def test_then_map_product_with_overlapping_params(self) -> None:
+        """then_map() fails when trying to re-bind partially-applied parameters."""
 
         @task
         def start() -> int:
@@ -412,8 +412,8 @@ class TestProductOperationErrors:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             start().then_map(fixed, y=[1, 2, 3])
 
-    def test_then_product_with_no_mapped_params(self) -> None:
-        """then_product() fails when no mapped parameters are provided."""
+    def test_then_map_with_no_mapped_params(self) -> None:
+        """then_map() fails when no mapped parameters are provided."""
 
         @task
         def start() -> int:
@@ -428,10 +428,10 @@ class TestProductOperationErrors:
 
 
 class TestZipOperationErrors:
-    """Test error handling for zip() and then_zip() operations."""
+    """Test error handling for mapped operations in zip mode."""
 
     def test_task_zip_with_non_iterable_params(self) -> None:
-        """zip() requires iterable parameters."""
+        """map() requires iterable parameters."""
 
         @task
         def divide(x: int, y: int) -> float:  # pragma: no cover
@@ -441,7 +441,7 @@ class TestZipOperationErrors:
             divide.map(x=10, y=5)
 
     def test_task_zip_with_overlapping_params(self) -> None:
-        """zip() fails when attempting to re-bind partially-applied parameters."""
+        """map() fails when attempting to re-bind partially-applied parameters."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -453,7 +453,7 @@ class TestZipOperationErrors:
             fixed.map(y=[3, 4, 5], x=[1, 2, 3])
 
     def test_task_zip_invalid_params(self) -> None:
-        """zip() fails when given parameters that don't exist."""
+        """map() fails when given parameters that don't exist."""
 
         @task
         def multiply(x: int, y: int) -> int:  # pragma: no cover
@@ -463,7 +463,7 @@ class TestZipOperationErrors:
             multiply.map(z=[10, 2, 3])
 
     def test_task_zip_missing_params(self) -> None:
-        """zip() fails when required parameters are omitted."""
+        """map() fails when required parameters are omitted."""
 
         @task
         def subtract(x: int, y: int) -> int:  # pragma: no cover
@@ -475,7 +475,7 @@ class TestZipOperationErrors:
             fixed.map()
 
     def test_task_zip_with_mismatched_lengths(self) -> None:
-        """zip() requires all iterable parameters to have the same length."""
+        """map() requires all iterable parameters to have the same length."""
 
         @task
         def add(x: int, y: int) -> int:  # pragma: no cover
@@ -484,8 +484,8 @@ class TestZipOperationErrors:
         with pytest.raises(ParameterError, match="Mixed lengths for task 'add'"):
             add.map(x=[1, 2, 3], y=[4, 5])
 
-    def test_then_zip_with_invalid_params(self) -> None:
-        """then_zip() fails when given parameters that don't exist."""
+    def test_then_map_zip_with_invalid_params(self) -> None:
+        """then_map zip fails when given parameters that don't exist."""
 
         @task
         def start() -> int:
@@ -498,8 +498,8 @@ class TestZipOperationErrors:
         with pytest.raises(ParameterError, match="Invalid parameters for task"):
             start().then_map(combine, z=[1, 2, 3])
 
-    def test_then_zip_with_non_iterable_params(self) -> None:
-        """then_zip() requires mapped parameters to be iterable."""
+    def test_then_map_zip_with_non_iterable_params(self) -> None:
+        """then_map zip requires mapped parameters to be iterable."""
 
         @task
         def start() -> int:
@@ -512,8 +512,8 @@ class TestZipOperationErrors:
         with pytest.raises(ParameterError, match="Non-iterable parameters"):
             start().then_map(combine, y=10)
 
-    def test_then_zip_with_mismatched_lengths(self) -> None:
-        """then_zip() fails when mapped parameter lengths don't match."""
+    def test_then_map_zip_with_mismatched_lengths(self) -> None:
+        """then_map zip fails when mapped parameter lengths don't match."""
 
         @task
         def start() -> int:
@@ -526,8 +526,8 @@ class TestZipOperationErrors:
         with pytest.raises(ParameterError, match="Mixed lengths"):
             start().then_map(compute, y=[1, 2, 3], z=[10, 20])
 
-    def test_then_zip_with_overlapping_params(self) -> None:
-        """then_zip() fails when trying to re-bind partially-applied parameters."""
+    def test_then_map_zip_with_overlapping_params(self) -> None:
+        """then_map zip fails when trying to re-bind partially-applied parameters."""
 
         @task
         def start() -> int:
@@ -542,8 +542,8 @@ class TestZipOperationErrors:
         with pytest.raises(ParameterError, match="Overlapping parameters"):
             start().then_map(fixed, y=[1, 2, 3])
 
-    def test_then_zip_with_no_mapped_params(self) -> None:
-        """then_zip() fails when no mapped parameters are provided."""
+    def test_then_map_zip_with_no_mapped_params(self) -> None:
+        """then_map zip fails when no mapped parameters are provided."""
 
         @task
         def start() -> int:
