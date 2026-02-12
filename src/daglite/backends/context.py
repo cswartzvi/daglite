@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from contextvars import ContextVar
 from contextvars import Token
+from typing import TYPE_CHECKING
 
 from pluggy import PluginManager
 
 from daglite.datasets.reporters import DatasetReporter
-from daglite.graph.base import NodeMetadata
 from daglite.plugins.reporters import EventReporter
+
+if TYPE_CHECKING:
+    from daglite.graph.nodes.base import NodeMetadata
+else:
+    NodeMetadata = object
+
 
 # Context variables for worker execution environment
 _plugin_manager: ContextVar[PluginManager | None] = ContextVar("plugin_manager", default=None)
