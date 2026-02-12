@@ -102,7 +102,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             ...     return sum(values)
 
             Create a mapped future
-            >>> numbers_future = generate_numbers.zip(n=[0, 1, 2, 3, 4])
+            >>> numbers_future = generate_numbers.map(n=[0, 1, 2, 3, 4])
 
             Chain with another mapped task
             >>> squared_future = numbers_future.then(square).join(sum_values)
@@ -112,7 +112,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             30
 
             Using the fluent API
-            >>> result = generate_numbers.zip(n=[0, 1, 2, 3, 4]).then(square).join(sum_values)
+            >>> result = generate_numbers.map(n=[0, 1, 2, 3, 4]).then(square).join(sum_values)
             >>> evaluate(result)
             30
 

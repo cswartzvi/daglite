@@ -145,12 +145,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ...     return x + y
 
             Chain task calls via unbound parameter (`x`) and zip over mapped arg (`y`)
-            >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30], z=[1, 2, 3])
-            >>> evaluate(future)
-            [21, 32, 43]
-
-            Chain task calls via unbound parameter (`x`) and product over mapped arg (`y`)
-            >>> future = prepare(n=5).then_product(combine, y=[10, 20, 30])
+            >>> future = prepare(n=5).then_map(combine, y=[10, 20, 30])
             >>> evaluate(future)
             [20, 30, 40]
         """
@@ -170,7 +165,7 @@ class TaskFuture(BaseTaskFuture[R]):
         if not mapped_kwargs:
             raise ParameterError(
                 f"At least one mapped parameter required for task '{actual_task.name}' "
-                f"with .then_product(). Use .then() for 1-to-1 chaining instead."
+                f"with `.then_map()` in 'product' mode. Use .then() for 1-to-1 chaining instead."
             )
 
         if map_mode == "zip":
@@ -181,7 +176,7 @@ class TaskFuture(BaseTaskFuture[R]):
             if len(len_details) > 1:
                 raise ParameterError(
                     f"Mixed lengths for task '{actual_task.name}', pairwise fan-out with "
-                    f"`.then_zip()` requires all sequences to have the same length. "
+                    f"`.then_map()` in 'zip' mode requires all sequences to have the same length. "
                     f"Found lengths: {sorted(len_details)}"
                 )
 

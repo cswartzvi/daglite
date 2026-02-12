@@ -182,7 +182,7 @@ class MapTaskNode(BaseGraphNode):
             if len(lengths) > 1:
                 length_details = {name: len(vals) for name, vals in mapped.items()}
                 raise ParameterError(
-                    f"Map task '{self.name}' with `.zip()` requires all sequences to have the "
+                    f"Map task '{self.name}' in 'zip' mode requires all sequences to have the "
                     f"same length. Got mismatched lengths: {length_details}. "
                     f"Consider using `.extend()` if you want a Cartesian product instead."
                 )
@@ -194,7 +194,7 @@ class MapTaskNode(BaseGraphNode):
                 calls.append(kw)
         else:
             raise ExecutionError(
-                f"Unknown map mode '{self.mode}'. Expected 'extend' or 'zip'. "
+                f"Unknown map mode '{self.mode}'. Expected 'product' or 'zip'. "
                 f"This indicates an internal error in graph construction."
             )
 

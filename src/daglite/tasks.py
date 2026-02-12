@@ -358,12 +358,12 @@ class BaseTask(abc.ABC, Generic[P, R]):
             [11, 12, 13]
 
             Product mode - All sequences provided:
-            >>> future = combine.map(x=[1, 2], y=[10, 20], map_mode="product))
+            >>> future = combine.map(x=[1, 2], y=[10, 20], map_mode="product")
             >>> evaluate(future)
             [11, 21, 12, 22]
 
             Product mode - Fixed scalar parameter with single sequence:
-            >>> future = combine.partial(y=10).map(x=[1, 2, 3], map_mode="product)
+            >>> future = combine.partial(y=10).map(x=[1, 2, 3], map_mode="product")
             >>> evaluate(future)
             [11, 12, 13]
         """
@@ -427,7 +427,7 @@ class Task(BaseTask[P, R]):
             Use the partial task with only the remaining parameter
             >>> base(x=1)  # doctest: +ELLIPSIS
             TaskFuture(...)
-            >>> base.product(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
+            >>> base.map(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
             MapTaskFuture(...)
         """
         check_invalid_params(self.signature, kwargs, self.name)
@@ -508,8 +508,8 @@ class PartialTask(BaseTask[P, R]):
             }
             if len(len_details) > 1:
                 raise ParameterError(
-                    f"Mixed lengths for task '{self.name}', pairwise fan-out with `.zip()` "
-                    f"requires all sequences to have the same length. Found lengths: "
+                    f"Mixed lengths for task '{self.name}', pairwise fan-out with `map` in 'zip' "
+                    f"mode requires all sequences to have the same length. Found lengths: "
                     f"{sorted(len_details)}"
                 )
 
