@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
 
+from daglite._validation import MapMode
 from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.futures.base import BaseTaskFuture
@@ -50,7 +51,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
     task: Task[Any, R]
     """Underlying task to be called."""
 
-    mode: str  # "product" or "zip"
+    mode: MapMode
     """Mode of operation ('product' for Cartesian product, 'zip' for pairwise)."""
 
     fixed_kwargs: Mapping[str, Any]
