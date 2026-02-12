@@ -172,7 +172,7 @@ class TestMapTaskRetries:
 
             return x * x
 
-        result = evaluate(flaky_square.product(x=[1, 2, 3, 4]))
+        result = evaluate(flaky_square.map(x=[1, 2, 3, 4]))
         assert result == [1, 4, 9, 16]
 
         # Odd numbers: 1 attempt each, Even numbers: 2 attempts each
@@ -197,7 +197,7 @@ class TestMapTaskRetries:
             return x * x
 
         async def run():
-            return await evaluate_async(flaky_square.product(x=[1, 2, 3, 4]))
+            return await evaluate_async(flaky_square.map(x=[1, 2, 3, 4]))
 
         result = asyncio.run(run())
         assert result == [1, 4, 9, 16]

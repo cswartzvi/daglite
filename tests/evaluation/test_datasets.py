@@ -203,7 +203,7 @@ class TestSaveWithMapTasks:
                 return sorted(values)
 
             future = (
-                process.product(x=[1, 2, 3])
+                process.map(x=[1, 2, 3], map_mode="product")
                 .save("item_{x}_{iteration_index}.pkl", save_store=store)
                 .join(collect)
             )
@@ -229,7 +229,7 @@ class TestSaveWithMapTasks:
                 return sorted(values)
 
             future = (
-                add.zip(x=[1, 2, 3], y=[10, 20, 30])
+                add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode="zip")
                 .save("sum_{iteration_index}.pkl", save_store=store)
                 .join(collect)
             )
@@ -276,7 +276,7 @@ class TestSaveWithMapTaskFutureExtras:
                 return x * 2
 
             prefix_future = make_prefix()
-            future = double.product(x=[1, 2]).save(
+            future = double.map(x=[1, 2]).save(
                 "{prefix}_{iteration_index}.pkl",
                 save_store=store,
                 prefix=prefix_future,
@@ -302,7 +302,7 @@ class TestSaveWithMapTaskFutureExtras:
             def triple(x: int) -> int:
                 return x * 3
 
-            future = triple.product(x=[1, 2]).save(
+            future = triple.map(x=[1, 2]).save(
                 "{label}_{iteration_index}.pkl",
                 save_store=store,
                 label="batch",

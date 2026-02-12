@@ -3,8 +3,11 @@
 import string
 from collections.abc import Iterable
 from inspect import Signature
+from typing import Literal
 
 from daglite.exceptions import ParameterError
+
+MapMode = Literal["product", "zip"]
 
 
 def check_invalid_params(signature: Signature, kwargs: dict, task_name: str) -> None:

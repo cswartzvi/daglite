@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
+from daglite._validation import MapMode
 from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_missing_params
@@ -323,17 +324,19 @@ class BaseTask(abc.ABC, Generic[P, R]):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
+    def map(
+        self, *, map_mode: MapMode = "zip", **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]
+    ) -> MapTaskFuture[R]:
         """
-        Create a fan-out operation by applying this task over all combinations of sequences.
-
-        This creates a Cartesian product of all provided sequences, calling the task once for each
-        combination. Useful for parameter sweeps and batch operations.
+        Create a fan-out operation by applying this task to mapped sequences.
 
         Args:
+            map_mode: Whether to use "product" (Cartesian product) or "zip" (element-wise zip) for
+                the fan-out operation. Defaults to "zip". If "zip" is used, all sequences must have
+                the same length or an error is raised.
             **kwargs: Keyword arguments where values are sequences. Each sequence element will be
-                combined with elements from other sequences in a Cartesian product. Can include
-                `TaskFuture` objects that resolve to sequences.
+                combined with elements from other sequences (based on the map_mode) and passed as
+                parameters to this task.
 
         Returns:
             A `MapTaskFuture` representing the fan-out execution of this task.
@@ -344,48 +347,23 @@ class BaseTask(abc.ABC, Generic[P, R]):
             ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
-            All sequences provided:
-            >>> future = combine.product(x=[1, 2], y=[10, 20])
-            >>> evaluate(future)
-            [11, 21, 12, 22]
-
-            Fixed scalar parameter with single sequence:
-            >>> future = combine.partial(y=10).product(x=[1, 2, 3])
-            >>> evaluate(future)
-            [11, 12, 13]
-        """
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        """
-        Create a fan-out operation by applying this task to zipped sequences.
-
-        Sequences are zipped element-wise (similar to Python's `zip(`) function), calling the task
-        once for each aligned set of elements. All sequences must have the same length or an error
-        is raised.
-
-        Args:
-            **kwargs: Keyword arguments where values are equal-length sequences. Elements at the
-                same index across sequences are combined in each call. Can include `TaskFuture`
-                objects that resolve to sequences.
-
-        Returns:
-            A `MapTaskFuture` representing the fan-out execution of this task.
-
-        Examples:
-            >>> from daglite import task, evaluate
-            >>> @task
-            ... def combine(x: int, y: int) -> int:
-            ...     return x + y
-
-            All sequences provided:
-            >>> future = combine.zip(x=[1, 2, 3], y=[10, 20, 30])
+            Zip mode (default) - All sequences provided:
+            >>> future = combine.map(x=[1, 2, 3], y=[10, 20, 30])
             >>> evaluate(future)
             [11, 22, 33]
 
-            Fixed scalar parameter with single sequence:
-            >>> future = combine.partial(y=10).zip(x=[1, 2, 3])
+            Zip mode (default) - Fixed scalar parameter with single sequence:
+            >>> future = combine.partial(y=10).map(x=[1, 2, 3])
+            >>> evaluate(future)
+            [11, 12, 13]
+
+            Product mode - All sequences provided:
+            >>> future = combine.map(x=[1, 2], y=[10, 20], map_mode="product")
+            >>> evaluate(future)
+            [11, 21, 12, 22]
+
+            Product mode - Fixed scalar parameter with single sequence:
+            >>> future = combine.partial(y=10).map(x=[1, 2, 3], map_mode="product")
             >>> evaluate(future)
             [11, 12, 13]
         """
@@ -449,7 +427,7 @@ class Task(BaseTask[P, R]):
             Use the partial task with only the remaining parameter
             >>> base(x=1)  # doctest: +ELLIPSIS
             TaskFuture(...)
-            >>> base.product(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
+            >>> base.map(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
             MapTaskFuture(...)
         """
         check_invalid_params(self.signature, kwargs, self.name)
@@ -467,14 +445,9 @@ class Task(BaseTask[P, R]):
         )
 
     @override
-    def product(self, **kwargs: Any) -> MapTaskFuture[R]:
-        # Create a PartialTask with no fixed params, then call product
-        return self.partial().product(**kwargs)
-
-    @override
-    def zip(self, **kwargs: Any) -> MapTaskFuture[R]:
-        # Create a PartialTask with no fixed params, then call zip
-        return self.partial().zip(**kwargs)
+    def map(self, *, map_mode: MapMode = "zip", **kwargs: Any) -> MapTaskFuture[R]:
+        # Create a PartialTask with no fixed params, then call map
+        return self.partial().map(**kwargs, map_mode=map_mode)
 
 
 @dataclass(frozen=True)
@@ -514,27 +487,9 @@ class PartialTask(BaseTask[P, R]):
         )
 
     @override
-    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
-        from daglite.futures import MapTaskFuture
-
-        merged = {**self.fixed_kwargs, **kwargs}
-
-        check_invalid_params(self.signature, merged, self.name)
-        check_missing_params(self.signature, merged, self.name)
-        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
-        check_invalid_map_params(self.signature, kwargs, self.name)
-
-        return MapTaskFuture(
-            task=self.task,
-            mode="product",
-            fixed_kwargs=self.fixed_kwargs,
-            mapped_kwargs=dict(kwargs),
-            backend_name=self.backend_name,
-            task_store=self.store,
-        )
-
-    @override
-    def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
+    def map(
+        self, *, map_mode: MapMode = "zip", **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]
+    ) -> MapTaskFuture[R]:
         from daglite.futures import MapTaskFuture
         from daglite.futures.base import BaseTaskFuture
 
@@ -545,20 +500,22 @@ class PartialTask(BaseTask[P, R]):
         check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
         check_invalid_map_params(self.signature, kwargs, self.name)
 
-        len_details = {
-            len(val)  # type: ignore
-            for val in kwargs.values()
-            if not isinstance(val, BaseTaskFuture)
-        }
-        if len(len_details) > 1:
-            raise ParameterError(
-                f"Mixed lengths for task '{self.name}', pairwise fan-out with `.zip()` requires "
-                f"all sequences to have the same length. Found lengths: {sorted(len_details)}"
-            )
+        if map_mode == "zip":
+            len_details = {
+                len(val)  # type: ignore
+                for val in kwargs.values()
+                if not isinstance(val, BaseTaskFuture)
+            }
+            if len(len_details) > 1:
+                raise ParameterError(
+                    f"Mixed lengths for task '{self.name}', pairwise fan-out with `map` in 'zip' "
+                    f"mode requires all sequences to have the same length. Found lengths: "
+                    f"{sorted(len_details)}"
+                )
 
         return MapTaskFuture(
             task=self.task,
-            mode="zip",
+            mode=map_mode,
             fixed_kwargs=self.fixed_kwargs,
             mapped_kwargs=dict(kwargs),
             backend_name=self.backend_name,

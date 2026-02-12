@@ -219,7 +219,7 @@ class TestSaveWithMapTasksProcessBackend:
 
             proc = compute_int.with_options(backend_name="processes")
             future = (
-                proc.product(x=[1, 2, 3])
+                proc.map(x=[1, 2, 3], map_mode="product")
                 .save("item_{x}_{iteration_index}.pkl", save_store=store)
                 .join(collect_ints)
             )
@@ -237,7 +237,7 @@ class TestSaveWithMapTasksProcessBackend:
 
             proc = add.with_options(backend_name="processes")
             future = (
-                proc.zip(x=[1, 2, 3], y=[10, 20, 30])
+                proc.map(x=[1, 2, 3], y=[10, 20, 30])
                 .save("sum_{iteration_index}.pkl", save_store=store)
                 .join(collect_ints)
             )
@@ -261,7 +261,7 @@ class TestMapSaveFutureExtrasProcessBackend:
 
             prefix_future = pfx()
             future = (
-                dbl.product(x=[1, 2])
+                dbl.map(x=[1, 2])
                 .save(
                     "{prefix}_{iteration_index}.pkl",
                     save_store=store,
@@ -282,7 +282,7 @@ class TestMapSaveFutureExtrasProcessBackend:
 
             t = triple.with_options(backend_name="processes")
             future = (
-                t.product(x=[1, 2])
+                t.map(x=[1, 2])
                 .save(
                     "{label}_{iteration_index}.pkl",
                     save_store=store,

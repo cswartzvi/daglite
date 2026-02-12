@@ -80,7 +80,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.side_effect = [0, 1]  # root task, then map task
 
             plugin = RichProgressPlugin()
-            result = evaluate(square.product(x=[1, 2, 3, 4]), plugins=[plugin])
+            result = evaluate(square.map(x=[1, 2, 3, 4]), plugins=[plugin])
 
             assert result == [1, 4, 9, 16]
 
@@ -106,7 +106,7 @@ class TestRichProgressIntegration:
 
             plugin = RichProgressPlugin()
             result = evaluate(
-                double.with_options(backend_name="threads").product(x=[1, 2, 3]),
+                double.with_options(backend_name="threads").map(x=[1, 2, 3]),
                 plugins=[plugin],
             )
 
@@ -155,7 +155,7 @@ class TestRichProgressIntegration:
             plugin = RichProgressPlugin()
 
             with pytest.raises(ValueError, match="Failed on 2"):
-                evaluate(failing_square.product(x=[1, 2, 3]), plugins=[plugin])
+                evaluate(failing_square.map(x=[1, 2, 3]), plugins=[plugin])
 
             # Map task should have been added
             assert mock_progress.add_task.call_count >= 2
@@ -174,7 +174,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.side_effect = [0, 1]
 
             plugin = RichProgressPlugin(secondary_style="bold green")
-            result = evaluate(square.product(x=[1, 2, 3]), plugins=[plugin])
+            result = evaluate(square.map(x=[1, 2, 3]), plugins=[plugin])
 
             assert result == [1, 4, 9]
 
@@ -240,10 +240,7 @@ class TestRichProgressAndLoggingTogether:
             progress_plugin = RichProgressPlugin()
             logging_plugin = RichLifecycleLoggingPlugin()
 
-            result = evaluate(
-                square.product(x=[1, 2, 3]),
-                plugins=[progress_plugin, logging_plugin],
-            )
+            result = evaluate(square.map(x=[1, 2, 3]), plugins=[progress_plugin, logging_plugin])
 
             assert result == [1, 4, 9]
 

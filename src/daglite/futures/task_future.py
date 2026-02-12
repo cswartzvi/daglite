@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
 
+from daglite._validation import MapMode
 from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_overlap_params
@@ -106,23 +107,28 @@ class TaskFuture(BaseTaskFuture[R]):
         unbound_param = get_unbound_param(actual_task.signature, all_fixed, actual_task.name)
         return actual_task(**{unbound_param: self}, **all_fixed)
 
-    def then_product(
+    def then_map(
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
+        *,
+        map_mode: MapMode = "zip",
         **mapped_kwargs: Any,
     ) -> MapTaskFuture[T]:
         """
-        Fan out this future as input to another task by creating a Cartesian product.
+        Fan out this future as input to another task mapped over additional parameter sequences.
 
-        The current future's result is used as a fixed (scalar) argument to `next_task`, while a
-        Cartesian product is formed over the provided mapped parameter sequences in `mapped_kwargs`.
-        The next task is called once for each combination of the mapped parameters, with the same
-        future value passed to every call.
+        The current future's result is used as a fixed (scalar) argument to `next_task`, while
+        elements from the provided mapped parameter sequences in `mapped_kwargs` are combined based
+        on the specified `map_mode`. The next task is called once for each combination of mapped
+        parameters, with the same future value passed to every call.
 
         Args:
             next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
                 with ONE unbound parameter; this unbound parameter will receive the current
                 future's value for every combination of mapped parameters.
+            map_mode: Whether to use "product" (Cartesian product) or "zip" (element-wise zip) for
+                    the fan-out operation. Defaults to "zip". If "zip" is used, all sequences must
+                    have the same length or an error is raised.
             **mapped_kwargs: Additional parameters to map over (sequences). Each sequence element
                 will be combined with elements from other sequences in a Cartesian product.
 
@@ -138,8 +144,8 @@ class TaskFuture(BaseTaskFuture[R]):
             ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
-            Chain task calls via unbound parameter (`x`) and product over mapped arg (`y`)
-            >>> future = prepare(n=5).then_product(combine, y=[10, 20, 30])
+            Chain task calls via unbound parameter (`x`) and zip over mapped arg (`y`)
+            >>> future = prepare(n=5).then_map(combine, y=[10, 20, 30])
             >>> evaluate(future)
             [20, 30, 40]
         """
@@ -159,8 +165,20 @@ class TaskFuture(BaseTaskFuture[R]):
         if not mapped_kwargs:
             raise ParameterError(
                 f"At least one mapped parameter required for task '{actual_task.name}' "
-                f"with .then_product(). Use .then() for 1-to-1 chaining instead."
+                f"with `.then_map()`. Use .then() for 1-to-1 chaining instead."
             )
+
+        if map_mode == "zip":
+            # Check that all concrete sequences have the same length
+            len_details = {
+                len(val) for val in mapped_kwargs.values() if not isinstance(val, BaseTaskFuture)
+            }
+            if len(len_details) > 1:
+                raise ParameterError(
+                    f"Mixed lengths for task '{actual_task.name}', pairwise fan-out with "
+                    f"`.then_map()` in 'zip' mode requires all sequences to have the same length. "
+                    f"Found lengths: {sorted(len_details)}"
+                )
 
         merged = {**all_fixed, **mapped_kwargs}
         unbound_param = get_unbound_param(actual_task.signature, merged, actual_task.name)
@@ -170,88 +188,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
         return MapTaskFuture(
             task=actual_task,
-            mode="product",
-            fixed_kwargs=all_fixed,
-            mapped_kwargs=mapped_kwargs,
-            backend_name=self.backend_name,
-        )
-
-    def then_zip(
-        self,
-        next_task: Task[Any, T] | PartialTask[Any, T],
-        **mapped_kwargs: Any,
-    ) -> MapTaskFuture[T]:
-        """
-        Fan out this future as input to another task by zipping with other sequences.
-
-        The current future's result is used as a fixed (scalar) argument to `next_task`, while
-        elements from the provided mapped parameter sequences in `mapped_kwargs` are paired by
-        their index. The next task is called once for each index, with the
-        same future value passed to every call.
-
-        Args:
-            next_task: Either a `Task` that accepts exactly ONE parameter, or a `PartialTask`
-                with ONE unbound parameter; this unbound parameter will receive the current
-                future's value for every paired set of mapped parameters.
-            **mapped_kwargs: Additional equal-length sequences to zip with. Elements at the
-                same index across sequences are combined in each call.
-
-        Returns:
-            A `MapTaskFuture` representing the result of applying the task to zipped elements.
-
-        Examples:
-            >>> from daglite import task, evaluate
-            >>> @task
-            ... def prepare(n: int) -> int:
-            ...     return n * 2
-            >>> @task
-            ... def combine(x: int, y: int, z: int) -> int:
-            ...     return x + y + z
-
-            Chain task calls via unbound parameter (`x`) and zip over mapped arg (`y`)
-            >>> future = prepare(n=5).then_zip(combine, y=[10, 20, 30], z=[1, 2, 3])
-            >>> evaluate(future)
-            [21, 32, 43]
-        """
-        from daglite.futures.map_future import MapTaskFuture
-
-        if isinstance(next_task, PartialTask):
-            check_overlap_params(dict(next_task.fixed_kwargs), mapped_kwargs, next_task.name)
-            all_fixed = next_task.fixed_kwargs
-            actual_task = next_task.task
-        else:
-            all_fixed = {}
-            actual_task = next_task
-
-        check_invalid_params(actual_task.signature, mapped_kwargs, actual_task.name)
-        check_invalid_map_params(actual_task.signature, mapped_kwargs, actual_task.name)
-
-        if not mapped_kwargs:
-            raise ParameterError(
-                f"At least one mapped parameter required for task '{actual_task.name}' "
-                f"with .then_zip(). Use .then() for 1-to-1 chaining instead."
-            )
-
-        # Check that all concrete sequences have the same length
-        len_details = {
-            len(val) for val in mapped_kwargs.values() if not isinstance(val, BaseTaskFuture)
-        }
-        if len(len_details) > 1:
-            raise ParameterError(
-                f"Mixed lengths for task '{actual_task.name}', pairwise fan-out with "
-                f"`.then_zip()` requires all sequences to have the same length. "
-                f"Found lengths: {sorted(len_details)}"
-            )
-
-        merged = {**all_fixed, **mapped_kwargs}
-        unbound_param = get_unbound_param(actual_task.signature, merged, actual_task.name)
-
-        # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
-        all_fixed = {**all_fixed, unbound_param: self}
-
-        return MapTaskFuture(
-            task=actual_task,
-            mode="zip",
+            mode=map_mode,
             fixed_kwargs=all_fixed,
             mapped_kwargs=mapped_kwargs,
             backend_name=self.backend_name,

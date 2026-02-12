@@ -55,7 +55,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def map_pipeline(values: list[int]):
-            return square.product(x=values)
+            return square.map(x=values)
 
         graph = map_pipeline([1, 2, 3, 4])
         result = evaluate(graph)
@@ -74,7 +74,7 @@ class TestPipelineEvaluation:
 
         @pipeline
         def map_reduce_pipeline(values: list[int]):
-            doubled = double.product(x=values)
+            doubled = double.map(x=values)
             return doubled.join(sum_all)
 
         graph = map_reduce_pipeline([1, 2, 3, 4])

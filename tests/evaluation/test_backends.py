@@ -70,7 +70,7 @@ def nested_computation(x: int) -> int:
 
 @pipeline
 def increment_all_pipeline(nums: list[int]):
-    incremented = add.zip(x=nums, y=[1] * len(nums))
+    incremented = add.map(x=nums, y=[1] * len(nums))
     return incremented
 
 
@@ -96,7 +96,7 @@ class TestBackendIntegration:
         """Different backends handle map operations correctly."""
         task_with_backend = double.with_options(backend_name=backend)
         nums = [1, 2, 3, 4, 5]
-        results = evaluate(task_with_backend.zip(x=nums))
+        results = evaluate(task_with_backend.map(x=nums))
         assert results == [2, 4, 6, 8, 10]
 
     def test_mixed_backends_in_pipeline(self) -> None:
@@ -106,7 +106,7 @@ class TestBackendIntegration:
         sum_task = sum_values.with_options(backend_name="inline")
 
         data = fetch()
-        processed = process.zip(x=data)
+        processed = process.map(x=data)
         total = sum_task(values=processed)
 
         result = evaluate(total)
@@ -142,7 +142,7 @@ class TestBackendWithPipelines:
 
         @pipeline
         def compute_pipeline(nums: list[int]):
-            squared = square_proc.zip(x=nums)
+            squared = square_proc.map(x=nums)
             return sum_values(values=squared)
 
         result = evaluate(compute_pipeline(nums=[1, 2, 3, 4]))

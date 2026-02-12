@@ -131,7 +131,7 @@ class TestSyncTasksWithEvaluateAsync:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        squared_seq = square.product(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
+        squared_seq = square.map(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
         total = squared_seq.join(sum_all)
 
         async def run():
@@ -154,7 +154,7 @@ class TestSyncTasksWithEvaluateAsync:
                 result *= v
             return result
 
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
+        added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
         prod = added_seq.join(product)
 
         async def run():
@@ -221,7 +221,7 @@ class TestSyncTasksWithEvaluateAsync:
         def double(x: int) -> int:
             return x * 2
 
-        result_future = double.product(x=[1, 2, 3])
+        result_future = double.map(x=[1, 2, 3])
 
         async def run():
             return await evaluate_async(result_future)
@@ -239,7 +239,7 @@ class TestSyncTasksWithEvaluateAsync:
         def square(z: int) -> int:
             return z**2
 
-        doubled = double.product(x=[1, 2, 3])
+        doubled = double.map(x=[1, 2, 3])
         squared = doubled.then(square)
 
         async def run():
@@ -259,7 +259,7 @@ class TestSyncTasksWithEvaluateAsync:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        tripled = triple.product(x=[1, 2, 3, 4])
+        tripled = triple.map(x=[1, 2, 3, 4])
         total = tripled.join(sum_all)
 
         async def run():
@@ -279,7 +279,7 @@ class TestSyncTasksWithEvaluateAsync:
         def square(z: int) -> int:
             return z**2
 
-        doubled: MapTaskFuture[int] = double.product(x=[1, 2, 3])
+        doubled: MapTaskFuture[int] = double.map(x=[1, 2, 3])
         squared: MapTaskFuture[int] = doubled.then(square)
 
         async def run():
@@ -291,7 +291,7 @@ class TestSyncTasksWithEvaluateAsync:
     def test_map_async_with_process_backend(self) -> None:
         """Async evaluation handles map with ProcessBackend."""
 
-        doubled: MapTaskFuture[int] = double_process.product(x=[1, 2, 3])
+        doubled: MapTaskFuture[int] = double_process.map(x=[1, 2, 3])
         squared: MapTaskFuture[int] = doubled.then(square_process)
 
         async def run():
@@ -423,7 +423,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x * 2  # pragma: no cover
 
-        doubled_seq = double.product(x=[])
+        doubled_seq = double.map(x=[])
 
         async def run():
             return await evaluate_async(doubled_seq)
@@ -439,7 +439,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x + y  # pragma: no cover
 
-        added_seq = add.zip(x=[], y=[])
+        added_seq = add.map(x=[], y=[])
 
         async def run():
             return await evaluate_async(added_seq)
@@ -461,7 +461,7 @@ class TestMappedOperationsWithEvaluateAsync:
             return x**2
 
         future = generate()
-        seq = square.product(x=future)
+        seq = square.map(x=future)
 
         async def run():
             return await evaluate_async(seq)
@@ -483,7 +483,7 @@ class TestMappedOperationsWithEvaluateAsync:
             return x * y
 
         future = generate()
-        seq = multiply.zip(x=future, y=[2, 3, 4])
+        seq = multiply.map(x=future, y=[2, 3, 4])
 
         async def run():
             return await evaluate_async(seq)
@@ -499,7 +499,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x + y
 
-        added_seq = add.product(x=[1, 2, 3], y=[10, 20, 30])
+        added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode="product")
 
         async def run():
             return await evaluate_async(added_seq)
@@ -520,8 +520,8 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return z * factor
 
-        added_seq = add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
-        multiplied_seq = multiply.product(z=added_seq, factor=[2, 3])
+        added_seq = add.map(x=[1, 2], y=[10, 20], map_mode="product")
+        multiplied_seq = multiply.map(z=added_seq, factor=[2, 3], map_mode="product")
 
         async def run():
             return await evaluate_async(multiplied_seq)
@@ -537,7 +537,7 @@ class TestMappedOperationsWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return x + y
 
-        added_seq = add.zip(x=[1, 2, 3], y=[10, 20, 30])
+        added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30])
 
         async def run():
             return await evaluate_async(added_seq)
@@ -564,7 +564,7 @@ class TestMappedOperationsWithEvaluateAsync:
             return max(values)
 
         result_future = (
-            add.product(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
+            add.map(x=[1, 2], y=[10, 20])  # [11, 21, 12, 22]
             .then(triple)  # [33, 63, 36, 66]
             .join(max_value)
         )
@@ -647,7 +647,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
             await asyncio.sleep(0.001)
             return sum(v**2 for v in values)
 
-        generated = generate_range.product(n=[2, 3, 4])
+        generated = generate_range.map(n=[2, 3, 4])
         squared = generated.then(square)
 
         async def run():
