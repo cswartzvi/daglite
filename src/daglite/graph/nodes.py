@@ -58,11 +58,11 @@ class TaskNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override
@@ -136,15 +136,15 @@ class MapTaskNode(BaseGraphNode):
     def dependencies(self) -> set[UUID]:
         deps = set()
         for param in self.fixed_kwargs.values():
-            if param.is_ref and param.ref is not None:
-                deps.add(param.ref)
+            if param.reference is not None:
+                deps.add(param.reference)
         for param in self.mapped_kwargs.values():
-            if param.is_ref and param.ref is not None:
-                deps.add(param.ref)
+            if param.reference is not None:
+                deps.add(param.reference)
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override
@@ -271,11 +271,11 @@ class DatasetNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override

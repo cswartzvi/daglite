@@ -27,30 +27,30 @@ class TestInputParam:
         param = InputParam.from_value(42)
         assert param._kind == "value"
         assert param.value == 42
-        assert not param.is_ref
+        assert param.reference is None
 
     def test_from_ref(self) -> None:
         """InputParam.from_ref creates a ref-type input."""
         node_id = uuid4()
         param = InputParam.from_ref(node_id)
         assert param._kind == "ref"
-        assert param.ref == node_id
-        assert param.is_ref
+        assert param.reference == node_id
+        assert param.reference is not None
 
     def test_from_sequence(self) -> None:
         """InputParam.from_sequence creates a sequence-type input."""
         param = InputParam.from_sequence([1, 2, 3])
         assert param._kind == "sequence"
         assert param.value == [1, 2, 3]
-        assert not param.is_ref
+        assert param.reference is None
 
     def test_from_sequence_ref(self) -> None:
         """InputParam.from_sequence_ref creates a sequence_ref-type input."""
         node_id = uuid4()
         param = InputParam.from_sequence_ref(node_id)
         assert param._kind == "sequence_ref"
-        assert param.ref == node_id
-        assert param.is_ref
+        assert param.reference == node_id
+        assert param.reference is not None
 
     def test_resolve_value(self) -> None:
         """InputParam resolves value inputs correctly."""
@@ -79,17 +79,17 @@ class TestInputParam:
     def test_invalid_ref_with_value_kind(self) -> None:
         """InputParam with value kind must have a value, not a ref."""
         with pytest.raises(GraphError, match="InputParam kind 'value' must not have a ref."):
-            InputParam(_kind="value", ref=uuid4())
+            InputParam(_kind="value", reference=uuid4())
 
     def test_invalid_value_with_ref_kind(self) -> None:
         """InputParam with ref kind must have a ref, not a value."""
         with pytest.raises(GraphError, match="InputParam kind 'ref' must not have a value."):
-            InputParam(_kind="ref", value=42, ref=uuid4())
+            InputParam(_kind="ref", value=42, reference=uuid4())
 
     def test_invalid_scalar_with_sequence_kind(self) -> None:
         """InputParam with sequence kind must have a value, not a ref."""
         with pytest.raises(GraphError, match="InputParam kind 'sequence' must not have a ref."):
-            InputParam(_kind="sequence", ref=uuid4())
+            InputParam(_kind="sequence", reference=uuid4())
 
     def test_invalid_scalar_with_ref_kind(self) -> None:
         """InputParam with ref kind must have a ref, not a value."""

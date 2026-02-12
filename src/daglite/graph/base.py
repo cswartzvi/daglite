@@ -182,26 +182,21 @@ class InputParam:
     value: Any | None = None
     """Concrete value for 'value' and 'sequence' kinds. Must be None for 'ref' kinds."""
 
-    ref: UUID | None = None
+    reference: UUID | None = None
     """Reference node ID for 'ref' and 'sequence_ref' kinds. Must be None for 'value' kinds."""
 
     def __post_init__(self) -> None:
         context = "This may indicate an internal error in graph construction."
         if self._kind in ("value", "sequence"):
-            if self.ref is not None:
+            if self.reference is not None:
                 raise GraphError(f"InputParam kind '{self._kind}' must not have a ref ID.")
         elif self._kind in ("ref", "sequence_ref"):
-            if self.ref is None:
+            if self.reference is None:
                 raise GraphError(f"InputParam kind '{self._kind}' requires a ref ID.")
             if self.value is not None:
                 raise GraphError(f"InputParam kind '{self._kind}' must not have a value.")
         else:  # pragma no cover
             raise GraphError(f"Unknown InputParam kind: '{self._kind}'. {context}")
-
-    @property
-    def is_ref(self) -> bool:
-        """Returns `True` if this input is a reference to another node's output."""
-        return self._kind in ("ref", "sequence_ref")
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
@@ -217,14 +212,14 @@ class InputParam:
             case "value":
                 return self.value
             case "ref":
-                assert self.ref is not None  # Checked by post_init
-                return completed_nodes[self.ref]
+                assert self.reference is not None  # Checked by post_init
+                return completed_nodes[self.reference]
             case "sequence":
                 assert self.value is not None  # Checked by post_init
                 return list(self.value)
             case "sequence_ref":
-                assert self.ref is not None  # Checked by post_init
-                return list(completed_nodes[self.ref])
+                assert self.reference is not None  # Checked by post_init
+                return list(completed_nodes[self.reference])
             case _:  # pragma no cover
                 raise GraphError(f"Unknown InputParam kind: '{self._kind}'. ")
 
@@ -236,7 +231,7 @@ class InputParam:
     @classmethod
     def from_ref(cls, node_id: UUID) -> InputParam:
         """Creates a InputParam that references another node's output."""
-        return cls(_kind="ref", ref=node_id)
+        return cls(_kind="ref", reference=node_id)
 
     @classmethod
     def from_sequence(cls, vals: Sequence[Any]) -> InputParam:
@@ -246,7 +241,7 @@ class InputParam:
     @classmethod
     def from_sequence_ref(cls, node_id: UUID) -> InputParam:
         """Creates a InputParam that references another node's sequence output."""
-        return cls(_kind="sequence_ref", ref=node_id)
+        return cls(_kind="sequence_ref", reference=node_id)
 
 
 @dataclass(frozen=True)

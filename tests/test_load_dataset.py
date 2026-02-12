@@ -205,8 +205,8 @@ class TestDatasetFutureToGraphWithSaveExtras:
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["version"]
-            assert dep.is_ref
-            assert dep.ref == version.id
+            assert dep.reference is not None
+            assert dep.reference == version.id
 
     def test_save_with_plain_extra_creates_value(self):
         """A plain (non-future) extra on .save() becomes a value param."""
@@ -219,7 +219,7 @@ class TestDatasetFutureToGraphWithSaveExtras:
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["label"]
-            assert not dep.is_ref
+            assert not dep.reference is not None
             assert dep.value == "batch1"
 
 

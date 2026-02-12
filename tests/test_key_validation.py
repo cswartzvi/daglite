@@ -387,4 +387,4 @@ class TestToGraphValidation:
         node = future.to_graph()
         config = node.output_configs[0]
         assert "version" in config.dependencies
-        assert config.dependencies["version"].is_ref
+        assert config.dependencies["version"].reference
