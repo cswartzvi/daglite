@@ -371,13 +371,13 @@ class TaskFuture(BaseTaskFuture[R]):
 
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
-        return collect_dependencies(self.kwargs, outputs=self._future_outputs)
+        return collect_dependencies(self.kwargs, outputs=self._output_futures)
 
     @override
     def to_graph(self) -> TaskNode:
         kwargs = build_parameters(self.kwargs)
         placeholders = set(self.kwargs.keys())
-        output_configs = build_output_configs(self._future_outputs, placeholders)
+        output_configs = build_output_configs(self._output_futures, placeholders)
         return TaskNode(
             id=self.id,
             name=self.task.name,

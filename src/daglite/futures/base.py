@@ -38,8 +38,8 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     # Internal unique ID for this future
     _id: UUID = field(init=False, repr=False)
 
-    # Configurations for future outputs to be saved after task execution
-    _future_outputs: tuple[FutureOutput, ...] = field(init=False, repr=False, default=())
+    # Future outputs to be saved after execution, accumulated via save() calls.
+    _output_futures: tuple[OutputFuture, ...] = field(init=False, repr=False, default=())
 
     task_store: DatasetStore | None = field(default=None, kw_only=True)
 
@@ -135,7 +135,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
         else:
             checkpoint_name = None
 
-        config = FutureOutput(
+        config = OutputFuture(
             key=key,
             name=checkpoint_name,
             format=save_format,
@@ -143,12 +143,12 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
             options=save_options or {},
             extras=dict(extras),
         )
-        new_configs = self._future_outputs + (config,)
+        new_configs = self._output_futures + (config,)
 
         # Create a new future with the same ID and updated future outputs
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_future_outputs", new_configs)
+        object.__setattr__(new_future, "_output_futures", new_configs)  # Must match attribute name
 
         return new_future
 
@@ -167,8 +167,8 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
 
 
 @dataclass(frozen=True)
-class FutureOutput:
-    """Builder-level output configuration with raw extras (before graph IR conversion)."""
+class OutputFuture:
+    """Represents a pending output configuration for a task future, to be saved after execution."""
 
     key: str
     name: str | None

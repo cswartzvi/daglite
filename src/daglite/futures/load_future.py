@@ -109,7 +109,7 @@ class DatasetFuture(TaskFuture[R]):
         check_key_placeholders(self.load_key, available_names)
 
         kwargs = build_parameters(self.kwargs)
-        output_configs = build_output_configs(self._future_outputs, available_names)
+        output_configs = build_output_configs(self._output_futures, available_names)
         return DatasetNode(
             id=self.id,
             name=f"load({self.load_key})",

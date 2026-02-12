@@ -111,7 +111,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("out1_{x}").save("out2_{x}")
-        assert len(future._future_outputs) == 2
+        assert len(future._output_futures) == 2
 
     def test_save_with_checkpoint_true(self):
         """save_checkpoint=True uses the key as the checkpoint name."""
@@ -121,7 +121,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key", save_checkpoint=True)
-        assert future._future_outputs[0].name == "my_key"
+        assert future._output_futures[0].name == "my_key"
 
     def test_save_with_checkpoint_string(self):
         """save_checkpoint=str uses the string as checkpoint name."""
@@ -131,7 +131,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key", save_checkpoint="cp_name")
-        assert future._future_outputs[0].name == "cp_name"
+        assert future._output_futures[0].name == "cp_name"
 
     def test_save_without_checkpoint(self):
         """save_checkpoint=None means no checkpoint."""
@@ -141,7 +141,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key")
-        assert future._future_outputs[0].name is None
+        assert future._output_futures[0].name is None
 
     def test_save_with_format(self):
         """save_format is stored in the future output config."""
@@ -151,7 +151,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_format="pickle")
-        assert future._future_outputs[0].format == "pickle"
+        assert future._output_futures[0].format == "pickle"
 
     def test_save_with_store_string(self):
         """String save_store is converted to DatasetStore."""
@@ -161,7 +161,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_store="/tmp/test_store")
-        assert isinstance(future._future_outputs[0].store, DatasetStore)
+        assert isinstance(future._output_futures[0].store, DatasetStore)
 
     def test_save_with_store_instance(self):
         """DatasetStore instance is stored directly."""
@@ -174,7 +174,7 @@ class TestFutureSave:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = work(x=1).save("data.pkl", save_store=store)
-            assert future._future_outputs[0].store is store
+            assert future._output_futures[0].store is store
 
     def test_save_falls_back_to_task_store(self):
         """Without explicit save_store, uses task_store."""
@@ -189,7 +189,7 @@ class TestFutureSave:
 
             future = work(x=1)
             saved = future.save("data.pkl")
-            assert saved._future_outputs[0].store is store
+            assert saved._output_futures[0].store is store
 
     def test_save_with_options(self):
         """save_options are stored in the config."""
@@ -199,7 +199,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_options={"protocol": 5})
-        assert future._future_outputs[0].options == {"protocol": 5}
+        assert future._output_futures[0].options == {"protocol": 5}
 
     def test_save_with_extras(self):
         """Extra kwargs are stored as extras for key formatting."""
@@ -209,7 +209,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("output_{x}_{version}", version="v1")
-        assert future._future_outputs[0].extras == {"version": "v1"}
+        assert future._output_futures[0].extras == {"version": "v1"}
 
     def test_save_with_future_as_extra(self):
         """TaskFuture extras are stored for dependency resolution."""
@@ -223,7 +223,7 @@ class TestFutureSave:
             return "v1"  # pragma: no cover
 
         future = work(x=1).save("output_{version}", version=get_version())
-        assert isinstance(future._future_outputs[0].extras["version"], TaskFuture)
+        assert isinstance(future._output_futures[0].extras["version"], TaskFuture)
 
     def test_save_rejects_empty_placeholder(self):
         """save() rejects keys with empty {} placeholders."""

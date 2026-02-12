@@ -184,7 +184,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
     @override
     def get_dependencies(self) -> list[GraphBuilder]:
         kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
-        return collect_dependencies(kwargs, self._future_outputs)
+        return collect_dependencies(kwargs, self._output_futures)
 
     @override
     def to_graph(self) -> MapTaskNode:
@@ -192,7 +192,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
         mapped_kwargs = build_map_parameters(self.mapped_kwargs)
         kwargs = {**fixed_kwargs, **mapped_kwargs}
         placeholders = set(kwargs.keys()) | {"iteration_index"}  # From map task nodes
-        output_configs = build_output_configs(self._future_outputs, placeholders)
+        output_configs = build_output_configs(self._output_futures, placeholders)
         return MapTaskNode(
             id=self.id,
             name=self.task.name,

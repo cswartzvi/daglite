@@ -4,14 +4,14 @@ from typing import Any, Mapping
 
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
-from daglite.futures.base import FutureOutput
+from daglite.futures.base import OutputFuture
 from daglite.graph.base import GraphBuilder
 from daglite.graph.base import OutputConfig
 from daglite.graph.base import ParamInput
 
 
 def collect_dependencies(
-    kwargs: Mapping[str, Any], outputs: tuple[FutureOutput, ...] | None = None
+    kwargs: Mapping[str, Any], outputs: tuple[OutputFuture, ...] | None = None
 ) -> list[GraphBuilder]:
     """
     Collects graph dependencies from the provided kwargs and future outputs.
@@ -87,7 +87,7 @@ def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
 
 
 def build_output_configs(
-    future_outputs: tuple[FutureOutput, ...], placeholders: set[str]
+    future_outputs: tuple[OutputFuture, ...], placeholders: set[str]
 ) -> tuple[OutputConfig, ...]:
     """
     Builds graph IR output configurations from the provided future outputs.
