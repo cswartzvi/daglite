@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from daglite.exceptions import GraphConstructionError
+from daglite.exceptions import GraphError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphBuilder
 
@@ -31,7 +31,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
         if not deps_collected:
             # First visit: check for cycles and collect dependencies
             if node_id in visiting:
-                raise GraphConstructionError(
+                raise GraphError(
                     f"Circular dependency detected: node '{node_id}' references itself "
                     "through its dependencies"
                 )
