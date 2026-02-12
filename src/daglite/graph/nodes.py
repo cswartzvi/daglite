@@ -21,8 +21,8 @@ from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphMetadata
+from daglite.graph.base import InputParam
 from daglite.graph.base import OutputConfig
-from daglite.graph.base import ParamInput
 
 _DIRECT_REPORTER = DirectDatasetReporter()
 
@@ -38,7 +38,7 @@ class TaskNode(BaseGraphNode):
     func: Callable
     """Function to be executed for this task node."""
 
-    kwargs: Mapping[str, ParamInput]
+    kwargs: Mapping[str, InputParam]
     """Keyword parameters for the task function."""
 
     retries: int = 0
@@ -111,10 +111,10 @@ class MapTaskNode(BaseGraphNode):
     mode: str
     """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
 
-    fixed_kwargs: Mapping[str, ParamInput]
+    fixed_kwargs: Mapping[str, InputParam]
     """Fixed keyword arguments for the mapped function."""
 
-    mapped_kwargs: Mapping[str, ParamInput]
+    mapped_kwargs: Mapping[str, InputParam]
     """Mapped keyword arguments for the mapped function."""
 
     retries: int = 0
@@ -266,7 +266,7 @@ class DatasetNode(BaseGraphNode):
     load_options: dict[str, Any] = field(default_factory=dict)
     """Additional options forwarded to the ``Dataset`` constructor."""
 
-    kwargs: Mapping[str, ParamInput] = field(default_factory=dict)
+    kwargs: Mapping[str, InputParam] = field(default_factory=dict)
     """Keyword parameters used for key-template formatting."""
 
     @override

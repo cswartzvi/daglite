@@ -6,8 +6,8 @@ from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import OutputFuture
 from daglite.graph.base import GraphBuilder
+from daglite.graph.base import InputParam
 from daglite.graph.base import OutputConfig
-from daglite.graph.base import ParamInput
 
 
 def collect_dependencies(
@@ -38,7 +38,7 @@ def collect_dependencies(
     return deps
 
 
-def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
+def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
     """
     Builds graph IR parameters for task futures from the provided kwargs.
 
@@ -48,18 +48,18 @@ def build_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
         kwargs: Keyword arguments to resolve into graph parameters.
 
     Returns:
-        A dictionary mapping parameter names to ParamInput instances for graph construction.
+        A dictionary mapping parameter names to InputParam instances for graph construction.
     """
     params: dict[str, Any] = {}
     for name, value in kwargs.items():
         if isinstance(value, BaseTaskFuture):
-            params[name] = ParamInput.from_ref(value.id)
+            params[name] = InputParam.from_ref(value.id)
         else:
-            params[name] = ParamInput.from_value(value)
+            params[name] = InputParam.from_value(value)
     return params
 
 
-def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
+def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
     """
     Builds graph IR parameters for mapped task futures from the provided kwargs.
 
@@ -69,19 +69,19 @@ def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
         kwargs: Keyword arguments to resolve into graph parameters.
 
     Returns:
-        A dictionary mapping parameter names to ParamInput instances for graph construction.
+        A dictionary mapping parameter names to InputParam instances for graph construction.
     """
     from daglite.futures.map_future import MapTaskFuture
     from daglite.futures.task_future import BaseTaskFuture
 
-    params: dict[str, ParamInput] = {}
+    params: dict[str, InputParam] = {}
     for name, seq in kwargs.items():
         if isinstance(seq, MapTaskFuture):
-            params[name] = ParamInput.from_sequence_ref(seq.id)
+            params[name] = InputParam.from_sequence_ref(seq.id)
         elif isinstance(seq, BaseTaskFuture):
-            params[name] = ParamInput.from_sequence_ref(seq.id)
+            params[name] = InputParam.from_sequence_ref(seq.id)
         else:
-            params[name] = ParamInput.from_sequence(seq)
+            params[name] = InputParam.from_sequence(seq)
 
     return params
 
