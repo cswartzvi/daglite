@@ -8,7 +8,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 from typing_extensions import override
 
-from daglite.graph.base import NodeMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl

@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from daglite.datasets.store import DatasetStore
-from daglite.graph.base import NodeOutputConfig
-from daglite.graph.nodes import _save_outputs
+from daglite.graph.nodes.base import NodeOutputConfig
+from daglite.graph.nodes.core import _save_outputs
 
 
 class TestSaveOutputsNoOp:
@@ -33,7 +33,7 @@ class TestSaveOutputsKeyFormatting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="output.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result={"data": 1},
@@ -51,7 +51,7 @@ class TestSaveOutputsKeyFormatting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="output_{data_id}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -68,7 +68,7 @@ class TestSaveOutputsKeyFormatting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="output_{version}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -85,7 +85,7 @@ class TestSaveOutputsKeyFormatting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="output_{iteration_index}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -103,7 +103,7 @@ class TestSaveOutputsKeyFormatting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="output_{missing}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 with pytest.raises(ValueError, match="not available"):
                     _save_outputs(
@@ -125,7 +125,7 @@ class TestSaveOutputsRouting:
 
             mock_reporter = MagicMock()
 
-            with patch("daglite.graph.nodes.get_dataset_reporter", return_value=mock_reporter):
+            with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=mock_reporter):
                 _save_outputs(
                     result={"data": 1},
                     resolved_inputs={},
@@ -143,7 +143,7 @@ class TestSaveOutputsRouting:
         mock_store.is_local = False
         config = NodeOutputConfig(key="out.pkl", store=mock_store, format="pickle")
 
-        with patch("daglite.graph.nodes.get_dataset_reporter") as mock_get_reporter:
+        with patch("daglite.graph.nodes.core.get_dataset_reporter") as mock_get_reporter:
             mock_get_reporter.return_value = MagicMock()
             _save_outputs(
                 result={"data": 1},
@@ -160,7 +160,7 @@ class TestSaveOutputsRouting:
             store = DatasetStore(tmpdir)
             config = NodeOutputConfig(key="out.txt", store=store, format="text")
 
-            with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+            with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None):
                 _save_outputs(
                     result="hello",
                     resolved_inputs={},
@@ -181,7 +181,7 @@ class TestSaveOutputsStoreResolution:
         mock_store.is_local = False
         config = NodeOutputConfig(key="out.pkl", store=mock_store)
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},
@@ -197,7 +197,7 @@ class TestSaveOutputsStoreResolution:
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,
-            patch("daglite.graph.nodes.get_dataset_reporter", return_value=None),
+            patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None),
             patch("daglite.settings.get_global_settings") as mock_settings,
         ):
             mock_settings.return_value.datastore_store = tmpdir
@@ -216,7 +216,7 @@ class TestSaveOutputsStoreResolution:
         mock_store.is_local = False
 
         with (
-            patch("daglite.graph.nodes.get_dataset_reporter", return_value=None),
+            patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None),
             patch("daglite.settings.get_global_settings") as mock_settings,
         ):
             mock_settings.return_value.datastore_store = mock_store
@@ -239,7 +239,7 @@ class TestSaveOutputsFormatAndOptions:
         mock_store.is_local = False
         config = NodeOutputConfig(key="data.txt", store=mock_store, format="text")
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="hello",
                 resolved_inputs={},
@@ -256,7 +256,7 @@ class TestSaveOutputsFormatAndOptions:
         mock_store.is_local = False
         config = NodeOutputConfig(key="data.pkl", store=mock_store, options={"protocol": 5})
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},
@@ -274,7 +274,7 @@ class TestSaveOutputsFormatAndOptions:
         config1 = NodeOutputConfig(key="out1.pkl", store=mock_store)
         config2 = NodeOutputConfig(key="out2.pkl", store=mock_store)
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes.core.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},

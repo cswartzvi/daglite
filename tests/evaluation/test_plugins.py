@@ -15,7 +15,7 @@ import pytest
 from daglite import evaluate
 from daglite import task
 from daglite.engine import evaluate_async
-from daglite.graph.base import NodeMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import register_plugins

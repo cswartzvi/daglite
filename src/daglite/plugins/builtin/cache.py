@@ -8,7 +8,7 @@ from daglite.plugins.hooks.markers import hook_impl
 
 if TYPE_CHECKING:
     from daglite.cache.store import CacheStore
-    from daglite.graph.base import NodeMetadata
+    from daglite.graph.nodes.base import NodeMetadata
 
 
 class CachePlugin:

@@ -11,7 +11,7 @@ from rich.progress import BarColumn
 from rich.progress import Progress
 from rich.progress import TaskID
 
-from daglite.graph.base import NodeMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.registry import EventRegistry
 
 
@@ -314,7 +314,7 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_with_reporter(self):
         """Test that on_cache_hit reports event when reporter is present."""
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
 
         plugin = RichProgressPlugin()
         metadata = NodeMetadata(id=uuid4(), name="test_task", kind="task", key="test_task")
@@ -335,7 +335,7 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_advances_progress(self):
         """Test that on_cache_hit advances the progress bar."""
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
 
         plugin = RichProgressPlugin()
         plugin._progress = Mock()
@@ -361,7 +361,7 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_without_registered_task(self):
         """Test that on_cache_hit handles missing task gracefully."""
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
 
         plugin = RichProgressPlugin()
         plugin._progress = Mock()

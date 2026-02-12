@@ -860,7 +860,7 @@ def test_cycle_detection_raises_error() -> None:
 
     from daglite.engine import _ExecutionState
     from daglite.exceptions import ExecutionError
-    from daglite.graph.base import NodeInput
+    from daglite.graph.nodes.base import NodeInput
     from daglite.graph.nodes import TaskNode
 
     # Manually create a cyclic graph (can't do this with normal API)

@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from daglite.graph.base import NodeMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.hooks.markers import hook_spec
 from daglite.plugins.reporters import EventReporter
 

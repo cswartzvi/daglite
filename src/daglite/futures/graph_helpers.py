@@ -5,8 +5,8 @@ from typing import Any, Mapping
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import OutputFuture
-from daglite.graph.base import NodeInput
-from daglite.graph.base import NodeOutputConfig
+from daglite.graph.nodes.base import NodeInput
+from daglite.graph.nodes.base import NodeOutputConfig
 from daglite.graph.builder import GraphBuilder
 
 

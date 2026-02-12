@@ -18,7 +18,7 @@ from typing_extensions import override
 
 from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
-from daglite.graph.base import NodeMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl

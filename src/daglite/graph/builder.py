@@ -7,7 +7,7 @@ from typing import Protocol
 from uuid import UUID
 
 from daglite.exceptions import GraphError
-from daglite.graph.base import BaseGraphNode
+from daglite.graph.nodes.base import BaseGraphNode
 
 
 class GraphBuilder(Protocol):

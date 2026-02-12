@@ -19,10 +19,10 @@ from daglite.datasets.reporters import DirectDatasetReporter
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import NodeInput
-from daglite.graph.base import NodeMetadata
-from daglite.graph.base import NodeOutputConfig
+from daglite.graph.nodes.base import BaseGraphNode
+from daglite.graph.nodes.base import NodeInput
+from daglite.graph.nodes.base import NodeMetadata
+from daglite.graph.nodes.base import NodeOutputConfig
 
 _DIRECT_REPORTER = DirectDatasetReporter()
 
@@ -535,7 +535,7 @@ def _save_outputs(
         output_deps: List of resolved output dependencies for each output config.
         key_extras: Additional variables for key formatting.
     """
-    from daglite.graph.base import NodeOutputConfig
+    from daglite.graph.nodes.base import NodeOutputConfig
     from daglite.settings import get_global_settings
 
     if not output_config:

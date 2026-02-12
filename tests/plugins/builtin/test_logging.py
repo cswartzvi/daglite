@@ -153,7 +153,7 @@ class TestTaskLoggerAdapter:
         """Test process method when task is executing."""
         from uuid import uuid4
 
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
 
         base_logger = logging.getLogger("test.adapter")
         adapter = _TaskLoggerAdapter(base_logger, {})
@@ -594,7 +594,7 @@ class TestLifecycleLoggingPlugin:
         """Test that plugin tracks mapped node IDs."""
         from uuid import uuid4
 
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
@@ -617,7 +617,7 @@ class TestLifecycleLoggingPluginOnCacheHit:
         from unittest.mock import Mock
         from uuid import uuid4
 
-        from daglite.graph.base import NodeMetadata
+        from daglite.graph.nodes.base import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
