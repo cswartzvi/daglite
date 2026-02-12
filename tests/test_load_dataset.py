@@ -228,9 +228,9 @@ class TestDatasetNodeOutputDependencies:
 
     def test_output_config_future_deps_included(self):
         """Dependencies from output configs are included in DatasetNode.dependencies()."""
+        from daglite.graph.nodes import DatasetNode
         from daglite.graph.nodes.base import NodeInput
         from daglite.graph.nodes.base import NodeOutputConfig
-        from daglite.graph.nodes import DatasetNode
 
         dep_id_1 = uuid4()
         dep_id_2 = uuid4()

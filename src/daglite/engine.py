@@ -27,8 +27,8 @@ else:
 
 from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
-from daglite.graph.nodes.base import BaseGraphNode
 from daglite.graph.builder import build_graph
+from daglite.graph.nodes.base import BaseGraphNode
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 

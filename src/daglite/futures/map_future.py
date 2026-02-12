@@ -13,8 +13,8 @@ from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.graph_helpers import build_mapped_node_inputs
-from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.graph_helpers import build_node_inputs
+from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.graph_helpers import collect_dependencies
 from daglite.graph.builder import GraphBuilder
 from daglite.graph.nodes import MapTaskNode

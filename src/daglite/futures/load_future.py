@@ -10,8 +10,8 @@ from typing_extensions import override
 from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
-from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.graph_helpers import build_node_inputs
+from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.task_future import TaskFuture
 from daglite.graph.nodes import DatasetNode
 from daglite.utils import build_repr

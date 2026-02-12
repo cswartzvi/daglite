@@ -12,10 +12,10 @@ import pytest
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import GraphError
 from daglite.exceptions import ParameterError
-from daglite.graph.nodes.base import NodeInput
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.graph.nodes.base import NodeInput
 from daglite.tasks import task
 
 

@@ -860,8 +860,8 @@ def test_cycle_detection_raises_error() -> None:
 
     from daglite.engine import _ExecutionState
     from daglite.exceptions import ExecutionError
-    from daglite.graph.nodes.base import NodeInput
     from daglite.graph.nodes import TaskNode
+    from daglite.graph.nodes.base import NodeInput
 
     # Manually create a cyclic graph (can't do this with normal API)
     # Node A depends on Node B, Node B depends on Node A
