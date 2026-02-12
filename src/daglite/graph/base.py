@@ -184,27 +184,32 @@ class ParamInput:
     - sequence_ref : sequence produced by another node
     """
 
-    kind: ParamKind
+    _kind: ParamKind
+    """Kind of this parameter input, determining how it should be resolved."""
+
     value: Any | None = None
+    """Concrete value for 'value' and 'sequence' kinds. Must be None for 'ref' kinds."""
+
     ref: UUID | None = None
+    """Reference node ID for 'ref' and 'sequence_ref' kinds. Must be None for 'value' kinds."""
 
     def __post_init__(self) -> None:
         context = "This may indicate an internal error in graph construction."
-        if self.kind in ("value", "sequence"):
+        if self._kind in ("value", "sequence"):
             if self.ref is not None:
-                raise GraphError(f"ParamInput kind '{self.kind}' must not have a ref.")
-        elif self.kind in ("ref", "sequence_ref"):
+                raise GraphError(f"ParamInput kind '{self._kind}' must not have a ref ID.")
+        elif self._kind in ("ref", "sequence_ref"):
             if self.ref is None:
-                raise GraphError(f"ParamInput kind '{self.kind}' requires a ref.")
+                raise GraphError(f"ParamInput kind '{self._kind}' requires a ref ID.")
             if self.value is not None:
-                raise ValueError(f"ParamInput kind '{self.kind}' must not have a value.")
+                raise GraphError(f"ParamInput kind '{self._kind}' must not have a value.")
         else:  # pragma no cover
-            raise GraphError(f"Unknown ParamInput kind: '{self.kind}'. {context}")
+            raise GraphError(f"Unknown ParamInput kind: '{self._kind}'. {context}")
 
     @property
     def is_ref(self) -> bool:
         """Returns `True` if this input is a reference to another node's output."""
-        return self.kind in ("ref", "sequence_ref")
+        return self._kind in ("ref", "sequence_ref")
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
@@ -216,7 +221,7 @@ class ParamInput:
         Returns:
             Resolved concrete value for this input.
         """
-        match self.kind:
+        match self._kind:
             case "value":
                 return self.value
             case "ref":
@@ -228,26 +233,28 @@ class ParamInput:
             case "sequence_ref":
                 assert self.ref is not None  # Checked by post_init
                 return list(completed_nodes[self.ref])
+            case _:  # pragma no cover
+                raise GraphError(f"Unknown ParamInput kind: '{self._kind}'. ")
 
     @classmethod
     def from_value(cls, v: Any) -> ParamInput:
         """Creates a ParamInput from a concrete value."""
-        return cls(kind="value", value=v)
+        return cls(_kind="value", value=v)
 
     @classmethod
     def from_ref(cls, node_id: UUID) -> ParamInput:
         """Creates a ParamInput that references another node's output."""
-        return cls(kind="ref", ref=node_id)
+        return cls(_kind="ref", ref=node_id)
 
     @classmethod
     def from_sequence(cls, vals: Sequence[Any]) -> ParamInput:
         """Creates a ParamInput from a concrete sequence value."""
-        return cls(kind="sequence", value=list(vals))
+        return cls(_kind="sequence", value=list(vals))
 
     @classmethod
     def from_sequence_ref(cls, node_id: UUID) -> ParamInput:
         """Creates a ParamInput that references another node's sequence output."""
-        return cls(kind="sequence_ref", ref=node_id)
+        return cls(_kind="sequence_ref", ref=node_id)
 
 
 @dataclass(frozen=True)
