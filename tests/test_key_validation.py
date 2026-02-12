@@ -328,7 +328,7 @@ class TestToGraphValidation:
         assert len(node.output_configs) == 0
 
     def test_to_graph_format_threaded(self):
-        """save_format is threaded through to OutputConfig.format."""
+        """save_format is threaded through to NodeOutputConfig.format."""
 
         @task
         def work(x: int) -> int:
@@ -339,7 +339,7 @@ class TestToGraphValidation:
         assert node.output_configs[0].format == "pickle"
 
     def test_to_graph_options_threaded(self):
-        """save_options are threaded through to OutputConfig.options."""
+        """save_options are threaded through to NodeOutputConfig.options."""
 
         @task
         def work(x: int) -> int:
@@ -350,7 +350,7 @@ class TestToGraphValidation:
         assert node.output_configs[0].options == {"protocol": 5}
 
     def test_to_graph_checkpoint_name_threaded(self):
-        """Checkpoint name is threaded through to OutputConfig.name."""
+        """Checkpoint name is threaded through to NodeOutputConfig.name."""
 
         @task
         def work(x: int) -> int:

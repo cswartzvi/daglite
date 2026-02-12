@@ -45,7 +45,7 @@ class BaseGraphNode(abc.ABC):
     timeout: float | None = field(default=None, kw_only=True)
     """Maximum execution time in seconds (enforced by backend). If None, no timeout."""
 
-    output_configs: tuple[OutputConfig, ...] = field(default=(), kw_only=True)
+    output_configs: tuple[NodeOutputConfig, ...] = field(default=(), kw_only=True)
     """Output save/checkpoint configurations for this node."""
 
     def __post_init__(self) -> None:
@@ -212,7 +212,7 @@ class NodeInput:
 
 
 @dataclass(frozen=True)
-class OutputConfig:
+class NodeOutputConfig:
     """
     Configuration for saving or checkpointing a task output.
 

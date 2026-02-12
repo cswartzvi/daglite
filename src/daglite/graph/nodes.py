@@ -22,7 +22,7 @@ from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import NodeInput
 from daglite.graph.base import NodeMetadata
-from daglite.graph.base import OutputConfig
+from daglite.graph.base import NodeOutputConfig
 
 _DIRECT_REPORTER = DirectDatasetReporter()
 
@@ -358,7 +358,7 @@ async def _run_implementation(
     func: Callable[..., Any],
     metadata: NodeMetadata,
     resolved_inputs: dict[str, Any],
-    output_config: tuple[OutputConfig, ...],
+    output_config: tuple[NodeOutputConfig, ...],
     output_deps: list[dict[str, Any]],
     retries: int = 0,
     cache_enabled: bool = False,
@@ -510,7 +510,7 @@ async def _run_implementation(
 def _save_outputs(
     result: Any,
     resolved_inputs: dict[str, Any],
-    output_config: tuple[OutputConfig, ...],
+    output_config: tuple[NodeOutputConfig, ...],
     output_deps: list[dict[str, Any]],
     key_extras: dict[str, Any] | None = None,
 ) -> None:
@@ -535,7 +535,7 @@ def _save_outputs(
         output_deps: List of resolved output dependencies for each output config.
         key_extras: Additional variables for key formatting.
     """
-    from daglite.graph.base import OutputConfig
+    from daglite.graph.base import NodeOutputConfig
     from daglite.settings import get_global_settings
 
     if not output_config:
@@ -544,7 +544,7 @@ def _save_outputs(
     dataset_reporter = get_dataset_reporter()
 
     for idx, config in enumerate(output_config):
-        if not isinstance(config, OutputConfig):  # pragma: no cover
+        if not isinstance(config, NodeOutputConfig):  # pragma: no cover
             continue
 
         # Resolve the target store: explicit config → settings default
