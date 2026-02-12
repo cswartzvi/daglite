@@ -224,22 +224,22 @@ class InputParam:
 
     @classmethod
     def from_value(cls, v: Any) -> InputParam:
-        """Creates a InputParam from a concrete value."""
+        """Creates an InputParam from a concrete value."""
         return cls(_kind="value", value=v)
 
     @classmethod
     def from_ref(cls, node_id: UUID) -> InputParam:
-        """Creates a InputParam that references another node's output."""
+        """Creates an InputParam that references another node's output."""
         return cls(_kind="ref", reference=node_id)
 
     @classmethod
     def from_sequence(cls, vals: Sequence[Any]) -> InputParam:
-        """Creates a InputParam from a concrete sequence value."""
+        """Creates an InputParam from a concrete sequence value."""
         return cls(_kind="sequence", value=list(vals))
 
     @classmethod
     def from_sequence_ref(cls, node_id: UUID) -> InputParam:
-        """Creates a InputParam that references another node's sequence output."""
+        """Creates an InputParam that references another node's sequence output."""
         return cls(_kind="sequence_ref", reference=node_id)
 
 
