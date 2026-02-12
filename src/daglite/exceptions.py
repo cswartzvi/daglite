@@ -9,15 +9,15 @@ class DagliteError(Exception):
     """Base exception for all daglite errors."""
 
 
-class TaskConfigurationError(DagliteError):
+class TaskError(DagliteError):
     """Raised when a task is configured incorrectly."""
 
 
-class GraphConstructionError(DagliteError):
-    """Raised when there's an error constructing the task graph."""
+class GraphError(DagliteError):
+    """Raised when a IR graph construction or validation error occurs."""
 
 
-class ParameterError(TaskConfigurationError):
+class ParameterError(TaskError):
     """Raised when task parameters are invalid or incorrectly specified."""
 
 

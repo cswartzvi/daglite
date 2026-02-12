@@ -2,89 +2,81 @@
 
 import pytest
 
+from daglite._validation import check_key_placeholders
+from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
 from daglite.futures import TaskFuture
-from daglite.futures import _validate_key_placeholders
-from daglite.futures import _validate_key_template
 from daglite.tasks import task
-
-# ── _validate_key_template (syntax-level) ─────────────────────────────────────
 
 
 class TestValidateKeyTemplate:
-    """Tests for _validate_key_template() syntax validation."""
+    """Tests for check_key_template() syntax validation."""
 
     def test_valid_template_no_placeholders(self):
         """Plain strings pass validation."""
-        _validate_key_template("simple_key")
+        check_key_template("simple_key")
 
     def test_valid_template_with_placeholders(self):
         """Templates with named placeholders pass."""
-        _validate_key_template("output_{data_id}_{version}")
+        check_key_template("output_{data_id}_{version}")
 
     def test_valid_template_nested_path(self):
         """Templates with path separators pass."""
-        _validate_key_template("outputs/{data_id}/result.pkl")
+        check_key_template("outputs/{data_id}/result.pkl")
 
     def test_empty_placeholder_raises(self):
         """Empty {} placeholders are rejected."""
         with pytest.raises(ValueError, match="empty placeholder"):
-            _validate_key_template("output_{}")
+            check_key_template("output_{}")
 
     def test_malformed_template_unclosed_brace(self):
         """Unclosed brace raises ValueError."""
         with pytest.raises(ValueError, match="Invalid key template"):
-            _validate_key_template("output_{unclosed")
+            check_key_template("output_{unclosed")
 
     def test_multiple_valid_placeholders(self):
         """Multiple named placeholders all pass."""
-        _validate_key_template("{a}_{b}_{c}")
+        check_key_template("{a}_{b}_{c}")
 
     def test_mixed_literal_and_placeholder(self):
         """Mix of literal text and placeholders passes."""
-        _validate_key_template("prefix_{name}_suffix")
+        check_key_template("prefix_{name}_suffix")
 
     def test_single_placeholder_only(self):
         """A key that is just a single placeholder passes."""
-        _validate_key_template("{key}")
-
-
-# ── _validate_key_placeholders (name matching) ───────────────────────────────
+        check_key_template("{key}")
 
 
 class TestValidateKeyPlaceholders:
-    """Tests for _validate_key_placeholders() placeholder-name validation."""
+    """Tests for check_key_placeholders() placeholder-name validation."""
 
     def test_all_placeholders_available(self):
         """No error when all placeholders match available names."""
-        _validate_key_placeholders("output_{a}_{b}", {"a", "b", "c"})
+        check_key_placeholders("output_{a}_{b}", {"a", "b", "c"})
 
     def test_missing_placeholder_raises(self):
         """Missing placeholder raises ValueError."""
         with pytest.raises(ValueError, match="won't be available"):
-            _validate_key_placeholders("output_{missing}", {"a", "b"})
+            check_key_placeholders("output_{missing}", {"a", "b"})
 
     def test_partial_match_raises(self):
         """One matching and one missing still raises."""
         with pytest.raises(ValueError, match="won't be available"):
-            _validate_key_placeholders("output_{a}_{missing}", {"a", "b"})
+            check_key_placeholders("output_{a}_{missing}", {"a", "b"})
 
     def test_no_placeholders_always_passes(self):
         """A literal key with no placeholders always passes."""
-        _validate_key_placeholders("literal_key", set())
+        check_key_placeholders("literal_key", set())
 
     def test_empty_available_with_placeholder_raises(self):
         """Placeholders with empty available set raises."""
         with pytest.raises(ValueError, match="won't be available"):
-            _validate_key_placeholders("{x}", set())
+            check_key_placeholders("{x}", set())
 
     def test_error_message_lists_available(self):
         """Error message includes the sorted available variables."""
-        with pytest.raises(ValueError, match="Available variables: \\['alpha', 'beta'\\]"):
-            _validate_key_placeholders("{gamma}", {"alpha", "beta"})
-
-
-# ── BaseTaskFuture.save() ────────────────────────────────────────────────────
+        with pytest.raises(ValueError, match="Available placeholders: \\['alpha', 'beta'\\]"):
+            check_key_placeholders("{gamma}", {"alpha", "beta"})
 
 
 class TestFutureSave:
@@ -119,7 +111,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("out1_{x}").save("out2_{x}")
-        assert len(future._future_outputs) == 2
+        assert len(future._output_futures) == 2
 
     def test_save_with_checkpoint_true(self):
         """save_checkpoint=True uses the key as the checkpoint name."""
@@ -129,7 +121,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key", save_checkpoint=True)
-        assert future._future_outputs[0].name == "my_key"
+        assert future._output_futures[0].name == "my_key"
 
     def test_save_with_checkpoint_string(self):
         """save_checkpoint=str uses the string as checkpoint name."""
@@ -139,7 +131,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key", save_checkpoint="cp_name")
-        assert future._future_outputs[0].name == "cp_name"
+        assert future._output_futures[0].name == "cp_name"
 
     def test_save_without_checkpoint(self):
         """save_checkpoint=None means no checkpoint."""
@@ -149,7 +141,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("my_key")
-        assert future._future_outputs[0].name is None
+        assert future._output_futures[0].name is None
 
     def test_save_with_format(self):
         """save_format is stored in the future output config."""
@@ -159,7 +151,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_format="pickle")
-        assert future._future_outputs[0].format == "pickle"
+        assert future._output_futures[0].format == "pickle"
 
     def test_save_with_store_string(self):
         """String save_store is converted to DatasetStore."""
@@ -169,7 +161,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_store="/tmp/test_store")
-        assert isinstance(future._future_outputs[0].store, DatasetStore)
+        assert isinstance(future._output_futures[0].store, DatasetStore)
 
     def test_save_with_store_instance(self):
         """DatasetStore instance is stored directly."""
@@ -182,7 +174,7 @@ class TestFutureSave:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = work(x=1).save("data.pkl", save_store=store)
-            assert future._future_outputs[0].store is store
+            assert future._output_futures[0].store is store
 
     def test_save_falls_back_to_task_store(self):
         """Without explicit save_store, uses task_store."""
@@ -197,7 +189,7 @@ class TestFutureSave:
 
             future = work(x=1)
             saved = future.save("data.pkl")
-            assert saved._future_outputs[0].store is store
+            assert saved._output_futures[0].store is store
 
     def test_save_with_options(self):
         """save_options are stored in the config."""
@@ -207,7 +199,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_options={"protocol": 5})
-        assert future._future_outputs[0].options == {"protocol": 5}
+        assert future._output_futures[0].options == {"protocol": 5}
 
     def test_save_with_extras(self):
         """Extra kwargs are stored as extras for key formatting."""
@@ -217,7 +209,7 @@ class TestFutureSave:
             return x  # pragma: no cover
 
         future = work(x=1).save("output_{x}_{version}", version="v1")
-        assert future._future_outputs[0].extras == {"version": "v1"}
+        assert future._output_futures[0].extras == {"version": "v1"}
 
     def test_save_with_future_as_extra(self):
         """TaskFuture extras are stored for dependency resolution."""
@@ -231,7 +223,7 @@ class TestFutureSave:
             return "v1"  # pragma: no cover
 
         future = work(x=1).save("output_{version}", version=get_version())
-        assert isinstance(future._future_outputs[0].extras["version"], TaskFuture)
+        assert isinstance(future._output_futures[0].extras["version"], TaskFuture)
 
     def test_save_rejects_empty_placeholder(self):
         """save() rejects keys with empty {} placeholders."""
@@ -252,9 +244,6 @@ class TestFutureSave:
 
         with pytest.raises(ValueError, match="Invalid key template"):
             work(x=1).save("output_{unclosed")
-
-
-# ── TaskFuture.to_graph() placeholder validation ────────────────────────────
 
 
 class TestToGraphValidation:
@@ -383,7 +372,7 @@ class TestToGraphValidation:
         assert node.output_configs[1].key == "out2_{x}"
 
     def test_to_graph_future_extra_becomes_dependency(self):
-        """TaskFuture extras become ParamInput refs in output dependencies."""
+        """TaskFuture extras become InputParam refs in output dependencies."""
 
         @task
         def work(x: int) -> int:
@@ -398,4 +387,4 @@ class TestToGraphValidation:
         node = future.to_graph()
         config = node.output_configs[0]
         assert "version" in config.dependencies
-        assert config.dependencies["version"].is_ref
+        assert config.dependencies["version"].reference

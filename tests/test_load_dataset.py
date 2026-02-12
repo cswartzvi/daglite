@@ -205,8 +205,8 @@ class TestDatasetFutureToGraphWithSaveExtras:
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["version"]
-            assert dep.is_ref
-            assert dep.ref == version.id
+            assert dep.reference is not None
+            assert dep.reference == version.id
 
     def test_save_with_plain_extra_creates_value(self):
         """A plain (non-future) extra on .save() becomes a value param."""
@@ -219,7 +219,7 @@ class TestDatasetFutureToGraphWithSaveExtras:
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["label"]
-            assert not dep.is_ref
+            assert not dep.reference is not None
             assert dep.value == "batch1"
 
 
@@ -228,8 +228,8 @@ class TestDatasetNodeOutputDependencies:
 
     def test_output_config_future_deps_included(self):
         """Dependencies from output configs are included in DatasetNode.dependencies()."""
+        from daglite.graph.base import InputParam
         from daglite.graph.base import OutputConfig
-        from daglite.graph.base import ParamInput
         from daglite.graph.nodes import DatasetNode
 
         dep_id_1 = uuid4()
@@ -240,9 +240,9 @@ class TestDatasetNodeOutputDependencies:
             format=None,
             store=None,
             dependencies={
-                "v": ParamInput.from_ref(dep_id_1),
-                "w": ParamInput.from_ref(dep_id_2),
-                "x": ParamInput.from_value("static"),
+                "v": InputParam.from_ref(dep_id_1),
+                "w": InputParam.from_ref(dep_id_2),
+                "x": InputParam.from_value("static"),
             },
             options={},
         )

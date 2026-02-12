@@ -15,19 +15,28 @@ from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
+from daglite._validation import check_invalid_map_params
+from daglite._validation import check_invalid_params
+from daglite._validation import check_missing_params
+from daglite._validation import check_overlap_params
+from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ParameterError
-from daglite.futures import BaseTaskFuture
-from daglite.futures import MapTaskFuture
-from daglite.futures import TaskFuture
 
+# NOTE: Tasks are the building blocks of daglite DAGs, however the fluent API for composing
+# DAGs allows for tasks to accept downstream types as parameters. To avoid circular imports,
+# all downstream types used in type annotations are imported within TYPE_CHECKING blocks.
+# If methods within this file need to use downstream types at runtime, they should be imported
+# locally within those methods.
 if TYPE_CHECKING:
-    from daglite.datasets.store import DatasetStore
+    from daglite.futures import MapTaskFuture
+    from daglite.futures import TaskFuture
 else:
-    OutputStore = object
+    MapTaskFuture = object
+    TaskFuture = object
+
 
 P = ParamSpec("P")
 R = TypeVar("R")
-S = TypeVar("S")
 
 
 # region Decorator
@@ -314,7 +323,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> "MapTaskFuture[R]":
+    def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
         """
         Create a fan-out operation by applying this task over all combinations of sequences.
 
@@ -348,7 +357,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> "MapTaskFuture[R]":
+    def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
         """
         Create a fan-out operation by applying this task to zipped sequences.
 
@@ -443,7 +452,7 @@ class Task(BaseTask[P, R]):
             >>> base.product(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
             MapTaskFuture(...)
         """
-        check_invalid_params(self, kwargs)
+        check_invalid_params(self.signature, kwargs, self.name)
         return PartialTask(
             name=self.name,
             description=self.description,
@@ -492,11 +501,13 @@ class PartialTask(BaseTask[P, R]):
 
     @override
     def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
+        from daglite.futures import TaskFuture
+
         merged = {**self.fixed_kwargs, **kwargs}
 
-        check_invalid_params(self, merged)
-        check_missing_params(self, merged)
-        check_overlap_params(self, kwargs)
+        check_invalid_params(self.signature, merged, self.name)
+        check_missing_params(self.signature, merged, self.name)
+        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
 
         return TaskFuture(
             task=self.task, kwargs=merged, backend_name=self.backend_name, task_store=self.store
@@ -504,13 +515,14 @@ class PartialTask(BaseTask[P, R]):
 
     @override
     def product(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
+        from daglite.futures import MapTaskFuture
+
         merged = {**self.fixed_kwargs, **kwargs}
 
-        check_invalid_params(self, merged)
-        check_missing_params(self, merged)
-
-        check_overlap_params(self, kwargs)
-        check_invalid_map_params(self, kwargs)
+        check_invalid_params(self.signature, merged, self.name)
+        check_missing_params(self.signature, merged, self.name)
+        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
+        check_invalid_map_params(self.signature, kwargs, self.name)
 
         return MapTaskFuture(
             task=self.task,
@@ -523,13 +535,15 @@ class PartialTask(BaseTask[P, R]):
 
     @override
     def zip(self, **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]) -> MapTaskFuture[R]:
+        from daglite.futures import MapTaskFuture
+        from daglite.futures.base import BaseTaskFuture
+
         merged = {**self.fixed_kwargs, **kwargs}
 
-        check_invalid_params(self, merged)
-        check_missing_params(self, merged)
-
-        check_overlap_params(self, kwargs)
-        check_invalid_map_params(self, kwargs)
+        check_invalid_params(self.signature, merged, self.name)
+        check_missing_params(self.signature, merged, self.name)
+        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
+        check_invalid_map_params(self.signature, kwargs, self.name)
 
         len_details = {
             len(val)  # type: ignore
@@ -550,108 +564,3 @@ class PartialTask(BaseTask[P, R]):
             backend_name=self.backend_name,
             task_store=self.store,
         )
-
-
-# region Helpers
-
-# NOTE: The following helper functions are used for parameter validation and extraction. They
-# are public, but generally intended for internal use within the task and future classes.
-
-
-def check_invalid_params(task: BaseTask, kwargs: dict) -> None:
-    """
-    Checks that all provided parameters are valid for the given task.
-
-    Args:
-        task: Task whose parameters are being validated.
-        kwargs: Provided arguments to validate.
-
-    Raises:
-        ParameterError: If any provided parameters are not in the task's signature.
-    """
-    if invalid_params := sorted(kwargs.keys() - task.signature.parameters.keys()):
-        raise ParameterError(f"Invalid parameters for task '{task.name}': {invalid_params}")
-
-
-def check_missing_params(task: BaseTask, kwargs: dict) -> None:
-    """
-    Checks that all required parameters for the given task are provided.
-
-    Args:
-        task: Task whose parameters are being validated.
-        kwargs: Provided arguments to validate.
-
-    Raises:
-        ParameterError: If any required parameters are missing.
-    """
-    if missing_params := sorted(task.signature.parameters.keys() - kwargs.keys()):
-        raise ParameterError(f"Missing parameters for task '{task.name}': {missing_params}")
-
-
-def check_overlap_params(task: PartialTask, kwargs: dict) -> None:
-    """
-    Checks that no provided parameters overlap with already fixed parameters.
-
-    Args:
-        task: `PartialTask` whose parameters are being validated.
-        kwargs: Provided arguments to validate.
-
-    Raises:
-        ParameterError: If any provided parameters overlap with already fixed parameters.
-    """
-    fixed = task.fixed_kwargs.keys()
-    if overlap_params := sorted(fixed & kwargs.keys()):
-        raise ParameterError(
-            f"Overlapping parameters for task '{task.name}', specified parameters "
-            f"were previously bound in `.partial()`: {overlap_params}"
-        )
-
-
-def check_invalid_map_params(task: BaseTask, kwargs: dict) -> None:
-    """
-    Checks that all provided parameters for a mapping task are iterable.
-
-    Args:
-        task: Task whose parameters are being validated.
-        kwargs: Provided arguments to validate.
-
-    Raises:
-        ParameterError: If any provided parameters are not iterable.
-    """
-    non_sequences = []
-    parameters = task.signature.parameters.keys()
-    for key, value in kwargs.items():
-        if key in parameters and not isinstance(value, (Iterable, BaseTaskFuture)):
-            non_sequences.append(key)
-    if non_sequences := sorted(non_sequences):
-        raise ParameterError(
-            f"Non-iterable parameters for task '{task.name}', "
-            f"all parameters must be Iterable or TaskFuture[Iterable] "
-            f"(use `.partial()` to set scalar parameters): {non_sequences}"
-        )
-
-
-def get_unbound_param(task: BaseTask, kwargs: dict) -> str:
-    """
-    Returns the single unbound parameter name for the given task and provided arguments.
-
-    Args:
-        task: Task whose unbound parameter is being determined.
-        kwargs: Provided arguments to validate.
-
-    Raises:
-        ParameterError: If there are zero or multiple unbound parameters.
-    """
-    unbound = [p for p in task.signature.parameters if p not in kwargs]
-    if len(unbound) == 0:
-        raise ParameterError(
-            f"Task '{task.name}' has no unbound parameters for "
-            f"upstream value. All parameters already provided: {list(kwargs.keys())}"
-        )
-    if len(unbound) > 1:
-        raise ParameterError(
-            f"Task '{task.name}' must have exactly one "
-            f"unbound parameter for upstream value, found {len(unbound)}: {unbound} "
-            f"(use `.partial()` to set scalar parameters): {unbound[1:]}"
-        )
-    return unbound[0]

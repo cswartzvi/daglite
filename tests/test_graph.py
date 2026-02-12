@@ -10,99 +10,96 @@ from uuid import uuid4
 import pytest
 
 from daglite.exceptions import ExecutionError
-from daglite.exceptions import GraphConstructionError
+from daglite.exceptions import GraphError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import ParamInput
+from daglite.graph.base import InputParam
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
 from daglite.tasks import task
 
 
-class TestParamInput:
-    """Test ParamInput creation and resolution."""
+class TestInputParam:
+    """Test InputParam creation and resolution."""
 
     def test_from_value(self) -> None:
-        """ParamInput.from_value creates a value-type input."""
-        param = ParamInput.from_value(42)
-        assert param.kind == "value"
+        """InputParam.from_value creates a value-type input."""
+        param = InputParam.from_value(42)
+        assert param._kind == "value"
         assert param.value == 42
-        assert not param.is_ref
+        assert param.reference is None
 
     def test_from_ref(self) -> None:
-        """ParamInput.from_ref creates a ref-type input."""
+        """InputParam.from_ref creates a ref-type input."""
         node_id = uuid4()
-        param = ParamInput.from_ref(node_id)
-        assert param.kind == "ref"
-        assert param.ref == node_id
-        assert param.is_ref
+        param = InputParam.from_ref(node_id)
+        assert param._kind == "ref"
+        assert param.reference == node_id
+        assert param.reference is not None
 
     def test_from_sequence(self) -> None:
-        """ParamInput.from_sequence creates a sequence-type input."""
-        param = ParamInput.from_sequence([1, 2, 3])
-        assert param.kind == "sequence"
+        """InputParam.from_sequence creates a sequence-type input."""
+        param = InputParam.from_sequence([1, 2, 3])
+        assert param._kind == "sequence"
         assert param.value == [1, 2, 3]
-        assert not param.is_ref
+        assert param.reference is None
 
     def test_from_sequence_ref(self) -> None:
-        """ParamInput.from_sequence_ref creates a sequence_ref-type input."""
+        """InputParam.from_sequence_ref creates a sequence_ref-type input."""
         node_id = uuid4()
-        param = ParamInput.from_sequence_ref(node_id)
-        assert param.kind == "sequence_ref"
-        assert param.ref == node_id
-        assert param.is_ref
+        param = InputParam.from_sequence_ref(node_id)
+        assert param._kind == "sequence_ref"
+        assert param.reference == node_id
+        assert param.reference is not None
 
     def test_resolve_value(self) -> None:
-        """ParamInput resolves value inputs correctly."""
-        param = ParamInput.from_value(100)
+        """InputParam resolves value inputs correctly."""
+        param = InputParam.from_value(100)
         assert param.resolve({}) == 100
 
     def test_resolve_ref(self) -> None:
-        """ParamInput resolves ref inputs from values dict."""
+        """InputParam resolves ref inputs from values dict."""
         node_id = uuid4()
-        param = ParamInput.from_ref(node_id)
+        param = InputParam.from_ref(node_id)
         values = {node_id: "result"}
         assert param.resolve(values) == "result"
 
     def test_resolve_sequence_from_sequence(self) -> None:
-        """ParamInput resolves sequence inputs correctly."""
-        param = ParamInput.from_sequence([10, 20, 30])
-        assert param.resolve_sequence({}) == [10, 20, 30]
+        """InputParam resolves sequence inputs correctly."""
+        param = InputParam.from_sequence([10, 20, 30])
+        assert param.resolve({}) == [10, 20, 30]
 
     def test_resolve_sequence_from_ref(self) -> None:
-        """ParamInput resolves sequence_ref inputs from values dict."""
+        """InputParam resolves sequence_ref inputs from values dict."""
         node_id = uuid4()
-        param = ParamInput.from_sequence_ref(node_id)
+        param = InputParam.from_sequence_ref(node_id)
         values = {node_id: [1, 2, 3]}
-        assert param.resolve_sequence(values) == [1, 2, 3]
+        assert param.resolve(values) == [1, 2, 3]
 
-    def test_resolve_sequence_as_scalar_fails(self) -> None:
-        """Cannot resolve sequence input as scalar value."""
-        param = ParamInput.from_sequence([1, 2, 3])
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'sequence'"):
-            param.resolve({})
+    def test_invalid_ref_with_value_kind(self) -> None:
+        """InputParam with value kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="InputParam kind 'value' must not have a ref."):
+            InputParam(_kind="value", reference=uuid4())
 
-    def test_resolve_sequence_ref_as_scalar_fails(self) -> None:
-        """Cannot resolve sequence_ref input as scalar value."""
-        node_id = uuid4()
-        param = ParamInput.from_sequence_ref(node_id)
-        values = {node_id: [1, 2, 3]}
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'sequence_ref'"):
-            param.resolve(values)
+    def test_invalid_value_with_ref_kind(self) -> None:
+        """InputParam with ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="InputParam kind 'ref' must not have a value."):
+            InputParam(_kind="ref", value=42, reference=uuid4())
 
-    def test_resolve_value_as_sequence_fails(self) -> None:
-        """Cannot resolve value input as sequence."""
-        param = ParamInput.from_value(42)
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'value'"):
-            param.resolve_sequence({})
+    def test_invalid_scalar_with_sequence_kind(self) -> None:
+        """InputParam with sequence kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="InputParam kind 'sequence' must not have a ref."):
+            InputParam(_kind="sequence", reference=uuid4())
 
-    def test_resolve_ref_as_sequence_fails(self) -> None:
-        """Cannot resolve ref input as sequence."""
-        node_id = uuid4()
-        param = ParamInput.from_ref(node_id)
-        values = {node_id: "scalar"}
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'ref'"):
-            param.resolve_sequence(values)
+    def test_invalid_scalar_with_ref_kind(self) -> None:
+        """InputParam with ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="InputParam kind 'ref' requires a ref."):
+            InputParam(_kind="ref", value=42)
+
+    def test_invalid_sequence_with_ref_kind(self) -> None:
+        """InputParam with sequence_ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="InputParam kind 'sequence_ref' requires a ref."):
+            InputParam(_kind="sequence_ref", value=[1, 2, 3])
 
 
 class TestTaskNodes:
@@ -121,8 +118,8 @@ class TestTaskNodes:
             backend_name=None,
             func=add,
             kwargs={
-                "x": ParamInput.from_value(1),
-                "y": ParamInput.from_value(2),
+                "x": InputParam.from_value(1),
+                "y": InputParam.from_value(2),
             },
         )
 
@@ -142,7 +139,7 @@ class TestTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            kwargs={"x": ParamInput.from_ref(dep_id)},
+            kwargs={"x": InputParam.from_ref(dep_id)},
         )
 
         deps = node.dependencies()
@@ -161,7 +158,7 @@ class TestTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            kwargs={"x": ParamInput.from_value(10)},
+            kwargs={"x": InputParam.from_value(10)},
         )
 
         deps = node.dependencies()
@@ -185,7 +182,7 @@ class TestMapTaskNodes:
             func=process,
             mode="extend",
             fixed_kwargs={},
-            mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
         )
 
         assert node.mode == "extend"
@@ -204,7 +201,7 @@ class TestMapTaskNodes:
             func=process,
             mode="zip",
             fixed_kwargs={},
-            mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
         )
 
         assert node.mode == "zip"
@@ -223,8 +220,8 @@ class TestMapTaskNodes:
             backend_name=None,
             func=add,
             mode="extend",
-            fixed_kwargs={"offset": ParamInput.from_ref(dep_id)},
-            mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
+            fixed_kwargs={"offset": InputParam.from_ref(dep_id)},
+            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
         )
 
         deps = node.dependencies()
@@ -244,8 +241,8 @@ class TestMapTaskNodes:
             backend_name=None,
             func=add,
             mode="extend",
-            fixed_kwargs={"offset": ParamInput.from_value(10)},
-            mapped_kwargs={"x": ParamInput.from_sequence_ref(dep_id)},
+            fixed_kwargs={"offset": InputParam.from_value(10)},
+            mapped_kwargs={"x": InputParam.from_sequence_ref(dep_id)},
         )
 
         deps = node.dependencies()
@@ -264,8 +261,8 @@ class TestMapTaskNodes:
             backend_name=None,
             func=add,
             mode="extend",
-            fixed_kwargs={"offset": ParamInput.from_value(10)},
-            mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
+            fixed_kwargs={"offset": InputParam.from_value(10)},
+            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
         )
 
         # Check kwargs are stored correctly
@@ -289,8 +286,8 @@ class TestMapTaskNodes:
             mode="zip",
             fixed_kwargs={},
             mapped_kwargs={
-                "x": ParamInput.from_sequence([1, 2, 3]),
-                "y": ParamInput.from_sequence([10, 20]),  # Different length
+                "x": InputParam.from_sequence([1, 2, 3]),
+                "y": InputParam.from_sequence([10, 20]),  # Different length
             },
         )
 
@@ -314,7 +311,7 @@ class TestMapTaskNodes:
             func=process,
             mode="invalid",  # Invalid mode
             fixed_kwargs={},
-            mapped_kwargs={"x": ParamInput.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
         )
 
         resolved_inputs = node.resolve_inputs({})
@@ -540,7 +537,7 @@ class TestBuildGraph:
         builder_a = CircularBuilder(id_a, builder_b)
         builder_b._other = builder_a  # Create the cycle
 
-        with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
+        with pytest.raises(GraphError, match="Circular dependency detected"):
             build_graph(builder_a)  # pyright: ignore
 
     def test_detects_self_reference(self) -> None:
@@ -572,5 +569,5 @@ class TestBuildGraph:
 
         builder = SelfRefBuilder()
 
-        with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
+        with pytest.raises(GraphError, match="Circular dependency detected"):
             build_graph(builder)  # pyright: ignore

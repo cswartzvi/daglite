@@ -21,8 +21,8 @@ from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
 from daglite.graph.base import GraphMetadata
+from daglite.graph.base import InputParam
 from daglite.graph.base import OutputConfig
-from daglite.graph.base import ParamInput
 
 _DIRECT_REPORTER = DirectDatasetReporter()
 
@@ -38,7 +38,7 @@ class TaskNode(BaseGraphNode):
     func: Callable
     """Function to be executed for this task node."""
 
-    kwargs: Mapping[str, ParamInput]
+    kwargs: Mapping[str, InputParam]
     """Keyword parameters for the task function."""
 
     retries: int = 0
@@ -58,22 +58,16 @@ class TaskNode(BaseGraphNode):
 
     @override
     def dependencies(self) -> set[UUID]:
-        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        inputs = {}
-        for name, param in self.kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
-                # Defensive: TaskNode kwargs are always "value" or "ref", never sequence types
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:
-                inputs[name] = param.resolve(completed_nodes)
+        inputs = {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
         return inputs
 
     @override
@@ -117,10 +111,10 @@ class MapTaskNode(BaseGraphNode):
     mode: str
     """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
 
-    fixed_kwargs: Mapping[str, ParamInput]
+    fixed_kwargs: Mapping[str, InputParam]
     """Fixed keyword arguments for the mapped function."""
 
-    mapped_kwargs: Mapping[str, ParamInput]
+    mapped_kwargs: Mapping[str, InputParam]
     """Mapped keyword arguments for the mapped function."""
 
     retries: int = 0
@@ -142,37 +136,22 @@ class MapTaskNode(BaseGraphNode):
     def dependencies(self) -> set[UUID]:
         deps = set()
         for param in self.fixed_kwargs.values():
-            if param.is_ref and param.ref is not None:
-                deps.add(param.ref)
+            if param.reference is not None:
+                deps.add(param.reference)
         for param in self.mapped_kwargs.values():
-            if param.is_ref and param.ref is not None:
-                deps.add(param.ref)
+            if param.reference is not None:
+                deps.add(param.reference)
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        inputs = {}
-
-        # Resolve fixed kwargs
-        for name, param in self.fixed_kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
-                # Defensive: fixed_kwargs are always "value" or "ref", never sequence types
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:
-                inputs[name] = param.resolve(completed_nodes)
-
-        # Resolve mapped kwargs
-        for name, param in self.mapped_kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:  # pragma: no cover
-                # Defensive: mapped_kwargs are always "sequence" or "sequence_ref", never value/ref
-                inputs[name] = param.resolve(completed_nodes)
-
+        fixed_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.fixed_kwargs.items()}
+        mapped_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.mapped_kwargs.items()}
+        inputs = {**fixed_inputs, **mapped_inputs}
         return inputs
 
     def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
@@ -287,16 +266,16 @@ class DatasetNode(BaseGraphNode):
     load_options: dict[str, Any] = field(default_factory=dict)
     """Additional options forwarded to the ``Dataset`` constructor."""
 
-    kwargs: Mapping[str, ParamInput] = field(default_factory=dict)
+    kwargs: Mapping[str, InputParam] = field(default_factory=dict)
     """Keyword parameters used for key-template formatting."""
 
     @override
     def dependencies(self) -> set[UUID]:
-        deps = {p.ref for p in self.kwargs.values() if p.is_ref and p.ref is not None}
+        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
         for config in self.output_configs:
             for param in config.dependencies.values():
-                if param.is_ref and param.ref is not None:
-                    deps.add(param.ref)
+                if param.reference is not None:
+                    deps.add(param.reference)
         return deps
 
     @override

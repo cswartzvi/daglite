@@ -17,7 +17,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from daglite.datasets.store import DatasetStore
-from daglite.exceptions import ExecutionError
+from daglite.exceptions import GraphError
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "dataset"]
@@ -113,7 +113,7 @@ class BaseGraphNode(abc.ABC):
         IDs of nodes that the current node depends on (its direct predecessors).
 
         Each node implementation determines its own dependencies based on its
-        internal structure (e.g., from ParamInputs, sub-graphs, etc.).
+        internal structure (e.g., from InputParams, sub-graphs, etc.).
         """
         ...
 
@@ -134,7 +134,7 @@ class BaseGraphNode(abc.ABC):
         """
         Resolve output dependencies to concrete values.
 
-        Resolves ParamInput extras in output_configs to actual values from completed nodes.
+        Resolves InputParam extras in output_configs to actual values from completed nodes.
         Returns parallel list to output_configs containing only the resolved extras dicts.
 
         Args:
@@ -173,90 +173,75 @@ class BaseGraphNode(abc.ABC):
 
 
 @dataclass(frozen=True)
-class ParamInput:
-    """
-    Parameter input representation for graph IR.
+class InputParam:
+    """Input parameter representation for graph IR."""
 
-    Inputs can be one of four kinds:
-    - value        : concrete Python value
-    - ref          : scalar produced by another node
-    - sequence     : concrete list/tuple
-    - sequence_ref : sequence produced by another node
-    """
+    _kind: ParamKind
+    """Kind of this parameter input, determining how it should be resolved."""
 
-    kind: ParamKind
     value: Any | None = None
-    ref: UUID | None = None
+    """Concrete value for 'value' and 'sequence' kinds. Must be None for 'ref' kinds."""
 
-    @property
-    def is_ref(self) -> bool:
-        """Returns `True` if this input is a reference to another node's output."""
-        return self.kind in ("ref", "sequence_ref")
+    reference: UUID | None = None
+    """Reference node ID for 'ref' and 'sequence_ref' kinds. Must be None for 'value' kinds."""
+
+    def __post_init__(self) -> None:
+        context = "This may indicate an internal error in graph construction."
+        if self._kind in ("value", "sequence"):
+            if self.reference is not None:
+                raise GraphError(f"InputParam kind '{self._kind}' must not have a ref ID.")
+        elif self._kind in ("ref", "sequence_ref"):
+            if self.reference is None:
+                raise GraphError(f"InputParam kind '{self._kind}' requires a ref ID.")
+            if self.value is not None:
+                raise GraphError(f"InputParam kind '{self._kind}' must not have a value.")
+        else:  # pragma no cover
+            raise GraphError(f"Unknown InputParam kind: '{self._kind}'. {context}")
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
-        Resolves this input to a scalar value.
+        Resolves this input to a concrete value using completed node outputs.
 
         Args:
             completed_nodes: Mapping from node IDs to their computed values.
 
         Returns:
-           Resolved scalar value.
+            Resolved concrete value for this input.
         """
-        if self.kind == "value":
-            return self.value
-        if self.kind == "ref":
-            assert self.ref is not None
-            return completed_nodes[self.ref]
-
-        raise ExecutionError(
-            f"Cannot resolve parameter of kind '{self.kind}' as a scalar value. "
-            f"Expected 'value' or 'ref', but got '{self.kind}'. "
-            f"This may indicate an internal error in graph construction."
-        )
-
-    def resolve_sequence(self, completed_nodes: Mapping[UUID, Any]) -> Sequence[Any]:
-        """
-        Resolves this input to a sequence value.
-
-        Args:
-            completed_nodes: Mapping from node IDs to their computed values.
-
-        Returns:
-            Resolved sequence value.
-        """
-        if self.kind == "sequence":
-            return list(self.value)  # type: ignore
-        if self.kind == "sequence_ref":
-            assert self.ref is not None
-            return list(completed_nodes[self.ref])
-        from daglite.exceptions import ExecutionError
-
-        raise ExecutionError(
-            f"Cannot resolve parameter of kind '{self.kind}' as a sequence. "
-            f"Expected 'sequence' or 'sequence_ref', but got '{self.kind}'. "
-            f"This may indicate an internal error in graph construction."
-        )
+        match self._kind:
+            case "value":
+                return self.value
+            case "ref":
+                assert self.reference is not None  # Checked by post_init
+                return completed_nodes[self.reference]
+            case "sequence":
+                assert self.value is not None  # Checked by post_init
+                return list(self.value)
+            case "sequence_ref":
+                assert self.reference is not None  # Checked by post_init
+                return list(completed_nodes[self.reference])
+            case _:  # pragma no cover
+                raise GraphError(f"Unknown InputParam kind: '{self._kind}'. ")
 
     @classmethod
-    def from_value(cls, v: Any) -> ParamInput:
-        """Creates a ParamInput from a concrete value."""
-        return cls(kind="value", value=v)
+    def from_value(cls, v: Any) -> InputParam:
+        """Creates a InputParam from a concrete value."""
+        return cls(_kind="value", value=v)
 
     @classmethod
-    def from_ref(cls, node_id: UUID) -> ParamInput:
-        """Creates a ParamInput that references another node's output."""
-        return cls(kind="ref", ref=node_id)
+    def from_ref(cls, node_id: UUID) -> InputParam:
+        """Creates a InputParam that references another node's output."""
+        return cls(_kind="ref", reference=node_id)
 
     @classmethod
-    def from_sequence(cls, vals: Sequence[Any]) -> ParamInput:
-        """Creates a ParamInput from a concrete sequence value."""
-        return cls(kind="sequence", value=list(vals))
+    def from_sequence(cls, vals: Sequence[Any]) -> InputParam:
+        """Creates a InputParam from a concrete sequence value."""
+        return cls(_kind="sequence", value=list(vals))
 
     @classmethod
-    def from_sequence_ref(cls, node_id: UUID) -> ParamInput:
-        """Creates a ParamInput that references another node's sequence output."""
-        return cls(kind="sequence_ref", ref=node_id)
+    def from_sequence_ref(cls, node_id: UUID) -> InputParam:
+        """Creates a InputParam that references another node's sequence output."""
+        return cls(_kind="sequence_ref", reference=node_id)
 
 
 @dataclass(frozen=True)
@@ -265,7 +250,7 @@ class OutputConfig:
     Configuration for saving or checkpointing a task output.
 
     Outputs can be saved with a storage key and optional checkpoint name for resumption.
-    Extra parameters (as ParamInputs) can be included for formatting or metadata.
+    Extra parameters (as InputParams) can be included for formatting or metadata.
     """
 
     key: str
@@ -280,7 +265,7 @@ class OutputConfig:
     format: str | None = None
     """Optional serialization format hint (e.g., 'pickle', 'json', etc.)."""
 
-    dependencies: Mapping[str, ParamInput] = field(default_factory=dict)
+    dependencies: Mapping[str, InputParam] = field(default_factory=dict)
     """Parameter dependencies for this output, used for key formatting"""
 
     options: dict[str, Any] = field(default_factory=dict)
