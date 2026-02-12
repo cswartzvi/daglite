@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from daglite.exceptions import ExecutionError
-from daglite.exceptions import GraphConstructionError
+from daglite.exceptions import GraphError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import ParamInput
 from daglite.graph.builder import build_graph
@@ -67,42 +67,34 @@ class TestParamInput:
     def test_resolve_sequence_from_sequence(self) -> None:
         """ParamInput resolves sequence inputs correctly."""
         param = ParamInput.from_sequence([10, 20, 30])
-        assert param.resolve_sequence({}) == [10, 20, 30]
+        assert param.resolve({}) == [10, 20, 30]
 
     def test_resolve_sequence_from_ref(self) -> None:
         """ParamInput resolves sequence_ref inputs from values dict."""
         node_id = uuid4()
         param = ParamInput.from_sequence_ref(node_id)
         values = {node_id: [1, 2, 3]}
-        assert param.resolve_sequence(values) == [1, 2, 3]
+        assert param.resolve(values) == [1, 2, 3]
 
-    def test_resolve_sequence_as_scalar_fails(self) -> None:
-        """Cannot resolve sequence input as scalar value."""
-        param = ParamInput.from_sequence([1, 2, 3])
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'sequence'"):
-            param.resolve({})
+    def test_invalid_ref_with_value_kind(self) -> None:
+        """ParamInput with value kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="ParamInput kind 'value' must not have a ref."):
+            ParamInput(kind="value", ref=uuid4())
 
-    def test_resolve_sequence_ref_as_scalar_fails(self) -> None:
-        """Cannot resolve sequence_ref input as scalar value."""
-        node_id = uuid4()
-        param = ParamInput.from_sequence_ref(node_id)
-        values = {node_id: [1, 2, 3]}
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'sequence_ref'"):
-            param.resolve(values)
+    def test_invalid_scalar_with_sequence_kind(self) -> None:
+        """ParamInput with sequence kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="ParamInput kind 'sequence' must not have a ref."):
+            ParamInput(kind="sequence", ref=uuid4())
 
-    def test_resolve_value_as_sequence_fails(self) -> None:
-        """Cannot resolve value input as sequence."""
-        param = ParamInput.from_value(42)
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'value'"):
-            param.resolve_sequence({})
+    def test_invalid_scalar_with_ref_kind(self) -> None:
+        """ParamInput with ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="ParamInput kind 'ref' requires a ref."):
+            ParamInput(kind="ref", value=42)
 
-    def test_resolve_ref_as_sequence_fails(self) -> None:
-        """Cannot resolve ref input as sequence."""
-        node_id = uuid4()
-        param = ParamInput.from_ref(node_id)
-        values = {node_id: "scalar"}
-        with pytest.raises(ExecutionError, match="Cannot resolve parameter of kind 'ref'"):
-            param.resolve_sequence(values)
+    def test_invalid_sequence_with_ref_kind(self) -> None:
+        """ParamInput with sequence_ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="ParamInput kind 'sequence_ref' requires a ref."):
+            ParamInput(kind="sequence_ref", value=[1, 2, 3])
 
 
 class TestTaskNodes:
@@ -540,7 +532,7 @@ class TestBuildGraph:
         builder_a = CircularBuilder(id_a, builder_b)
         builder_b._other = builder_a  # Create the cycle
 
-        with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
+        with pytest.raises(GraphError, match="Circular dependency detected"):
             build_graph(builder_a)  # pyright: ignore
 
     def test_detects_self_reference(self) -> None:
@@ -572,5 +564,5 @@ class TestBuildGraph:
 
         builder = SelfRefBuilder()
 
-        with pytest.raises(GraphConstructionError, match="Circular dependency detected"):
+        with pytest.raises(GraphError, match="Circular dependency detected"):
             build_graph(builder)  # pyright: ignore

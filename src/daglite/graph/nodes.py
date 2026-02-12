@@ -67,13 +67,7 @@ class TaskNode(BaseGraphNode):
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        inputs = {}
-        for name, param in self.kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
-                # Defensive: TaskNode kwargs are always "value" or "ref", never sequence types
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:
-                inputs[name] = param.resolve(completed_nodes)
+        inputs = {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
         return inputs
 
     @override
@@ -155,24 +149,9 @@ class MapTaskNode(BaseGraphNode):
 
     @override
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        inputs = {}
-
-        # Resolve fixed kwargs
-        for name, param in self.fixed_kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):  # pragma: no cover
-                # Defensive: fixed_kwargs are always "value" or "ref", never sequence types
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:
-                inputs[name] = param.resolve(completed_nodes)
-
-        # Resolve mapped kwargs
-        for name, param in self.mapped_kwargs.items():
-            if param.kind in ("sequence", "sequence_ref"):
-                inputs[name] = param.resolve_sequence(completed_nodes)
-            else:  # pragma: no cover
-                # Defensive: mapped_kwargs are always "sequence" or "sequence_ref", never value/ref
-                inputs[name] = param.resolve(completed_nodes)
-
+        fixed_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.fixed_kwargs.items()}
+        mapped_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.mapped_kwargs.items()}
+        inputs = {**fixed_inputs, **mapped_inputs}
         return inputs
 
     def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:

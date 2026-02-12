@@ -17,7 +17,7 @@ from typing import Any, Literal, Protocol
 from uuid import UUID
 
 from daglite.datasets.store import DatasetStore
-from daglite.exceptions import ExecutionError
+from daglite.exceptions import GraphError
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "dataset"]
@@ -188,6 +188,19 @@ class ParamInput:
     value: Any | None = None
     ref: UUID | None = None
 
+    def __post_init__(self) -> None:
+        context = "This may indicate an internal error in graph construction."
+        if self.kind in ("value", "sequence"):
+            if self.ref is not None:
+                raise GraphError(f"ParamInput kind '{self.kind}' must not have a ref.")
+        elif self.kind in ("ref", "sequence_ref"):
+            if self.ref is None:
+                raise GraphError(f"ParamInput kind '{self.kind}' requires a ref.")
+            if self.value is not None:
+                raise ValueError(f"ParamInput kind '{self.kind}' must not have a value.")
+        else:  # pragma no cover
+            raise GraphError(f"Unknown ParamInput kind: '{self.kind}'. {context}")
+
     @property
     def is_ref(self) -> bool:
         """Returns `True` if this input is a reference to another node's output."""
@@ -195,48 +208,26 @@ class ParamInput:
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
-        Resolves this input to a scalar value.
+        Resolves this input to a concrete value using completed node outputs.
 
         Args:
             completed_nodes: Mapping from node IDs to their computed values.
 
         Returns:
-           Resolved scalar value.
+            Resolved concrete value for this input.
         """
-        if self.kind == "value":
-            return self.value
-        if self.kind == "ref":
-            assert self.ref is not None
-            return completed_nodes[self.ref]
-
-        raise ExecutionError(
-            f"Cannot resolve parameter of kind '{self.kind}' as a scalar value. "
-            f"Expected 'value' or 'ref', but got '{self.kind}'. "
-            f"This may indicate an internal error in graph construction."
-        )
-
-    def resolve_sequence(self, completed_nodes: Mapping[UUID, Any]) -> Sequence[Any]:
-        """
-        Resolves this input to a sequence value.
-
-        Args:
-            completed_nodes: Mapping from node IDs to their computed values.
-
-        Returns:
-            Resolved sequence value.
-        """
-        if self.kind == "sequence":
-            return list(self.value)  # type: ignore
-        if self.kind == "sequence_ref":
-            assert self.ref is not None
-            return list(completed_nodes[self.ref])
-        from daglite.exceptions import ExecutionError
-
-        raise ExecutionError(
-            f"Cannot resolve parameter of kind '{self.kind}' as a sequence. "
-            f"Expected 'sequence' or 'sequence_ref', but got '{self.kind}'. "
-            f"This may indicate an internal error in graph construction."
-        )
+        match self.kind:
+            case "value":
+                return self.value
+            case "ref":
+                assert self.ref is not None  # Checked by post_init
+                return completed_nodes[self.ref]
+            case "sequence":
+                assert self.value is not None  # Checked by post_init
+                return list(self.value)
+            case "sequence_ref":
+                assert self.ref is not None  # Checked by post_init
+                return list(completed_nodes[self.ref])
 
     @classmethod
     def from_value(cls, v: Any) -> ParamInput:
