@@ -219,7 +219,7 @@ class TestDatasetFutureToGraphWithSaveExtras:
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["label"]
-            assert not dep.reference is not None
+            assert dep.reference is None
             assert dep.value == "batch1"
 
 
