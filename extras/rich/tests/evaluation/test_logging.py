@@ -102,7 +102,7 @@ class TestRichLifecycleLoggingIntegration:
             return x * x
 
         result = evaluate(
-            square.product(x=[1, 2, 3, 4]),
+            square.map(x=[1, 2, 3, 4]),
             plugins=[RichLifecycleLoggingPlugin()],
         )
 
@@ -122,7 +122,7 @@ class TestRichLifecycleLoggingIntegration:
             return x * 2
 
         result = evaluate(
-            double.with_options(backend_name="threads").product(x=[1, 2, 3]),
+            double.with_options(backend_name="threads").map(x=[1, 2, 3]),
             plugins=[RichLifecycleLoggingPlugin()],
         )
 
@@ -144,7 +144,7 @@ class TestRichLifecycleLoggingIntegration:
 
         with pytest.raises(ValueError, match="Failed on 2"):
             evaluate(
-                failing_square.product(x=[1, 2, 3]),
+                failing_square.map(x=[1, 2, 3]),
                 plugins=[RichLifecycleLoggingPlugin()],
             )
 
