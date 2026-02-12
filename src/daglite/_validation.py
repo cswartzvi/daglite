@@ -89,7 +89,7 @@ def check_invalid_map_params(signature: Signature, kwargs: dict, task_name: str)
         )
 
 
-def get_unbound_param(signature: Signature, kwargs: dict, task_name) -> str:
+def get_unbound_param(signature: Signature, kwargs: dict, task_name: str) -> str:
     """
     Returns the single unbound parameter name for the given task and provided arguments.
 
