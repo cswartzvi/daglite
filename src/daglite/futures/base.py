@@ -46,7 +46,7 @@ class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())
-        object.__setattr__(self, "_future_outputs", ())
+        object.__setattr__(self, "_output_futures", ())
 
     @property
     @override

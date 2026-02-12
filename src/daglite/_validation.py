@@ -63,8 +63,8 @@ def check_invalid_map_params(signature: Signature, kwargs: dict, task_name: str)
     """
     Checks that all provided parameters for a map task are iterable or TaskFuture.
 
-    Note that function is intended to be used for validating parameters passed to  map tasks, where
-    all parameters must be iterable (or TaskFuture that produces an iterable).
+    Note that this function is intended to be used for validating parameters passed to map tasks,
+    where all parameters must be iterable (or TaskFuture that produces an iterable).
 
     Args:
         signature: Signature of the map task function.
@@ -89,7 +89,7 @@ def check_invalid_map_params(signature: Signature, kwargs: dict, task_name: str)
         )
 
 
-def get_unbound_param(signature: Signature, kwargs: dict, task_name) -> str:
+def get_unbound_param(signature: Signature, kwargs: dict, task_name: str) -> str:
     """
     Returns the single unbound parameter name for the given task and provided arguments.
 

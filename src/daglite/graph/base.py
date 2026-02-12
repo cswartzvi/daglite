@@ -186,7 +186,6 @@ class InputParam:
     """Reference node ID for 'ref' and 'sequence_ref' kinds. Must be None for 'value' kinds."""
 
     def __post_init__(self) -> None:
-        context = "This may indicate an internal error in graph construction."
         if self._kind in ("value", "sequence"):
             if self.reference is not None:
                 raise GraphError(f"InputParam kind '{self._kind}' must not have a ref ID.")
@@ -196,7 +195,7 @@ class InputParam:
             if self.value is not None:
                 raise GraphError(f"InputParam kind '{self._kind}' must not have a value.")
         else:  # pragma no cover
-            raise GraphError(f"Unknown InputParam kind: '{self._kind}'. {context}")
+            raise GraphError(f"Unknown InputParam kind: '{self._kind}'.")
 
     def resolve(self, completed_nodes: Mapping[UUID, Any]) -> Any:
         """
@@ -225,22 +224,22 @@ class InputParam:
 
     @classmethod
     def from_value(cls, v: Any) -> InputParam:
-        """Creates a InputParam from a concrete value."""
+        """Creates an InputParam from a concrete value."""
         return cls(_kind="value", value=v)
 
     @classmethod
     def from_ref(cls, node_id: UUID) -> InputParam:
-        """Creates a InputParam that references another node's output."""
+        """Creates an InputParam that references another node's output."""
         return cls(_kind="ref", reference=node_id)
 
     @classmethod
     def from_sequence(cls, vals: Sequence[Any]) -> InputParam:
-        """Creates a InputParam from a concrete sequence value."""
+        """Creates an InputParam from a concrete sequence value."""
         return cls(_kind="sequence", value=list(vals))
 
     @classmethod
     def from_sequence_ref(cls, node_id: UUID) -> InputParam:
-        """Creates a InputParam that references another node's sequence output."""
+        """Creates an InputParam that references another node's sequence output."""
         return cls(_kind="sequence_ref", reference=node_id)
 
 

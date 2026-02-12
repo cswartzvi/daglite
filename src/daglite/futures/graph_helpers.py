@@ -87,14 +87,14 @@ def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, InputParam]:
 
 
 def build_output_configs(
-    future_outputs: tuple[OutputFuture, ...], placeholders: set[str]
+    future_outputs: tuple[OutputFuture, ...], base_placeholders: set[str]
 ) -> tuple[OutputConfig, ...]:
     """
     Builds graph IR output configurations from the provided future outputs.
 
     Args:
         future_outputs: Tuple of FutureOutput instances from the TaskFuture.
-        placeholders: Base set of available placeholder names for validating output keys.
+        base_placeholders: Base set of available placeholder names for validating output keys.
             This typically includes root-level parameters and any outputs from upstream nodes.
 
     Returns:
@@ -103,7 +103,7 @@ def build_output_configs(
 
     output_configs: list[OutputConfig] = []
     for future_output in future_outputs:
-        placeholders |= future_output.extras.keys()
+        placeholders = base_placeholders | future_output.extras.keys()
         check_key_placeholders(future_output.key, placeholders)
 
         dependencies = build_parameters(future_output.extras)
