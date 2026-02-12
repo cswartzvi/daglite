@@ -8,7 +8,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 from typing_extensions import override
 
-from daglite.graph.base import GraphMetadata
+from daglite.graph.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl
@@ -86,7 +86,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def after_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -102,7 +102,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def on_cache_hit(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
@@ -116,7 +116,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def on_node_error(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -131,7 +131,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def before_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs_list: list[dict[str, Any]],
     ) -> None:
         description = f"Mapping '{metadata.key or metadata.name}'"
@@ -143,7 +143,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def after_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs_list: list[dict[str, Any]],
         results: list[Any],
         duration: float,

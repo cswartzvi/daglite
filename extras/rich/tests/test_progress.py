@@ -11,7 +11,7 @@ from rich.progress import BarColumn
 from rich.progress import Progress
 from rich.progress import TaskID
 
-from daglite.graph.base import GraphMetadata
+from daglite.graph.base import NodeMetadata
 from daglite.plugins.registry import EventRegistry
 
 
@@ -95,7 +95,7 @@ class TestRichProgressPlugin:
     def test_after_node_execute_with_reporter(self):
         """Test after_node_execute with reporter present."""
         plugin = RichProgressPlugin()
-        metadata = GraphMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
+        metadata = NodeMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
         inputs = {"x": 1}
         result = 2
         duration = 0.5
@@ -114,7 +114,7 @@ class TestRichProgressPlugin:
         plugin._progress = Mock()
         plugin._root_task_id = TaskID(0)
 
-        metadata = GraphMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
+        metadata = NodeMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
         inputs = {"x": 1}
         result = 2
         duration = 0.5
@@ -127,7 +127,7 @@ class TestRichProgressPlugin:
     def test_on_node_error_with_reporter(self):
         """Test on_node_error with reporter present."""
         plugin = RichProgressPlugin()
-        metadata = GraphMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
+        metadata = NodeMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
         inputs = {"x": 1}
         error = ValueError("test error")
         duration = 0.5
@@ -146,7 +146,7 @@ class TestRichProgressPlugin:
         plugin._progress = Mock()
         plugin._root_task_id = TaskID(0)
 
-        metadata = GraphMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
+        metadata = NodeMetadata(id=uuid4(), name="test_task", key="test_task", kind="task")
         inputs = {"x": 1}
         error = ValueError("test error")
         duration = 0.5
@@ -162,7 +162,7 @@ class TestRichProgressPlugin:
         plugin._progress = Mock()
         plugin._progress.add_task.return_value = TaskID(1)
 
-        metadata = GraphMetadata(id=uuid4(), name="map_task", key="map_task", kind="map")
+        metadata = NodeMetadata(id=uuid4(), name="map_task", key="map_task", kind="map")
         inputs_list = [{"x": 1}, {"x": 2}, {"x": 3}]
 
         plugin.before_mapped_node_execute(metadata, inputs_list)
@@ -178,7 +178,7 @@ class TestRichProgressPlugin:
         plugin._progress = Mock()
         plugin._root_task_id = TaskID(0)
 
-        metadata = GraphMetadata(id=uuid4(), name="map_task", key="map_task", kind="map")
+        metadata = NodeMetadata(id=uuid4(), name="map_task", key="map_task", kind="map")
         map_task_id = TaskID(1)
         plugin._id_to_task[metadata.id] = map_task_id
 
@@ -314,10 +314,10 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_with_reporter(self):
         """Test that on_cache_hit reports event when reporter is present."""
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
 
         plugin = RichProgressPlugin()
-        metadata = GraphMetadata(id=uuid4(), name="test_task", kind="task", key="test_task")
+        metadata = NodeMetadata(id=uuid4(), name="test_task", kind="task", key="test_task")
 
         mock_reporter = Mock()
 
@@ -335,13 +335,13 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_advances_progress(self):
         """Test that on_cache_hit advances the progress bar."""
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
 
         plugin = RichProgressPlugin()
         plugin._progress = Mock()
 
         node_id = uuid4()
-        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="task", key="test_task")
 
         # Register a task for this node
         task_id = TaskID(1)
@@ -361,14 +361,14 @@ class TestRichProgressOnCacheHit:
 
     def test_on_cache_hit_without_registered_task(self):
         """Test that on_cache_hit handles missing task gracefully."""
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
 
         plugin = RichProgressPlugin()
         plugin._progress = Mock()
         plugin._root_task_id = TaskID(0)
 
         node_id = uuid4()
-        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="task", key="test_task")
 
         # No task registered - should fall back to root task
         plugin.on_cache_hit(

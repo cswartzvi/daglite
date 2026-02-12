@@ -20,8 +20,8 @@ from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import GraphMetadata
 from daglite.graph.base import InputParam
+from daglite.graph.base import NodeMetadata
 from daglite.graph.base import OutputConfig
 
 _DIRECT_REPORTER = DirectDatasetReporter()
@@ -71,8 +71,8 @@ class TaskNode(BaseGraphNode):
         return inputs
 
     @override
-    def to_metadata(self) -> "GraphMetadata":
-        return GraphMetadata(
+    def to_metadata(self) -> NodeMetadata:
+        return NodeMetadata(
             id=self.id,
             name=self.name,
             kind="task",
@@ -201,9 +201,8 @@ class MapTaskNode(BaseGraphNode):
         return calls
 
     @override
-    def to_metadata(self) -> "GraphMetadata":
-        """Returns a metadata object for this graph node."""
-        return GraphMetadata(
+    def to_metadata(self) -> NodeMetadata:
+        return NodeMetadata(
             id=self.id,
             name=self.name,
             kind="map",
@@ -283,8 +282,8 @@ class DatasetNode(BaseGraphNode):
         return {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
 
     @override
-    def to_metadata(self) -> GraphMetadata:
-        return GraphMetadata(
+    def to_metadata(self) -> NodeMetadata:
+        return NodeMetadata(
             id=self.id,
             name=self.name,
             kind="dataset",
@@ -357,7 +356,7 @@ class DatasetNode(BaseGraphNode):
 
 async def _run_implementation(
     func: Callable[..., Any],
-    metadata: GraphMetadata,
+    metadata: NodeMetadata,
     resolved_inputs: dict[str, Any],
     output_config: tuple[OutputConfig, ...],
     output_deps: list[dict[str, Any]],

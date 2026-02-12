@@ -15,7 +15,7 @@ import pytest
 from daglite import evaluate
 from daglite import task
 from daglite.engine import evaluate_async
-from daglite.graph.base import GraphMetadata
+from daglite.graph.base import NodeMetadata
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.manager import _get_global_plugin_manager
 from daglite.plugins.manager import register_plugins
@@ -190,7 +190,7 @@ class TestHookParameters:
         # Verify node-level hooks
         assert len(capture.node_executions) == 1
         assert isinstance(capture.node_executions[0]["key"], str)
-        assert isinstance(capture.node_executions[0]["metadata"], GraphMetadata)
+        assert isinstance(capture.node_executions[0]["metadata"], NodeMetadata)
         assert capture.node_executions[0]["inputs"] == {"x": 2, "y": 3}
 
         assert len(capture.node_results) == 1

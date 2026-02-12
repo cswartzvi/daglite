@@ -153,13 +153,13 @@ class TestTaskLoggerAdapter:
         """Test process method when task is executing."""
         from uuid import uuid4
 
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
 
         base_logger = logging.getLogger("test.adapter")
         adapter = _TaskLoggerAdapter(base_logger, {})
 
         # Mock task metadata
-        task_metadata = GraphMetadata(
+        task_metadata = NodeMetadata(
             id=uuid4(),
             name="test_task",
             kind="task",
@@ -594,14 +594,14 @@ class TestLifecycleLoggingPlugin:
         """Test that plugin tracks mapped node IDs."""
         from uuid import uuid4
 
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         # Simulate before_mapped_node_execute hook
         node_id = uuid4()
-        metadata = GraphMetadata(id=node_id, name="test_task", kind="map", key="test_key")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="map", key="test_key")
 
         plugin.before_mapped_node_execute(metadata, inputs_list=[{}, {}])
 
@@ -617,13 +617,13 @@ class TestLifecycleLoggingPluginOnCacheHit:
         from unittest.mock import Mock
         from uuid import uuid4
 
-        from daglite.graph.base import GraphMetadata
+        from daglite.graph.base import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         node_id = uuid4()
-        metadata = GraphMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="task", key="test_task")
 
         # Call hook - it should log without raising
         plugin.on_cache_hit(

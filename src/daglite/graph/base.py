@@ -24,26 +24,26 @@ NodeKind = Literal["task", "map", "dataset"]
 
 
 @dataclass(frozen=True)
-class GraphMetadata:
-    """Metadata for a compiled graph."""
+class NodeMetadata:
+    """Metadata for a compiled graph IR node."""
 
     id: UUID
-    """Unique identifier for this node."""
+    """Unique identifier of this graph IR node."""
 
     name: str
-    """Human-readable name for the graph."""
+    """Human-readable name of this graph IR node."""
 
     kind: NodeKind
-    """Kind of this graph node (e.g., 'task', 'map', etc.)."""
+    """ (e.g., 'task', 'map', etc.)."""
 
     description: str | None = field(default=None, kw_only=True)
-    """Optional human-readable description for the graph."""
+    """Optional human-readable description of this graph IR node."""
 
     backend_name: str | None = field(default=None, kw_only=True)
-    """Default backend name for executing nodes in this graph."""
+    """Name of backend used to execute this graph IR node."""
 
     key: str | None = field(default=None, kw_only=True)
-    """Optional key identifying this specific node instance in the execution graph."""
+    """Optional key identifying this specific node in the IR graph."""
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ class BaseGraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def to_metadata(self) -> "GraphMetadata":
+    def to_metadata(self) -> NodeMetadata:
         """Returns a metadata object for this graph node."""
         ...
 
