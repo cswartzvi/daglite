@@ -13,9 +13,12 @@ from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Literal
+from typing import Any, Awaitable, Callable, Literal
 from uuid import UUID
 
+from pluggy import HookRelay
+
+from daglite.backends.base import Backend
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import GraphError
 
@@ -52,6 +55,11 @@ class BaseGraphNode(abc.ABC):
         # This is unlikely to happen given timeout is checked at task level, but just in case
         assert self.timeout is None or self.timeout >= 0, "Timeout must be non-negative"
 
+    @property
+    @abc.abstractmethod
+    def kind(self) -> NodeKind:
+        pass
+
     @abc.abstractmethod
     def dependencies(self) -> set[UUID]:
         """
@@ -61,6 +69,36 @@ class BaseGraphNode(abc.ABC):
         internal structure (e.g., from NodeInputs, sub-graphs, etc.).
         """
         ...
+
+    @abc.abstractmethod
+    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Callable[[], Awaitable[Any]]]:
+        """
+        Returns parameterless async callables ready for backend submission.
+
+        Args:
+            completed_nodes: Mapping from node IDs to their computed results.
+        """
+        ...
+
+    @abc.abstractmethod
+    def collect(self, results: list[Any]) -> Any:
+        """Post-processed results gathered from execution."""
+        ...
+
+    async def execute(
+        self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
+    ) -> Any:
+        """
+        Executes the node on the specified backend.
+
+        Args:
+            backend: Backend where node will be executed.
+            completed_nodes: Mapping from node IDs to their computed results.
+            hooks: Pluggy relay for preforming hook calls.
+
+        Returns:
+            Materialized result of the node execution.
+        """
 
     @abc.abstractmethod
     def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
