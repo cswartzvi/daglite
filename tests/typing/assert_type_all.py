@@ -214,7 +214,7 @@ def test_then_map_zip_basic() -> None:
     assert_type(result, MapTaskFuture[int])
 
 
-def test_then_mapchaining() -> None:
+def test_then_map_zip_chaining() -> None:
     """Test then_map() in zip mode with then() and join()."""
     prep = double(x=5)
     chained = prep.then_map(add, y=[10, 20]).then(to_string).join(join_strings)

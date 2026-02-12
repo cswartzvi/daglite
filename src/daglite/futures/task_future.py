@@ -115,7 +115,7 @@ class TaskFuture(BaseTaskFuture[R]):
         **mapped_kwargs: Any,
     ) -> MapTaskFuture[T]:
         """
-        Fan out this future as input to another task by creating a Cartesian product.
+        Fan out this future as input to another task mapped over additional parameter sequences.
 
         The current future's result is used as a fixed (scalar) argument to `next_task`, while
         elements from the provided mapped parameter sequences in `mapped_kwargs` are combined based
@@ -165,7 +165,7 @@ class TaskFuture(BaseTaskFuture[R]):
         if not mapped_kwargs:
             raise ParameterError(
                 f"At least one mapped parameter required for task '{actual_task.name}' "
-                f"with `.then_map()` in 'product' mode. Use .then() for 1-to-1 chaining instead."
+                f"with `.then_map()`. Use .then() for 1-to-1 chaining instead."
             )
 
         if map_mode == "zip":

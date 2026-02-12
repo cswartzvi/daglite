@@ -335,8 +335,8 @@ class BaseTask(abc.ABC, Generic[P, R]):
                 the fan-out operation. Defaults to "zip". If "zip" is used, all sequences must have
                 the same length or an error is raised.
             **kwargs: Keyword arguments where values are sequences. Each sequence element will be
-                combined with elements from other sequences in a Cartesian product. Can include
-                `TaskFuture` objects that resolve to sequences.
+                combined with elements from other sequences (based on the map_mode) and passed as
+                parameters to this task.
 
         Returns:
             A `MapTaskFuture` representing the fan-out execution of this task.

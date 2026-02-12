@@ -184,7 +184,7 @@ class MapTaskNode(BaseGraphNode):
                 raise ParameterError(
                     f"Map task '{self.name}' in 'zip' mode requires all sequences to have the "
                     f"same length. Got mismatched lengths: {length_details}. "
-                    f"Consider using `.extend()` if you want a Cartesian product instead."
+                    f"Consider using 'product' mode if you want a Cartesian product instead."
                 )
             n = lengths.pop() if lengths else 0
             for i in range(n):
