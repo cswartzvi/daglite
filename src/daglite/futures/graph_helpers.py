@@ -13,6 +13,17 @@ from daglite.graph.base import ParamInput
 def collect_dependencies(
     kwargs: Mapping[str, Any], outputs: tuple[FutureOutput, ...] | None = None
 ) -> list[GraphBuilder]:
+    """
+    Collects graph dependencies from the provided kwargs and future outputs.
+
+    Args:
+        kwargs: Keyword arguments to inspect for task future dependencies.
+        outputs: Optional tuple of FutureOutput instances to inspect for additional dependencies.
+
+    Returns:
+        A list of GraphBuilder instances representing the dependencies for a task future.
+    """
+
     deps: list[GraphBuilder] = []
 
     for value in kwargs.values():
@@ -61,13 +72,13 @@ def build_map_parameters(kwargs: Mapping[str, Any]) -> dict[str, ParamInput]:
         A dictionary mapping parameter names to ParamInput instances for graph construction.
     """
     from daglite.futures.map_future import MapTaskFuture
-    from daglite.futures.task_future import TaskFuture
+    from daglite.futures.task_future import BaseTaskFuture
 
     params: dict[str, ParamInput] = {}
     for name, seq in kwargs.items():
         if isinstance(seq, MapTaskFuture):
             params[name] = ParamInput.from_sequence_ref(seq.id)
-        elif isinstance(seq, TaskFuture):
+        elif isinstance(seq, BaseTaskFuture):
             params[name] = ParamInput.from_sequence_ref(seq.id)
         else:
             params[name] = ParamInput.from_sequence(seq)
