@@ -16,7 +16,7 @@ from daglite.futures.graph_helpers import build_map_parameters
 from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.graph_helpers import build_parameters
 from daglite.futures.graph_helpers import collect_dependencies
-from daglite.graph.base import GraphBuilder
+from daglite.graph.builder import GraphBuilder
 from daglite.graph.nodes import MapTaskNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task

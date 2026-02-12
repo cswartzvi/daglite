@@ -19,7 +19,7 @@ from daglite.futures.base import BaseTaskFuture
 from daglite.futures.graph_helpers import build_output_configs
 from daglite.futures.graph_helpers import build_parameters
 from daglite.futures.graph_helpers import collect_dependencies
-from daglite.graph.base import GraphBuilder
+from daglite.graph.builder import GraphBuilder
 from daglite.graph.nodes import TaskNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task

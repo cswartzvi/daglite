@@ -1,10 +1,45 @@
 """Graph building utilities for daglite Intermediate Representation (IR)."""
 
+from __future__ import annotations
+
+import abc
+from typing import Protocol
 from uuid import UUID
 
 from daglite.exceptions import GraphError
 from daglite.graph.base import BaseGraphNode
-from daglite.graph.base import GraphBuilder
+
+
+class GraphBuilder(Protocol):
+    """Protocol for building graph Intermediate Representation (IR) components from tasks."""
+
+    @property
+    def id(self) -> UUID:
+        """Returns the unique identifier for this builder's graph node."""
+        ...
+
+    @abc.abstractmethod
+    def get_dependencies(self) -> list[GraphBuilder]:
+        """
+        Return the direct dependencies of this builder.
+
+        Returns:
+            list[GraphBuilder]: List of builders this node depends on.
+        """
+        ...
+
+    @abc.abstractmethod
+    def to_graph(self) -> BaseGraphNode:
+        """
+        Convert this builder into a GraphNode.
+
+        All dependencies will have their IDs assigned before this is called,
+        so implementations can safely access dependency.id.
+
+        Returns:
+            GraphNode: The constructed graph node.
+        """
+        ...
 
 
 def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:

@@ -13,7 +13,7 @@ from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Literal, Protocol
+from typing import Any, Literal
 from uuid import UUID
 
 from daglite.datasets.store import DatasetStore
@@ -21,38 +21,6 @@ from daglite.exceptions import GraphError
 
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 NodeKind = Literal["task", "map", "dataset"]
-
-
-class GraphBuilder(Protocol):
-    """Protocol for building graph Intermediate Representation (IR) components from tasks."""
-
-    @property
-    def id(self) -> UUID:
-        """Returns the unique identifier for this builder's graph node."""
-        ...
-
-    @abc.abstractmethod
-    def get_dependencies(self) -> list[GraphBuilder]:
-        """
-        Return the direct dependencies of this builder.
-
-        Returns:
-            list[GraphBuilder]: List of builders this node depends on.
-        """
-        ...
-
-    @abc.abstractmethod
-    def to_graph(self) -> BaseGraphNode:
-        """
-        Convert this builder into a GraphNode.
-
-        All dependencies will have their IDs assigned before this is called,
-        so implementations can safely access dependency.id.
-
-        Returns:
-            GraphNode: The constructed graph node.
-        """
-        ...
 
 
 @dataclass(frozen=True)

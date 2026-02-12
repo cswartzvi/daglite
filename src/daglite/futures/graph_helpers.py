@@ -5,9 +5,9 @@ from typing import Any, Mapping
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import OutputFuture
-from daglite.graph.base import GraphBuilder
 from daglite.graph.base import InputParam
 from daglite.graph.base import OutputConfig
+from daglite.graph.builder import GraphBuilder
 
 
 def collect_dependencies(

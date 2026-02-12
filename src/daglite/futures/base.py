@@ -14,7 +14,7 @@ from typing_extensions import Self, override
 
 from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
-from daglite.graph.base import GraphBuilder
+from daglite.graph.builder import GraphBuilder
 
 P = ParamSpec("P")
 R = TypeVar("R")
