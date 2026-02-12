@@ -63,16 +63,16 @@ def evaluate(
 
 
 @overload
-def evaluate(
-    future: TaskFuture[AsyncGenerator[T, Any]],
+async def evaluate(
+    future: TaskFuture[AsyncIterator[T]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
-async def evaluate(
-    future: TaskFuture[AsyncIterator[T]],
+def evaluate(
+    future: TaskFuture[AsyncGenerator[T, Any]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
