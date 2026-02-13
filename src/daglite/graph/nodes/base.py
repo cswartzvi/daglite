@@ -58,6 +58,7 @@ class BaseGraphNode(abc.ABC):
     @property
     @abc.abstractmethod
     def kind(self) -> NodeKind:
+        """Returns the kind of this graph node (e.g., 'task', 'map', etc.)."""
         pass
 
     @abc.abstractmethod

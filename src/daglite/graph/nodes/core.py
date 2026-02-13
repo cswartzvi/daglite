@@ -21,6 +21,7 @@ from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.nodes.base import BaseGraphNode
 from daglite.graph.nodes.base import NodeInput
+from daglite.graph.nodes.base import NodeKind
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.graph.nodes.base import NodeOutputConfig
 
@@ -55,6 +56,11 @@ class TaskNode(BaseGraphNode):
 
         # This is unlikely to happen given retries is checked at task level, but just in case
         assert self.retries >= 0, "Retries must be non-negative"
+
+    @property
+    @override
+    def kind(self) -> NodeKind:
+        return "task"
 
     @override
     def dependencies(self) -> set[UUID]:
@@ -131,6 +137,11 @@ class MapTaskNode(BaseGraphNode):
 
         # This is unlikely to happen given retries is checked at task level, but just in case
         assert self.retries >= 0, "Retries must be non-negative"
+
+    @property
+    @override
+    def kind(self) -> NodeKind:
+        return "map"
 
     @override
     def dependencies(self) -> set[UUID]:
