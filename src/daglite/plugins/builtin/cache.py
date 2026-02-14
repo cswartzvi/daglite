@@ -22,11 +22,11 @@ class CachePlugin:
         >>> from daglite.plugins.builtin.cache import CachePlugin
         >>> store = FileCacheStore("/tmp/cache")
         >>> plugin = CachePlugin(store=store)
-        >>> from daglite import task, evaluate
+        >>> from daglite import task
         >>> @task(cache=True)
         ... def expensive_computation(x: int) -> int:
         ...     return x * 2
-        >>> result = evaluate(expensive_computation(x=5), plugins=[plugin])
+        >>> result = expensive_computation(x=5).run(plugins=[plugin])
     """
 
     def __init__(self, store: CacheStore) -> None:

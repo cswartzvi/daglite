@@ -5,8 +5,6 @@ import time
 
 import pytest
 
-from daglite import evaluate
-from daglite import evaluate_async
 from daglite import task
 
 
@@ -44,7 +42,7 @@ class TestThreadBackendTimeout:
             return x * 2
 
         with pytest.raises(TimeoutError, match="exceeded timeout"):
-            evaluate(slow_task(x=5))
+            slow_task(x=5).run()
 
     def test_thread_backend_timeout_success(self) -> None:
         """ThreadBackend allows tasks that complete within timeout."""
@@ -54,7 +52,7 @@ class TestThreadBackendTimeout:
             # No sleep - completes immediately, well within timeout
             return x * 2
 
-        result = evaluate(fast_task(x=5))
+        result = fast_task(x=5).run()
         assert result == 10
 
     def test_thread_backend_async_timeout_enforced(self) -> None:
@@ -66,7 +64,7 @@ class TestThreadBackendTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(slow_async_task(x=5))
+            return await slow_async_task(x=5).run_async()
 
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             asyncio.run(run())
@@ -82,7 +80,7 @@ class TestThreadBackendTimeout:
             return x * 2
 
         with pytest.raises(TimeoutError):
-            evaluate(slow_task(x=5))
+            slow_task(x=5).run()
 
         # Should only attempt once - timeouts are not retried
         assert len(attempts) == 1
@@ -94,18 +92,18 @@ class TestProcessBackendTimeout:
     def test_process_backend_timeout_enforced(self) -> None:
         """ProcessBackend enforces timeout and raises TimeoutError."""
         with pytest.raises(TimeoutError, match="exceeded timeout"):
-            evaluate(slow_task_process(x=5))
+            slow_task_process(x=5).run()
 
     def test_process_backend_timeout_success(self) -> None:
         """ProcessBackend allows tasks that complete within timeout."""
-        result = evaluate(fast_task_process(x=5))
+        result = fast_task_process(x=5).run()
         assert result == 10
 
     def test_process_backend_async_timeout_enforced(self) -> None:
         """ProcessBackend enforces timeout on async tasks."""
 
         async def run():
-            return await evaluate_async(slow_async_task_process(x=5))
+            return await slow_async_task_process(x=5).run_async()
 
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             asyncio.run(run())
@@ -123,7 +121,7 @@ class TestAsyncTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(quick_task(x=5))
+            return await quick_task(x=5).run_async()
 
         result = asyncio.run(run())
         assert result == 10
@@ -137,7 +135,7 @@ class TestAsyncTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(slow_task(x=5))
+            return await slow_task(x=5).run_async()
 
         with pytest.raises(TimeoutError, match="exceeded timeout"):
             asyncio.run(run())
@@ -153,7 +151,7 @@ class TestAsyncTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(slow_task(x=5))
+            return await slow_task(x=5).run_async()
 
         with pytest.raises(TimeoutError):
             asyncio.run(run())
@@ -170,7 +168,7 @@ class TestAsyncTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(slow_task(x=5))
+            return await slow_task(x=5).run_async()
 
         with pytest.raises(TimeoutError):
             asyncio.run(run())
@@ -194,7 +192,7 @@ class TestInlineBackendTimeout:
 
         # Timeout is now enforced (task runs in thread pool)
         with pytest.raises(TimeoutError, match="exceeded timeout"):
-            evaluate(slow_task(x=5))
+            slow_task(x=5).run()
 
     def test_Inline_backend_sync_timeout_success(self) -> None:
         """InlineBackend allows sync tasks that complete within timeout."""
@@ -204,7 +202,7 @@ class TestInlineBackendTimeout:
             # No sleep - completes immediately, well within timeout
             return x * 2
 
-        result = evaluate(fast_task(x=5))
+        result = fast_task(x=5).run()
         assert result == 10
 
 
@@ -222,7 +220,7 @@ class TestTimeoutPropagation:
         task_with_timeout = slow_task.with_options(timeout=0.05)
 
         with pytest.raises(TimeoutError):
-            evaluate(task_with_timeout(x=5))
+            task_with_timeout(x=5).run()
 
     def test_timeout_with_partial_task(self) -> None:
         """Timeout works with partial tasks."""
@@ -235,7 +233,7 @@ class TestTimeoutPropagation:
         partial = slow_multiply.partial(factor=3)
 
         with pytest.raises(TimeoutError):
-            evaluate(partial(x=4))
+            partial(x=4).run()
 
 
 class TestMapTaskTimeout:
@@ -255,7 +253,7 @@ class TestMapTaskTimeout:
 
         # Should fail on first even number (2)
         with pytest.raises(TimeoutError):
-            evaluate(process_item.map(x=[1, 2, 3, 4]))
+            process_item.map(x=[1, 2, 3, 4]).run()
 
         # Verify that x=1 succeeded before x=2 timed out
         assert 1 in attempts
@@ -274,7 +272,7 @@ class TestMapTaskTimeout:
             return x * 2
 
         async def run():
-            return await evaluate_async(process_item.map(x=[1, 2, 3, 4]))
+            return await process_item.map(x=[1, 2, 3, 4]).run_async()
 
         # Should fail on first even number (2)
         with pytest.raises(TimeoutError):

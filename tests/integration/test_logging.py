@@ -8,7 +8,6 @@ import logging
 
 import pytest
 
-from daglite import evaluate
 from daglite import task
 from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import get_logger
@@ -159,7 +158,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = worker_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            result = task_with_backend(x=42).run(plugins=[plugin])
             assert result == 84
 
         # Verify log was captured and routed through coordinator
@@ -179,7 +178,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = metadata_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            result = evaluate(task_with_backend(x=99), plugins=[plugin])
+            result = task_with_backend(x=99).run(plugins=[plugin])
             assert result == 99
 
         # Verify task metadata fields exist in log records
@@ -198,7 +197,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = exception_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.ERROR):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            result = task_with_backend(x=42).run(plugins=[plugin])
             assert result == 42
 
         # Verify exception details are in logs
@@ -220,7 +219,7 @@ class TestCentralizedLoggingIntegration:
 
         with caplog.at_level(logging.INFO):
             future = task_with_backend.map(x=[1, 2, 3])
-            results = evaluate(future, plugins=[plugin])
+            results = future.run(plugins=[plugin])
             assert results == [2, 4, 6]
 
         # Verify all mapped tasks logged
@@ -245,7 +244,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = multi_level_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.WARNING):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            result = task_with_backend(x=42).run(plugins=[plugin])
             assert result == 42
 
         # Only WARNING and ERROR should be present
@@ -267,7 +266,7 @@ class TestCentralizedLoggingIntegration:
         task_with_backend = multi_logger_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            result = task_with_backend(x=42).run(plugins=[plugin])
             assert result == 42
 
         # Both logger messages should appear
@@ -289,7 +288,7 @@ class TestCentralizedLoggingIntegration:
         with caplog.at_level(logging.INFO):
             with pytest.raises(ValueError, match="Failed on 2"):
                 future = task_with_backend.map(x=[1, 2, 3])
-                evaluate(future, plugins=[plugin])
+                future.run(plugins=[plugin])
 
         # Verify error was logged before the exception was raised
         assert "Processing failed for 2" in caplog.text
@@ -316,7 +315,7 @@ class TestCentralizedLoggingDirectReporter:
             task_with_backend = contextual_logging_task.with_options(backend_name=backend_name)
 
         with caplog.at_level(logging.INFO):
-            result = evaluate(task_with_backend(x=42), plugins=[plugin])
+            result = task_with_backend(x=42).run(plugins=[plugin])
             assert result == 84  # 42 * 2
 
         # Logger should use daglite.tasks (not task-specific name)
@@ -332,8 +331,7 @@ class TestCentralizedLoggingProcessBackend:
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
         with caplog.at_level(logging.INFO):
-            result = evaluate(
-                dedupe_handler_task.with_options(backend_name="processes")(x=42),
+            result = dedupe_handler_task.with_options(backend_name="processes")(x=42).run(
                 plugins=[plugin],
             )
             assert result == 42
@@ -354,8 +352,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
             return a + b
 
         # Run with logging plugin
-        result = evaluate(
-            add(a=1, b=2),
+        result = add(a=1, b=2).run(
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -384,8 +381,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
         added = add(a=1, b=2)
         multiplied = multiply(x=added, y=3)
 
-        result = evaluate(
-            multiplied,
+        result = multiplied.run(
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -410,8 +406,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
             time.sleep(0.05)  # 50ms
             return "done"
 
-        result = evaluate(
-            slow_task(),
+        result = slow_task().run(
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -438,8 +433,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
                 raise ValueError(f"Attempt {attempt_count} failed")
             return "success"
 
-        result = evaluate(
-            flaky_task(),
+        result = flaky_task().run(
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -467,8 +461,7 @@ class TestLifecycleLoggingWithInlineEvaluation:
             raise RuntimeError(f"Attempt {attempt_count} failed")
 
         with pytest.raises(RuntimeError, match="Attempt 3 failed"):
-            evaluate(
-                always_fails(),
+            always_fails().run(
                 plugins=[LifecycleLoggingPlugin()],
             )
 
@@ -497,8 +490,7 @@ class TestLifecycleLoggingWithErrors:
             raise ValueError("Something went wrong")
 
         with pytest.raises(ValueError, match="Something went wrong"):
-            evaluate(
-                failing_task(),
+            failing_task().run(
                 plugins=[LifecycleLoggingPlugin()],
             )
 
@@ -518,8 +510,7 @@ class TestLifecycleLoggingWithErrors:
             raise RuntimeError("Evaluation failed")
 
         with pytest.raises(RuntimeError, match="Evaluation failed"):
-            evaluate(
-                error_task(),
+            error_task().run(
                 plugins=[LifecycleLoggingPlugin()],
             )
 
@@ -541,8 +532,7 @@ class TestLifecycleLoggingWithMappedTasks:
         def square(x: int) -> int:
             return x * x
 
-        result = evaluate(
-            square.map(x=[1, 2, 3, 4]),
+        result = square.map(x=[1, 2, 3, 4]).run(
             plugins=[LifecycleLoggingPlugin()],
         )
 
@@ -563,9 +553,12 @@ class TestLifecycleLoggingWithMappedTasks:
         def double(x: int) -> int:
             return x * 2
 
-        result = evaluate(
-            double.with_options(backend_name="threads").map(x=[1, 2, 3]),
-            plugins=[LifecycleLoggingPlugin()],
+        result = (
+            double.with_options(backend_name="threads")
+            .map(x=[1, 2, 3])
+            .run(
+                plugins=[LifecycleLoggingPlugin()],
+            )
         )
 
         assert result == [2, 4, 6]
@@ -580,9 +573,12 @@ class TestLifecycleLoggingWithMappedTasks:
         """Test that mapped task with processes backend is logged correctly."""
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
-        result = evaluate(
-            triple.with_options(backend_name="processes").map(x=[1, 2, 3]),
-            plugins=[LifecycleLoggingPlugin()],
+        result = (
+            triple.with_options(backend_name="processes")
+            .map(x=[1, 2, 3])
+            .run(
+                plugins=[LifecycleLoggingPlugin()],
+            )
         )
 
         assert result == [3, 6, 9]
@@ -604,8 +600,7 @@ class TestLifecycleLoggingWithMappedTasks:
             return x * x
 
         with pytest.raises(ValueError, match="Failed on 2"):
-            evaluate(
-                failing_square.map(x=[1, 2, 3]),
+            failing_square.map(x=[1, 2, 3]).run(
                 plugins=[LifecycleLoggingPlugin()],
             )
 

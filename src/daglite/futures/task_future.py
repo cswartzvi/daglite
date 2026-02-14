@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
+from collections.abc import Coroutine
+from collections.abc import Generator
+from collections.abc import Iterator
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
@@ -63,6 +69,104 @@ class TaskFuture(BaseTaskFuture[R]):
     def __repr__(self) -> str:
         return build_repr("TaskFuture", self.task.name, kwargs=self.kwargs)
 
+    @overload
+    def run(
+        self: TaskFuture[CoroutineType[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Coroutine[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    def run(
+        self: TaskFuture[AsyncIterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[AsyncGenerator[T, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Generator[T, Any, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Iterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(self, *, plugins: list[Any] | None = None) -> R: ...
+
+    @override
+    def run(self, *, plugins: list[Any] | None = None) -> Any:
+        return super().run(plugins=plugins)
+
+    @overload
+    async def run_async(
+        self: TaskFuture[CoroutineType[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Coroutine[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[AsyncGenerator[T, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[AsyncIterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Generator[T, Any, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Iterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(self, *, plugins: list[Any] | None = None) -> R: ...
+
+    @override
+    async def run_async(self, *, plugins: list[Any] | None = None) -> Any:
+        return await super().run_async(plugins=plugins)
+
     def then(
         self,
         next_task: Task[Any, T] | PartialTask[Any, T],
@@ -80,7 +184,7 @@ class TaskFuture(BaseTaskFuture[R]):
             A `TaskFuture` representing the result of applying the task to this future's value.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def prepare(n: int) -> int:
             ...     return n * 2
@@ -91,7 +195,7 @@ class TaskFuture(BaseTaskFuture[R]):
             Chain task calls via unbound parameter (`x`)
             >>> prepare(n=5).then(add, y=10)  # doctest: +ELLIPSIS
             TaskFuture(...)
-            >>> evaluate(prepare(n=5).then(add, y=10))
+            >>> prepare(n=5).then(add, y=10).run()
             20
         """
         from daglite.tasks import PartialTask
@@ -136,7 +240,7 @@ class TaskFuture(BaseTaskFuture[R]):
             A `MapTaskFuture` representing the result of applying the task to all combinations.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def prepare(n: int) -> int:
             ...     return n * 2
@@ -146,7 +250,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
             Chain task calls via unbound parameter (`x`) and zip over mapped arg (`y`)
             >>> future = prepare(n=5).then_map(combine, y=[10, 20, 30])
-            >>> evaluate(future)
+            >>> future.run()
             [20, 30, 40]
         """
         from daglite.futures.map_future import MapTaskFuture
@@ -262,7 +366,7 @@ class TaskFuture(BaseTaskFuture[R]):
                 provided.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
 
             With type annotations (size inferred)
             >>> @task
@@ -287,7 +391,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ...     return f"Coordinates: ({x}, {y})"
             >>> x, y = get_coords().split()
             >>> future = process(x=x, y=y)
-            >>> evaluate(future)
+            >>> future.run()
             'Coordinates: (10, 20)'
 
         """

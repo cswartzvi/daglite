@@ -3,7 +3,6 @@
 import pytest
 from daglite_rich.logging import RichLifecycleLoggingPlugin
 
-from daglite import evaluate
 from daglite import task
 
 # Module-level tasks required for multiprocessing backend (pickle compatibility)
@@ -33,8 +32,7 @@ class TestRichLifecycleLoggingIntegration:
         def add(a: int, b: int) -> int:
             return a + b
 
-        result = evaluate(
-            add(a=1, b=2),
+        result = add(a=1, b=2).run(
             plugins=[RichLifecycleLoggingPlugin()],
         )
 
@@ -61,8 +59,7 @@ class TestRichLifecycleLoggingIntegration:
         added = add(a=1, b=2)
         multiplied = multiply(x=added, y=3)
 
-        result = evaluate(
-            multiplied,
+        result = multiplied.run(
             plugins=[RichLifecycleLoggingPlugin()],
         )
 
@@ -82,8 +79,7 @@ class TestRichLifecycleLoggingIntegration:
             raise ValueError("Something went wrong")
 
         with pytest.raises(ValueError, match="Something went wrong"):
-            evaluate(
-                failing_task(),
+            failing_task().run(
                 plugins=[RichLifecycleLoggingPlugin()],
             )
 
@@ -101,8 +97,7 @@ class TestRichLifecycleLoggingIntegration:
         def square(x: int) -> int:
             return x * x
 
-        result = evaluate(
-            square.map(x=[1, 2, 3, 4]),
+        result = square.map(x=[1, 2, 3, 4]).run(
             plugins=[RichLifecycleLoggingPlugin()],
         )
 
@@ -121,9 +116,12 @@ class TestRichLifecycleLoggingIntegration:
         def double(x: int) -> int:
             return x * 2
 
-        result = evaluate(
-            double.with_options(backend_name="threads").map(x=[1, 2, 3]),
-            plugins=[RichLifecycleLoggingPlugin()],
+        result = (
+            double.with_options(backend_name="threads")
+            .map(x=[1, 2, 3])
+            .run(
+                plugins=[RichLifecycleLoggingPlugin()],
+            )
         )
 
         assert result == [2, 4, 6]
@@ -143,8 +141,7 @@ class TestRichLifecycleLoggingIntegration:
             return x * x
 
         with pytest.raises(ValueError, match="Failed on 2"):
-            evaluate(
-                failing_square.map(x=[1, 2, 3]),
+            failing_square.map(x=[1, 2, 3]).run(
                 plugins=[RichLifecycleLoggingPlugin()],
             )
 

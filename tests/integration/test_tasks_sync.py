@@ -1,11 +1,10 @@
-"""Integration test for task evaluation using evaluate() with both sync and async tasks."""
+"""Integration test for task evaluation using .run() with both sync and async tasks."""
 
 import asyncio
 import os
 
 import pytest
 
-from daglite import evaluate
 from daglite import task
 
 
@@ -33,7 +32,7 @@ class TestSinglePathExecution:
             return
 
         dummies = dummy()
-        result = evaluate(dummies)
+        result = dummies.run()
         assert result is None
 
     def test_single_task_evaluation_without_params(self) -> None:
@@ -44,7 +43,7 @@ class TestSinglePathExecution:
             return 5
 
         prepared = prepare()
-        result = evaluate(prepared)
+        result = prepared.run()
         assert result == 5
 
     def test_single_task_evaluation_with_params(self) -> None:
@@ -55,7 +54,7 @@ class TestSinglePathExecution:
             return x * y
 
         multiplied = multiply(x=4, y=6)
-        result = evaluate(multiplied)
+        result = multiplied.run()
         assert result == 24
 
     def test_short_chain_evaluation_without_params(self) -> None:
@@ -71,7 +70,7 @@ class TestSinglePathExecution:
 
         prepared = prepare()
         squared = square(z=prepared)
-        result = evaluate(squared)
+        result = squared.run()
         assert result == 25  # = 5 ** 2
 
     def test_long_chain_evaluation_with_params(self) -> None:
@@ -95,7 +94,7 @@ class TestSinglePathExecution:
         multiplied3 = multiply(z=multiplied2, factor=3)  # 240
         multiplied4 = multiply(z=multiplied3, factor=1)  # 240
         subtracted = subtract(value=multiplied4, decrement=40)  # 200
-        result = evaluate(subtracted)
+        result = subtracted.run()
         assert result == 200
 
     def test_partial_task_evaluation_without_params(self) -> None:
@@ -106,7 +105,7 @@ class TestSinglePathExecution:
             return base**exponent
 
         powered = power.partial(exponent=3)(base=2)
-        result = evaluate(powered)
+        result = powered.run()
         assert result == 8  # = 2 ** 3
 
     def test_partial_task_evaluation_with_params(self) -> None:
@@ -118,7 +117,7 @@ class TestSinglePathExecution:
 
         area_task = compute_area.partial(width=5.0)
         area = area_task(length=10.0)
-        result = evaluate(area)
+        result = area.run()
         assert result == 50.0  # = 10.0 * 5.0
 
     def test_mixed_chain_evaluation_without_params(self) -> None:
@@ -136,7 +135,7 @@ class TestSinglePathExecution:
 
         added = add(x=2, y=3)  # 5
         multiplied = fixed_multiply(z=added)  # 50
-        result = evaluate(multiplied)
+        result = multiplied.run()
         assert result == 50
 
     def test_mixed_chain_evaluation_with_params(self) -> None:
@@ -160,7 +159,7 @@ class TestSinglePathExecution:
         added = add(x=7, y=8)  # 15
         multiplied = fixed_multiply(z=added)  # 45
         subtracted = fixed_subtract(value=multiplied)  # 41
-        result = evaluate(subtracted)
+        result = subtracted.run()
         assert result == 41
 
     def test_deep_chain_with_task_reuse_and_independent_branches(self) -> None:
@@ -177,7 +176,7 @@ class TestSinglePathExecution:
             current = multiply(x=current, factor=2)
 
         # Evaluate all three independently
-        result_chain = evaluate(current)
+        result_chain = current.run()
 
         assert result_chain == 2 * (2**chain_depth)
 
@@ -200,7 +199,7 @@ class TestMappedTaskOperations:
             return x * 2  # pragma: no cover
 
         doubled_seq = double.map(x=[], map_mode=mode)  # type: ignore
-        result = evaluate(doubled_seq)
+        result = doubled_seq.run()
         assert result == []
 
     def test_single_parameter(self, mode: str) -> None:
@@ -211,7 +210,7 @@ class TestMappedTaskOperations:
             return x * 2
 
         doubled_seq = double.map(x=[1, 2, 3], map_mode=mode)  # type: ignore
-        result = evaluate(doubled_seq)
+        result = doubled_seq.run()
         assert result == [2, 4, 6]
 
     def test_single_element(self, mode: str) -> None:
@@ -222,7 +221,7 @@ class TestMappedTaskOperations:
             return x * 3
 
         tripled_seq = triple.map(x=[5], map_mode=mode)  # type: ignore
-        result = evaluate(tripled_seq)
+        result = tripled_seq.run()
         assert result == [15]
 
     def test_with_future_input(self, mode: str) -> None:
@@ -240,7 +239,7 @@ class TestMappedTaskOperations:
         seq = add.map(x=future, y=[10, 20, 30], map_mode=mode)  # type: ignore
 
         expected = [11, 21, 31, 12, 22, 32, 13, 23, 33] if mode == "product" else [11, 22, 33]
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_fixed_parameters(self, mode: str) -> None:
@@ -254,7 +253,7 @@ class TestMappedTaskOperations:
         seq = fixed.map(x=[1, 2, 3], map_mode=mode)  # type: ignore
         expected = [10, 20, 30]  # Same for both modes with single sequence
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_fixed_future_parameters(self, mode: str) -> None:
@@ -273,7 +272,7 @@ class TestMappedTaskOperations:
         seq = fixed.map(x=[2, 3, 4], map_mode=mode)  # type: ignore
         expected = [8, 12, 16]  # Same for both modes with single sequence
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_map(self, mode: str) -> None:
@@ -294,7 +293,7 @@ class TestMappedTaskOperations:
             else [121, 484, 1089]
         )
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_join(self, mode: str) -> None:
@@ -313,7 +312,7 @@ class TestMappedTaskOperations:
             198 if mode == "product" else 66
         )  # product: 9 combos sum to 198, zip: 11+22+33=66
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_map_kwargs(self, mode: str) -> None:
@@ -330,7 +329,7 @@ class TestMappedTaskOperations:
         seq = add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode=mode).then(multiply, factor=2)  # type: ignore
         expected = [22, 42, 62, 24, 44, 64, 26, 46, 66] if mode == "product" else [22, 44, 66]
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
     def test_with_join_kwargs(self, mode: str) -> None:
@@ -347,7 +346,7 @@ class TestMappedTaskOperations:
         seq = add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode=mode).join(sum_with_bonus, bonus=5)  # type: ignore
         expected = 203 if mode == "product" else 71  # product: 198+5, zip: 66+5
 
-        result = evaluate(seq)
+        result = seq.run()
         assert result == expected
 
 
@@ -362,7 +361,7 @@ class TestProductSpecificBehavior:
             return x + y
 
         added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode="product")
-        result = evaluate(added_seq)
+        result = added_seq.run()
         # Cartesian product: all combinations
         assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]
 
@@ -379,7 +378,7 @@ class TestProductSpecificBehavior:
 
         added_seq = add.map(x=[1, 2], y=[10, 20], map_mode="product")  # [11, 21, 12, 22]
         multiplied_seq = multiply.map(z=added_seq, factor=[2, 3], map_mode="product")
-        result = evaluate(multiplied_seq)
+        result = multiplied_seq.run()
         # Cartesian product of results
         assert result == [22, 33, 42, 63, 24, 36, 44, 66]
 
@@ -398,11 +397,11 @@ class TestProductSpecificBehavior:
         def max_value(values: list[int]) -> int:
             return max(values)
 
-        result = evaluate(
+        result = (
             add.map(x=[1, 2], y=[10, 20], map_mode="product")  # [11, 21, 12, 22]
             .then(triple)  # [33, 63, 36, 66]
             .join(max_value)
-        )
+        ).run()
         assert result == 66
 
 
@@ -417,7 +416,7 @@ class TestZipSpecificBehavior:
             return x + y + z
 
         summed_seq = sum_three.map(x=[1, 2], y=[10, 20], z=[100, 200])
-        result = evaluate(summed_seq)
+        result = summed_seq.run()
         # Element-wise alignment
         assert result == [111, 222]  # (1+10+100), (2+20+200)
 
@@ -434,7 +433,7 @@ class TestZipSpecificBehavior:
 
         added_seq = add.map(x=[1, 2], y=[10, 20])  # [11, 22]
         multiplied_seq = multiply.map(z=added_seq, factor=[2, 3])
-        result = evaluate(multiplied_seq)
+        result = multiplied_seq.run()
         # Element-wise: (11*2), (22*3)
         assert result == [22, 66]
 
@@ -453,11 +452,11 @@ class TestZipSpecificBehavior:
         def sum_all(values: list[int]) -> int:
             return sum(values)
 
-        result = evaluate(
+        result = (
             add.map(x=[1, 2, 3], y=[10, 20, 30])  # [11, 22, 33]
             .then(increment.partial(increment_by=5))  # [16, 27, 38]
             .join(sum_all)
-        )
+        ).run()
         assert result == 81
 
 
@@ -479,12 +478,12 @@ class TestComplexPathEvaluation:
         multiplied_seq = multiply.map(x=[1, 2], y=[10, 20], map_mode="product")  # [10, 20, 20, 40]
         # Fan-in with join
         total = multiplied_seq.join(sum_all)
-        result = evaluate(total)
+        result = total.run()
         assert result == 90  # 10 + 20 + 20 + 40
 
 
 class TestAsyncTasksWithEvaluate:
-    """Tests that async tasks work through evaluate() via the async-first engine."""
+    """Tests that async tasks work through .run() via the async-first engine."""
 
     def test_async_task_works(self) -> None:
         """Async tasks are evaluated through the async-first engine."""
@@ -494,7 +493,7 @@ class TestAsyncTasksWithEvaluate:
             await asyncio.sleep(0.001)
             return x + y
 
-        result = evaluate(async_add(x=5, y=10))  # type: ignore
+        result = async_add(x=5, y=10).run()  # type: ignore
         assert result == 15
 
     def test_async_map_task_works(self) -> None:
@@ -505,11 +504,11 @@ class TestAsyncTasksWithEvaluate:
             await asyncio.sleep(0.001)
             return x * x
 
-        result = evaluate(async_square.map(x=[1, 2, 3, 4]))
+        result = async_square.map(x=[1, 2, 3, 4]).run()
         assert result == [1, 4, 9, 16]
 
     def test_mixed_graph_with_async_works(self) -> None:
-        """Graphs containing both sync and async tasks work through evaluate()."""
+        """Graphs containing both sync and async tasks work through .run()."""
 
         @task
         def sync_task(x: int) -> int:
@@ -528,7 +527,7 @@ class TestAsyncTasksWithEvaluate:
         async_result = async_double(x=start)
         combined = combine(a=start, b=async_result)
 
-        result = evaluate(combined)
+        result = combined.run()
         assert result == 33  # sync_task(10)=11, async_double(11)=22, combine(11,22)=33
 
 
@@ -536,7 +535,7 @@ class TestGeneratorMaterialization:
     """
     Tests that generators are automatically materialized to lists.
 
-    Tests marked with @pytest.mark.parametrize run for both evaluate() and evaluate_async()
+    Tests marked with @pytest.mark.parametrize run for both .run() and .run_async()
     to ensure consistent behavior across evaluation modes. Other tests are sync-only.
     """
 
@@ -551,12 +550,10 @@ class TestGeneratorMaterialization:
                 yield i * 2
 
         async def run_async():
-            from daglite.engine import evaluate_async
-
-            return await evaluate_async(generate_numbers(n=5))
+            return await generate_numbers(n=5).run_async()
 
         if evaluation_mode == "sync":
-            result = evaluate(generate_numbers(n=5))
+            result = generate_numbers(n=5).run()
         else:
             result = asyncio.run(run_async())
 
@@ -589,7 +586,7 @@ class TestGeneratorMaterialization:
         count = count_values(values=numbers)
         result_future = combine(total=total, count=count)
 
-        result = evaluate(result_future)
+        result = result_future.run()
         assert result == (10, 5)  # sum([0,1,2,3,4]) = 10, len = 5
 
     @pytest.mark.parametrize("evaluation_mode", ["sync", "async"])
@@ -611,12 +608,10 @@ class TestGeneratorMaterialization:
         totals = ranges.then(sum_values)
 
         async def run_async():
-            from daglite.engine import evaluate_async
-
-            return await evaluate_async(totals)
+            return await totals.run_async()
 
         if evaluation_mode == "sync":
-            result = evaluate(totals)
+            result = totals.run()
         else:
             result = asyncio.run(run_async())
 
@@ -634,11 +629,11 @@ class TestGeneratorMaterialization:
         def return_tuple(n: int) -> tuple[int, ...]:
             return tuple(i * 2 for i in range(n))
 
-        list_result = evaluate(return_list(n=3))
+        list_result = return_list(n=3).run()
         assert list_result == [0, 2, 4]
         assert isinstance(list_result, list)
 
-        tuple_result = evaluate(return_tuple(n=3))
+        tuple_result = return_tuple(n=3).run()
         assert tuple_result == (0, 2, 4)
         assert isinstance(tuple_result, tuple)
 
@@ -649,7 +644,7 @@ class TestGeneratorMaterialization:
         def return_string() -> str:
             return "hello"
 
-        result = evaluate(return_string())
+        result = return_string().run()
         assert result == "hello"
         assert isinstance(result, str)
 
@@ -666,7 +661,7 @@ class TestGeneratorMaterialization:
         def double_all(values: list[int]) -> list[int]:
             return [v * 2 for v in values]
 
-        result = evaluate(generate_numbers(n=4).then(double_all))
+        result = generate_numbers(n=4).then(double_all).run()
         assert result == [0, 2, 4, 6]
 
     def test_generator_type_inference(self) -> None:
@@ -684,8 +679,8 @@ class TestGeneratorMaterialization:
                 yield str(i)
 
         # Type checker should infer list[int] and list[str]
-        iter_result = evaluate(return_iterator(n=3))
-        gen_result = evaluate(return_generator(n=3))
+        iter_result = return_iterator(n=3).run()
+        gen_result = return_generator(n=3).run()
 
         # These should work at runtime (list operations)
         assert isinstance(iter_result, list)
@@ -700,7 +695,7 @@ class TestGeneratorMaterialization:
         assert len(gen_result) == 4
 
     def test_async_generator_materialization_sync_mode(self) -> None:
-        """Async generators are materialized properly through evaluate()."""
+        """Async generators are materialized properly through .run()."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -719,7 +714,7 @@ class TestGeneratorMaterialization:
         nums = async_generate_numbers(n=5)
         total = sum_values(values=nums)
 
-        result = evaluate(total)
+        result = total.run()
         assert result == 10  # 0 + 1 + 2 + 3 + 4
 
     def test_async_generator_materialization_async_mode(self) -> None:
@@ -743,15 +738,13 @@ class TestGeneratorMaterialization:
         total = sum_values(values=nums)
 
         async def run_async():
-            from daglite.engine import evaluate_async
-
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run_async())
         assert result == 10  # 0 + 1 + 2 + 3 + 4
 
     def test_async_generator_map_materialization_sync_mode(self) -> None:
-        """Map tasks with async generators are materialized properly through evaluate()."""
+        """Map tasks with async generators are materialized properly through .run()."""
         from collections.abc import AsyncGenerator
 
         @task
@@ -770,7 +763,7 @@ class TestGeneratorMaterialization:
         ranges = async_get_range.map(n=[3, 4, 5])
         total = sum_all_ranges(ranges=ranges)
 
-        result = evaluate(total)
+        result = total.run()
         assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
     def test_async_generator_map_materialization_async_mode(self) -> None:
@@ -795,15 +788,13 @@ class TestGeneratorMaterialization:
         total = sum_all_ranges(ranges=ranges)
 
         async def run_async():
-            from daglite.engine import evaluate_async
-
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run_async())
         assert result == 19  # (0+1+2) + (0+1+2+3) + (0+1+2+3+4) = 3+6+10
 
     def test_async_generator_with_thread_backend_sync_mode(self) -> None:
-        """Async generators with ThreadBackend work through evaluate()."""
+        """Async generators with ThreadBackend work through .run()."""
         from collections.abc import AsyncGenerator
 
         @task(backend_name="threading")
@@ -822,7 +813,7 @@ class TestGeneratorMaterialization:
         nums = async_generate(n=5)
         total = sum_values(values=nums)
 
-        result = evaluate(total)
+        result = total.run()
         assert result == 20  # 0 + 2 + 4 + 6 + 8
 
     def test_async_generator_with_thread_backend_async_mode(self) -> None:
@@ -846,9 +837,7 @@ class TestGeneratorMaterialization:
         total = sum_values(values=nums)
 
         async def run_async():
-            from daglite.engine import evaluate_async
-
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run_async())
         assert result == 20  # 0+2+4+6+8
@@ -898,7 +887,7 @@ def test_cycle_detection_raises_error() -> None:
 
 
 class TestSiblingParallelism:
-    """Tests for concurrent execution of sibling tasks using evaluate()."""
+    """Tests for concurrent execution of sibling tasks using .run()."""
 
     def test_sync_siblings_with_threading_backend(self) -> None:
         """Sibling tasks with threading backend are submitted concurrently."""
@@ -927,7 +916,7 @@ class TestSiblingParallelism:
         t3 = track_execution(value=30)
         total = sum_values(a=t1, b=t2, c=t3)
 
-        result = evaluate(total)
+        result = total.run()
 
         # Verify results
         assert result == 60
@@ -955,7 +944,7 @@ class TestSiblingParallelism:
         t2 = get_pid_process(value=20)
         result_future = combine_pids(a=t1, b=t2)
 
-        result = evaluate(result_future)
+        result = result_future.run()
 
         # Verify results
         assert result["sum"] == 30
@@ -966,36 +955,35 @@ class TestSiblingParallelism:
 
 
 class TestEvaluateGuards:
-    """Tests for evaluate() entry-point guards (loop detection, nested call prevention)."""
+    """Tests for .run() entry-point guards (loop detection, nested call prevention)."""
 
     def test_evaluate_rejects_running_loop(self) -> None:
-        """evaluate() raises RuntimeError when called from async context."""
+        """.run() raises RuntimeError when called from async context."""
 
         async def inner():
-            evaluate(task(lambda: 1)())
+            task(lambda: 1)().run()
 
         with pytest.raises(RuntimeError, match="Cannot call evaluate"):
             asyncio.run(inner())
 
     def test_evaluate_async_rejects_nested_call(self) -> None:
-        """evaluate_async() raises RuntimeError when called from within a task."""
-        from daglite import evaluate_async
+        """.run_async() raises RuntimeError when called from within a task."""
 
         @task
         async def outer() -> int:
             inner_task = task(lambda: 1)
-            return await evaluate_async(inner_task())
+            return await inner_task().run_async()
 
         with pytest.raises(RuntimeError, match="Cannot call evaluate.*from within another task"):
-            asyncio.run(evaluate_async(outer()))
+            asyncio.run(outer().run_async())
 
     def test_evaluate_rejects_nested_call(self) -> None:
-        """evaluate() raises RuntimeError when called from within a task."""
+        """.run() raises RuntimeError when called from within a task."""
 
         @task
         def outer() -> int:
             inner_task = task(lambda: 1)
-            return evaluate(inner_task())
+            return inner_task().run()
 
         with pytest.raises(RuntimeError, match="Cannot call evaluate"):
-            evaluate(outer())
+            outer().run()

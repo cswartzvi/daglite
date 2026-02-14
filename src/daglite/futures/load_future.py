@@ -46,12 +46,12 @@ def load_dataset(
         A `DatasetFuture` that produces the loaded value when evaluated.
 
     Examples:
-        >>> from daglite import load_dataset, evaluate, task
+        >>> from daglite import load_dataset, task
         >>> @task
         ... def process(data: dict) -> str:
         ...     return str(data)
         >>> future = load_dataset("input.pkl").then(process)
-        >>> evaluate(future)  # doctest: +SKIP
+        >>> future.run()  # doctest: +SKIP
     """
     from daglite.tasks import Task as _Task
 

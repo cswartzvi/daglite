@@ -16,6 +16,9 @@ from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
 from daglite.graph.builder import NodeBuilder
 
+# NOTE: Circular import avoidance — engine imports futures, so we import engine lazily
+# inside run() and run_async() implementations.
+
 P = ParamSpec("P")
 R = TypeVar("R")
 T = TypeVar("T")
@@ -73,7 +76,7 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
             save_checkpoint: If provided, marks this save as a resumption point for
-                evaluate(from_=name). Can be:
+                `.run(from_=name)`. Can be:
                 - None: No checkpoint (default, just saves output)
                 - True: Use the key as the checkpoint name
                 - str: Explicit checkpoint name
@@ -151,6 +154,41 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
         object.__setattr__(new_future, "_output_futures", new_configs)  # Must match attribute name
 
         return new_future
+
+    def run(self, *, plugins: list[Any] | None = None) -> Any:
+        """
+        Evaluates this future synchronously and return the result.
+
+        This is a convenience method that builds and executes the task graph rooted at this
+        future. It cannot be called from within an async context (e.g., inside an `async def`
+        or running event loop). In those cases, use `.run_async()` instead.
+
+        Args:
+            plugins: Additional plugins to include with globally registered plugins.
+
+        Returns:
+            The evaluated result of this future.
+
+        Raises:
+            RuntimeError: If called from within an async context with a running event loop.
+        """
+        from daglite.engine import evaluate
+
+        return evaluate(self, plugins=plugins)
+
+    async def run_async(self, *, plugins: list[Any] | None = None) -> Any:
+        """
+        Evaluates this future asynchronously and return the result.
+
+        Args:
+            plugins: Additional plugins to include with globally registered plugins.
+
+        Returns:
+            The evaluated result of this future.
+        """
+        from daglite.engine import evaluate_async
+
+        return await evaluate_async(self, plugins=plugins)
 
     # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
 

@@ -6,7 +6,6 @@ from unittest.mock import patch
 import pytest
 from daglite_rich.progress import RichProgressPlugin
 
-from daglite import evaluate
 from daglite import task
 
 
@@ -28,7 +27,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.return_value = 0  # root task ID
 
             plugin = RichProgressPlugin()
-            result = evaluate(add(a=1, b=2), plugins=[plugin])
+            result = add(a=1, b=2).run(plugins=[plugin])
 
             assert result == 3
 
@@ -57,7 +56,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.return_value = 0
 
             plugin = RichProgressPlugin()
-            result = evaluate(multiplied, plugins=[plugin])
+            result = multiplied.run(plugins=[plugin])
 
             assert result == 9
 
@@ -80,7 +79,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.side_effect = [0, 1]  # root task, then map task
 
             plugin = RichProgressPlugin()
-            result = evaluate(square.map(x=[1, 2, 3, 4]), plugins=[plugin])
+            result = square.map(x=[1, 2, 3, 4]).run(plugins=[plugin])
 
             assert result == [1, 4, 9, 16]
 
@@ -105,8 +104,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.side_effect = [0, 1]
 
             plugin = RichProgressPlugin()
-            result = evaluate(
-                double.with_options(backend_name="threads").map(x=[1, 2, 3]),
+            result = (double.with_options(backend_name="threads").map(x=[1, 2, 3])).run(
                 plugins=[plugin],
             )
 
@@ -131,7 +129,7 @@ class TestRichProgressIntegration:
             plugin = RichProgressPlugin()
 
             with pytest.raises(ValueError, match="Task failed"):
-                evaluate(failing_task(), plugins=[plugin])
+                failing_task().run(plugins=[plugin])
 
             # Progress should still be started and stopped even on error
             mock_progress.start.assert_called()
@@ -155,7 +153,7 @@ class TestRichProgressIntegration:
             plugin = RichProgressPlugin()
 
             with pytest.raises(ValueError, match="Failed on 2"):
-                evaluate(failing_square.map(x=[1, 2, 3]), plugins=[plugin])
+                failing_square.map(x=[1, 2, 3]).run(plugins=[plugin])
 
             # Map task should have been added
             assert mock_progress.add_task.call_count >= 2
@@ -174,7 +172,7 @@ class TestRichProgressIntegration:
             mock_progress.add_task.side_effect = [0, 1]
 
             plugin = RichProgressPlugin(secondary_style="bold green")
-            result = evaluate(square.map(x=[1, 2, 3]), plugins=[plugin])
+            result = square.map(x=[1, 2, 3]).run(plugins=[plugin])
 
             assert result == [1, 4, 9]
 
@@ -208,8 +206,7 @@ class TestRichProgressAndLoggingTogether:
             progress_plugin = RichProgressPlugin()
             logging_plugin = RichLifecycleLoggingPlugin()
 
-            result = evaluate(
-                multiply(x=3, y=4),
+            result = multiply(x=3, y=4).run(
                 plugins=[progress_plugin, logging_plugin],
             )
 
@@ -240,7 +237,7 @@ class TestRichProgressAndLoggingTogether:
             progress_plugin = RichProgressPlugin()
             logging_plugin = RichLifecycleLoggingPlugin()
 
-            result = evaluate(square.map(x=[1, 2, 3]), plugins=[progress_plugin, logging_plugin])
+            result = square.map(x=[1, 2, 3]).run(plugins=[progress_plugin, logging_plugin])
 
             assert result == [1, 4, 9]
 

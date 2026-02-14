@@ -48,7 +48,7 @@ def pipeline(
         (when used as `@pipeline()`).
 
     Examples:
-        >>> from daglite import pipeline, task, evaluate
+        >>> from daglite import pipeline, task
         >>> from daglite.futures import TaskFuture
         >>> @task
         ... def some_task(x: int, y: int) -> int:

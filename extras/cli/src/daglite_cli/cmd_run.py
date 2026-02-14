@@ -9,8 +9,8 @@ from typing import Any
 
 import click
 
-from daglite import evaluate
-from daglite import evaluate_async
+from daglite.engine import evaluate
+from daglite.engine import evaluate_async
 from daglite.pipelines import load_pipeline
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings

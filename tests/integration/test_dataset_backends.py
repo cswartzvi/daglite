@@ -6,7 +6,6 @@ This ensures Windows compatibility (spawn start method).
 
 import tempfile
 
-from daglite import evaluate
 from daglite import task
 from daglite.datasets.store import DatasetStore
 
@@ -87,7 +86,7 @@ class TestSaveWithProcessBackend:
             future = greet.with_options(backend_name="processes")(name="World").save(
                 "greeting.txt", save_store=store
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "Hello, World!"
             assert store.exists("greeting.txt")
@@ -101,7 +100,7 @@ class TestSaveWithProcessBackend:
             future = compute_dict.with_options(backend_name="processes")(x=21).save(
                 "result.pkl", save_store=store
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == {"result": 42}
             assert store.load("result.pkl", return_type=dict) == {"result": 42}
@@ -114,7 +113,7 @@ class TestSaveWithProcessBackend:
             future = process_id.with_options(backend_name="processes")(data_id="abc").save(
                 "output_{data_id}.txt", save_store=store
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc.txt")
@@ -130,7 +129,7 @@ class TestSaveWithProcessBackend:
                 save_store=store,
                 version="v1",
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc_v1.txt")
@@ -146,7 +145,7 @@ class TestSaveWithProcessBackend:
                 save_store=store,
                 version=version_future,
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc_v2.txt")
@@ -161,7 +160,7 @@ class TestSaveWithProcessBackend:
                 .save("result_{x}.pkl", save_store=store)
                 .save("backup_{x}.pkl", save_store=store)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 10
             assert store.exists("result_5.pkl")
@@ -175,20 +174,20 @@ class TestSaveWithProcessBackend:
             future = make_text.with_options(backend_name="processes")().save(
                 "output.dat", save_store=store, save_format="text"
             )
-            evaluate(future)
+            future.run()
 
             data = store._driver.load("output.dat")
             assert data == b"hello"
 
     def test_save_does_not_alter_result(self):
-        """save() is a side effect; evaluate() returns the original result."""
+        """save() is a side effect; .run() returns the original result."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
 
-            result = evaluate(
-                compute_int.with_options(backend_name="processes")(x=21).save(
-                    "answer.pkl", save_store=store
-                )
+            result = (
+                compute_int.with_options(backend_name="processes")(x=21)
+                .save("answer.pkl", save_store=store)
+                .run()
             )
             assert result == 42
 
@@ -201,7 +200,7 @@ class TestSaveWithProcessBackend:
             s2 = step2.with_options(backend_name="processes")
 
             future = s1(x=5).save("step1.pkl", save_store=store).then(s2)
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 12
             assert store.exists("step1.pkl")
@@ -223,7 +222,7 @@ class TestSaveWithMapTasksProcessBackend:
                 .save("item_{x}_{iteration_index}.pkl", save_store=store)
                 .join(collect_ints)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [2, 4, 6]
             keys = store.list_keys()
@@ -241,7 +240,7 @@ class TestSaveWithMapTasksProcessBackend:
                 .save("sum_{iteration_index}.pkl", save_store=store)
                 .join(collect_ints)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [11, 22, 33]
             keys = store.list_keys()
@@ -269,7 +268,7 @@ class TestMapSaveFutureExtrasProcessBackend:
                 )
                 .join(collect_ints)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [2, 4]
             assert store.exists("run1_0.pkl")
@@ -290,7 +289,7 @@ class TestMapSaveFutureExtrasProcessBackend:
                 )
                 .join(collect_ints)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [3, 6]
             assert store.exists("batch_0.pkl")
@@ -307,7 +306,7 @@ class TestSaveWithTaskStoreProcessBackend:
 
             proc = compute_int.with_options(backend_name="processes", store=store)
             future = proc(x=5).save("result.pkl")
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 10
             assert store.exists("result.pkl")

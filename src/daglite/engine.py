@@ -4,14 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator
-from collections.abc import AsyncIterator
-from collections.abc import Coroutine
-from collections.abc import Generator
-from collections.abc import Iterator
 from dataclasses import dataclass
-from types import CoroutineType
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from uuid import uuid4
 
@@ -29,97 +23,17 @@ from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes.base import BaseGraphNode
-from daglite.tasks import MapTaskFuture
-from daglite.tasks import TaskFuture
-
-P = ParamSpec("P")
-R = TypeVar("R")
-T = TypeVar("T")
-
 
 # region Evaluation
-
-
-# NOTE: Due to limitations in Python's type system, we need to repeat all overloads for both
-# evaluate_sync() and evaluate_async(). Changes to overloads in one function should be mirrored in
-# the other.
-
-
-# Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload
-def evaluate(
-    future: TaskFuture[CoroutineType[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[Coroutine[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[AsyncIterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[AsyncGenerator[T, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# Overloads for Generators and iterators are materialized to lists
-@overload
-def evaluate(
-    future: TaskFuture[Generator[T, Any, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[Iterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# General overloads
-@overload
-def evaluate(
-    future: MapTaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
 
 
 def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    **NOTE**: This is a convenience wrapper around `evaluate_async()` that creates an event loop
-    internally via `asyncio.run()`. Because of this, it **cannot** be called from within an async
-    context (e.g., inside an `async def` or running event loop). In those cases, use
-    `evaluate_async()` directly.
+    This is the internal implementation backing `TaskFuture.run()`. It creates an event loop
+    internally via `asyncio.run()`, so it **cannot** be called from within an async context. In
+    those cases, use `_evaluate_async()` instead.
 
     Args:
         future: Task future that will be evaluated.
@@ -132,19 +46,19 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         RuntimeError: If called from within an async context with a running event loop
 
     Examples:
-        >>> from daglite import task, evaluate
+        >>> from daglite import task
         >>> @task
         ... def my_task(x: int, y: int) -> int:
         ...     return x + y
         >>> future = my_task(x=1, y=2)
 
         Standard evaluation
-        >>> evaluate(future)
+        >>> future.run()
         3
 
         Evaluation with plugins
         >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
-        >>> evaluate(future, plugins=[CentralizedLoggingPlugin()])
+        >>> future.run(plugins=[CentralizedLoggingPlugin()])
         3
 
         Sibling parallelism with threading backend
@@ -155,7 +69,7 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         >>> @task
         ... def combine(a: int, b: int) -> int:
         ...     return a + b
-        >>> evaluate(combine(a=t1, b=t2))  # t1 and t2 run in parallel
+        >>> combine(a=t1, b=t2).run()  # t1 and t2 run in parallel
         6
     """
     try:
@@ -169,82 +83,14 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     return asyncio.run(evaluate_async(future, plugins=plugins))
 
 
-# Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload
-async def evaluate_async(
-    future: TaskFuture[CoroutineType[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[Coroutine[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[AsyncGenerator[T, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[AsyncIterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# Overloads for Generators and iterators are materialized to lists
-@overload
-async def evaluate_async(
-    future: TaskFuture[Generator[T, Any, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[Iterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# General overloads
-@overload
-async def evaluate_async(
-    future: MapTaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
 async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future via asynchronous execution.
 
-    The future to be evaluated can contain any combination of sync and async task futures, and the
-    engine will execute them in an async-first manner. This means that sibling tasks (tasks nodes
-    at the same level of the DAG) can be executed concurrently if they are defined with an async
-    coroutine function and/or if their backend supports async execution (e.g., threading or
-    process). Tasks defined with synchronous functions are executed in a blocking manner.
+    This is the internal implementation backing `TaskFuture.run_async()`. The future can contain
+    any combination of sync and async task futures, and the engine will execute them in an
+    async-first manner. Sibling tasks can be executed concurrently if they use an async coroutine
+    and/or an async-capable backend (e.g., threading or process).
 
     Args:
         future: Task future that will be evaluated.
@@ -255,20 +101,20 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
 
     Examples:
         >>> import asyncio
-        >>> from daglite import task, evaluate_async
+        >>> from daglite import task
         >>> @task
         ... async def my_task(x: int, y: int) -> int:
         ...     return x + y
         >>> future = my_task(x=1, y=2)
 
         Standard evaluation
-        >>> asyncio.run(evaluate_async(future))
+        >>> asyncio.run(future.run_async())
         3
 
         With execution-specific plugins
         >>> import asyncio
         >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
-        >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
+        >>> asyncio.run(future.run_async(plugins=[CentralizedLoggingPlugin()]))
         3
     """
     from daglite.backends.context import get_current_task

@@ -1,4 +1,4 @@
-"""Integration tests for async task evaluation with evaluate_async()."""
+"""Integration tests for async task evaluation with .run_async()."""
 
 import asyncio
 import threading
@@ -6,7 +6,6 @@ import time
 
 import pytest
 
-from daglite import evaluate_async
 from daglite import task
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
@@ -48,7 +47,7 @@ def square_process(z: int) -> int:
 
 
 class TestSyncTasksWithEvaluateAsync:
-    """Tests evaluate_async() with regular (sync) task functions."""
+    """Tests .run_async() with regular (sync) task functions."""
 
     def test_single_task_async(self) -> None:
         """Async evaluation succeeds for single task."""
@@ -59,7 +58,7 @@ class TestSyncTasksWithEvaluateAsync:
             return x + y
 
         async def run():
-            return await evaluate_async(add(x=10, y=20))
+            return await add(x=10, y=20).run_async()
 
         result = asyncio.run(run())
         assert result == 30
@@ -84,7 +83,7 @@ class TestSyncTasksWithEvaluateAsync:
         subtracted = subtract(value=multiplied, decrement=15)  # 25
 
         async def run():
-            return await evaluate_async(subtracted)
+            return await subtracted.run_async()
 
         result = asyncio.run(run())
         assert result == 25
@@ -114,7 +113,7 @@ class TestSyncTasksWithEvaluateAsync:
         combined = combine(a=left_future, b=right_future)
 
         async def run():
-            return await evaluate_async(combined)
+            return await combined.run_async()
 
         result = asyncio.run(run())
         assert result == 15
@@ -135,7 +134,7 @@ class TestSyncTasksWithEvaluateAsync:
         total = squared_seq.join(sum_all)
 
         async def run():
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run())
         assert result == 30
@@ -158,7 +157,7 @@ class TestSyncTasksWithEvaluateAsync:
         prod = added_seq.join(product)
 
         async def run():
-            return await evaluate_async(prod)
+            return await prod.run_async()
 
         result = asyncio.run(run())
         assert result == 11 * 22 * 33
@@ -173,7 +172,7 @@ class TestSyncTasksWithEvaluateAsync:
         divided = divide(x=10, y=0)
 
         async def run():
-            return await evaluate_async(divided)
+            return await divided.run_async()
 
         with pytest.raises(ZeroDivisionError):
             asyncio.run(run())
@@ -195,13 +194,13 @@ class TestSyncTasksWithEvaluateAsync:
         c = add(x=a, y=b)  # 9
 
         async def run():
-            return await evaluate_async(c)
+            return await c.run_async()
 
         result = asyncio.run(run())
         assert result == 9
 
     def test_Inline_backend_with_sync_tasks(self) -> None:
-        """Inline backend with sync tasks works in evaluate_async()."""
+        """Inline backend with sync tasks works in .run_async()."""
 
         @task(backend_name="inline")
         def add(x: int, y: int) -> int:
@@ -210,12 +209,12 @@ class TestSyncTasksWithEvaluateAsync:
         result_future = add(x=10, y=20)
 
         async def run():
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         assert asyncio.run(run()) == 30
 
     def test_Inline_backend_with_sync_map_tasks(self) -> None:
-        """Inline backend with sync map tasks works in evaluate_async()."""
+        """Inline backend with sync map tasks works in .run_async()."""
 
         @task(backend_name="inline")
         def double(x: int) -> int:
@@ -224,7 +223,7 @@ class TestSyncTasksWithEvaluateAsync:
         result_future = double.map(x=[1, 2, 3])
 
         async def run():
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         assert asyncio.run(run()) == [2, 4, 6]
 
@@ -243,7 +242,7 @@ class TestSyncTasksWithEvaluateAsync:
         squared = doubled.then(square)
 
         async def run():
-            return await evaluate_async(squared)
+            return await squared.run_async()
 
         result = asyncio.run(run())
         assert result == [4, 16, 36]  # [2, 4, 6] squared
@@ -263,7 +262,7 @@ class TestSyncTasksWithEvaluateAsync:
         total = tripled.join(sum_all)
 
         async def run():
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run())
         assert result == 30  # (3 + 6 + 9 + 12)
@@ -283,7 +282,7 @@ class TestSyncTasksWithEvaluateAsync:
         squared: MapTaskFuture[int] = doubled.then(square)
 
         async def run():
-            return await evaluate_async(squared)
+            return await squared.run_async()
 
         result = asyncio.run(run())
         assert result == [4, 16, 36]  # [2, 4, 6] squared
@@ -295,14 +294,14 @@ class TestSyncTasksWithEvaluateAsync:
         squared: MapTaskFuture[int] = doubled.then(square_process)
 
         async def run():
-            return await evaluate_async(squared)
+            return await squared.run_async()
 
         result = asyncio.run(run())
         assert result == [4, 16, 36]  # [2, 4, 6] squared
 
 
 class TestAsyncTasksWithEvaluateAsync:
-    """Tests evaluate_async() with async task functions (async def)."""
+    """Tests .run_async() with async task functions (async def)."""
 
     def test_async_task_async_evaluation(self) -> None:
         """Async tasks can be evaluated asynchronously."""
@@ -313,7 +312,7 @@ class TestAsyncTasksWithEvaluateAsync:
             return x * factor
 
         async def run():
-            return await evaluate_async(async_multiply(x=7, factor=3))
+            return await async_multiply(x=7, factor=3).run_async()
 
         result = asyncio.run(run())
         assert result == 21
@@ -345,7 +344,7 @@ class TestAsyncTasksWithEvaluateAsync:
 
         async def run():
             start = time.time()
-            result = await evaluate_async(combined)
+            result = await combined.run_async()
             total_time = time.time() - start
             return result, total_time
 
@@ -366,7 +365,7 @@ class TestAsyncTasksWithEvaluateAsync:
         future = failing_task(x=10)
 
         async def run():
-            return await evaluate_async(future)
+            return await future.run_async()
 
         try:
             asyncio.run(run())  # pyright: ignore
@@ -384,7 +383,7 @@ class TestAsyncTasksWithEvaluateAsync:
 
         async def run():
             result_future = async_compute(x=21)
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         result = asyncio.run(run())
         assert result == 42
@@ -394,7 +393,7 @@ class TestAsyncTasksWithEvaluateAsync:
 
         async def run():
             result_future = async_square_process(x=7)
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         result = asyncio.run(run())
         assert result == 49
@@ -406,14 +405,14 @@ class TestAsyncTasksWithEvaluateAsync:
         result = async_add_process(y=doubled, z=3)  # 13
 
         async def run():
-            return await evaluate_async(result)
+            return await result.run_async()
 
         final = asyncio.run(run())
         assert final == 13
 
 
 class TestMappedOperationsWithEvaluateAsync:
-    """Tests product/zip operations with async tasks and evaluate_async()."""
+    """Tests product/zip operations with async tasks and .run_async()."""
 
     def test_product_empty_sequence(self) -> None:
         """Product evaluation succeeds with empty sequences."""
@@ -426,7 +425,7 @@ class TestMappedOperationsWithEvaluateAsync:
         doubled_seq = double.map(x=[])
 
         async def run():
-            return await evaluate_async(doubled_seq)
+            return await doubled_seq.run_async()
 
         result = asyncio.run(run())
         assert result == []
@@ -442,7 +441,7 @@ class TestMappedOperationsWithEvaluateAsync:
         added_seq = add.map(x=[], y=[])
 
         async def run():
-            return await evaluate_async(added_seq)
+            return await added_seq.run_async()
 
         result = asyncio.run(run())
         assert result == []
@@ -464,7 +463,7 @@ class TestMappedOperationsWithEvaluateAsync:
         seq = square.map(x=future)
 
         async def run():
-            return await evaluate_async(seq)
+            return await seq.run_async()
 
         result = asyncio.run(run())
         assert result == [1, 4, 9]
@@ -486,7 +485,7 @@ class TestMappedOperationsWithEvaluateAsync:
         seq = multiply.map(x=future, y=[2, 3, 4])
 
         async def run():
-            return await evaluate_async(seq)
+            return await seq.run_async()
 
         result = asyncio.run(run())
         assert result == [10, 30, 60]
@@ -502,7 +501,7 @@ class TestMappedOperationsWithEvaluateAsync:
         added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30], map_mode="product")
 
         async def run():
-            return await evaluate_async(added_seq)
+            return await added_seq.run_async()
 
         result = asyncio.run(run())
         assert result == [11, 21, 31, 12, 22, 32, 13, 23, 33]
@@ -524,7 +523,7 @@ class TestMappedOperationsWithEvaluateAsync:
         multiplied_seq = multiply.map(z=added_seq, factor=[2, 3], map_mode="product")
 
         async def run():
-            return await evaluate_async(multiplied_seq)
+            return await multiplied_seq.run_async()
 
         result = asyncio.run(run())
         assert result == [22, 33, 42, 63, 24, 36, 44, 66]
@@ -540,7 +539,7 @@ class TestMappedOperationsWithEvaluateAsync:
         added_seq = add.map(x=[1, 2, 3], y=[10, 20, 30])
 
         async def run():
-            return await evaluate_async(added_seq)
+            return await added_seq.run_async()
 
         result = asyncio.run(run())
         assert result == [11, 22, 33]
@@ -570,14 +569,14 @@ class TestMappedOperationsWithEvaluateAsync:
         )
 
         async def run():
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         result = asyncio.run(run())
         assert result == 66
 
 
 class TestGeneratorMaterializationWithEvaluateAsync:
-    """Tests async generator materialization with evaluate_async()."""
+    """Tests async generator materialization with .run_async()."""
 
     def test_async_generator_is_materialized(self) -> None:
         """Async generators returned from tasks are materialized to lists."""
@@ -590,7 +589,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
                 yield i * 2
 
         async def run():
-            return await evaluate_async(generate_numbers(n=5))
+            return await generate_numbers(n=5).run_async()
 
         result = asyncio.run(run())
         assert result == [0, 2, 4, 6, 8]
@@ -627,7 +626,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
         result_future = combine(total=total, count=count)
 
         async def run():
-            return await evaluate_async(result_future)
+            return await result_future.run_async()
 
         result = asyncio.run(run())
         assert result == (10, 5)  # sum([0,1,2,3,4]) = 10, len = 5
@@ -651,7 +650,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
         squared = generated.then(square)
 
         async def run():
-            return await evaluate_async(squared)
+            return await squared.run_async()
 
         result = asyncio.run(run())
         # [0,1] -> 1, [0,1,2] -> 5, [0,1,2,3] -> 14
@@ -685,7 +684,7 @@ class TestConcurrentSiblingTaskExecution:
         total = sum_values(a=t1, b=t2, c=t3)
 
         async def run():
-            return await evaluate_async(total)
+            return await total.run_async()
 
         result = asyncio.run(run())
 

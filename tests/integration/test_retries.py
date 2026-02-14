@@ -4,8 +4,6 @@ import asyncio
 
 import pytest
 
-from daglite import evaluate
-from daglite import evaluate_async
 from daglite import task
 
 
@@ -19,7 +17,7 @@ class TestSyncRetries:
         def add(x: int, y: int) -> int:
             return x + y
 
-        result = evaluate(add(x=10, y=20))
+        result = add(x=10, y=20).run()
         assert result == 30
 
     def test_task_retries_on_failure(self) -> None:
@@ -33,7 +31,7 @@ class TestSyncRetries:
                 raise ValueError(f"Attempt {len(attempts)} failed")
             return x * 2
 
-        result = evaluate(flaky_task(x=5))
+        result = flaky_task(x=5).run()
         assert result == 10
         assert len(attempts) == 3  # Initial attempt + 2 retries
 
@@ -47,7 +45,7 @@ class TestSyncRetries:
             raise ValueError(f"Attempt {len(attempts)} failed")
 
         with pytest.raises(ValueError, match="Attempt 3 failed"):
-            evaluate(always_fails(x=5))
+            always_fails(x=5).run()
 
         assert len(attempts) == 3  # Initial attempt + 2 retries
 
@@ -61,7 +59,7 @@ class TestSyncRetries:
             raise ValueError("Failed")
 
         with pytest.raises(ValueError, match="Failed"):
-            evaluate(fails_once(x=5))
+            fails_once(x=5).run()
 
         assert len(attempts) == 1  # Only initial attempt
 
@@ -77,7 +75,7 @@ class TestSyncRetries:
             return x * 2
 
         task_with_retries = flaky_task.with_options(retries=1)
-        result = evaluate(task_with_retries(x=5))
+        result = task_with_retries(x=5).run()
         assert result == 10
         assert len(attempts) == 2
 
@@ -93,7 +91,7 @@ class TestSyncRetries:
             return x * factor
 
         partial = flaky_multiply.partial(factor=3)
-        result = evaluate(partial(x=4))
+        result = partial(x=4).run()
         assert result == 12
         assert len(attempts) == 2
 
@@ -110,7 +108,7 @@ class TestAsyncRetries:
             return x + y
 
         async def run():
-            return await evaluate_async(add(x=10, y=20))
+            return await add(x=10, y=20).run_async()
 
         result = asyncio.run(run())
         assert result == 30
@@ -128,7 +126,7 @@ class TestAsyncRetries:
             return x * 2
 
         async def run():
-            return await evaluate_async(flaky_task(x=5))
+            return await flaky_task(x=5).run_async()
 
         result = asyncio.run(run())
         assert result == 10
@@ -145,7 +143,7 @@ class TestAsyncRetries:
             raise ValueError(f"Attempt {len(attempts)} failed")
 
         async def run():
-            return await evaluate_async(always_fails(x=5))
+            return await always_fails(x=5).run_async()
 
         with pytest.raises(ValueError, match="Attempt 3 failed"):
             asyncio.run(run())
@@ -172,7 +170,7 @@ class TestMapTaskRetries:
 
             return x * x
 
-        result = evaluate(flaky_square.map(x=[1, 2, 3, 4]))
+        result = flaky_square.map(x=[1, 2, 3, 4]).run()
         assert result == [1, 4, 9, 16]
 
         # Odd numbers: 1 attempt each, Even numbers: 2 attempts each
@@ -197,7 +195,7 @@ class TestMapTaskRetries:
             return x * x
 
         async def run():
-            return await evaluate_async(flaky_square.map(x=[1, 2, 3, 4]))
+            return await flaky_square.map(x=[1, 2, 3, 4]).run_async()
 
         result = asyncio.run(run())
         assert result == [1, 4, 9, 16]

@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 from typing_extensions import override
 
 from daglite._typing import MapMode
+
+# NOTE: Any needed for plugins parameter type
 from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.futures._shared import build_mapped_node_inputs
@@ -75,6 +77,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
         kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
         return build_repr("MapTaskFuture", self.task.name, f"mode={self.mode}", kwargs=kwargs)
 
+    @override
+    def run(self, *, plugins: list[Any] | None = None) -> list[R]:
+        return super().run(plugins=plugins)
+
+    @override
+    async def run_async(self, *, plugins: list[Any] | None = None) -> list[R]:
+        return await super().run_async(plugins=plugins)
+
     def then(
         self, mapped_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
     ) -> MapTaskFuture[T]:
@@ -90,7 +100,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             **kwargs: Additional fixed parameters to pass to the mapped task.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def generate_numbers(n: int) -> int:
             ...     return n
@@ -108,12 +118,12 @@ class MapTaskFuture(BaseTaskFuture[R]):
             >>> squared_future = numbers_future.then(square).join(sum_values)
 
             Evaluate the final result
-            >>> evaluate(squared_future)
+            >>> squared_future.run()
             30
 
             Using the fluent API
             >>> result = generate_numbers.map(n=[0, 1, 2, 3, 4]).then(square).join(sum_values)
-            >>> evaluate(result)
+            >>> result.run()
             30
 
         Returns:

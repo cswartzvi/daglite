@@ -9,7 +9,6 @@ from typing import Any
 from typing_extensions import assert_type
 
 from daglite import task
-from daglite.engine import evaluate_async
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 
@@ -36,9 +35,9 @@ def test_async_task_with_product() -> None:
 
 
 async def test_async_task_evaluation() -> None:
-    """evaluate() unwraps coroutines from async tasks."""
+    """run_async() unwraps coroutines from async tasks."""
     future = async_add(x=5, y=10)
-    result = await evaluate_async(future)
+    result = await future.run_async()
     assert_type(result, int)
 
 
