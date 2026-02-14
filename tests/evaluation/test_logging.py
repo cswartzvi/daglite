@@ -166,6 +166,11 @@ class TestCentralizedLoggingIntegration:
         assert "Worker processing 42" in caplog.text
         assert len(caplog.records) > 0
 
+        # Verify task context is present on log records
+        record = caplog.records[0]
+        assert hasattr(record, "daglite_task_key")
+        assert record.daglite_task_key == "worker_task"
+
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_task_metadata_preserved(self, backend_name, caplog):
         """Test that daglite_* metadata fields are preserved from workers."""
@@ -200,6 +205,11 @@ class TestCentralizedLoggingIntegration:
         assert "Exception in worker" in caplog.text
         assert "ValueError" in caplog.text
         assert "Worker error for 42" in caplog.text
+
+        # Verify task context is present on error records
+        record = caplog.records[0]
+        assert hasattr(record, "daglite_task_key")
+        assert record.daglite_task_key == "exception_task"
 
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_mapped_task_logging(self, backend_name, caplog):
@@ -244,6 +254,11 @@ class TestCentralizedLoggingIntegration:
         assert "Warning: 42" in caplog.text
         assert "Error: 42" in caplog.text
 
+        # Verify task context is present on filtered records
+        for record in caplog.records:
+            assert hasattr(record, "daglite_task_key")
+            assert record.daglite_task_key == "multi_level_task"
+
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_multiple_loggers(self, backend_name, caplog):
         """Test that multiple logger names work correctly."""
@@ -259,6 +274,11 @@ class TestCentralizedLoggingIntegration:
         assert "Logger one: 42" in caplog.text
         assert "Logger two: 42" in caplog.text
 
+        # Verify task context is present on all records
+        for record in caplog.records:
+            assert hasattr(record, "daglite_task_key")
+            assert record.daglite_task_key == "multi_logger_task"
+
     @pytest.mark.parametrize("backend_name", ["threads", "processes"])
     def test_mapped_task_error_logging(self, backend_name, caplog):
         """Test that errors in mapped tasks are logged correctly."""
@@ -273,6 +293,12 @@ class TestCentralizedLoggingIntegration:
 
         # Verify error was logged before the exception was raised
         assert "Processing failed for 2" in caplog.text
+
+        # Verify task context is present on error record
+        error_records = [r for r in caplog.records if "Processing failed" in r.message]
+        assert len(error_records) > 0
+        assert hasattr(error_records[0], "daglite_task_key")
+        assert error_records[0].daglite_task_key.startswith("failing_map_task")
 
 
 class TestCentralizedLoggingDirectReporter:
