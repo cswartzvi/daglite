@@ -17,6 +17,7 @@ class BidirectionalPlugin(Protocol):
     2. Use reporter in worker-side hooks to send events back to coordinator
 
     Examples:
+    >>> from daglite.plugins.events import Event
     >>> from daglite.plugins.hooks.markers import hook_impl
     >>> class ProgressPlugin:
     ...     def register_event_handlers(self, registry):
