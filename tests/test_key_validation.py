@@ -257,7 +257,7 @@ class TestToGraphValidation:
             return ""  # pragma: no cover
 
         future = work(data_id="abc", version="v1").save("output_{data_id}_{version}")
-        node = future.to_graph()
+        node = future.build_node()
         assert len(node.output_configs) == 1
 
     def test_task_future_to_graph_invalid_placeholder_raises(self):
@@ -269,7 +269,7 @@ class TestToGraphValidation:
 
         future = work(data_id="abc").save("output_{data_id}_{missing}")
         with pytest.raises(ValueError, match="won't be available"):
-            future.to_graph()
+            future.build_node()
 
     def test_task_future_to_graph_extras_count_as_available(self):
         """Extras provided to save() are available as placeholders."""
@@ -279,7 +279,7 @@ class TestToGraphValidation:
             return ""  # pragma: no cover
 
         future = work(data_id="abc").save("output_{data_id}_{version}", version="v1")
-        node = future.to_graph()
+        node = future.build_node()
         assert len(node.output_configs) == 1
 
     def test_map_future_to_graph_valid_placeholders(self):
@@ -292,7 +292,7 @@ class TestToGraphValidation:
         future = work.map(x=[1, 2], y=[3, 4], map_mode="product").save(
             "out_{x}_{y}_{iteration_index}"
         )
-        node = future.to_graph()
+        node = future.build_node()
         assert len(node.output_configs) == 1
 
     def test_map_future_to_graph_invalid_placeholder_raises(self):
@@ -304,7 +304,7 @@ class TestToGraphValidation:
 
         future = work.map(x=[1, 2]).save("out_{x}_{missing}")
         with pytest.raises(ValueError, match="won't be available"):
-            future.to_graph()
+            future.build_node()
 
     def test_map_future_iteration_index_available(self):
         """MapTaskFuture has iteration_index as an available placeholder."""
@@ -314,7 +314,7 @@ class TestToGraphValidation:
             return x  # pragma: no cover
 
         future = work.map(x=[1, 2]).save("out_{iteration_index}")
-        node = future.to_graph()
+        node = future.build_node()
         assert len(node.output_configs) == 1
 
     def test_to_graph_no_outputs_passes(self):
@@ -324,40 +324,40 @@ class TestToGraphValidation:
         def work(x: int) -> int:
             return x  # pragma: no cover
 
-        node = work(x=1).to_graph()
+        node = work(x=1).build_node()
         assert len(node.output_configs) == 0
 
     def test_to_graph_format_threaded(self):
-        """save_format is threaded through to OutputConfig.format."""
+        """save_format is threaded through to NodeOutputConfig.format."""
 
         @task
         def work(x: int) -> int:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_format="pickle")
-        node = future.to_graph()
+        node = future.build_node()
         assert node.output_configs[0].format == "pickle"
 
     def test_to_graph_options_threaded(self):
-        """save_options are threaded through to OutputConfig.options."""
+        """save_options are threaded through to NodeOutputConfig.options."""
 
         @task
         def work(x: int) -> int:
             return x  # pragma: no cover
 
         future = work(x=1).save("data.pkl", save_options={"protocol": 5})
-        node = future.to_graph()
+        node = future.build_node()
         assert node.output_configs[0].options == {"protocol": 5}
 
     def test_to_graph_checkpoint_name_threaded(self):
-        """Checkpoint name is threaded through to OutputConfig.name."""
+        """Checkpoint name is threaded through to NodeOutputConfig.name."""
 
         @task
         def work(x: int) -> int:
             return x  # pragma: no cover
 
         future = work(x=1).save("out", save_checkpoint="cp")
-        node = future.to_graph()
+        node = future.build_node()
         assert node.output_configs[0].name == "cp"
 
     def test_to_graph_multiple_outputs(self):
@@ -368,13 +368,13 @@ class TestToGraphValidation:
             return x  # pragma: no cover
 
         future = work(x=1).save("out1_{x}").save("out2_{x}")
-        node = future.to_graph()
+        node = future.build_node()
         assert len(node.output_configs) == 2
         assert node.output_configs[0].key == "out1_{x}"
         assert node.output_configs[1].key == "out2_{x}"
 
     def test_to_graph_future_extra_becomes_dependency(self):
-        """TaskFuture extras become InputParam refs in output dependencies."""
+        """TaskFuture extras become NodeInput refs in output dependencies."""
 
         @task
         def work(x: int) -> int:
@@ -386,7 +386,7 @@ class TestToGraphValidation:
 
         version_future = get_version()
         future = work(x=1).save("out_{version}", version=version_future)
-        node = future.to_graph()
+        node = future.build_node()
         config = node.output_configs[0]
         assert "version" in config.dependencies
         assert config.dependencies["version"].reference

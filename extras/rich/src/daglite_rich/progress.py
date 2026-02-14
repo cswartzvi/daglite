@@ -8,7 +8,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 from typing_extensions import override
 
-from daglite.graph.base import GraphMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl
@@ -86,7 +86,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def after_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -102,7 +102,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def on_cache_hit(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
@@ -116,7 +116,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def on_node_error(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -131,21 +131,20 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     @hook_impl(trylast=True)
     def before_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
+        metadata: NodeMetadata,
+        iteration_count: int,
     ) -> None:
         description = f"Mapping '{metadata.key or metadata.name}'"
         map_task_id = self._progress.add_task(
-            description, total=len(inputs_list), bar_style=self.secondary_style
+            description, total=iteration_count, bar_style=self.secondary_style
         )
         self._id_to_task[metadata.id] = map_task_id
 
     @hook_impl(trylast=True)
     def after_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        metadata: NodeMetadata,
+        iteration_count: int,
         duration: float,
     ) -> None:
         map_task_id = self._id_to_task.pop(metadata.id, None)

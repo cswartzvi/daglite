@@ -8,17 +8,20 @@ from typing import TYPE_CHECKING
 
 from pluggy import PluginManager
 
-from daglite.graph.base import GraphMetadata
+from daglite.datasets.reporters import DatasetReporter
 from daglite.plugins.reporters import EventReporter
 
 if TYPE_CHECKING:
-    from daglite.datasets.reporters import DatasetReporter
+    from daglite.graph.nodes.base import NodeMetadata
+else:
+    NodeMetadata = object
+
 
 # Context variables for worker execution environment
 _plugin_manager: ContextVar[PluginManager | None] = ContextVar("plugin_manager", default=None)
 _event_reporter: ContextVar[EventReporter | None] = ContextVar("event_reporter", default=None)
 _dataset_reporter: ContextVar[DatasetReporter | None] = ContextVar("dataset_reporter", default=None)
-_current_task: ContextVar["GraphMetadata | None"] = ContextVar("current_task", default=None)
+_current_task: ContextVar["NodeMetadata | None"] = ContextVar("current_task", default=None)
 
 
 def set_execution_context(
@@ -100,7 +103,7 @@ def reset_execution_context() -> None:  # pragma: no cover
     _current_task.set(None)
 
 
-def set_current_task(metadata: "GraphMetadata") -> Token["GraphMetadata | None"]:
+def set_current_task(metadata: NodeMetadata) -> Token[NodeMetadata | None]:
     """
     Set the currently executing task's metadata.
 
@@ -116,18 +119,17 @@ def set_current_task(metadata: "GraphMetadata") -> Token["GraphMetadata | None"]
     return _current_task.set(metadata)
 
 
-def get_current_task() -> "GraphMetadata | None":
+def get_current_task() -> NodeMetadata | None:
     """
     Get the currently executing task's metadata.
 
     Returns:
-        GraphMetadata if a task is currently executing, None otherwise.
-        Useful for contextual logging and debugging.
+        NodeMetadata of currently executing task, None otherwise.
     """
     return _current_task.get()
 
 
-def reset_current_task(token: Token["GraphMetadata | None"]) -> None:  # pragma: no cover
+def reset_current_task(token: Token["NodeMetadata | None"]) -> None:  # pragma: no cover
     """
     Reset current task context to previous state.
 

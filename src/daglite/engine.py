@@ -27,8 +27,8 @@ else:
 
 from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
-from daglite.graph.base import BaseGraphNode
 from daglite.graph.builder import build_graph
+from daglite.graph.nodes.base import BaseGraphNode
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
@@ -64,15 +64,15 @@ def evaluate(
 
 @overload
 def evaluate(
-    future: TaskFuture[AsyncGenerator[T, Any]],
+    future: TaskFuture[AsyncIterator[T]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
 
 
 @overload
-async def evaluate(
-    future: TaskFuture[AsyncIterator[T]],
+def evaluate(
+    future: TaskFuture[AsyncGenerator[T, Any]],
     *,
     plugins: list[Any] | None = None,
 ) -> list[T]: ...
@@ -296,11 +296,13 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         nodes_to_process = state.get_source_nodes()
 
         while nodes_to_process:
-            # Submit all ready siblings
-            tasks: dict[asyncio.Task[Any], UUID] = {
-                asyncio.create_task(_submit_node(state.nodes[nid], state, backend_manager)): nid
-                for nid in nodes_to_process
-            }
+            # Submit all ready siblings via polymorphic node.execute()
+            tasks: dict[asyncio.Task[Any], UUID] = {}
+            for nid in nodes_to_process:
+                node = state.nodes[nid]
+                backend = backend_manager.get(node.backend_name)
+                coro = node.execute(backend, state.completed_nodes, plugin_manager.hook)
+                tasks[asyncio.create_task(coro)] = nid
 
             # Wait for completion, returning early on first exception for fail-fast
             done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_EXCEPTION)
@@ -335,68 +337,6 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         event_processor.stop()
         dataset_processor.stop()
         backend_manager.stop()
-
-    return result
-
-
-async def _submit_node(
-    node: BaseGraphNode, state: _ExecutionState, backend_manager: BackendManager
-) -> Any:
-    """
-    Submits a node for execution on its designated backend and returns the result.
-
-    Args:
-        node: The graph node to be executed.
-        state: Current execution state, used to resolve inputs and track completed nodes.
-        backend_manager: Manager for submitting tasks to backends.
-
-    Returns:
-        The result of executing the node, with mapped tasks and generators materialized to lists.
-    """
-
-    from daglite.graph.nodes import MapTaskNode
-
-    backend = backend_manager.get(node.backend_name)
-    plugin_manager = backend.plugin_manager
-    completed_nodes = state.completed_nodes
-    resolved_inputs = node.resolve_inputs(completed_nodes)
-    resolved_output_deps = node.resolve_output_deps(completed_nodes)
-
-    if isinstance(node, MapTaskNode):
-        # Submit multiple calls for map tasks, one per iteration, and gather results
-        futures = []
-        mapped_inputs = node.build_iteration_calls(resolved_inputs)
-
-        start_time = time.perf_counter()
-        plugin_manager.hook.before_mapped_node_execute(
-            metadata=node.to_metadata(), inputs_list=mapped_inputs
-        )
-
-        for idx, call in enumerate(mapped_inputs):
-            kwargs = {"iteration_index": idx, "resolved_output_deps": resolved_output_deps}
-            future = backend.submit(node.run, call, timeout=node.timeout, **kwargs)
-            futures.append(future)
-
-        result = await asyncio.gather(*futures)
-        duration = time.perf_counter() - start_time
-
-        plugin_manager.hook.after_mapped_node_execute(
-            metadata=node.to_metadata(),
-            inputs_list=mapped_inputs,
-            results=result,
-            duration=duration,
-        )
-    else:
-        # Submit a single call for regular tasks
-        future = backend.submit(
-            node.run,
-            resolved_inputs,
-            timeout=node.timeout,
-            resolved_output_deps=resolved_output_deps,
-        )
-        result = await future
-
-    result = await _materialize_result(result)
 
     return result
 
@@ -443,29 +383,6 @@ def _setup_dataset_processor(hook: Any = None) -> "DatasetProcessor":
     return DatasetProcessor(hook=hook)
 
 
-async def _materialize_result(result: Any) -> Any:
-    """
-    Materialize mapped tasks, and async/sync generators to concrete results.
-
-    Args:
-        result: The raw result from a node execution, which may be a list of mapped results, a
-            function, coroutine, or a sync/async generator.
-    """
-    if isinstance(result, list):  # From map tasks
-        return await asyncio.gather(*[_materialize_result(item) for item in result])
-
-    if isinstance(result, (AsyncGenerator, AsyncIterator)):
-        items = []
-        async for item in result:
-            items.append(item)
-        return items
-
-    if isinstance(result, (Generator, Iterator)) and not isinstance(result, (str, bytes)):
-        return list(result)
-
-    return result
-
-
 # region State
 
 
@@ -510,7 +427,7 @@ class _ExecutionState:
         successors: dict[UUID, set[UUID]] = defaultdict(set)
 
         for nid, node in nodes.items():
-            for dep in node.dependencies():
+            for dep in node.get_dependencies():
                 indegree[nid] += 1
                 successors[dep].add(nid)
 

@@ -124,35 +124,35 @@ class TestDatasetFutureToGraph:
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data.pkl", load_store=store)
-            node = future.to_graph()
+            node = future.build_node()
             assert isinstance(node, DatasetNode)
 
     def test_node_has_correct_kind(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data.pkl", load_store=store)
-            node = future.to_graph()
-            assert node.to_metadata().kind == "dataset"
+            node = future.build_node()
+            assert node.metadata.kind == "dataset"
 
     def test_node_name(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data.pkl", load_store=store)
-            node = future.to_graph()
+            node = future.build_node()
             assert node.name == "load(data.pkl)"
 
     def test_node_store(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data.pkl", load_store=store)
-            node = future.to_graph()
+            node = future.build_node()
             assert node.store is store
 
     def test_node_extras_as_kwargs(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data_{v}.pkl", load_store=store, v="1.0")
-            node = future.to_graph()
+            node = future.build_node()
             assert "v" in node.kwargs
 
     def test_node_dependencies_from_future_extras(self):
@@ -164,15 +164,15 @@ class TestDatasetFutureToGraph:
             store = DatasetStore(tmpdir)
             version = get_version()
             future = load_dataset("data_{v}.pkl", load_store=store, v=version)
-            node = future.to_graph()
-            assert version.id in node.dependencies()
+            node = future.build_node()
+            assert version.id in node.get_dependencies()
 
     def test_invalid_placeholder_raises(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             future = load_dataset("data_{missing}.pkl", load_store=store)
             with pytest.raises(ValueError, match="missing"):
-                future.to_graph()
+                future.build_node()
 
     def test_output_configs_from_save(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -180,7 +180,7 @@ class TestDatasetFutureToGraph:
             future = load_dataset("input.pkl", load_store=store).save(
                 "output.pkl", save_store=store
             )
-            node = future.to_graph()
+            node = future.build_node()
             assert len(node.output_configs) == 1
             assert node.output_configs[0].key == "output.pkl"
 
@@ -201,7 +201,7 @@ class TestDatasetFutureToGraphWithSaveExtras:
             future = load_dataset("input.pkl", load_store=store).save(
                 "output_{version}.pkl", save_store=store, version=version
             )
-            node = future.to_graph()
+            node = future.build_node()
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["version"]
@@ -215,7 +215,7 @@ class TestDatasetFutureToGraphWithSaveExtras:
             future = load_dataset("input.pkl", load_store=store).save(
                 "output_{label}.pkl", save_store=store, label="batch1"
             )
-            node = future.to_graph()
+            node = future.build_node()
 
             assert len(node.output_configs) == 1
             dep = node.output_configs[0].dependencies["label"]
@@ -228,21 +228,21 @@ class TestDatasetNodeOutputDependencies:
 
     def test_output_config_future_deps_included(self):
         """Dependencies from output configs are included in DatasetNode.dependencies()."""
-        from daglite.graph.base import InputParam
-        from daglite.graph.base import OutputConfig
         from daglite.graph.nodes import DatasetNode
+        from daglite.graph.nodes.base import NodeInput
+        from daglite.graph.nodes.base import NodeOutputConfig
 
         dep_id_1 = uuid4()
         dep_id_2 = uuid4()
-        output_config = OutputConfig(
+        output_config = NodeOutputConfig(
             key="out_{v}_{w}.pkl",
             name=None,
             format=None,
             store=None,
             dependencies={
-                "v": InputParam.from_ref(dep_id_1),
-                "w": InputParam.from_ref(dep_id_2),
-                "x": InputParam.from_value("static"),
+                "v": NodeInput.from_ref(dep_id_1),
+                "w": NodeInput.from_ref(dep_id_2),
+                "x": NodeInput.from_value("static"),
             },
             options={},
         )
@@ -257,7 +257,7 @@ class TestDatasetNodeOutputDependencies:
                 kwargs={},
                 output_configs=(output_config,),
             )
-            deps = node.dependencies()
+            deps = node.get_dependencies()
             assert dep_id_1 in deps
             assert dep_id_2 in deps
 
@@ -274,7 +274,7 @@ class TestResolveDefaultStore:
             try:
                 set_global_settings(DagliteSettings(datastore_store=tmpdir))
                 future = load_dataset("data.pkl")
-                node = future.to_graph()
+                node = future.build_node()
                 assert isinstance(node.store, DatasetStore)
                 assert node.store.base_path == tmpdir
             finally:
@@ -290,7 +290,7 @@ class TestResolveDefaultStore:
             try:
                 set_global_settings(DagliteSettings(datastore_store=store))
                 future = load_dataset("data.pkl")
-                node = future.to_graph()
+                node = future.build_node()
                 assert node.store is store
             finally:
                 set_global_settings(DagliteSettings())

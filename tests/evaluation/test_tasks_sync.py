@@ -860,8 +860,8 @@ def test_cycle_detection_raises_error() -> None:
 
     from daglite.engine import _ExecutionState
     from daglite.exceptions import ExecutionError
-    from daglite.graph.base import InputParam
     from daglite.graph.nodes import TaskNode
+    from daglite.graph.nodes.base import NodeInput
 
     # Manually create a cyclic graph (can't do this with normal API)
     # Node A depends on Node B, Node B depends on Node A
@@ -879,7 +879,7 @@ def test_cycle_detection_raises_error() -> None:
             description=None,
             backend_name=None,
             func=dummy,
-            kwargs={"x": InputParam(_kind="ref", value=None, reference=node_b_id)},
+            kwargs={"x": NodeInput(_kind="ref", value=None, reference=node_b_id)},
         ),
         node_b_id: TaskNode(
             id=node_b_id,
@@ -887,7 +887,7 @@ def test_cycle_detection_raises_error() -> None:
             description=None,
             backend_name=None,
             func=dummy,
-            kwargs={"x": InputParam(_kind="ref", value=None, reference=node_a_id)},
+            kwargs={"x": NodeInput(_kind="ref", value=None, reference=node_a_id)},
         ),
     }
 

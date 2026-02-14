@@ -12,94 +12,95 @@ import pytest
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import GraphError
 from daglite.exceptions import ParameterError
-from daglite.graph.base import InputParam
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.graph.nodes._shared import resolve_inputs
+from daglite.graph.nodes.base import NodeInput
 from daglite.tasks import task
 
 
-class TestInputParam:
-    """Test InputParam creation and resolution."""
+class TestNodeInput:
+    """Test NodeInput creation and resolution."""
 
     def test_from_value(self) -> None:
-        """InputParam.from_value creates a value-type input."""
-        param = InputParam.from_value(42)
+        """NodeInput.from_value creates a value-type input."""
+        param = NodeInput.from_value(42)
         assert param._kind == "value"
         assert param.value == 42
         assert param.reference is None
 
     def test_from_ref(self) -> None:
-        """InputParam.from_ref creates a ref-type input."""
+        """NodeInput.from_ref creates a ref-type input."""
         node_id = uuid4()
-        param = InputParam.from_ref(node_id)
+        param = NodeInput.from_ref(node_id)
         assert param._kind == "ref"
         assert param.reference == node_id
         assert param.reference is not None
 
     def test_from_sequence(self) -> None:
-        """InputParam.from_sequence creates a sequence-type input."""
-        param = InputParam.from_sequence([1, 2, 3])
+        """NodeInput.from_sequence creates a sequence-type input."""
+        param = NodeInput.from_sequence([1, 2, 3])
         assert param._kind == "sequence"
         assert param.value == [1, 2, 3]
         assert param.reference is None
 
     def test_from_sequence_ref(self) -> None:
-        """InputParam.from_sequence_ref creates a sequence_ref-type input."""
+        """NodeInput.from_sequence_ref creates a sequence_ref-type input."""
         node_id = uuid4()
-        param = InputParam.from_sequence_ref(node_id)
+        param = NodeInput.from_sequence_ref(node_id)
         assert param._kind == "sequence_ref"
         assert param.reference == node_id
         assert param.reference is not None
 
     def test_resolve_value(self) -> None:
-        """InputParam resolves value inputs correctly."""
-        param = InputParam.from_value(100)
+        """NodeInput resolves value inputs correctly."""
+        param = NodeInput.from_value(100)
         assert param.resolve({}) == 100
 
     def test_resolve_ref(self) -> None:
-        """InputParam resolves ref inputs from values dict."""
+        """NodeInput resolves ref inputs from values dict."""
         node_id = uuid4()
-        param = InputParam.from_ref(node_id)
+        param = NodeInput.from_ref(node_id)
         values = {node_id: "result"}
         assert param.resolve(values) == "result"
 
     def test_resolve_sequence_from_sequence(self) -> None:
-        """InputParam resolves sequence inputs correctly."""
-        param = InputParam.from_sequence([10, 20, 30])
+        """NodeInput resolves sequence inputs correctly."""
+        param = NodeInput.from_sequence([10, 20, 30])
         assert param.resolve({}) == [10, 20, 30]
 
     def test_resolve_sequence_from_ref(self) -> None:
-        """InputParam resolves sequence_ref inputs from values dict."""
+        """NodeInput resolves sequence_ref inputs from values dict."""
         node_id = uuid4()
-        param = InputParam.from_sequence_ref(node_id)
+        param = NodeInput.from_sequence_ref(node_id)
         values = {node_id: [1, 2, 3]}
         assert param.resolve(values) == [1, 2, 3]
 
     def test_invalid_ref_with_value_kind(self) -> None:
-        """InputParam with value kind must have a value, not a ref."""
-        with pytest.raises(GraphError, match="InputParam kind 'value' must not have a ref."):
-            InputParam(_kind="value", reference=uuid4())
+        """NodeInput with value kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="NodeInput kind 'value' must not have a ref."):
+            NodeInput(_kind="value", reference=uuid4())
 
     def test_invalid_value_with_ref_kind(self) -> None:
-        """InputParam with ref kind must have a ref, not a value."""
-        with pytest.raises(GraphError, match="InputParam kind 'ref' must not have a value."):
-            InputParam(_kind="ref", value=42, reference=uuid4())
+        """NodeInput with ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="NodeInput kind 'ref' must not have a value."):
+            NodeInput(_kind="ref", value=42, reference=uuid4())
 
     def test_invalid_scalar_with_sequence_kind(self) -> None:
-        """InputParam with sequence kind must have a value, not a ref."""
-        with pytest.raises(GraphError, match="InputParam kind 'sequence' must not have a ref."):
-            InputParam(_kind="sequence", reference=uuid4())
+        """NodeInput with sequence kind must have a value, not a ref."""
+        with pytest.raises(GraphError, match="NodeInput kind 'sequence' must not have a ref."):
+            NodeInput(_kind="sequence", reference=uuid4())
 
     def test_invalid_scalar_with_ref_kind(self) -> None:
-        """InputParam with ref kind must have a ref, not a value."""
-        with pytest.raises(GraphError, match="InputParam kind 'ref' requires a ref."):
-            InputParam(_kind="ref", value=42)
+        """NodeInput with ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="NodeInput kind 'ref' requires a ref."):
+            NodeInput(_kind="ref", value=42)
 
     def test_invalid_sequence_with_ref_kind(self) -> None:
-        """InputParam with sequence_ref kind must have a ref, not a value."""
-        with pytest.raises(GraphError, match="InputParam kind 'sequence_ref' requires a ref."):
-            InputParam(_kind="sequence_ref", value=[1, 2, 3])
+        """NodeInput with sequence_ref kind must have a ref, not a value."""
+        with pytest.raises(GraphError, match="NodeInput kind 'sequence_ref' requires a ref."):
+            NodeInput(_kind="sequence_ref", value=[1, 2, 3])
 
 
 class TestTaskNodes:
@@ -118,8 +119,8 @@ class TestTaskNodes:
             backend_name=None,
             func=add,
             kwargs={
-                "x": InputParam.from_value(1),
-                "y": InputParam.from_value(2),
+                "x": NodeInput.from_value(1),
+                "y": NodeInput.from_value(2),
             },
         )
 
@@ -139,10 +140,10 @@ class TestTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            kwargs={"x": InputParam.from_ref(dep_id)},
+            kwargs={"x": NodeInput.from_ref(dep_id)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert len(deps) == 1
         assert dep_id in deps
 
@@ -158,10 +159,10 @@ class TestTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            kwargs={"x": InputParam.from_value(10)},
+            kwargs={"x": NodeInput.from_value(10)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert len(deps) == 0
 
 
@@ -180,12 +181,12 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            mode="extend",
+            mode="product",
             fixed_kwargs={},
-            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        assert node.mode == "extend"
+        assert node.mode == "product"
 
     def test_zip_mode(self) -> None:
         """MapTaskNode initializes with zip mode."""
@@ -201,7 +202,7 @@ class TestMapTaskNodes:
             func=process,
             mode="zip",
             fixed_kwargs={},
-            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
         assert node.mode == "zip"
@@ -219,12 +220,12 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
-            fixed_kwargs={"offset": InputParam.from_ref(dep_id)},
-            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
+            mode="product",
+            fixed_kwargs={"offset": NodeInput.from_ref(dep_id)},
+            mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert dep_id in deps
 
     def test_dependencies_from_mapped(self) -> None:
@@ -240,12 +241,12 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
-            fixed_kwargs={"offset": InputParam.from_value(10)},
-            mapped_kwargs={"x": InputParam.from_sequence_ref(dep_id)},
+            mode="product",
+            fixed_kwargs={"offset": NodeInput.from_value(10)},
+            mapped_kwargs={"x": NodeInput.from_sequence_ref(dep_id)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert dep_id in deps
 
     def test_inputs(self) -> None:
@@ -260,9 +261,9 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
-            fixed_kwargs={"offset": InputParam.from_value(10)},
-            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
+            mode="product",
+            fixed_kwargs={"offset": NodeInput.from_value(10)},
+            mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
         # Check kwargs are stored correctly
@@ -286,16 +287,16 @@ class TestMapTaskNodes:
             mode="zip",
             fixed_kwargs={},
             mapped_kwargs={
-                "x": InputParam.from_sequence([1, 2, 3]),
-                "y": InputParam.from_sequence([10, 20]),  # Different length
+                "x": NodeInput.from_sequence([1, 2, 3]),
+                "y": NodeInput.from_sequence([10, 20]),  # Different length
             },
         )
 
-        resolved_inputs = node.resolve_inputs({})
+        resolved = resolve_inputs({**node.fixed_kwargs, **node.mapped_kwargs}, {})
         with pytest.raises(
             ParameterError, match="Map task .* in 'zip' mode requires all sequences"
         ):
-            node.build_iteration_calls(resolved_inputs)
+            node.build_iteration_calls(resolved)
 
     def test_invalid_mode(self) -> None:
         """MapTaskNode build_iteration_calls fails with invalid mode."""
@@ -309,14 +310,14 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            mode="invalid",  # Invalid mode
+            mode="invalid",  # type: ignore
             fixed_kwargs={},
-            mapped_kwargs={"x": InputParam.from_sequence([1, 2, 3])},
+            mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        resolved_inputs = node.resolve_inputs({})
+        resolved = resolve_inputs({**node.fixed_kwargs, **node.mapped_kwargs}, {})
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
-            node.build_iteration_calls(resolved_inputs)
+            node.build_iteration_calls(resolved)
 
 
 class TestBuildGraph:
@@ -389,7 +390,7 @@ class TestBuildGraph:
         assert len(graph) == 3
         # Verify combine node depends on both sources
         combine_node = graph[result.id]
-        deps = combine_node.dependencies()
+        deps = combine_node.get_dependencies()
         assert s1.id in deps
         assert s2.id in deps
 
@@ -515,10 +516,10 @@ class TestBuildGraph:
             def id(self) -> UUID:
                 return self._id
 
-            def get_dependencies(self) -> list:
+            def get_upstream_builders(self) -> list:
                 return [self._other] if self._other else []
 
-            def to_graph(self):  # pragma: no cover
+            def build_node(self):  # pragma: no cover
                 from daglite.graph.nodes import TaskNode
 
                 return TaskNode(
@@ -552,10 +553,10 @@ class TestBuildGraph:
             def id(self):
                 return self._id
 
-            def get_dependencies(self) -> list:
+            def get_upstream_builders(self) -> list:
                 return [self]
 
-            def to_graph(self):  # pragma: no cover
+            def build_node(self):  # pragma: no cover
                 from daglite.graph.nodes import TaskNode
 
                 return TaskNode(

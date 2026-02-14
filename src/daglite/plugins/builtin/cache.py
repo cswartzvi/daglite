@@ -8,7 +8,7 @@ from daglite.plugins.hooks.markers import hook_impl
 
 if TYPE_CHECKING:
     from daglite.cache.store import CacheStore
-    from daglite.graph.base import GraphMetadata
+    from daglite.graph.nodes.base import NodeMetadata
 
 
 class CachePlugin:
@@ -42,7 +42,7 @@ class CachePlugin:
     def check_cache(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         cache_enabled: bool,
         cache_ttl: int | None,
@@ -72,7 +72,7 @@ class CachePlugin:
     def update_cache(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         cache_enabled: bool,

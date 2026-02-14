@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from daglite.graph.base import GraphMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.hooks.markers import hook_spec
 from daglite.plugins.reporters import EventReporter
 
@@ -14,7 +14,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def before_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         reporter: EventReporter | None,
     ) -> None:
@@ -30,7 +30,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def after_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -50,7 +50,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def on_node_error(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -70,7 +70,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def before_node_retry(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         attempt: int,
         last_error: Exception,
@@ -90,7 +90,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def after_node_retry(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         attempt: int,
         succeeded: bool,
@@ -111,7 +111,7 @@ class WorkerSideNodeSpecs:
     def check_cache(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         cache_enabled: bool,
         cache_ttl: int | None,
@@ -138,7 +138,7 @@ class WorkerSideNodeSpecs:
     def on_cache_hit(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
@@ -158,7 +158,7 @@ class WorkerSideNodeSpecs:
     def update_cache(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         cache_enabled: bool,
@@ -269,23 +269,22 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def before_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
+        metadata: NodeMetadata,
+        iteration_count: int,
     ) -> None:
         """
         Called before a mapped node begins execution.
 
         Args:
             metadata: Metadata for the mapped node to be executed.
-            inputs_list: List of resolved inputs for each mapping.
+            iteration_count: Number of iterations the mapped node will execute.
         """
 
     @hook_spec
     def after_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        metadata: NodeMetadata,
+        iteration_count: int,
         duration: float,
     ) -> None:
         """
@@ -293,9 +292,8 @@ class CoordinatorSideNodeSpecs:
 
         Args:
             metadata: Metadata for the executed mapped node.
-            inputs_list: List of resolved inputs for each mapping.
-            duration: Execution time in seconds for all mappings.
-            results: List of results produced by each mapping.
+            iteration_count: Number of iterations that were executed.
+            duration: Execution time in seconds for all iterations.
         """
 
 

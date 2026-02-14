@@ -145,7 +145,7 @@ def run(
     if settings_dict:
         set_global_settings(DagliteSettings(**settings_dict))
 
-    # Call the pipeline to get the GraphBuilder
+    # Call the pipeline to get the NodeBuilder
     try:
         graph = pipeline_obj(**params)
     except Exception as e:  # pragma: no cover

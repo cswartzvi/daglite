@@ -14,7 +14,7 @@ from typing_extensions import Self, override
 
 from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
-from daglite.graph.base import GraphBuilder
+from daglite.graph.builder import NodeBuilder
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -32,7 +32,7 @@ S6 = TypeVar("S6")
 
 
 @dataclass(frozen=True)
-class BaseTaskFuture(abc.ABC, GraphBuilder, Generic[R]):
+class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
     """Base class for all task futures, representing unevaluated task invocations."""
 
     # Internal unique ID for this future

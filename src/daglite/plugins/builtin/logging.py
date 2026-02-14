@@ -18,7 +18,7 @@ from typing_extensions import override
 
 from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
-from daglite.graph.base import GraphMetadata
+from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl
@@ -328,8 +328,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def before_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
+        metadata: NodeMetadata,
+        iteration_count: int,
     ) -> None:
         self._mapped_nodes.add(metadata.id)
         # Coordinator-side hooks need manual task context since get_current_task() returns None.
@@ -337,7 +337,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_key = metadata.key or metadata.name
         backend_name = metadata.backend_name or "inline"
         self._logger.info(
-            f"Task '{node_key}' - Starting task with {len(inputs_list)} iterations using "
+            f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
@@ -345,7 +345,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def before_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         reporter: EventReporter | None,
     ) -> None:
@@ -362,7 +362,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def after_node_execute(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -377,7 +377,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def on_node_error(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -398,7 +398,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def before_node_retry(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         attempt: int,
         last_error: Exception,
@@ -419,7 +419,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def after_node_retry(
         self,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         attempt: int,
         succeeded: bool,
@@ -440,7 +440,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     def on_cache_hit(
         self,
         func: Any,
-        metadata: GraphMetadata,
+        metadata: NodeMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
@@ -454,9 +454,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def after_mapped_node_execute(
         self,
-        metadata: GraphMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        metadata: NodeMetadata,
+        iteration_count: int,
         duration: float,
     ) -> None:
         node_key = metadata.key or metadata.name

@@ -7,8 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from daglite.datasets.store import DatasetStore
-from daglite.graph.base import OutputConfig
-from daglite.graph.nodes import _save_outputs
+from daglite.graph.nodes._workers import save_outputs as _save_outputs
+from daglite.graph.nodes.base import NodeOutputConfig
 
 
 class TestSaveOutputsNoOp:
@@ -31,9 +31,9 @@ class TestSaveOutputsKeyFormatting:
         """Literal key with no placeholders is used as-is."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="output.pkl", store=store)
+            config = NodeOutputConfig(key="output.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result={"data": 1},
@@ -49,9 +49,9 @@ class TestSaveOutputsKeyFormatting:
         """Key placeholders are resolved from resolved_inputs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="output_{data_id}.pkl", store=store)
+            config = NodeOutputConfig(key="output_{data_id}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -66,9 +66,9 @@ class TestSaveOutputsKeyFormatting:
         """Key placeholders can come from output_deps."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="output_{version}.pkl", store=store)
+            config = NodeOutputConfig(key="output_{version}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -83,9 +83,9 @@ class TestSaveOutputsKeyFormatting:
         """Key placeholders can come from key_extras."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="output_{iteration_index}.pkl", store=store)
+            config = NodeOutputConfig(key="output_{iteration_index}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 _save_outputs(
                     result="value",
@@ -101,9 +101,9 @@ class TestSaveOutputsKeyFormatting:
         """Missing placeholder raises ValueError with helpful message."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="output_{missing}.pkl", store=store)
+            config = NodeOutputConfig(key="output_{missing}.pkl", store=store)
 
-            with patch("daglite.graph.nodes.get_dataset_reporter") as mock_reporter:
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_reporter:
                 mock_reporter.return_value = MagicMock(is_direct=True)
                 with pytest.raises(ValueError, match="not available"):
                     _save_outputs(
@@ -121,11 +121,13 @@ class TestSaveOutputsRouting:
         """Local store saves are routed via the dataset reporter."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="out.pkl", store=store, format="pickle")
+            config = NodeOutputConfig(key="out.pkl", store=store, format="pickle")
 
             mock_reporter = MagicMock()
 
-            with patch("daglite.graph.nodes.get_dataset_reporter", return_value=mock_reporter):
+            with patch(
+                "daglite.graph.nodes._workers.get_dataset_reporter", return_value=mock_reporter
+            ):
                 _save_outputs(
                     result={"data": 1},
                     resolved_inputs={},
@@ -141,9 +143,9 @@ class TestSaveOutputsRouting:
         """Remote (non-local) store saves directly, bypassing reporter."""
         mock_store = MagicMock()
         mock_store.is_local = False
-        config = OutputConfig(key="out.pkl", store=mock_store, format="pickle")
+        config = NodeOutputConfig(key="out.pkl", store=mock_store, format="pickle")
 
-        with patch("daglite.graph.nodes.get_dataset_reporter") as mock_get_reporter:
+        with patch("daglite.graph.nodes._workers.get_dataset_reporter") as mock_get_reporter:
             mock_get_reporter.return_value = MagicMock()
             _save_outputs(
                 result={"data": 1},
@@ -158,9 +160,9 @@ class TestSaveOutputsRouting:
         """When no dataset reporter is set, saves directly to store."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            config = OutputConfig(key="out.txt", store=store, format="text")
+            config = NodeOutputConfig(key="out.txt", store=store, format="text")
 
-            with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+            with patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None):
                 _save_outputs(
                     result="hello",
                     resolved_inputs={},
@@ -176,12 +178,12 @@ class TestSaveOutputsStoreResolution:
     """Tests for store resolution in _save_outputs."""
 
     def test_explicit_store_used(self):
-        """Store from OutputConfig is used when present."""
+        """Store from NodeOutputConfig is used when present."""
         mock_store = MagicMock()
         mock_store.is_local = False
-        config = OutputConfig(key="out.pkl", store=mock_store)
+        config = NodeOutputConfig(key="out.pkl", store=mock_store)
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},
@@ -193,11 +195,11 @@ class TestSaveOutputsStoreResolution:
 
     def test_settings_fallback_string(self):
         """When config.store is None, falls back to settings.datastore_store (string)."""
-        config = OutputConfig(key="out.pkl", store=None)
+        config = NodeOutputConfig(key="out.pkl", store=None)
 
         with (
             tempfile.TemporaryDirectory() as tmpdir,
-            patch("daglite.graph.nodes.get_dataset_reporter", return_value=None),
+            patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None),
             patch("daglite.settings.get_global_settings") as mock_settings,
         ):
             mock_settings.return_value.datastore_store = tmpdir
@@ -211,12 +213,12 @@ class TestSaveOutputsStoreResolution:
 
     def test_settings_fallback_store_instance(self):
         """When config.store is None, falls back to settings.datastore_store (DatasetStore)."""
-        config = OutputConfig(key="out.pkl", store=None)
+        config = NodeOutputConfig(key="out.pkl", store=None)
         mock_store = MagicMock()
         mock_store.is_local = False
 
         with (
-            patch("daglite.graph.nodes.get_dataset_reporter", return_value=None),
+            patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None),
             patch("daglite.settings.get_global_settings") as mock_settings,
         ):
             mock_settings.return_value.datastore_store = mock_store
@@ -234,12 +236,12 @@ class TestSaveOutputsFormatAndOptions:
     """Tests for format and options pass-through."""
 
     def test_format_passed_to_reporter(self):
-        """Format from OutputConfig is passed through to reporter.save()."""
+        """Format from NodeOutputConfig is passed through to reporter.save()."""
         mock_store = MagicMock()
         mock_store.is_local = False
-        config = OutputConfig(key="data.txt", store=mock_store, format="text")
+        config = NodeOutputConfig(key="data.txt", store=mock_store, format="text")
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="hello",
                 resolved_inputs={},
@@ -251,12 +253,12 @@ class TestSaveOutputsFormatAndOptions:
         assert kwargs["format"] == "text"
 
     def test_options_passed_to_reporter(self):
-        """Options from OutputConfig are passed through."""
+        """Options from NodeOutputConfig are passed through."""
         mock_store = MagicMock()
         mock_store.is_local = False
-        config = OutputConfig(key="data.pkl", store=mock_store, options={"protocol": 5})
+        config = NodeOutputConfig(key="data.pkl", store=mock_store, options={"protocol": 5})
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},
@@ -271,10 +273,10 @@ class TestSaveOutputsFormatAndOptions:
         """_save_outputs handles multiple output configs."""
         mock_store = MagicMock()
         mock_store.is_local = False
-        config1 = OutputConfig(key="out1.pkl", store=mock_store)
-        config2 = OutputConfig(key="out2.pkl", store=mock_store)
+        config1 = NodeOutputConfig(key="out1.pkl", store=mock_store)
+        config2 = NodeOutputConfig(key="out2.pkl", store=mock_store)
 
-        with patch("daglite.graph.nodes.get_dataset_reporter", return_value=None):
+        with patch("daglite.graph.nodes._workers.get_dataset_reporter", return_value=None):
             _save_outputs(
                 result="value",
                 resolved_inputs={},
