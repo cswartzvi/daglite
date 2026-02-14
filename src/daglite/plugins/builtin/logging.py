@@ -343,6 +343,19 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         )
 
     @hook_impl
+    def after_mapped_node_execute(
+        self,
+        metadata: NodeMetadata,
+        iteration_count: int,
+        duration: float,
+    ) -> None:
+        node_key = metadata.key or metadata.name
+        self._logger.info(
+            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
+
+    @hook_impl
     def before_node_execute(
         self,
         metadata: NodeMetadata,
@@ -448,19 +461,6 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_key = metadata.key or metadata.name
         self._logger.info(
             f"Task '{node_key}' - Using cached result",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
-        )
-
-    @hook_impl
-    def after_mapped_node_execute(
-        self,
-        metadata: NodeMetadata,
-        iteration_count: int,
-        duration: float,
-    ) -> None:
-        node_key = metadata.key or metadata.name
-        self._logger.info(
-            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
