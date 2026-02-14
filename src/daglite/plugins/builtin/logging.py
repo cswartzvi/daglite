@@ -19,7 +19,7 @@ from typing_extensions import override
 from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
 from daglite.graph.nodes.base import NodeMetadata
-from daglite.plugins.base import BidirectionalPlugin
+from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.registry import EventRegistry
@@ -112,7 +112,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     return _TaskLoggerAdapter(base_logger, {})
 
 
-class CentralizedLoggingPlugin(BidirectionalPlugin):
+class CentralizedLoggingPlugin(EventHandlerPlugin):
     """
     Plugin that enables centralized logging via the reporter system.
 

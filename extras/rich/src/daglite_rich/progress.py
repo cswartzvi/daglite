@@ -9,7 +9,7 @@ from rich.progress import TaskID
 from typing_extensions import override
 
 from daglite.graph.nodes.base import NodeMetadata
-from daglite.plugins.base import BidirectionalPlugin
+from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.registry import EventRegistry
@@ -23,7 +23,7 @@ else:
     RichProgressBar = Any
 
 
-class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
+class RichProgressPlugin(EventHandlerPlugin, SerializablePlugin):
     """
     Plugin that adds rich progress bars and logging to daglite tasks.
 
