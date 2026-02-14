@@ -2,7 +2,7 @@
 
 [![PyPI](https://img.shields.io/pypi/v/daglite?label=PyPI)](https://pypi.org/project/daglite/)
 [![Python](https://img.shields.io/badge/python-3.10+-blue)](https://www.python.org/)
-[![type checked](https://img.shields.io/badge/type%20checked-mypy%2C%20pyright%2C%20pyrefly%2C%20ty-blue)](https://github.com/cswartzvi/daglite)
+[![type checked](https://img.shields.io/badge/type%20checked-mypy%2C%20pyright%2C%20pyrefly%2C%20ty-blue)](https://github.com/cswartzvi/daglite/tree/main/tests/typing)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![tests](https://img.shields.io/github/actions/workflow/status/cswartzvi/daglite/testing.yaml?branch=main&label=tests&logo=github)](https://github.com/cswartzvi/daglite/actions/workflows/testing.yaml)
 [![codecov](https://codecov.io/github/cswartzvi/daglite/graph/badge.svg?token=1o01x0xk7i)](https://codecov.io/github/cswartzvi/daglite)
