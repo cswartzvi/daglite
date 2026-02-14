@@ -329,7 +329,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     def before_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
+        iteration_count: int,
     ) -> None:
         self._mapped_nodes.add(metadata.id)
         # Coordinator-side hooks need manual task context since get_current_task() returns None.
@@ -337,7 +337,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_key = metadata.key or metadata.name
         backend_name = metadata.backend_name or "inline"
         self._logger.info(
-            f"Task '{node_key}' - Starting task with {len(inputs_list)} iterations using "
+            f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
@@ -455,8 +455,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     def after_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        iteration_count: int,
         duration: float,
     ) -> None:
         node_key = metadata.key or metadata.name

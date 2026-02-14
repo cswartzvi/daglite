@@ -8,18 +8,18 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
 
-from daglite._validation import MapMode
+from daglite._typing import MapMode
 from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_overlap_params
 from daglite._validation import get_unbound_param
 from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
+from daglite.futures._shared import build_node_inputs
+from daglite.futures._shared import build_output_configs
+from daglite.futures._shared import collect_builders
 from daglite.futures.base import BaseTaskFuture
-from daglite.futures.graph_helpers import build_node_inputs
-from daglite.futures.graph_helpers import build_output_configs
-from daglite.futures.graph_helpers import collect_dependencies
-from daglite.graph.builder import GraphBuilder
+from daglite.graph.builder import NodeBuilder
 from daglite.graph.nodes import TaskNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
@@ -307,11 +307,11 @@ class TaskFuture(BaseTaskFuture[R]):
         return tuple(_get_index(tup=self, index=i) for i in range(final_size))
 
     @override
-    def get_dependencies(self) -> list[GraphBuilder]:
-        return collect_dependencies(self.kwargs, outputs=self._output_futures)
+    def get_upstream_builders(self) -> list[NodeBuilder]:
+        return collect_builders(self.kwargs, outputs=self._output_futures)
 
     @override
-    def to_graph(self) -> TaskNode:
+    def build_node(self) -> TaskNode:
         kwargs = build_node_inputs(self.kwargs)
         placeholders = set(self.kwargs.keys())
         output_configs = build_output_configs(self._output_futures, placeholders)

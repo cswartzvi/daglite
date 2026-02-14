@@ -33,7 +33,7 @@ def pipeline(
     """
     Decorator to convert a Python function into a daglite `Pipeline`.
 
-    Pipelines are functions that return a `GraphBuilder` (typically a `TaskFuture` or
+    Pipelines are functions that return a `NodeBuilder` (typically a `TaskFuture` or
     `MapTaskFuture`). They serve as entry points for CLI execution and provide a way
     to parameterize DAG construction.
 
@@ -89,11 +89,11 @@ def pipeline(
 @dataclass(frozen=True)
 class Pipeline(Generic[P, R]):
     """
-    Wraps a Python function as a pipeline that returns a GraphBuilder.
+    Wraps a Python function as a pipeline that returns a `NodeBuilder``.
 
     Users should **not** directly instantiate this class, use the `@pipeline` decorator instead.
 
-    A pipeline function should accept parameters and return a `GraphBuilder` (e.g., `TaskFuture`
+    A pipeline function should accept parameters and return a `NodeBuilder` (e.g., `TaskFuture`
     or `MapTaskFuture`). These parameters can be provided via the CLI, allowing for dynamic
     DAG construction based on user input.
     """

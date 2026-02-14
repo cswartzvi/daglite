@@ -15,6 +15,7 @@ from daglite.exceptions import ParameterError
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes import TaskNode
+from daglite.graph.nodes._shared import resolve_inputs
 from daglite.graph.nodes.base import NodeInput
 from daglite.tasks import task
 
@@ -142,7 +143,7 @@ class TestTaskNodes:
             kwargs={"x": NodeInput.from_ref(dep_id)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert len(deps) == 1
         assert dep_id in deps
 
@@ -161,7 +162,7 @@ class TestTaskNodes:
             kwargs={"x": NodeInput.from_value(10)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert len(deps) == 0
 
 
@@ -180,7 +181,7 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            mode="extend",
+            mode="product",
             fixed_kwargs={},
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
@@ -219,12 +220,12 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
+            mode="product",
             fixed_kwargs={"offset": NodeInput.from_ref(dep_id)},
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert dep_id in deps
 
     def test_dependencies_from_mapped(self) -> None:
@@ -240,12 +241,12 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
+            mode="product",
             fixed_kwargs={"offset": NodeInput.from_value(10)},
             mapped_kwargs={"x": NodeInput.from_sequence_ref(dep_id)},
         )
 
-        deps = node.dependencies()
+        deps = node.get_dependencies()
         assert dep_id in deps
 
     def test_inputs(self) -> None:
@@ -260,7 +261,7 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=add,
-            mode="extend",
+            mode="product",
             fixed_kwargs={"offset": NodeInput.from_value(10)},
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
@@ -291,11 +292,11 @@ class TestMapTaskNodes:
             },
         )
 
-        resolved_inputs = node.resolve_inputs({})
+        resolved = resolve_inputs({**node.fixed_kwargs, **node.mapped_kwargs}, {})
         with pytest.raises(
             ParameterError, match="Map task .* in 'zip' mode requires all sequences"
         ):
-            node.build_iteration_calls(resolved_inputs)
+            node.build_iteration_calls(resolved)
 
     def test_invalid_mode(self) -> None:
         """MapTaskNode build_iteration_calls fails with invalid mode."""
@@ -309,14 +310,14 @@ class TestMapTaskNodes:
             description=None,
             backend_name=None,
             func=process,
-            mode="invalid",  # Invalid mode
+            mode="invalid",  # type: ignore
             fixed_kwargs={},
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        resolved_inputs = node.resolve_inputs({})
+        resolved = resolve_inputs({**node.fixed_kwargs, **node.mapped_kwargs}, {})
         with pytest.raises(ExecutionError, match="Unknown map mode 'invalid'"):
-            node.build_iteration_calls(resolved_inputs)
+            node.build_iteration_calls(resolved)
 
 
 class TestBuildGraph:
@@ -389,7 +390,7 @@ class TestBuildGraph:
         assert len(graph) == 3
         # Verify combine node depends on both sources
         combine_node = graph[result.id]
-        deps = combine_node.dependencies()
+        deps = combine_node.get_dependencies()
         assert s1.id in deps
         assert s2.id in deps
 
@@ -515,10 +516,10 @@ class TestBuildGraph:
             def id(self) -> UUID:
                 return self._id
 
-            def get_dependencies(self) -> list:
+            def get_upstream_builders(self) -> list:
                 return [self._other] if self._other else []
 
-            def to_graph(self):  # pragma: no cover
+            def build_node(self):  # pragma: no cover
                 from daglite.graph.nodes import TaskNode
 
                 return TaskNode(
@@ -552,10 +553,10 @@ class TestBuildGraph:
             def id(self):
                 return self._id
 
-            def get_dependencies(self) -> list:
+            def get_upstream_builders(self) -> list:
                 return [self]
 
-            def to_graph(self):  # pragma: no cover
+            def build_node(self):  # pragma: no cover
                 from daglite.graph.nodes import TaskNode
 
                 return TaskNode(

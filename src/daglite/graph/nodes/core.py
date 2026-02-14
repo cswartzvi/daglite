@@ -1,15 +1,25 @@
 """Defines graph nodes for the daglite Intermediate Representation (IR)."""
 
+import asyncio
+import functools
 import inspect
 import time
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
+from collections.abc import Generator
+from collections.abc import Iterator
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
+from itertools import product
 from typing import Any, Callable, TypeVar
 from uuid import UUID
 
+from pluggy import HookRelay
 from typing_extensions import override
 
+from daglite._typing import MapMode
+from daglite.backends.base import Backend
 from daglite.backends.context import get_dataset_reporter
 from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
@@ -19,11 +29,15 @@ from daglite.datasets.reporters import DirectDatasetReporter
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
+from daglite.graph.nodes._shared import collect_dependencies
+from daglite.graph.nodes._shared import resolve_inputs
+from daglite.graph.nodes._shared import resolve_output_parameters
 from daglite.graph.nodes.base import BaseGraphNode
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeKind
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.graph.nodes.base import NodeOutputConfig
+from daglite.graph.nodes.base import Submission
 
 _DIRECT_REPORTER = DirectDatasetReporter()
 
@@ -63,48 +77,29 @@ class TaskNode(BaseGraphNode):
         return "task"
 
     @override
-    def dependencies(self) -> set[UUID]:
-        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
-        for config in self.output_configs:
-            for param in config.dependencies.values():
-                if param.reference is not None:
-                    deps.add(param.reference)
-        return deps
+    def get_dependencies(self) -> set[UUID]:
+        return collect_dependencies(self.kwargs, self.output_configs)
 
     @override
-    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        inputs = {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
-        return inputs
-
-    @override
-    def to_metadata(self) -> NodeMetadata:
-        return NodeMetadata(
-            id=self.id,
-            name=self.name,
-            kind="task",
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
-        )
-
-    @override
-    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from dataclasses import replace
-
-        metadata = replace(self.to_metadata(), key=self.name)
-        resolved_output_extras = kwargs.get("resolved_output_deps", [])
-
-        return await _run_implementation(
+    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
+        inputs = resolve_inputs(self.kwargs, completed_nodes)
+        output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
+        func = functools.partial(
+            _run_implementation,
             func=self.func,
-            metadata=metadata,
-            resolved_inputs=resolved_inputs,
-            output_config=self.output_configs,
-            output_deps=resolved_output_extras,
+            metadata=self.metadata,
+            inputs=inputs,
+            output_configs=self.output_configs,
+            output_parameters=output_parameters,
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
-            key_extras={},
         )
+        return [func]
+
+    @override
+    def _collect(self, results: list[Any]) -> Any:
+        return results[0] if results else None
 
 
 @dataclass(frozen=True)
@@ -114,7 +109,7 @@ class MapTaskNode(BaseGraphNode):
     func: Callable
     """Function to be executed for each map iteration."""
 
-    mode: str
+    mode: MapMode
     """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
 
     fixed_kwargs: Mapping[str, NodeInput]
@@ -144,26 +139,57 @@ class MapTaskNode(BaseGraphNode):
         return "map"
 
     @override
-    def dependencies(self) -> set[UUID]:
-        deps = set()
-        for param in self.fixed_kwargs.values():
-            if param.reference is not None:
-                deps.add(param.reference)
-        for param in self.mapped_kwargs.values():
-            if param.reference is not None:
-                deps.add(param.reference)
-        for config in self.output_configs:
-            for param in config.dependencies.values():
-                if param.reference is not None:
-                    deps.add(param.reference)
-        return deps
+    def get_dependencies(self) -> set[UUID]:
+        kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
+        return collect_dependencies(kwargs, self.output_configs)
 
     @override
-    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        fixed_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.fixed_kwargs.items()}
-        mapped_inputs = {nm: pm.resolve(completed_nodes) for nm, pm in self.mapped_kwargs.items()}
-        inputs = {**fixed_inputs, **mapped_inputs}
-        return inputs
+    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
+        inputs = resolve_inputs({**self.fixed_kwargs, **self.mapped_kwargs}, completed_nodes)
+        iteration_calls = self.build_iteration_calls(inputs)
+        output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
+        submissions: list[Submission] = []
+        for idx, iteration_call in enumerate(iteration_calls):
+            submission = functools.partial(
+                _run_implementation,
+                func=self.func,
+                metadata=self.metadata,
+                inputs=iteration_call,
+                output_configs=self.output_configs,
+                output_parameters=output_parameters,
+                retries=self.retries,
+                cache_enabled=self.cache,
+                cache_ttl=self.cache_ttl,
+                iteration_index=idx,
+            )
+            submissions.append(submission)
+        return submissions
+
+    @override
+    def _collect(self, results: list[Any]) -> Any:
+        return list(results)
+
+    @override
+    async def execute(
+        self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
+    ) -> Any:
+        submissions = self._prepare(completed_nodes)
+        iteration_count = len(submissions)
+
+        start_time = time.perf_counter()
+        hooks.before_mapped_node_execute(metadata=self.metadata, iteration_count=iteration_count)
+
+        futures = [backend.submit(fn, timeout=self.timeout) for fn in submissions]
+        results = await asyncio.gather(*futures)
+
+        duration = time.perf_counter() - start_time
+        hooks.after_mapped_node_execute(
+            metadata=self.metadata,
+            iteration_count=iteration_count,
+            duration=duration,
+        )
+
+        return self._collect(results)
 
     def build_iteration_calls(self, resolved_inputs: dict[str, Any]) -> list[dict[str, Any]]:
         """
@@ -172,9 +198,6 @@ class MapTaskNode(BaseGraphNode):
         Args:
             resolved_inputs: Pre-resolved parameter inputs for this node.
         """
-
-        from itertools import product
-
         fixed = {k: v for k, v in resolved_inputs.items() if k in self.fixed_kwargs}
         mapped = {k: v for k, v in resolved_inputs.items() if k in self.mapped_kwargs}
 
@@ -211,39 +234,6 @@ class MapTaskNode(BaseGraphNode):
 
         return calls
 
-    @override
-    def to_metadata(self) -> NodeMetadata:
-        return NodeMetadata(
-            id=self.id,
-            name=self.name,
-            kind="map",
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
-        )
-
-    @override
-    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from dataclasses import replace
-
-        iteration_index = kwargs["iteration_index"]
-        resolved_output_deps = kwargs.get("resolved_output_deps", [])
-
-        node_key = f"{self.name}[{iteration_index}]"
-        metadata = replace(self.to_metadata(), key=node_key)
-
-        return await _run_implementation(
-            func=self.func,
-            metadata=metadata,
-            resolved_inputs=resolved_inputs,
-            output_config=self.output_configs,
-            output_deps=resolved_output_deps,
-            retries=self.retries,
-            cache_enabled=self.cache,
-            cache_ttl=self.cache_ttl,
-            key_extras={"iteration_index": iteration_index},
-        )
-
 
 # region Special Nodes
 
@@ -279,87 +269,36 @@ class DatasetNode(BaseGraphNode):
     kwargs: Mapping[str, NodeInput] = field(default_factory=dict)
     """Keyword parameters used for key-template formatting."""
 
+    @property
     @override
-    def dependencies(self) -> set[UUID]:
-        deps = {p.reference for p in self.kwargs.values() if p.reference is not None}
-        for config in self.output_configs:
-            for param in config.dependencies.values():
-                if param.reference is not None:
-                    deps.add(param.reference)
-        return deps
+    def kind(self) -> NodeKind:
+        return "dataset"
 
     @override
-    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        return {name: param.resolve(completed_nodes) for name, param in self.kwargs.items()}
+    def get_dependencies(self) -> set[UUID]:
+        return collect_dependencies(self.kwargs, self.output_configs)
 
     @override
-    def to_metadata(self) -> NodeMetadata:
-        return NodeMetadata(
-            id=self.id,
-            name=self.name,
-            kind="dataset",
-            description=self.description,
-            backend_name=self.backend_name,
-            key=self.key,
+    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
+        resolved_inputs = resolve_inputs(self.kwargs, completed_nodes)
+        output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
+        func = functools.partial(
+            _run_dataset_load,
+            store=self.store,
+            load_key=self.load_key,
+            return_type=self.return_type,
+            load_format=self.load_format,
+            load_options=self.load_options,
+            metadata=self.metadata,
+            resolved_inputs=resolved_inputs,
+            output_configs=self.output_configs,
+            output_parameters=output_parameters,
         )
+        return [func]
 
     @override
-    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        from dataclasses import replace as dc_replace
-
-        # Format the key template with resolved dependency values
-        try:
-            key = self.load_key.format(**resolved_inputs)
-        except KeyError as e:
-            available = sorted(resolved_inputs.keys())
-            raise ValueError(
-                f"Dataset key template '{self.load_key}' references {e} "
-                f"which is not available.\n"
-                f"Available variables: {', '.join(available)}"
-            ) from e
-
-        metadata = dc_replace(self.to_metadata(), key=self.name)
-        token = set_current_task(metadata)
-
-        try:
-            hook = get_plugin_manager().hook
-            hook.before_dataset_load(
-                key=key,
-                return_type=self.return_type,
-                format=self.load_format,
-                options=self.load_options or None,
-            )
-
-            start_time = time.time()
-            result = self.store.load(
-                key,
-                return_type=self.return_type,
-                format=self.load_format,
-                options=self.load_options or None,
-            )
-            duration = time.time() - start_time
-
-            hook.after_dataset_load(
-                key=key,
-                return_type=self.return_type,
-                format=self.load_format,
-                options=self.load_options or None,
-                result=result,
-                duration=duration,
-            )
-
-            # Save outputs if chained via .save()
-            resolved_output_deps = kwargs.get("resolved_output_deps", [])
-            _save_outputs(
-                result=result,
-                resolved_inputs=resolved_inputs,
-                output_config=self.output_configs,
-                output_deps=resolved_output_deps,
-            )
-
-            return result
-        finally:
-            reset_current_task(token)
+    def _collect(self, results: list[Any]) -> Any:
+        return results[0] if results else None
 
 
 # region Common Run
@@ -368,13 +307,14 @@ class DatasetNode(BaseGraphNode):
 async def _run_implementation(
     func: Callable[..., Any],
     metadata: NodeMetadata,
-    resolved_inputs: dict[str, Any],
-    output_config: tuple[NodeOutputConfig, ...],
-    output_deps: list[dict[str, Any]],
+    inputs: dict[str, Any],
+    output_configs: tuple[NodeOutputConfig, ...],
+    output_parameters: list[dict[str, Any]],
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
     key_extras: dict[str, Any] | None = None,
+    iteration_index: int | None = None,
 ) -> Any:
     """
     Private implementation for running a node with context setup and retries.
@@ -382,17 +322,26 @@ async def _run_implementation(
     Args:
         func: Async function to execute.
         metadata: Metadata for the node being executed.
-        resolved_inputs: Pre-resolved parameter inputs for this node.
-        output_config: Output configuration tuple for this node.
-        output_deps: List of resolved output dependencies for each output config.
+        inputs: Dictionary of resolved input values for the function execution.
+        output_configs: Output configuration tuple for this node.
+        output_parameters: List of resolved output parameters for each output config.
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
         key_extras: Additional variables for key formatting.
+        iteration_index: Optional index for map iterations, used for metadata key formatting.
 
     Returns:
         Result of the function execution.
     """
+    from dataclasses import replace
+
+    # Set metadata key: "name[idx]" for map iterations, "name" for regular tasks
+    if iteration_index is not None:
+        metadata = replace(metadata, key=f"{metadata.name}[{iteration_index}]")
+        key_extras = {**(key_extras or {}), "iteration_index": iteration_index}
+    else:
+        metadata = replace(metadata, key=metadata.name)
 
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
@@ -402,7 +351,7 @@ async def _run_implementation(
     cached_result = hook.check_cache(
         func=func,
         metadata=metadata,
-        inputs=resolved_inputs,
+        inputs=inputs,
         cache_enabled=cache_enabled,
         cache_ttl=cache_ttl,
     )
@@ -415,14 +364,14 @@ async def _run_implementation(
         hook.on_cache_hit(
             func=func,
             metadata=metadata,
-            inputs=resolved_inputs,
+            inputs=inputs,
             result=result,
             reporter=reporter,
         )
         reset_current_task(token)
         return result
 
-    hook.before_node_execute(metadata=metadata, inputs=resolved_inputs, reporter=reporter)
+    hook.before_node_execute(metadata=metadata, inputs=inputs, reporter=reporter)
 
     last_error: Exception | None = None
     attempt, max_attempts = 0, retries + 1
@@ -437,7 +386,7 @@ async def _run_implementation(
                     assert last_error is not None
                     hook.before_node_retry(
                         metadata=metadata,
-                        inputs=resolved_inputs,
+                        inputs=inputs,
                         reporter=reporter,
                         attempt=attempt,
                         last_error=last_error,
@@ -445,23 +394,34 @@ async def _run_implementation(
 
                 # Synchronous/asynchronous function handling
                 if inspect.iscoroutinefunction(func):
-                    result = await func(**resolved_inputs)
+                    result = await func(**inputs)
+                elif inspect.isasyncgenfunction(func):
+                    result = [item async for item in func(**inputs)]
                 else:
-                    result = func(**resolved_inputs)
+                    result = func(**inputs)
+
+                # Materialize async generators/iterators to lists
+                if isinstance(result, (AsyncGenerator, AsyncIterator)):
+                    result = [item async for item in result]
+                # Materialize sync generators/iterators to lists
+                elif isinstance(result, (Generator, Iterator)) and not isinstance(
+                    result, (str, bytes)
+                ):
+                    result = list(result)
 
                 duration = time.time() - start_time
 
                 if attempt > 1:
                     hook.after_node_retry(
                         metadata=metadata,
-                        inputs=resolved_inputs,
+                        inputs=inputs,
                         reporter=reporter,
                         attempt=attempt,
                         succeeded=True,
                     )
                 hook.after_node_execute(
                     metadata=metadata,
-                    inputs=resolved_inputs,
+                    inputs=inputs,
                     result=result,
                     duration=duration,
                     reporter=reporter,
@@ -469,7 +429,7 @@ async def _run_implementation(
                 hook.update_cache(
                     func=func,
                     metadata=metadata,
-                    inputs=resolved_inputs,
+                    inputs=inputs,
                     result=result,
                     cache_enabled=cache_enabled,
                     cache_ttl=cache_ttl,
@@ -478,9 +438,9 @@ async def _run_implementation(
                 # Save outputs via dataset reporter if configured
                 _save_outputs(
                     result=result,
-                    resolved_inputs=resolved_inputs,
-                    output_config=output_config,
-                    output_deps=output_deps,
+                    resolved_inputs=inputs,
+                    output_config=output_configs,
+                    output_deps=output_parameters,
                     key_extras=key_extras or {},
                 )
 
@@ -493,7 +453,7 @@ async def _run_implementation(
                 if attempt > 1:
                     hook.after_node_retry(
                         metadata=metadata,
-                        inputs=resolved_inputs,
+                        inputs=inputs,
                         reporter=reporter,
                         attempt=attempt,
                         succeeded=False,
@@ -507,13 +467,97 @@ async def _run_implementation(
         assert last_error is not None
         hook.on_node_error(
             metadata=metadata,
-            inputs=resolved_inputs,
+            inputs=inputs,
             reporter=reporter,
             error=last_error,
             duration=duration,
         )
         raise last_error
 
+    finally:
+        reset_current_task(token)
+
+
+async def _run_dataset_load(
+    store: DatasetStore,
+    load_key: str,
+    return_type: type | None,
+    load_format: str | None,
+    load_options: dict[str, Any],
+    metadata: NodeMetadata,
+    resolved_inputs: dict[str, Any],
+    output_configs: tuple[NodeOutputConfig, ...],
+    output_parameters: list[dict[str, Any]],
+) -> Any:
+    """
+    Private implementation for loading a dataset with context setup and hooks.
+
+    Args:
+        store: The dataset store to load from.
+        load_key: Storage key template (may contain ``{param}`` placeholders).
+        return_type: Expected Python type for deserialization dispatch.
+        load_format: Explicit serialization format hint.
+        load_options: Additional options forwarded to the Dataset constructor.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Resolved inputs for key-template formatting.
+        output_configs: Output configuration tuple for this node.
+        output_parameters: Resolved output parameters for each output config.
+
+    Returns:
+        The deserialized dataset value.
+    """
+    from dataclasses import replace as dc_replace
+
+    # Format the key template with resolved dependency values
+    try:
+        key = load_key.format(**resolved_inputs)
+    except KeyError as e:
+        available = sorted(resolved_inputs.keys())
+        raise ValueError(
+            f"Dataset key template '{load_key}' references {e} "
+            f"which is not available.\n"
+            f"Available variables: {', '.join(available)}"
+        ) from e
+
+    node_metadata = dc_replace(metadata, key=metadata.name)
+    token = set_current_task(node_metadata)
+
+    try:
+        hook = get_plugin_manager().hook
+        hook.before_dataset_load(
+            key=key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+        )
+
+        start_time = time.time()
+        result = store.load(
+            key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+        )
+        duration = time.time() - start_time
+
+        hook.after_dataset_load(
+            key=key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+            result=result,
+            duration=duration,
+        )
+
+        # Save outputs if chained via .save()
+        _save_outputs(
+            result=result,
+            resolved_inputs=resolved_inputs,
+            output_config=output_configs,
+            output_deps=output_parameters,
+        )
+
+        return result
     finally:
         reset_current_task(token)
 

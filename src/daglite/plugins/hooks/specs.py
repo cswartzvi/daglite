@@ -270,22 +270,21 @@ class CoordinatorSideNodeSpecs:
     def before_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
+        iteration_count: int,
     ) -> None:
         """
         Called before a mapped node begins execution.
 
         Args:
             metadata: Metadata for the mapped node to be executed.
-            inputs_list: List of resolved inputs for each mapping.
+            iteration_count: Number of iterations the mapped node will execute.
         """
 
     @hook_spec
     def after_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        iteration_count: int,
         duration: float,
     ) -> None:
         """
@@ -293,9 +292,8 @@ class CoordinatorSideNodeSpecs:
 
         Args:
             metadata: Metadata for the executed mapped node.
-            inputs_list: List of resolved inputs for each mapping.
-            duration: Execution time in seconds for all mappings.
-            results: List of results produced by each mapping.
+            iteration_count: Number of iterations that were executed.
+            duration: Execution time in seconds for all iterations.
         """
 
 

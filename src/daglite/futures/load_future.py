@@ -10,8 +10,8 @@ from typing_extensions import override
 from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
 from daglite.datasets.store import DatasetStore
-from daglite.futures.graph_helpers import build_node_inputs
-from daglite.futures.graph_helpers import build_output_configs
+from daglite.futures._shared import build_node_inputs
+from daglite.futures._shared import build_output_configs
 from daglite.futures.task_future import TaskFuture
 from daglite.graph.nodes import DatasetNode
 from daglite.utils import build_repr
@@ -104,7 +104,7 @@ class DatasetFuture(TaskFuture[R]):
         return build_repr("DatasetFuture", f"key={self.load_key!r}", kwargs=self.kwargs)
 
     @override
-    def to_graph(self) -> DatasetNode:  # type: ignore[override]
+    def build_node(self) -> DatasetNode:  # type: ignore[override]
         available_names = set(self.kwargs.keys())
         check_key_placeholders(self.load_key, available_names)
 

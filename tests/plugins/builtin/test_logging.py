@@ -603,7 +603,7 @@ class TestLifecycleLoggingPlugin:
         node_id = uuid4()
         metadata = NodeMetadata(id=node_id, name="test_task", kind="map", key="test_key")
 
-        plugin.before_mapped_node_execute(metadata, inputs_list=[{}, {}])
+        plugin.before_mapped_node_execute(metadata, iteration_count=2)
 
         # Should track the node ID
         assert node_id in plugin._mapped_nodes

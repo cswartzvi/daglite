@@ -163,9 +163,8 @@ class TestRichProgressPlugin:
         plugin._progress.add_task.return_value = TaskID(1)
 
         metadata = NodeMetadata(id=uuid4(), name="map_task", key="map_task", kind="map")
-        inputs_list = [{"x": 1}, {"x": 2}, {"x": 3}]
 
-        plugin.before_mapped_node_execute(metadata, inputs_list)
+        plugin.before_mapped_node_execute(metadata, iteration_count=3)
 
         plugin._progress.add_task.assert_called_once_with(
             "Mapping 'map_task'", total=3, bar_style="bold yellow"
@@ -182,11 +181,9 @@ class TestRichProgressPlugin:
         map_task_id = TaskID(1)
         plugin._id_to_task[metadata.id] = map_task_id
 
-        inputs_list = [{"x": 1}, {"x": 2}, {"x": 3}]
-        results = [2, 4, 6]
         duration = 0.5
 
-        plugin.after_mapped_node_execute(metadata, inputs_list, results, duration)
+        plugin.after_mapped_node_execute(metadata, iteration_count=3, duration=duration)
 
         # Should hide the map task and advance root task
         plugin._progress.update.assert_called_once_with(map_task_id, visible=False)

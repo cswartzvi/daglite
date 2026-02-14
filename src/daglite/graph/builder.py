@@ -10,8 +10,8 @@ from daglite.exceptions import GraphError
 from daglite.graph.nodes.base import BaseGraphNode
 
 
-class GraphBuilder(Protocol):
-    """Protocol for building graph Intermediate Representation (IR) components from tasks."""
+class NodeBuilder(Protocol):
+    """Protocol for building graph Intermediate Representation (IR) nodes from tasks."""
 
     @property
     def id(self) -> UUID:
@@ -19,32 +19,29 @@ class GraphBuilder(Protocol):
         ...
 
     @abc.abstractmethod
-    def get_dependencies(self) -> list[GraphBuilder]:
+    def get_upstream_builders(self) -> list[NodeBuilder]:
         """
-        Return the direct dependencies of this builder.
+        Returns all graph builders that this builder depends on.
 
         Returns:
-            list[GraphBuilder]: List of builders this node depends on.
+            list[NodeBuilder]: List of builders this node depends on.
         """
         ...
 
     @abc.abstractmethod
-    def to_graph(self) -> BaseGraphNode:
+    def build_node(self) -> BaseGraphNode:
         """
-        Convert this builder into a GraphNode.
-
-        All dependencies will have their IDs assigned before this is called,
-        so implementations can safely access dependency.id.
+        Builds and configures a graph node.
 
         Returns:
-            GraphNode: The constructed graph node.
+            BaseGraphNode: A configured graph node instance.
         """
         ...
 
 
-def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
+def build_graph(root: NodeBuilder) -> dict[UUID, BaseGraphNode]:
     """
-    Compile a GraphBuilder tree into a dict of GraphNodes keyed by node id.
+    Compile a `NodeBuilder` tree into a dict of GraphNodes keyed by node id.
 
     Uses an iterative post-order traversal to avoid stack overflow on deep chains.
 
@@ -53,7 +50,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
     """
     nodes: dict[UUID, BaseGraphNode] = {}
     visiting: set[UUID] = set()
-    stack: list[tuple[GraphBuilder, bool]] = [(root, False)]
+    stack: list[tuple[NodeBuilder, bool]] = [(root, False)]
 
     while stack:
         node_like, deps_collected = stack.pop()
@@ -64,7 +61,7 @@ def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
             continue
 
         if not deps_collected:
-            # First visit: check for cycles and collect dependencies
+            # First visit: check for cycles and collect upstream builders
             if node_id in visiting:
                 raise GraphError(
                     f"Circular dependency detected: node '{node_id}' references itself "
@@ -72,16 +69,16 @@ def build_graph(root: GraphBuilder) -> dict[UUID, BaseGraphNode]:
                 )
 
             visiting.add(node_id)
-            deps = node_like.get_dependencies()
+            upstream_builders = node_like.get_upstream_builders()
             stack.append((node_like, True))
 
-            # Push dependencies onto stack (in reverse so they process in order)
-            for dep in reversed(deps):
-                if dep.id not in nodes:
-                    stack.append((dep, False))
+            # Push upstream builders onto stack (in reverse so they process in order)
+            for upstream_builder in reversed(upstream_builders):
+                if upstream_builder.id not in nodes:
+                    stack.append((upstream_builder, False))
         else:
-            # Second visit: all dependencies processed, now build this node
-            node = node_like.to_graph()
+            # Second visit: all upstream builders processed, now build this node
+            node = node_like.build_node()
             nodes[node_id] = node
             visiting.discard(node_id)
 

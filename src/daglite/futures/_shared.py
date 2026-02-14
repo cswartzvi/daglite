@@ -5,44 +5,45 @@ from typing import Any, Mapping
 from daglite._validation import check_key_placeholders
 from daglite.futures.base import BaseTaskFuture
 from daglite.futures.base import OutputFuture
-from daglite.graph.builder import GraphBuilder
+from daglite.graph.builder import NodeBuilder
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeOutputConfig
 
 
-def collect_dependencies(
+def collect_builders(
     kwargs: Mapping[str, Any], outputs: tuple[OutputFuture, ...] | None = None
-) -> list[GraphBuilder]:
+) -> list[NodeBuilder]:
     """
-    Collects graph dependencies from the provided kwargs and future outputs.
+    Collects upstream `NodeBuilder` instances from the provided parameters and outputs.
 
     Args:
-        kwargs: Keyword arguments to inspect for task future dependencies.
-        outputs: Optional tuple of `FutureOutput` instances to inspect for additional dependencies.
+        kwargs: Keyword arguments to inspect for task upstream builders.
+        outputs: Optional tuple of `FutureOutput` instances to inspect for additional builder.
 
     Returns:
-        A list of `GraphBuilder` instances representing the dependencies for a task future.
+        A list of `NodeBuilder` instances found in the given parameters and outputs, representing
+        upstream dependencies for graph construction.
     """
 
-    deps: list[GraphBuilder] = []
+    builder: list[NodeBuilder] = []
 
     for value in kwargs.values():
         if isinstance(value, BaseTaskFuture):
-            deps.append(value)
+            builder.append(value)
 
     outputs = outputs if outputs else tuple()
     for future_output in outputs:
         for value in future_output.extras.values():
             if isinstance(value, BaseTaskFuture):
-                deps.append(value)
-    return deps
+                builder.append(value)
+    return builder
 
 
 def build_node_inputs(kwargs: Mapping[str, Any]) -> dict[str, NodeInput]:
     """
-    Builds graph node inputs for task futures from the provided kwargs.
+    Builds graph `NodeInput instances for task futures from the provided kwargs.
 
-    Note converts task futures to reference parameters, and passes through concrete values as-is.
+    Converts task futures to reference parameters, and passes through concrete values as-is.
 
     Args:
         kwargs: Keyword arguments to resolve into graph parameters.
@@ -63,7 +64,7 @@ def build_mapped_node_inputs(kwargs: Mapping[str, Any]) -> dict[str, NodeInput]:
     """
     Builds graph node inputs for map task futures from the provided kwargs.
 
-    Note converts task futures to reference parameters, and passes through concrete values as-is.
+    Converts task futures to reference parameters, and passes through concrete values as-is.
 
     Args:
         kwargs: Keyword arguments to resolve into graph parameters.

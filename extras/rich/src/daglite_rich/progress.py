@@ -132,11 +132,11 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def before_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
+        iteration_count: int,
     ) -> None:
         description = f"Mapping '{metadata.key or metadata.name}'"
         map_task_id = self._progress.add_task(
-            description, total=len(inputs_list), bar_style=self.secondary_style
+            description, total=iteration_count, bar_style=self.secondary_style
         )
         self._id_to_task[metadata.id] = map_task_id
 
@@ -144,8 +144,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def after_mapped_node_execute(
         self,
         metadata: NodeMetadata,
-        inputs_list: list[dict[str, Any]],
-        results: list[Any],
+        iteration_count: int,
         duration: float,
     ) -> None:
         map_task_id = self._id_to_task.pop(metadata.id, None)

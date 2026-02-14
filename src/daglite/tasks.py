@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
 
 from typing_extensions import Self, override
 
-from daglite._validation import MapMode
+from daglite._typing import MapMode
 from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_missing_params

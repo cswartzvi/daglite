@@ -430,8 +430,10 @@ class TestLoadDataset:
             )
             import asyncio
 
+            # _prepare builds the submission; calling it triggers the key formatting
+            submissions = node._prepare({})
             with pytest.raises(ValueError, match="missing"):
-                asyncio.run(node.run({}))
+                asyncio.run(submissions[0]())
 
 
 class TestLoadDatasetHooks:

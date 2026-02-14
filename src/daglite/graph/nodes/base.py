@@ -13,17 +13,17 @@ from collections.abc import Mapping
 from collections.abc import Sequence
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any
 from uuid import UUID
 
 from pluggy import HookRelay
 
+from daglite._typing import NodeKind
+from daglite._typing import ParamKind
+from daglite._typing import Submission
 from daglite.backends.base import Backend
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import GraphError
-
-ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
-NodeKind = Literal["task", "map", "dataset"]
 
 
 @dataclass(frozen=True)
@@ -61,18 +61,29 @@ class BaseGraphNode(abc.ABC):
         """Returns the kind of this graph node (e.g., 'task', 'map', etc.)."""
         pass
 
-    @abc.abstractmethod
-    def dependencies(self) -> set[UUID]:
-        """
-        IDs of nodes that the current node depends on (its direct predecessors).
+    @property
+    def metadata(self) -> NodeMetadata:
+        """Converts this graph node to its metadata representation for external use."""
+        return NodeMetadata(
+            id=self.id,
+            name=self.name,
+            kind=self.kind,
+            description=self.description,
+            backend_name=self.backend_name,
+            key=self.key,
+        )
 
-        Each node implementation determines its own dependencies based on its
-        internal structure (e.g., from NodeInputs, sub-graphs, etc.).
+    @abc.abstractmethod
+    def get_dependencies(self) -> set[UUID]:
+        """
+        Returns the IDs of nodes that the current node depends on (its direct predecessors).
+
+        Each node implementation determines its own dependencies based on its internal structure.
         """
         ...
 
     @abc.abstractmethod
-    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Callable[[], Awaitable[Any]]]:
+    def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
         """
         Returns parameterless async callables ready for backend submission.
 
@@ -82,8 +93,16 @@ class BaseGraphNode(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def collect(self, results: list[Any]) -> Any:
-        """Post-processed results gathered from execution."""
+    def _collect(self, results: list[Any]) -> Any:
+        """
+        Post-processed results gathered from execution.
+
+        Args:
+            results: List of raw results returned from the backend execution.
+
+        Returns:
+            Processed result for this node.
+        """
         ...
 
     async def execute(
@@ -91,6 +110,10 @@ class BaseGraphNode(abc.ABC):
     ) -> Any:
         """
         Executes the node on the specified backend.
+
+        The default implementation calls ``_prepare`` → ``backend.submit`` →
+        ``asyncio.gather`` → ``_collect``.  Subclasses that need coordinator-side
+        hooks (e.g. ``MapTaskNode``) can override this method.
 
         Args:
             backend: Backend where node will be executed.
@@ -100,60 +123,12 @@ class BaseGraphNode(abc.ABC):
         Returns:
             Materialized result of the node execution.
         """
+        import asyncio
 
-    @abc.abstractmethod
-    def resolve_inputs(self, completed_nodes: Mapping[UUID, Any]) -> dict[str, Any]:
-        """
-        Resolve this node's inputs from completed predecessor nodes.
-
-        Args:
-            completed_nodes: Mapping from node IDs to their computed results.
-
-        Returns:
-            Dictionary of resolved parameter names to values, ready for execution.
-        """
-        ...
-
-    def resolve_output_deps(self, completed_nodes: Mapping[UUID, Any]) -> list[dict[str, Any]]:
-        """
-        Resolve output dependencies to concrete values.
-
-        Resolves NodeInput extras in output_configs to actual values from completed nodes.
-        Returns parallel list to output_configs containing only the resolved extras dicts.
-
-        Args:
-            completed_nodes: Mapping from node IDs to their computed results.
-
-        Returns:
-            List of resolved extras dictionaries, parallel to self.output_configs.
-        """
-        resolved_deps_list = []
-        for config in self.output_configs:
-            resolved_deps = {n: p.resolve(completed_nodes) for n, p in config.dependencies.items()}
-            resolved_deps_list.append(resolved_deps)
-        return resolved_deps_list
-
-    @abc.abstractmethod
-    async def run(self, resolved_inputs: dict[str, Any], **kwargs: Any) -> Any:
-        """
-        Execute this node asynchronously with resolved inputs.
-
-        Similar to run() but for async execution contexts. This allows proper
-        handling of async functions without forcing materialization.
-
-        Args:
-            resolved_inputs: Pre-resolved parameter inputs for this node.
-            **kwargs: Additional runtime-specific execution parameters.
-
-        Returns:
-            Node execution result. May be an async generator or regular value.
-        """
-        ...
-
-    @abc.abstractmethod
-    def to_metadata(self) -> NodeMetadata:
-        """Returns a metadata object for this graph node."""
-        ...
+        submissions = self._prepare(completed_nodes)
+        futures = [backend.submit(fn, timeout=self.timeout) for fn in submissions]
+        results = await asyncio.gather(*futures)
+        return self._collect(results)
 
 
 @dataclass(frozen=True)

@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Awaitable
 
 from pluggy import PluginManager
 from typing_extensions import final
+
+from daglite._typing import Submission
 
 if TYPE_CHECKING:
     from daglite.datasets.processor import DatasetProcessor
@@ -16,8 +18,6 @@ else:
     DatasetReporter = object
     EventProcessor = object
     EventReporter = object
-
-T = TypeVar("T")
 
 
 class Backend(abc.ABC):
@@ -96,21 +96,13 @@ class Backend(abc.ABC):
         pass  # pragma: no cover
 
     @abc.abstractmethod
-    def submit(
-        self,
-        func: Callable[[dict[str, Any]], Any],
-        inputs: dict[str, Any],
-        timeout: float | None = None,
-        **kwargs: Any,
-    ) -> Awaitable[Any]:
+    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
         """
         Submit a callable for execution in the backend.
 
         Args:
-            func: Callable to execute
-            inputs: Pre-resolved parameter inputs
+            func: A parameterless async coroutine to execute.
             timeout: Maximum execution time in seconds. If None, no timeout is enforced.
-            **kwargs: Additional execution options.
 
         Returns:
             An awaitable that resolves to the result of the callable.

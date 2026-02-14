@@ -7,12 +7,13 @@ from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as CFTimeoutError
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable
 from uuid import UUID
 
 from pluggy import PluginManager
 from typing_extensions import override
 
+from daglite._typing import Submission
 from daglite.backends.base import Backend
 from daglite.backends.context import set_execution_context
 from daglite.datasets.reporters import DatasetReporter
@@ -63,13 +64,7 @@ class InlineBackend(Backend):
         self._timeout_executor.shutdown(wait=True)
 
     @override
-    def submit(
-        self,
-        func: Callable[[dict[str, Any]], Any],
-        inputs: dict[str, Any],
-        timeout: float | None = None,
-        **kwargs: Any,
-    ) -> Awaitable[Any]:
+    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
         # Set execution context for immediate execution (runs in main thread)
         # Context cleanup happens when backend stops, not per-task
         set_execution_context(self.plugin_manager, self.event_reporter, self.dataset_reporter)
@@ -79,9 +74,7 @@ class InlineBackend(Backend):
         # until completion. This is a limitation of Python's concurrency model as there is no
         # safe way to kill a thread.
         if timeout is not None:
-            executor_future = self._timeout_executor.submit(
-                _run_coro_in_worker, func, inputs, **kwargs
-            )
+            executor_future = self._timeout_executor.submit(_run_coroutine_in_worker, func)
             timed_future: Future[Any] = Future()
             self._timeout_executor.submit(
                 _wait_with_timeout, executor_future, timed_future, timeout
@@ -90,7 +83,7 @@ class InlineBackend(Backend):
 
         # No timeout path - execute inline
         concurrent_future: Future[Any] = Future()
-        coro = func(inputs, **kwargs)
+        coro = func()
 
         def _on_done(f):
             try:
@@ -141,14 +134,8 @@ class ThreadBackend(Backend):
         self._timeout_executor.shutdown(wait=True)
 
     @override
-    def submit(
-        self,
-        func: Callable[[dict[str, Any]], Any],
-        inputs: dict[str, Any],
-        timeout: float | None = None,
-        **kwargs: Any,
-    ) -> Awaitable[Any]:
-        executor_future = self._executor.submit(_run_coro_in_worker, func, inputs, **kwargs)
+    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
+        executor_future = self._executor.submit(_run_coroutine_in_worker, func)
         if timeout is None:
             return asyncio.wrap_future(executor_future)
 
@@ -256,14 +243,8 @@ class ProcessBackend(Backend):
             self.dataset_reporter.close()
 
     @override
-    def submit(
-        self,
-        func: Callable[[dict[str, Any]], Any],
-        inputs: dict[str, Any],
-        timeout: float | None = None,
-        **kwargs: Any,
-    ) -> Awaitable[Any]:
-        executor_future = self._executor.submit(_run_coro_in_worker, func, inputs, **kwargs)
+    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
+        executor_future = self._executor.submit(_run_coroutine_in_worker, func)
         if timeout is None:
             return asyncio.wrap_future(executor_future)
 
@@ -273,7 +254,7 @@ class ProcessBackend(Backend):
         return asyncio.wrap_future(timed_future)
 
 
-def _run_coro_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -> Any:
+def _run_coroutine_in_worker(func: Submission) -> Any:
     """
     Run an async function to completion in a worker thread/process.
 
@@ -281,14 +262,12 @@ def _run_coro_in_worker(func: Callable, inputs: dict[str, Any], **kwargs: Any) -
     sync and async contexts because the worker thread/process has no running event loop of its own.
 
     Args:
-        func: Async function to run.
-        inputs: Inputs to pass to the function.
-        **kwargs: Additional keyword arguments to pass to the function.
+        func: Parameterless async callable to execute.
 
     Returns:
         The result of the async function.
     """
-    return asyncio.run(func(inputs, **kwargs))
+    return asyncio.run(func())
 
 
 def _wait_with_timeout(
