@@ -170,8 +170,8 @@ class TestDatasetProcessorRequestHandling:
         store.save.assert_called_once_with("data.pkl", 42, format=None, options=None)
 
 
-class TestDatasetProcessorGetRequest:
-    """Tests for _get_request static method."""
+class TestDatasetProcessorGetItem:
+    """Tests for _get_item static method."""
 
     def test_get_item_from_queue(self):
         """Gets request from a queue-like object."""
