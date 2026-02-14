@@ -12,6 +12,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 
 from daglite.graph.nodes.base import NodeMetadata
+from daglite.plugins.events import Event
 from daglite.plugins.registry import EventRegistry
 
 
@@ -225,7 +226,7 @@ class TestRichProgressPlugin:
         map_task_id = TaskID(1)
         plugin._id_to_task[node_id] = map_task_id
 
-        event = {"node_id": node_id}
+        event = Event(type="daglite-node-end", data={"node_id": node_id})
         plugin._handle_node_update(event)
 
         # Should advance the mapped task
@@ -238,7 +239,7 @@ class TestRichProgressPlugin:
         plugin._root_task_id = TaskID(0)
 
         node_id = uuid4()
-        event = {"node_id": node_id}
+        event = Event(type="daglite-node-end", data={"node_id": node_id})
 
         plugin._handle_node_update(event)
 

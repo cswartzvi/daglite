@@ -1,7 +1,9 @@
 """Event registry and processing for coordinator-side event handling."""
 
 import logging
-from typing import Any, Callable
+from typing import Callable
+
+from daglite.plugins.events import Event
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +16,9 @@ class EventRegistry:
     """
 
     def __init__(self) -> None:
-        self._handlers: dict[str, list[Callable[[dict[str, Any]], None]]] = {}
+        self._handlers: dict[str, list[Callable[[Event], None]]] = {}
 
-    def register(self, event_type: str, handler: Callable[[dict[str, Any]], None]) -> None:
+    def register(self, event_type: str, handler: Callable[[Event], None]) -> None:
         """
         Register handler for event type.
 
@@ -24,11 +26,11 @@ class EventRegistry:
 
         Args:
             event_type: Type of event to handle
-            handler: Callable that takes event dict
+            handler: Callable that takes an `Event`
         """
         self._handlers.setdefault(event_type, []).append(handler)
 
-    def dispatch(self, event: dict[str, Any]) -> None:
+    def dispatch(self, event: Event) -> None:
         """
         Dispatch event to all registered handlers.
 
@@ -36,15 +38,10 @@ class EventRegistry:
         running.
 
         Args:
-            event: Event dict with "type" key and additional data
+            event: `Event` to dispatch
         """
-        event_type = event.get("type")
-        if not event_type:
-            logger.warning(f"Event missing 'type' field: {event}")
-            return
-
-        for handler in self._handlers.get(event_type, []):
+        for handler in self._handlers.get(event.type, []):
             try:
                 handler(event)
             except Exception as e:
-                logger.exception(f"Error in event handler for '{event_type}': {e}")
+                logger.exception(f"Error in event handler for '{event.type}': {e}")

@@ -5,6 +5,7 @@ import time
 from multiprocessing import Queue as MpQueue
 from unittest.mock import MagicMock
 
+from daglite.datasets.events import DatasetSaveRequest
 from daglite.datasets.processor import DatasetProcessor
 
 
@@ -89,13 +90,13 @@ class TestDatasetProcessorLifecycle:
 
         # Put a save request on the queue
         q.put(
-            {
-                "key": "test.pkl",
-                "value": {"data": 1},
-                "store": store,
-                "format": "pickle",
-                "options": None,
-            }
+            DatasetSaveRequest(
+                key="test.pkl",
+                value={"data": 1},
+                store=store,
+                format="pickle",
+                options=None,
+            )
         )
 
         # Flush without starting background thread
@@ -122,13 +123,13 @@ class TestDatasetProcessorRequestHandling:
         store = MagicMock()
 
         proc._handle_request(
-            {
-                "key": "output.txt",
-                "value": "text content",
-                "store": store,
-                "format": "text",
-                "options": {"encoding": "utf-8"},
-            }
+            DatasetSaveRequest(
+                key="output.txt",
+                value="text content",
+                store=store,
+                format="text",
+                options={"encoding": "utf-8"},
+            )
         )
 
         store.save.assert_called_once_with(
@@ -145,11 +146,11 @@ class TestDatasetProcessorRequestHandling:
 
         with caplog.at_level(logging.ERROR):
             proc._handle_request(
-                {
-                    "key": "bad.pkl",
-                    "value": "data",
-                    "store": store,
-                }
+                DatasetSaveRequest(
+                    key="bad.pkl",
+                    value="data",
+                    store=store,
+                )
             )
 
         assert "error" in caplog.text.lower() or "Save failed" in caplog.text
@@ -160,11 +161,11 @@ class TestDatasetProcessorRequestHandling:
         store = MagicMock()
 
         proc._handle_request(
-            {
-                "key": "data.pkl",
-                "value": 42,
-                "store": store,
-            }
+            DatasetSaveRequest(
+                key="data.pkl",
+                value=42,
+                store=store,
+            )
         )
 
         store.save.assert_called_once_with("data.pkl", 42, format=None, options=None)
@@ -214,13 +215,13 @@ class TestDatasetProcessorBackgroundProcessing:
         proc.start()
 
         q.put(
-            {
-                "key": "bg.pkl",
-                "value": "background",
-                "store": store,
-                "format": None,
-                "options": None,
-            }
+            DatasetSaveRequest(
+                key="bg.pkl",
+                value="background",
+                store=store,
+                format=None,
+                options=None,
+            )
         )
 
         # Poll instead of sleeping a fixed duration
@@ -242,13 +243,13 @@ class TestDatasetProcessorBackgroundProcessing:
 
         for i in range(5):
             q.put(
-                {
-                    "key": f"item_{i}.pkl",
-                    "value": i,
-                    "store": store,
-                    "format": None,
-                    "options": None,
-                }
+                DatasetSaveRequest(
+                    key=f"item_{i}.pkl",
+                    value=i,
+                    store=store,
+                    format=None,
+                    options=None,
+                )
             )
 
         deadline = time.monotonic() + 5.0
@@ -270,7 +271,9 @@ class TestDatasetProcessorHooks:
         store = MagicMock()
 
         proc._handle_request(
-            {"key": "out.pkl", "value": 42, "store": store, "format": "pickle", "options": {"x": 1}}
+            DatasetSaveRequest(
+                key="out.pkl", value=42, store=store, format="pickle", options={"x": 1}
+            )
         )
 
         mock_hook.before_dataset_save.assert_called_once_with(
@@ -291,7 +294,7 @@ class TestDatasetProcessorHooks:
         store.save.side_effect = lambda *a, **kw: order.append("save")
         mock_hook.after_dataset_save.side_effect = lambda **kw: order.append("after")
 
-        proc._handle_request({"key": "k", "value": "v", "store": store})
+        proc._handle_request(DatasetSaveRequest(key="k", value="v", store=store))
 
         assert order == ["before", "save", "after"]
 
@@ -300,7 +303,7 @@ class TestDatasetProcessorHooks:
         proc = DatasetProcessor()
         store = MagicMock()
 
-        proc._handle_request({"key": "k", "value": "v", "store": store})
+        proc._handle_request(DatasetSaveRequest(key="k", value="v", store=store))
 
         store.save.assert_called_once()
 
@@ -311,7 +314,7 @@ class TestDatasetProcessorHooks:
         store = MagicMock()
         store.save.side_effect = RuntimeError("write failed")
 
-        proc._handle_request({"key": "k", "value": "v", "store": store})
+        proc._handle_request(DatasetSaveRequest(key="k", value="v", store=store))
 
         mock_hook.before_dataset_save.assert_called_once()
         mock_hook.after_dataset_save.assert_not_called()

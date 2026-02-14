@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from typing_extensions import override
 
+from daglite.plugins.events import Event
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,10 +50,10 @@ class DirectEventReporter(EventReporter):
     immediately via callback. Thread-safe for use in ThreadPoolExecutor.
 
     Args:
-        callback: Function to call with event dict when reporting an event.
+        callback: Function to call with :class:`Event` when reporting an event.
     """
 
-    def __init__(self, callback: Callable[[dict[str, Any]], None]):
+    def __init__(self, callback: Callable[[Event], None]):
         self._callback = callback
         self._lock = threading.Lock()
 
@@ -62,7 +64,7 @@ class DirectEventReporter(EventReporter):
 
     @override
     def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = {"type": event_type, **data}
+        event = Event(type=event_type, data=data)
         try:
             with self._lock:
                 self._callback(event)
@@ -97,7 +99,7 @@ class ProcessEventReporter(EventReporter):
 
     @override
     def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = {"type": event_type, **data}
+        event = Event(type=event_type, data=data)
         try:
             self._queue.put(event)
         except Exception as e:

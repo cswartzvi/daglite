@@ -32,6 +32,8 @@ if TYPE_CHECKING:
 
     from daglite.datasets.store import DatasetStore
 
+from daglite.datasets.events import DatasetSaveRequest
+
 logger = logging.getLogger(__name__)
 
 
@@ -159,13 +161,13 @@ class ProcessDatasetReporter(DatasetReporter):
         format: str | None = None,
         options: dict[str, Any] | None = None,
     ) -> None:
-        request = {
-            "key": key,
-            "value": value,
-            "store": store,
-            "format": format,
-            "options": options,
-        }
+        request = DatasetSaveRequest(
+            key=key,
+            value=value,
+            store=store,
+            format=format,
+            options=options,
+        )
         self._queue.put(request)
 
     def close(self) -> None:
