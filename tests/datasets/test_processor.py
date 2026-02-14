@@ -173,27 +173,30 @@ class TestDatasetProcessorRequestHandling:
 class TestDatasetProcessorGetRequest:
     """Tests for _get_request static method."""
 
-    def test_get_request_from_queue(self):
+    def test_get_item_from_queue(self):
         """Gets request from a queue-like object."""
         q = queue.Queue()
         request = {"key": "test.pkl", "value": 1, "store": None}
         q.put(request)
 
-        result = DatasetProcessor._get_request(q)
+        proc = DatasetProcessor()
+        result = proc._get_item(q)
         assert result == request
 
-    def test_get_request_empty_queue(self):
+    def test_get_item_empty_queue(self):
         """Returns None for empty queue."""
         q = queue.Queue()
-        result = DatasetProcessor._get_request(q)
+        proc = DatasetProcessor()
+        result = proc._get_item(q)
         assert result is None
 
-    def test_get_request_unknown_source_type(self, caplog):
+    def test_get_item_unknown_source_type(self, caplog):
         """Logs warning for unknown source types."""
         import logging
 
+        proc = DatasetProcessor()
         with caplog.at_level(logging.WARNING):
-            result = DatasetProcessor._get_request("not_a_queue")
+            result = proc._get_item("not_a_queue")
         assert result is None
         assert "unknown" in caplog.text.lower() or "Unknown" in caplog.text
 
