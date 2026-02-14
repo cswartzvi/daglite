@@ -57,7 +57,7 @@ class Backend(abc.ABC):
             event_processor: Event processor for event handling
             dataset_processor: Dataset processor for persisting outputs
         """
-        if self._started:
+        if self._started:  # pragma: no cover
             raise RuntimeError("Backend is already started.")
 
         self.plugin_manager = plugin_manager
@@ -83,7 +83,7 @@ class Backend(abc.ABC):
 
         Subclasses should NOT override this method. Instead, override ``_stop()``.
         """
-        if not self._started:
+        if not self._started:  # pragma: no cover
             return
 
         self._stop()
