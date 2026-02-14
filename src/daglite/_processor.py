@@ -1,13 +1,4 @@
-"""
-Shared base class for background queue processors.
-
-Both ``EventProcessor`` (plugins) and ``DatasetProcessor`` (datasets) follow
-the same pattern: a daemon thread polls a set of UUID-keyed queue sources,
-passes each item to a handler callback, and exposes ``start``/``flush``/
-``stop`` lifecycle methods.  ``BackgroundQueueProcessor`` captures that
-pattern in a single place so the threading logic only needs to be maintained
-once.
-"""
+"""Shared base class for background queue processors."""
 
 from __future__ import annotations
 
