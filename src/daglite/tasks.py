@@ -20,6 +20,7 @@ from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_missing_params
 from daglite._validation import check_overlap_params
+from daglite._validation import resolve_positional_args
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ParameterError
 
@@ -282,7 +283,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
         )
 
     @abc.abstractmethod
-    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> "TaskFuture[R]":
+    def __call__(
+        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
+    ) -> "TaskFuture[R]":
         """
         Creates a task future by binding values to the parameters of this task.
 
@@ -290,7 +293,11 @@ class BaseTask(abc.ABC, Generic[P, R]):
         evaluation results. See `daglite.engine.evaluate` or `daglite.engine.evaluate_async` for
         more details on evaluating task futures.
 
+        Supports both positional and keyword arguments. Positional arguments are resolved
+        to keyword arguments using the task function's parameter names.
+
         Args:
+            *args: Positional arguments resolved to parameters by position.
             **kwargs: Keyword arguments matching the task function's parameters. Must include
                 all required parameters. Can include `TaskFuture` objects.
 
@@ -303,8 +310,10 @@ class BaseTask(abc.ABC, Generic[P, R]):
             ... def add(x: int, y: int) -> int:
             ...     return x + y
 
-            Future creation
+            Future creation (keyword or positional)
             >>> add(x=1, y=2)  # doctest: +ELLIPSIS
+            TaskFuture(...)
+            >>> add(1, 2)  # doctest: +ELLIPSIS
             TaskFuture(...)
 
             Future evaluation
@@ -396,7 +405,10 @@ class Task(BaseTask[P, R]):
         return inspect.signature(self.func)
 
     @override
-    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
+    def __call__(
+        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
+    ) -> TaskFuture[R]:
+        kwargs = resolve_positional_args(self.signature, args, kwargs, self.name)
         return self.partial()(**kwargs)
 
     def partial(self, **kwargs: Any) -> PartialTask[P, R]:
@@ -473,8 +485,19 @@ class PartialTask(BaseTask[P, R]):
         return self.task.signature
 
     @override
-    def __call__(self, **kwargs: Any | TaskFuture[Any]) -> TaskFuture[R]:
+    def __call__(
+        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
+    ) -> TaskFuture[R]:
         from daglite.futures import TaskFuture
+
+        # Resolve positional args against unbound parameters (those not already fixed)
+        unbound_params = [
+            name for name in self.signature.parameters if name not in self.fixed_kwargs
+        ]
+        unbound_sig = self.signature.replace(
+            parameters=[self.signature.parameters[name] for name in unbound_params]
+        )
+        kwargs = resolve_positional_args(unbound_sig, args, kwargs, self.name)
 
         merged = {**self.fixed_kwargs, **kwargs}
 
