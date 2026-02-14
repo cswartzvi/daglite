@@ -65,8 +65,8 @@ class Backend(abc.ABC):
         self.dataset_processor = dataset_processor
         self.event_reporter = self._get_event_reporter()
         self.dataset_reporter = self._get_dataset_reporter()
-        self._started = True
         self._start()
+        self._started = True
 
     def _start(self) -> None:
         """
