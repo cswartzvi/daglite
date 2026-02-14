@@ -8,9 +8,9 @@ from daglite.plugins.registry import EventRegistry
 
 
 @runtime_checkable
-class BidirectionalPlugin(Protocol):
+class EventHandlerPlugin(Protocol):
     """
-    Plugin that uses bidirectional coordinator ↔ worker communication.
+    Plugin that registers coordinator-side event handlers.
 
     Plugins implementing this protocol can:
     1. Register coordinator-side event handlers via register_event_handlers()
@@ -109,6 +109,6 @@ def issubclass_serializable_plugin(
     )
 
 
-def isinstance_bidirectional_plugin(obj: Any) -> TypeIs[BidirectionalPlugin]:  # pragma: no cover
-    """Type narrowing check for BidirectionalPlugin protocol."""
-    return isinstance(obj, BidirectionalPlugin)
+def isinstance_event_handler_plugin(obj: Any) -> TypeIs[EventHandlerPlugin]:  # pragma: no cover
+    """Type narrowing check for EventHandlerPlugin protocol."""
+    return isinstance(obj, EventHandlerPlugin)

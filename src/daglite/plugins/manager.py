@@ -7,7 +7,7 @@ from typing import Any
 
 from pluggy import PluginManager
 
-from daglite.plugins.base import isinstance_bidirectional_plugin
+from daglite.plugins.base import isinstance_event_handler_plugin
 from daglite.plugins.base import isinstance_serializable_plugin
 from daglite.plugins.base import issubclass_serializable_plugin
 from daglite.plugins.registry import EventRegistry
@@ -70,9 +70,9 @@ def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginM
     # Add execution-specific plugins
     register_plugins(*plugins, _plugin_manager=new_manager)
 
-    # Register event handlers from bidirectional plugins
+    # Register event handlers from handler  plugins
     for plugin in new_manager.get_plugins():
-        if isinstance_bidirectional_plugin(plugin):  # pragma: no cover
+        if isinstance_event_handler_plugin(plugin):  # pragma: no cover
             plugin.register_event_handlers(registry)
 
     return new_manager

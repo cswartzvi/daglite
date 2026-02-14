@@ -5,6 +5,7 @@ Integration tests that use evaluate() are in tests/evaluation/test_logging.py.
 """
 
 import logging
+import os
 from multiprocessing import Queue as MultiprocessingQueue
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -623,6 +624,30 @@ class TestLifecycleLoggingPlugin:
 
         # Should track the node ID
         assert node_id in plugin._mapped_nodes
+
+    def test_daglite_debug_assigns_lifecycle_handlers(self):
+        """DAGLITE_DEBUG copies lifecycle handlers to the base daglite logger."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        with patch.dict(os.environ, {"DAGLITE_DEBUG": "1"}):
+            LifecycleLoggingPlugin()
+
+        base_logger = logging.getLogger("daglite")
+        lifecycle_logger = logging.getLogger("daglite.lifecycle")
+
+        assert len(base_logger.handlers) > 0
+        assert base_logger.handlers == lifecycle_logger.handlers
+
+    def test_no_daglite_debug_keeps_base_logger_empty(self):
+        """Without DAGLITE_DEBUG the base daglite logger has no handlers."""
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("DAGLITE_DEBUG", None)
+            LifecycleLoggingPlugin()
+
+        base_logger = logging.getLogger("daglite")
+        assert base_logger.handlers == []
 
 
 class TestLifecycleLoggingPluginOnCacheHit:

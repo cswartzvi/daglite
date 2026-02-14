@@ -6,10 +6,6 @@
       "format": "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
     },
-    "detailed": {
-      "format": "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
-      "datefmt": "%Y-%m-%d %H:%M:%S"
-    },
     "task": {
       "format": "%(asctime)s | %(levelname)-8s | Task '%(daglite_task_key)s' - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
@@ -31,7 +27,18 @@
     "file": {
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
-      "formatter": "detailed",
+      "formatter": "default",
+      "filename": "run.log",
+      "mode": "a",
+      "encoding": "utf-8",
+      "delay": true,
+      "maxBytes": 10485760,
+      "backupCount": 3
+    },
+    "file_task": {
+      "class": "logging.handlers.RotatingFileHandler",
+      "level": "DEBUG",
+      "formatter": "task",
       "filename": "run.log",
       "mode": "a",
       "encoding": "utf-8",
@@ -43,7 +50,7 @@
   "loggers": {
     "daglite": {
       "level": "DEBUG",
-      "handlers": ["console", "file"],
+      "handlers": [],
       "propagate": false
     },
     "daglite.lifecycle": {
@@ -53,7 +60,7 @@
     },
     "daglite.tasks": {
       "level": "DEBUG",
-      "handlers": ["console_task", "file"],
+      "handlers": ["console_task", "file_task"],
       "propagate": false
     }
   },

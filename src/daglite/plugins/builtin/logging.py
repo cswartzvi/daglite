@@ -9,6 +9,7 @@ send log records from workers back to the coordinator/main process.
 import json
 import logging
 import logging.config
+import os
 import threading
 from pathlib import Path
 from typing import Any, MutableMapping
@@ -19,7 +20,7 @@ from typing_extensions import override
 from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
 from daglite.graph.nodes.base import NodeMetadata
-from daglite.plugins.base import BidirectionalPlugin
+from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import Event
 from daglite.plugins.hooks.markers import hook_impl
@@ -113,7 +114,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     return _TaskLoggerAdapter(base_logger, {})
 
 
-class CentralizedLoggingPlugin(BidirectionalPlugin):
+class CentralizedLoggingPlugin(EventHandlerPlugin):
     """
     Plugin that enables centralized logging via the reporter system.
 
@@ -253,14 +254,33 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         config = config if config is not None else self._load_default_config()
         self._apply_logging_config(config)
 
+    @property
+    def _config_path(self) -> Path:
+        """Path to the default logging configuration file."""
+        return Path(__file__).parent / "logging.json"
+
     def _load_default_config(self) -> dict[str, Any]:
-        """Load default logging configuration from logging.json."""
-        config_path = Path(__file__).parent / "logging.json"
+        """
+        Load default logging configuration from :attr:`_config_path`.
+
+        If the `DAGLITE_DEBUG` environment variable is set (any truthy value), the base `daglite`
+        logger is configured with the `file` handler so that internal debug logs (logs outside of
+        `daglite.lifecycle` and `daglite.tasks`) are written to `run.log`. By default these are
+        suppressed.
+        """
+        config_path = self._config_path
         if config_path.exists():
             with open(config_path) as f:
-                return json.load(f)
+                config = json.load(f)
         else:  # pragma: no cover
             raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
+
+        if os.environ.get("DAGLITE_DEBUG"):
+            loggers = config.get("loggers", {})
+            if "daglite" in loggers and "daglite.lifecycle" in loggers:  # pragma: no branch
+                loggers["daglite"]["handlers"] = loggers["daglite.lifecycle"]["handlers"]
+
+        return config
 
     def _apply_logging_config(self, config: dict[str, Any]) -> None:
         """Apply logging configuration using dictConfig."""
@@ -340,6 +360,19 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         self._logger.info(
             f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
+            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+        )
+
+    @hook_impl
+    def after_mapped_node_execute(
+        self,
+        metadata: NodeMetadata,
+        iteration_count: int,
+        duration: float,
+    ) -> None:
+        node_key = metadata.key or metadata.name
+        self._logger.info(
+            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
@@ -451,19 +484,6 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_key = metadata.key or metadata.name
         self._logger.info(
             f"Task '{node_key}' - Using cached result",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
-        )
-
-    @hook_impl
-    def after_mapped_node_execute(
-        self,
-        metadata: NodeMetadata,
-        iteration_count: int,
-        duration: float,
-    ) -> None:
-        node_key = metadata.key or metadata.name
-        self._logger.info(
-            f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
 
