@@ -6,15 +6,7 @@
       "format": "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
     },
-    "detailed": {
-      "format": "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
-      "datefmt": "%Y-%m-%d %H:%M:%S"
-    },
     "task": {
-      "format": "%(asctime)s | %(levelname)-8s | Task '%(daglite_task_key)s' - %(message)s",
-      "datefmt": "%Y-%m-%d %H:%M:%S"
-    },
-    "task_detailed": {
       "format": "%(asctime)s | %(levelname)-8s | Task '%(daglite_task_key)s' - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
     }
@@ -35,7 +27,7 @@
     "file": {
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
-      "formatter": "detailed",
+      "formatter": "default",
       "filename": "run.log",
       "mode": "a",
       "encoding": "utf-8",
@@ -46,7 +38,7 @@
     "file_task": {
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
-      "formatter": "task_detailed",
+      "formatter": "task",
       "filename": "run.log",
       "mode": "a",
       "encoding": "utf-8",
