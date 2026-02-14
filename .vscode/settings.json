@@ -50,8 +50,9 @@
     "pytest.ini": "python-misc"
   },
   "python-envs.pythonProjects": [],
+  "python.terminal.activateEnvInCurrentTerminal": true,
+  "python.terminal.activateEnvironment": false,
   "python.testing.pytestArgs": ["tests"],
   "python.testing.pytestEnabled": true,
-  "python.testing.unittestEnabled": false,
-  "explorer.excludeGitIgnore": true
+  "python.testing.unittestEnabled": false
 }
