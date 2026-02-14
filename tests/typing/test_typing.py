@@ -1,7 +1,15 @@
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+# pyrefly has a known overload resolution bug with self-type narrowing when
+# targeting Python 3.10 stubs (works fine on 3.11+).
+_skip_pyrefly_310 = pytest.mark.skipif(
+    sys.version_info < (3, 11),
+    reason="pyrefly overload resolution bug with Python 3.10 stubs",
+)
 
 
 @pytest.mark.slow
@@ -10,7 +18,7 @@ import pytest
     [
         ("pyright", None),
         ("mypy", None),
-        ("pyrefly", "check"),
+        pytest.param("pyrefly", "check", marks=_skip_pyrefly_310),
         ("ty", "check"),
     ],
 )
