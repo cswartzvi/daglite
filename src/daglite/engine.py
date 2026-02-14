@@ -63,7 +63,7 @@ def evaluate(
 
 
 @overload
-async def evaluate(
+def evaluate(
     future: TaskFuture[AsyncIterator[T]],
     *,
     plugins: list[Any] | None = None,
