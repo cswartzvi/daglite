@@ -1,4 +1,13 @@
-"""Shared base class for background queue processors."""
+"""
+Shared base class for background queue processors.
+
+Both ``EventProcessor`` (plugins) and ``DatasetProcessor`` (datasets) follow
+the same pattern: a daemon thread polls a set of UUID-keyed queue sources,
+passes each item to a handler callback, and exposes ``start``/``flush``/
+``stop`` lifecycle methods.  ``BackgroundQueueProcessor`` captures that
+pattern in a single place so the threading logic only needs to be maintained
+once.
+"""
 
 from __future__ import annotations
 
@@ -33,6 +42,8 @@ class BackgroundQueueProcessor(ABC):
         self._running = False
         self._thread: Thread | None = None
 
+    # -- source management -------------------------------------------------
+
     def add_source(self, source: Any) -> UUID:
         """
         Add a queue-like source to process.
@@ -63,6 +74,8 @@ class BackgroundQueueProcessor(ABC):
             logger.debug(f"Removed {self._name} source (id: {source_id})")
         else:
             logger.warning(f"Tried to remove unknown {self._name} source (id: {source_id})")
+
+    # -- lifecycle ---------------------------------------------------------
 
     def start(self) -> None:
         """Start background processing of all registered sources."""
@@ -119,6 +132,8 @@ class BackgroundQueueProcessor(ABC):
             logger.warning(f"{self._name} thread did not stop cleanly")
         self._thread = None
 
+    # -- abstract hook -----------------------------------------------------
+
     @abstractmethod
     def _handle_item(self, item: Any) -> None:
         """
@@ -129,6 +144,8 @@ class BackgroundQueueProcessor(ABC):
         Args:
             item: The item retrieved from the queue.
         """
+
+    # -- internal helpers --------------------------------------------------
 
     def _process_loop(self) -> None:
         """Background loop consuming items from all sources."""
