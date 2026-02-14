@@ -89,7 +89,7 @@ def pipeline(
 @dataclass(frozen=True)
 class Pipeline(Generic[P, R]):
     """
-    Wraps a Python function as a pipeline that returns a `NodeBuilder``.
+    Wraps a Python function as a pipeline that returns a `NodeBuilder`.
 
     Users should **not** directly instantiate this class, use the `@pipeline` decorator instead.
 

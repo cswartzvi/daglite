@@ -34,7 +34,7 @@ class MapTaskNode(BaseGraphNode):
     """Function to be executed for each map iteration."""
 
     mode: MapMode
-    """Mapping mode: 'extend' for Cartesian product, 'zip' for parallel iteration."""
+    """Mapping mode: 'product' for Cartesian product, 'zip' for parallel iteration."""
 
     fixed_kwargs: Mapping[str, NodeInput]
     """Fixed keyword parameters of the task function to node inputs."""

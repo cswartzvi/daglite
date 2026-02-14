@@ -430,7 +430,7 @@ class TestLoadDataset:
             )
             import asyncio
 
-            # _prepare builds the submission; calling it triggers the key formatting
+            ## _prepare returns submissions; calling a submission triggers the key formatting
             submissions = node._prepare({})
             with pytest.raises(ValueError, match="missing"):
                 asyncio.run(submissions[0]())
