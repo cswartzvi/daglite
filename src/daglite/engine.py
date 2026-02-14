@@ -31,10 +31,9 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    **NOTE**: This is a convenience wrapper around `evaluate_async()` that creates an event loop
-    internally via `asyncio.run()`. Because of this, it **cannot** be called from within an async
-    context (e.g., inside an `async def` or running event loop). In those cases, use
-    `evaluate_async()` directly.
+    This is the internal implementation backing `TaskFuture.run()`. It creates an event loop
+    internally via `asyncio.run()`, so it **cannot** be called from within an async context. In
+    those cases, use `_evaluate_async()` instead.
 
     Args:
         future: Task future that will be evaluated.
@@ -47,19 +46,19 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         RuntimeError: If called from within an async context with a running event loop
 
     Examples:
-        >>> from daglite import task, evaluate
+        >>> from daglite import task
         >>> @task
         ... def my_task(x: int, y: int) -> int:
         ...     return x + y
         >>> future = my_task(x=1, y=2)
 
         Standard evaluation
-        >>> evaluate(future)
+        >>> future.run()
         3
 
         Evaluation with plugins
         >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
-        >>> evaluate(future, plugins=[CentralizedLoggingPlugin()])
+        >>> future.run(plugins=[CentralizedLoggingPlugin()])
         3
 
         Sibling parallelism with threading backend
@@ -70,7 +69,7 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         >>> @task
         ... def combine(a: int, b: int) -> int:
         ...     return a + b
-        >>> evaluate(combine(a=t1, b=t2))  # t1 and t2 run in parallel
+        >>> combine(a=t1, b=t2).run()  # t1 and t2 run in parallel
         6
     """
     try:
@@ -88,11 +87,10 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     """
     Evaluate the results of a task future via asynchronous execution.
 
-    The future to be evaluated can contain any combination of sync and async task futures, and the
-    engine will execute them in an async-first manner. This means that sibling tasks (tasks nodes
-    at the same level of the DAG) can be executed concurrently if they are defined with an async
-    coroutine function and/or if their backend supports async execution (e.g., threading or
-    process). Tasks defined with synchronous functions are executed in a blocking manner.
+    This is the internal implementation backing `TaskFuture.run_async()`. The future can contain
+    any combination of sync and async task futures, and the engine will execute them in an
+    async-first manner. Sibling tasks can be executed concurrently if they use an async coroutine
+    and/or an async-capable backend (e.g., threading or process).
 
     Args:
         future: Task future that will be evaluated.
@@ -103,20 +101,20 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
 
     Examples:
         >>> import asyncio
-        >>> from daglite import task, evaluate_async
+        >>> from daglite import task
         >>> @task
         ... async def my_task(x: int, y: int) -> int:
         ...     return x + y
         >>> future = my_task(x=1, y=2)
 
         Standard evaluation
-        >>> asyncio.run(evaluate_async(future))
+        >>> asyncio.run(future.run_async())
         3
 
         With execution-specific plugins
         >>> import asyncio
         >>> from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
-        >>> asyncio.run(evaluate_async(future, plugins=[CentralizedLoggingPlugin()]))
+        >>> asyncio.run(future.run_async(plugins=[CentralizedLoggingPlugin()]))
         3
     """
     from daglite.backends.context import get_current_task

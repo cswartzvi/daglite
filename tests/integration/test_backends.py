@@ -7,7 +7,6 @@ pickle support.
 
 import pytest
 
-from daglite import evaluate
 from daglite import pipeline
 from daglite import task
 
@@ -88,7 +87,7 @@ class TestBackendIntegration:
     def test_single_task_execution(self, backend: str, x: int, y: int, expected: int) -> None:
         """Different backends execute single tasks correctly."""
         task_with_backend = add.with_options(backend_name=backend)
-        result = evaluate(task_with_backend(x=x, y=y))
+        result = task_with_backend(x=x, y=y).run()
         assert result == expected
 
     @pytest.mark.parametrize("backend", ["inline", "threading", "processes"])
@@ -96,7 +95,7 @@ class TestBackendIntegration:
         """Different backends handle map operations correctly."""
         task_with_backend = double.with_options(backend_name=backend)
         nums = [1, 2, 3, 4, 5]
-        results = evaluate(task_with_backend.map(x=nums))
+        results = task_with_backend.map(x=nums).run()
         assert results == [2, 4, 6, 8, 10]
 
     def test_mixed_backends_in_pipeline(self) -> None:
@@ -109,7 +108,7 @@ class TestBackendIntegration:
         processed = process.map(x=data)
         total = sum_task(values=processed)
 
-        result = evaluate(total)
+        result = total.run()
         assert result == 55  # 1+4+9+16+25
 
     def test_processes_backend_with_dependencies(self) -> None:
@@ -120,7 +119,7 @@ class TestBackendIntegration:
         nums = gen(n=10)
         total = sum_task(values=nums)
 
-        result = evaluate(total)
+        result = total.run()
         assert result == 45  # 0+1+2+...+9
 
     def test_processes_backend_with_complex_data(self) -> None:
@@ -129,7 +128,7 @@ class TestBackendIntegration:
         dict1 = {"a": 1, "b": 2}
         dict2 = {"c": 3, "d": 4}
 
-        result = evaluate(task_with_backend(d1=dict1, d2=dict2))
+        result = task_with_backend(d1=dict1, d2=dict2).run()
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
 
 
@@ -145,7 +144,7 @@ class TestBackendWithPipelines:
             squared = square_proc.map(x=nums)
             return sum_values(values=squared)
 
-        result = evaluate(compute_pipeline(nums=[1, 2, 3, 4]))
+        result = compute_pipeline(nums=[1, 2, 3, 4]).run()
         assert result == 30  # 1+4+9+16
 
 
@@ -158,16 +157,16 @@ class TestBackendErrorHandling:
         task_with_backend = failing_task.with_options(backend_name=backend)
 
         # Should succeed
-        result = evaluate(task_with_backend(x=5))
+        result = task_with_backend(x=5).run()
         assert result == 10
 
         # Should raise ValueError
         with pytest.raises(ValueError, match="negative value not allowed"):
-            evaluate(task_with_backend(x=-5))
+            task_with_backend(x=-5).run()
 
         # Should raise ZeroDivisionError
         with pytest.raises(ZeroDivisionError, match="cannot divide by zero"):
-            evaluate(task_with_backend(x=0))
+            task_with_backend(x=0).run()
 
 
 class TestBackendPickleRequirements:
@@ -176,7 +175,7 @@ class TestBackendPickleRequirements:
     def test_task_with_nested_function(self) -> None:
         """Tasks defined at module level can contain nested helper functions."""
         task_with_backend = nested_computation.with_options(backend_name="processes")
-        result = evaluate(task_with_backend(x=5))
+        result = task_with_backend(x=5).run()
         assert result == 20  # (5*2) + (5*2)
 
     def test_task_with_lambda_function(self) -> None:
@@ -186,11 +185,11 @@ class TestBackendPickleRequirements:
         lambda_task = task(lambda x: x * 3, name="triple")  # type: ignore
 
         # Should work with Inline backend
-        result = evaluate(lambda_task.with_options(backend_name="inline")(x=7))
+        result = lambda_task.with_options(backend_name="inline")(x=7).run()
         assert result == 21
 
         # Should work with threading backend
-        result = evaluate(lambda_task.with_options(backend_name="threading")(x=8))
+        result = lambda_task.with_options(backend_name="threading")(x=8).run()
         assert result == 24
 
     def test_task_with_callable_object(self) -> None:
@@ -208,9 +207,9 @@ class TestBackendPickleRequirements:
         mult_task = task(multiplier, name="multiplier")  # type: ignore
 
         # Should work with Inline backend (no pickling needed)
-        result = evaluate(mult_task.with_options(backend_name="inline")(x=4))
+        result = mult_task.with_options(backend_name="inline")(x=4).run()
         assert result == 20
 
         # Should work with threading backend (pickle not strictly required)
-        result = evaluate(mult_task.with_options(backend_name="threading")(x=6))
+        result = mult_task.with_options(backend_name="threading")(x=6).run()
         assert result == 30

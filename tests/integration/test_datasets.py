@@ -1,18 +1,17 @@
-"""Integration tests for dataset saving via evaluate()."""
+"""Integration tests for dataset saving via .run()."""
 
 import tempfile
 from uuid import uuid4
 
 import pytest
 
-from daglite import evaluate
 from daglite import task
 from daglite.datasets.store import DatasetStore
 from daglite.futures import load_dataset
 
 
 class TestSaveWithEvaluate:
-    """Integration tests: .save() + evaluate() end-to-end."""
+    """Integration tests: .save() + .run() end-to-end."""
 
     def test_save_simple_string(self):
         """Save a string result via .save() during evaluation."""
@@ -24,7 +23,7 @@ class TestSaveWithEvaluate:
                 return f"Hello, {name}!"
 
             future = greet(name="World").save("greeting.txt", save_store=store)
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "Hello, World!"
             assert store.exists("greeting.txt")
@@ -40,7 +39,7 @@ class TestSaveWithEvaluate:
                 return {"result": x * 2}
 
             future = compute(x=21).save("result.pkl", save_store=store)
-            result = evaluate(future)
+            result = future.run()
 
             assert result == {"result": 42}
             assert store.load("result.pkl", return_type=dict) == {"result": 42}
@@ -55,7 +54,7 @@ class TestSaveWithEvaluate:
                 return f"processed_{data_id}"
 
             future = process(data_id="abc").save("output_{data_id}.txt", save_store=store)
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc.txt")
@@ -75,7 +74,7 @@ class TestSaveWithEvaluate:
                 save_store=store,
                 version="v1",
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc_v1.txt")
@@ -98,7 +97,7 @@ class TestSaveWithEvaluate:
                 save_store=store,
                 version=get_version(),
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == "processed_abc"
             assert store.exists("output_abc_v2.txt")
@@ -117,7 +116,7 @@ class TestSaveWithEvaluate:
                 .save("result_{x}.pkl", save_store=store)
                 .save("backup_{x}.pkl", save_store=store)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 10
             assert store.exists("result_5.pkl")
@@ -133,13 +132,13 @@ class TestSaveWithEvaluate:
                 return "hello"
 
             future = make_text().save("output.dat", save_store=store, save_format="text")
-            evaluate(future)
+            future.run()
 
             data = store._driver.load("output.dat")
             assert data == b"hello"
 
     def test_save_does_not_alter_result(self):
-        """save() is a side effect; evaluate() returns the original result."""
+        """save() is a side effect; .run() returns the original result."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
 
@@ -147,7 +146,7 @@ class TestSaveWithEvaluate:
             def compute() -> int:
                 return 42
 
-            result = evaluate(compute().save("answer.pkl", save_store=store))
+            result = compute().save("answer.pkl", save_store=store).run()
             assert result == 42
 
     def test_save_in_chain(self):
@@ -164,7 +163,7 @@ class TestSaveWithEvaluate:
                 return y * 2
 
             future = step1(x=5).save("step1.pkl", save_store=store).then(step2)
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 12
             assert store.exists("step1.pkl")
@@ -181,7 +180,7 @@ class TestSaveWithEvaluate:
                 return x * 2
 
             future = compute(x=5).save("result.pkl", save_store=store, save_checkpoint=True)
-            result = evaluate(future)
+            result = future.run()
             assert result == 10
             assert store.exists("result.pkl")
 
@@ -207,7 +206,7 @@ class TestSaveWithMapTasks:
                 .save("item_{x}_{iteration_index}.pkl", save_store=store)
                 .join(collect)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [2, 4, 6]
             # Check that at least some outputs were saved
@@ -233,7 +232,7 @@ class TestSaveWithMapTasks:
                 .save("sum_{iteration_index}.pkl", save_store=store)
                 .join(collect)
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == [11, 22, 33]
             keys = store.list_keys()
@@ -253,7 +252,7 @@ class TestSaveWithTaskStore:
                 return x * 2
 
             future = compute(x=5).save("result.pkl")
-            result = evaluate(future)
+            result = future.run()
 
             assert result == 10
             assert store.exists("result.pkl")
@@ -287,7 +286,7 @@ class TestSaveWithMapTaskFutureExtras:
                 return sorted(values)
 
             final = future.join(collect)
-            result = evaluate(final)
+            result = final.run()
 
             assert result == [2, 4]
             assert store.exists("run1_0.pkl")
@@ -313,7 +312,7 @@ class TestSaveWithMapTaskFutureExtras:
                 return sorted(values)
 
             final = future.join(collect)
-            result = evaluate(final)
+            result = final.run()
 
             assert result == [3, 6]
             assert store.exists("batch_0.pkl")
@@ -330,7 +329,7 @@ class TestLoadDataset:
             store.save("data.pkl", {"key": "value"})
 
             future = load_dataset("data.pkl", load_store=store, load_type=dict)
-            result = evaluate(future)
+            result = future.run()
             assert result == {"key": "value"}
 
     def test_load_string_value(self):
@@ -340,7 +339,7 @@ class TestLoadDataset:
             store.save("hello.txt", "hello world", format="text")
 
             future = load_dataset("hello.txt", load_store=store, load_type=str)
-            result = evaluate(future)
+            result = future.run()
             assert result == "hello world"
 
     def test_load_with_key_template(self):
@@ -352,7 +351,7 @@ class TestLoadDataset:
             future = load_dataset(
                 "data_{version}.pkl", load_store=store, load_type=list, version="v1"
             )
-            result = evaluate(future)
+            result = future.run()
             assert result == [1, 2, 3]
 
     def test_load_with_future_extra(self):
@@ -372,7 +371,7 @@ class TestLoadDataset:
                 load_type=dict,
                 version=get_version(),
             )
-            result = evaluate(future)
+            result = future.run()
             assert result == {"version": 2}
 
     def test_load_then_process(self):
@@ -387,7 +386,7 @@ class TestLoadDataset:
             store.save("input.pkl", [1, 2, 3])
 
             future = load_dataset("input.pkl", load_store=store, load_type=list).then(double)
-            result = evaluate(future)
+            result = future.run()
             assert result == [2, 4, 6]
 
     def test_load_then_save(self):
@@ -399,7 +398,7 @@ class TestLoadDataset:
             future = load_dataset("input.pkl", load_store=store, load_type=dict).save(
                 "output.pkl", save_store=store
             )
-            result = evaluate(future)
+            result = future.run()
 
             assert result == {"data": 42}
             assert store.exists("output.pkl")
@@ -412,7 +411,7 @@ class TestLoadDataset:
             store.save("data.txt", "hello", format="text")
 
             future = load_dataset("data.txt", load_store=store, load_type=str, load_format="text")
-            result = evaluate(future)
+            result = future.run()
             assert result == "hello"
 
     def test_bad_key_template_raises_at_runtime(self):
@@ -459,7 +458,7 @@ class TestLoadDatasetHooks:
             store.save("data.pkl", {"ok": True})
 
             future = load_dataset("data.pkl", load_store=store, load_type=dict)
-            result = evaluate(future, plugins=[HookTracker()])
+            result = future.run(plugins=[HookTracker()])
 
             assert result == {"ok": True}
             assert "before" in hook_calls

@@ -7,8 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from daglite import evaluate
-from daglite import evaluate_async
 from daglite import task
 from daglite.cache.store import FileCacheStore
 from daglite.plugins.builtin.cache import CachePlugin
@@ -39,11 +37,11 @@ def test_cache_hit(cache_plugin):
         return x * 2
 
     # First call - cache miss, should execute
-    result1 = evaluate(expensive_task(x=5), plugins=[cache_plugin])
+    result1 = expensive_task(x=5).run(plugins=[cache_plugin])
     assert result1 == 10
 
     # Second call - cache hit, should NOT execute
-    result2 = evaluate(expensive_task(x=5), plugins=[cache_plugin])
+    result2 = expensive_task(x=5).run(plugins=[cache_plugin])
     assert result2 == 10
     assert call_count == 1  # Should still be 1 (cache hit, not executed again)
 
@@ -59,12 +57,12 @@ def test_cache_miss_different_inputs(cache_plugin):
         return a + b
 
     # First call
-    result1 = evaluate(add_task(a=1, b=2), plugins=[cache_plugin])
+    result1 = add_task(a=1, b=2).run(plugins=[cache_plugin])
     assert result1 == 3
     assert call_count == 1
 
     # Different inputs - should be cache miss
-    result2 = evaluate(add_task(a=2, b=3), plugins=[cache_plugin])
+    result2 = add_task(a=2, b=3).run(plugins=[cache_plugin])
     assert result2 == 5
     assert call_count == 2
 
@@ -80,12 +78,12 @@ def test_cache_disabled(cache_plugin):
         return x * 3
 
     # First call
-    result1 = evaluate(regular_task(x=5), plugins=[cache_plugin])
+    result1 = regular_task(x=5).run(plugins=[cache_plugin])
     assert result1 == 15
     assert call_count == 1
 
     # Second call - should execute again (no caching)
-    result2 = evaluate(regular_task(x=5), plugins=[cache_plugin])
+    result2 = regular_task(x=5).run(plugins=[cache_plugin])
     assert result2 == 15
     assert call_count == 2  # Count should increase
 
@@ -108,8 +106,8 @@ def test_cache_different_functions(cache_plugin):
         return x * 2
 
     # Call both with same input
-    result1 = evaluate(task_a(x=5), plugins=[cache_plugin])
-    result2 = evaluate(task_b(x=5), plugins=[cache_plugin])
+    result1 = task_a(x=5).run(plugins=[cache_plugin])
+    result2 = task_b(x=5).run(plugins=[cache_plugin])
 
     assert result1 == 10
     assert result2 == 10
@@ -129,12 +127,12 @@ def test_cache_ttl_not_expired(cache_plugin):
         return x * 4
 
     # First call
-    result1 = evaluate(ttl_task(x=5), plugins=[cache_plugin])
+    result1 = ttl_task(x=5).run(plugins=[cache_plugin])
     assert result1 == 20
     assert call_count == 1
 
     # Second call immediately - should hit cache
-    result2 = evaluate(ttl_task(x=5), plugins=[cache_plugin])
+    result2 = ttl_task(x=5).run(plugins=[cache_plugin])
     assert result2 == 20
     assert call_count == 1
 
@@ -149,11 +147,11 @@ def test_cache_with_complex_types(cache_plugin):
     input_data = {"a": 1, "b": 2, "c": 3}
 
     # First call
-    result1 = evaluate(dict_task(data=input_data), plugins=[cache_plugin])
+    result1 = dict_task(data=input_data).run(plugins=[cache_plugin])
     assert result1 == {"a": 2, "b": 4, "c": 6}
 
     # Second call - should hit cache
-    result2 = evaluate(dict_task(data=input_data), plugins=[cache_plugin])
+    result2 = dict_task(data=input_data).run(plugins=[cache_plugin])
     assert result2 == {"a": 2, "b": 4, "c": 6}
 
 
@@ -165,7 +163,7 @@ def test_cache_file_structure(cache_plugin, temp_cache_dir):
         return x + 1
 
     # Execute task
-    evaluate(simple_task(x=10), plugins=[cache_plugin])
+    simple_task(x=10).run(plugins=[cache_plugin])
 
     # Check that cache directory contains files
     cache_path = Path(temp_cache_dir)
@@ -193,12 +191,12 @@ def test_cache_no_plugin():
         return x * 5
 
     # First call
-    result1 = evaluate(task_without_plugin(x=5))
+    result1 = task_without_plugin(x=5).run()
     assert result1 == 25
     assert call_count == 1
 
     # Second call - should execute again (no cache plugin)
-    result2 = evaluate(task_without_plugin(x=5))
+    result2 = task_without_plugin(x=5).run()
     assert result2 == 25
     assert call_count == 2
 
@@ -214,13 +212,13 @@ def test_cache_with_none_result(cache_plugin):
         # Intentionally returns None
 
     # First call
-    result1 = evaluate(returns_none(x=5), plugins=[cache_plugin])
+    result1 = returns_none(x=5).run(plugins=[cache_plugin])
     assert result1 is None
 
     # Second call - should hit cache
     # Note: This is tricky because check_cache returns None on miss too
     # We need to verify by checking call_count
-    result2 = evaluate(returns_none(x=5), plugins=[cache_plugin])
+    result2 = returns_none(x=5).run(plugins=[cache_plugin])
     assert result2 is None
     assert call_count == 1  # Verify cache hit - function not called again
 
@@ -239,11 +237,11 @@ def test_cache_with_async_task(cache_plugin):
 
     async def run():
         # First call - cache miss, should execute
-        result1 = await evaluate_async(async_expensive_task(x=7), plugins=[cache_plugin])
+        result1 = await async_expensive_task(x=7).run_async(plugins=[cache_plugin])
         assert result1 == 21
 
         # Second call - cache hit, should NOT execute
-        result2 = await evaluate_async(async_expensive_task(x=7), plugins=[cache_plugin])
+        result2 = await async_expensive_task(x=7).run_async(plugins=[cache_plugin])
         assert result2 == 21
         assert call_count == 1  # Verify cache hit - function not called again
 

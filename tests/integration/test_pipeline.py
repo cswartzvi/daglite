@@ -2,8 +2,6 @@
 
 import asyncio
 
-from daglite import evaluate
-from daglite import evaluate_async
 from daglite import pipeline
 from daglite import task
 
@@ -23,7 +21,7 @@ class TestPipelineEvaluation:
             return add(x=x, y=y)
 
         graph = simple_pipeline(5, 10)
-        result = evaluate(graph)
+        result = graph.run()
         assert result == 15
 
     def test_pipeline_with_chained_tasks(self) -> None:
@@ -43,7 +41,7 @@ class TestPipelineEvaluation:
             return multiply(x=sum_result, factor=factor)
 
         graph = chained_pipeline(5, 10, 3)
-        result = evaluate(graph)
+        result = graph.run()
         assert result == 45
 
     def test_pipeline_with_map_task_future(self) -> None:
@@ -58,7 +56,7 @@ class TestPipelineEvaluation:
             return square.map(x=values)
 
         graph = map_pipeline([1, 2, 3, 4])
-        result = evaluate(graph)
+        result = graph.run()
         assert result == [1, 4, 9, 16]
 
     def test_pipeline_with_map_and_reduce(self) -> None:
@@ -78,7 +76,7 @@ class TestPipelineEvaluation:
             return doubled.join(sum_all)
 
         graph = map_reduce_pipeline([1, 2, 3, 4])
-        result = evaluate(graph)
+        result = graph.run()
         assert result == 20
 
     def test_pipeline_with_default_parameters(self) -> None:
@@ -94,12 +92,12 @@ class TestPipelineEvaluation:
 
         # Use default
         graph1 = pipeline_with_defaults(10)
-        result1 = evaluate(graph1)
+        result1 = graph1.run()
         assert result1 == 20
 
         # Override default
         graph2 = pipeline_with_defaults(10, factor=3)
-        result2 = evaluate(graph2)
+        result2 = graph2.run()
         assert result2 == 30
 
     def test_pipeline_async_evaluation(self) -> None:
@@ -124,7 +122,7 @@ class TestPipelineEvaluation:
         graph = async_pipeline(1, 2, 3)
 
         async def run():
-            return await evaluate_async(graph)
+            return await graph.run_async()
 
         result = asyncio.run(run())
         assert result == 9  # (1+2) + (2*3) = 3 + 6 = 9

@@ -100,7 +100,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             **kwargs: Additional fixed parameters to pass to the mapped task.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def generate_numbers(n: int) -> int:
             ...     return n
@@ -118,12 +118,12 @@ class MapTaskFuture(BaseTaskFuture[R]):
             >>> squared_future = numbers_future.then(square).join(sum_values)
 
             Evaluate the final result
-            >>> evaluate(squared_future)
+            >>> squared_future.run()
             30
 
             Using the fluent API
             >>> result = generate_numbers.map(n=[0, 1, 2, 3, 4]).then(square).join(sum_values)
-            >>> evaluate(result)
+            >>> result.run()
             30
 
         Returns:

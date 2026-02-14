@@ -305,7 +305,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             A `TaskFuture` representing the execution of this task with the provided parameters.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def add(x: int, y: int) -> int:
             ...     return x + y
@@ -317,7 +317,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             TaskFuture(...)
 
             Future evaluation
-            >>> evaluate(add(x=1, y=2))
+            >>> add(x=1, y=2).run()
             3
 
             Connecting upstream task futures
@@ -326,7 +326,7 @@ class BaseTask(abc.ABC, Generic[P, R]):
             ...     return x * factor
             >>> future_add = add(x=2, y=3)
             >>> future_multiply = multiply(x=future_add, factor=10)
-            >>> evaluate(future_multiply)
+            >>> future_multiply.run()
             50
 
         """
@@ -351,29 +351,29 @@ class BaseTask(abc.ABC, Generic[P, R]):
             A `MapTaskFuture` representing the fan-out execution of this task.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def combine(x: int, y: int) -> int:
             ...     return x + y
 
             Zip mode (default) - All sequences provided:
             >>> future = combine.map(x=[1, 2, 3], y=[10, 20, 30])
-            >>> evaluate(future)
+            >>> future.run()
             [11, 22, 33]
 
             Zip mode (default) - Fixed scalar parameter with single sequence:
             >>> future = combine.partial(y=10).map(x=[1, 2, 3])
-            >>> evaluate(future)
+            >>> future.run()
             [11, 12, 13]
 
             Product mode - All sequences provided:
             >>> future = combine.map(x=[1, 2], y=[10, 20], map_mode="product")
-            >>> evaluate(future)
+            >>> future.run()
             [11, 21, 12, 22]
 
             Product mode - Fixed scalar parameter with single sequence:
             >>> future = combine.partial(y=10).map(x=[1, 2, 3], map_mode="product")
-            >>> evaluate(future)
+            >>> future.run()
             [11, 12, 13]
         """
         raise NotImplementedError()

@@ -184,7 +184,7 @@ class TaskFuture(BaseTaskFuture[R]):
             A `TaskFuture` representing the result of applying the task to this future's value.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def prepare(n: int) -> int:
             ...     return n * 2
@@ -195,7 +195,7 @@ class TaskFuture(BaseTaskFuture[R]):
             Chain task calls via unbound parameter (`x`)
             >>> prepare(n=5).then(add, y=10)  # doctest: +ELLIPSIS
             TaskFuture(...)
-            >>> evaluate(prepare(n=5).then(add, y=10))
+            >>> prepare(n=5).then(add, y=10).run()
             20
         """
         from daglite.tasks import PartialTask
@@ -240,7 +240,7 @@ class TaskFuture(BaseTaskFuture[R]):
             A `MapTaskFuture` representing the result of applying the task to all combinations.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
             >>> @task
             ... def prepare(n: int) -> int:
             ...     return n * 2
@@ -250,7 +250,7 @@ class TaskFuture(BaseTaskFuture[R]):
 
             Chain task calls via unbound parameter (`x`) and zip over mapped arg (`y`)
             >>> future = prepare(n=5).then_map(combine, y=[10, 20, 30])
-            >>> evaluate(future)
+            >>> future.run()
             [20, 30, 40]
         """
         from daglite.futures.map_future import MapTaskFuture
@@ -366,7 +366,7 @@ class TaskFuture(BaseTaskFuture[R]):
                 provided.
 
         Examples:
-            >>> from daglite import task, evaluate
+            >>> from daglite import task
 
             With type annotations (size inferred)
             >>> @task
@@ -391,7 +391,7 @@ class TaskFuture(BaseTaskFuture[R]):
             ...     return f"Coordinates: ({x}, {y})"
             >>> x, y = get_coords().split()
             >>> future = process(x=x, y=y)
-            >>> evaluate(future)
+            >>> future.run()
             'Coordinates: (10, 20)'
 
         """

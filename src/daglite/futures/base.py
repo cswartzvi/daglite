@@ -76,7 +76,7 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
             key: Storage key for this output. Can use {param} format strings which
                 will be auto-resolved from task parameters.
             save_checkpoint: If provided, marks this save as a resumption point for
-                evaluate(from_=name). Can be:
+                `.run(from_=name)`. Can be:
                 - None: No checkpoint (default, just saves output)
                 - True: Use the key as the checkpoint name
                 - str: Explicit checkpoint name
