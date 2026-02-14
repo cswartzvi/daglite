@@ -4,6 +4,7 @@ import time
 from queue import Queue
 from typing import Any
 
+from daglite.plugins.events import Event
 from daglite.plugins.processor import EventProcessor
 from daglite.plugins.registry import EventRegistry
 
@@ -83,23 +84,23 @@ class TestEventProcessor:
         """Events can be dispatched directly without background processing."""
         events_received = []
 
-        def handler(event: dict) -> None:
+        def handler(event: Event) -> None:
             events_received.append(event)
 
         registry = EventRegistry()
         registry.register("test_event", handler)
 
         processor = EventProcessor(registry)
-        processor.dispatch({"type": "test_event", "data": "direct"})
+        processor.dispatch(Event(type="test_event", data={"data": "direct"}))
 
         assert len(events_received) == 1
-        assert events_received[0]["data"] == "direct"
+        assert events_received[0].data["data"] == "direct"
 
     def test_background_processing_from_queue(self) -> None:
         """Background processor consumes events from queue sources."""
         events_received = []
 
-        def handler(event: dict) -> None:
+        def handler(event: Event) -> None:
             events_received.append(event)
 
         registry = EventRegistry()
@@ -112,8 +113,8 @@ class TestEventProcessor:
         processor.start()
 
         # Put events in queue
-        queue.put({"type": "test_event", "data": "event1"})
-        queue.put({"type": "test_event", "data": "event2"})
+        queue.put(Event(type="test_event", data={"data": "event1"}))
+        queue.put(Event(type="test_event", data={"data": "event2"}))
 
         # Wait for processing
         time.sleep(0.1)
@@ -121,8 +122,8 @@ class TestEventProcessor:
         processor.stop()
 
         assert len(events_received) == 2
-        assert events_received[0]["data"] == "event1"
-        assert events_received[1]["data"] == "event2"
+        assert events_received[0].data["data"] == "event1"
+        assert events_received[1].data["data"] == "event2"
 
     def test_get_item_with_unknown_source_type_logs_warning(self, caplog) -> None:
         """_get_item with unknown source type logs a warning."""

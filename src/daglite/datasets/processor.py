@@ -16,6 +16,7 @@ import logging
 from typing import Any
 
 from daglite._processor import BackgroundQueueProcessor
+from daglite.datasets.events import DatasetSaveRequest
 
 logger = logging.getLogger(__name__)
 
@@ -47,30 +48,26 @@ class DatasetProcessor(BackgroundQueueProcessor):
 
     # -- internal helpers --------------------------------------------------
 
-    def _handle_request(self, request: dict[str, Any]) -> None:
+    def _handle_request(self, request: DatasetSaveRequest) -> None:
         """
         Process a single save request received from a worker.
 
-        The request dict is expected to have:
-        - `key`: storage key/path
-        - `value`: the Python object (already unpickled by the queue)
-        - `store`: the ``DatasetStore`` to write to
-        - `format`: optional serialization format hint
-
         Args:
-            request: Save request dictionary.
+            request: `DatasetSaveRequest` containing the key, value, store,
+                optional format, and options.
         """
         try:
-            store = request["store"]
-            key = request["key"]
-            value = request["value"]
-            fmt = request.get("format")
-            options = request.get("options")
-
-            hook_kwargs = dict(key=key, value=value, format=fmt, options=options)
+            hook_kwargs = dict(
+                key=request.key,
+                value=request.value,
+                format=request.format,
+                options=request.options,
+            )
             if self._hook:
                 self._hook.before_dataset_save(**hook_kwargs)
-            store.save(key, value, format=fmt, options=options)
+            request.store.save(
+                request.key, request.value, format=request.format, options=request.options
+            )
             if self._hook:
                 self._hook.after_dataset_save(**hook_kwargs)
         except Exception as e:

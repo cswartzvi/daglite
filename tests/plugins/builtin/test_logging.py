@@ -17,6 +17,7 @@ from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import _ReporterHandler
 from daglite.plugins.builtin.logging import _TaskLoggerAdapter
 from daglite.plugins.builtin.logging import get_logger
+from daglite.plugins.events import Event
 from daglite.plugins.reporters import DirectEventReporter
 from daglite.plugins.reporters import ProcessEventReporter
 
@@ -279,12 +280,15 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling a basic log event."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = {
-            "name": "test.logger",
-            "level": "INFO",
-            "message": "Test message from worker",
-            "extra": {},
-        }
+        event = Event(
+            type="daglite-log",
+            data={
+                "name": "test.logger",
+                "level": "INFO",
+                "message": "Test message from worker",
+                "extra": {},
+            },
+        )
 
         with caplog.at_level(logging.INFO):
             plugin._handle_log_event(event)
@@ -296,12 +300,15 @@ class TestCentralizedLoggingPluginUnit:
         plugin = CentralizedLoggingPlugin(level=logging.WARNING)
 
         # INFO event should be filtered
-        info_event = {
-            "name": "test.logger",
-            "level": "INFO",
-            "message": "Info message",
-            "extra": {},
-        }
+        info_event = Event(
+            type="daglite-log",
+            data={
+                "name": "test.logger",
+                "level": "INFO",
+                "message": "Info message",
+                "extra": {},
+            },
+        )
 
         with caplog.at_level(logging.DEBUG):
             plugin._handle_log_event(info_event)
@@ -309,12 +316,15 @@ class TestCentralizedLoggingPluginUnit:
         assert "Info message" not in caplog.text
 
         # WARNING event should pass
-        warning_event = {
-            "name": "test.logger",
-            "level": "WARNING",
-            "message": "Warning message",
-            "extra": {},
-        }
+        warning_event = Event(
+            type="daglite-log",
+            data={
+                "name": "test.logger",
+                "level": "WARNING",
+                "message": "Warning message",
+                "extra": {},
+            },
+        )
 
         with caplog.at_level(logging.DEBUG):
             plugin._handle_log_event(warning_event)
@@ -325,13 +335,16 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with exception info."""
         plugin = CentralizedLoggingPlugin(level=logging.ERROR)
 
-        event = {
-            "name": "test.logger",
-            "level": "ERROR",
-            "message": "Error occurred",
-            "exc_info": "Traceback (most recent call last):\n  ValueError: Test error",
-            "extra": {},
-        }
+        event = Event(
+            type="daglite-log",
+            data={
+                "name": "test.logger",
+                "level": "ERROR",
+                "message": "Error occurred",
+                "exc_info": "Traceback (most recent call last):\n  ValueError: Test error",
+                "extra": {},
+            },
+        )
 
         with caplog.at_level(logging.ERROR):
             plugin._handle_log_event(event)
@@ -343,17 +356,20 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with extra fields."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = {
-            "name": "test.logger",
-            "level": "INFO",
-            "message": "Test message",
-            "extra": {
-                "filename": "worker.py",
-                "lineno": 123,
-                "daglite_task_name": "test_task",
-                "daglite_task_key": "test_task[0]",
+        event = Event(
+            type="daglite-log",
+            data={
+                "name": "test.logger",
+                "level": "INFO",
+                "message": "Test message",
+                "extra": {
+                    "filename": "worker.py",
+                    "lineno": 123,
+                    "daglite_task_name": "test_task",
+                    "daglite_task_key": "test_task[0]",
+                },
             },
-        }
+        )
 
         with caplog.at_level(logging.INFO):
             plugin._handle_log_event(event)
@@ -383,8 +399,8 @@ class TestReporterImplementations:
         # Verify callback was called with correct event
         callback.assert_called_once()
         event = callback.call_args[0][0]
-        assert event["type"] == "test_event"
-        assert event["key"] == "value"
+        assert event.type == "test_event"
+        assert event.data["key"] == "value"
 
     def test_direct_reporter_thread_safety(self):
         """Test DirectReporter is thread-safe."""
@@ -436,8 +452,8 @@ class TestReporterImplementations:
 
         # Verify event was put on queue
         event = queue.get(timeout=1)
-        assert event["type"] == "test_event"
-        assert event["key"] == "value"
+        assert event.type == "test_event"
+        assert event.data["key"] == "value"
 
         queue.close()
 

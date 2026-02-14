@@ -11,6 +11,7 @@ from typing_extensions import override
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
+from daglite.plugins.events import Event
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
@@ -96,7 +97,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
-            self._handle_node_update({"node_id": metadata.id})
+            self._handle_node_update(Event(type="daglite-node-end", data={"node_id": metadata.id}))
 
     @hook_impl(trylast=True)
     def on_cache_hit(
@@ -111,7 +112,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
-            self._handle_node_update({"node_id": metadata.id})
+            self._handle_node_update(Event(type="daglite-node-end", data={"node_id": metadata.id}))
 
     @hook_impl(trylast=True)
     def on_node_error(
@@ -126,7 +127,7 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
             reporter.report("daglite-node-end", data={"node_id": metadata.id})
         else:  # pragma: no cover
             # Fallback if no reporter is available
-            self._handle_node_update({"node_id": metadata.id})
+            self._handle_node_update(Event(type="daglite-node-end", data={"node_id": metadata.id}))
 
     @hook_impl(trylast=True)
     def before_mapped_node_execute(
@@ -166,9 +167,9 @@ class RichProgressPlugin(BidirectionalPlugin, SerializablePlugin):
     def register_event_handlers(self, registry: EventRegistry) -> None:
         registry.register("daglite-node-end", self._handle_node_update)
 
-    def _handle_node_update(self, event: dict) -> None:
+    def _handle_node_update(self, event: Event) -> None:
         # Check if this is a map iteration completion
-        node_id = event.get("node_id")
+        node_id = event.data.get("node_id")
         if node_id and node_id in self._id_to_task:
             self._progress.advance(task_id=self._id_to_task[node_id])
         else:

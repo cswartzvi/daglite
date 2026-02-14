@@ -21,6 +21,7 @@ from daglite.backends.context import get_event_reporter
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import BidirectionalPlugin
 from daglite.plugins.base import SerializablePlugin
+from daglite.plugins.events import Event
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
@@ -137,7 +138,7 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
         """
         registry.register(LOGGER_EVENT, self._handle_log_event)
 
-    def _handle_log_event(self, event: dict[str, Any]) -> None:
+    def _handle_log_event(self, event: Event) -> None:
         """
         Handle log event from worker.
 
@@ -145,13 +146,13 @@ class CentralizedLoggingPlugin(BidirectionalPlugin):
         on the coordinator side.
 
         Args:
-            event: Log event dict with name, level, message, and optional extras
+            event: :class:`Event` containing name, level, message, and optional extras
         """
-        logger_name = event.get("name", "daglite")
-        level = event.get("level", "INFO")
-        message = event.get("message", "")
-        exc_info_str = event.get("exc_info")
-        all_extra = event.get("extra", {})
+        logger_name = event.data.get("name", "daglite")
+        level = event.data.get("level", "INFO")
+        message = event.data.get("message", "")
+        exc_info_str = event.data.get("exc_info")
+        all_extra = event.data.get("extra", {})
 
         # Filter based on the plugin's configured minimum level
         log_level = getattr(logging, level, logging.INFO)
@@ -357,7 +358,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-start", data=data)
         else:  # pragma: no cover
-            self._handle_node_start(data)  # Fallback if no reporter is available
+            self._handle_node_start(Event(type="daglite-logging-node-start", data=data))
 
     @hook_impl
     def after_node_execute(
@@ -372,7 +373,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-complete", data=data)
         else:  # pragma: no cover
-            self._handle_node_complete(data)  # Fallback if no reporter is available
+            self._handle_node_complete(Event(type="daglite-logging-node-complete", data=data))
 
     @hook_impl
     def on_node_error(
@@ -393,7 +394,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-fail", data=data)
         else:  # pragma: no cover
-            self._handle_task_fail(data)  # Fallback if no reporter is available
+            self._handle_task_fail(Event(type="daglite-logging-node-fail", data=data))
 
     @hook_impl
     def before_node_retry(
@@ -414,7 +415,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-retry", data=data)
         else:  # pragma: no cover
-            self._handle_node_retry(data)  # Fallback if no reporter is available
+            self._handle_node_retry(Event(type="daglite-logging-node-retry", data=data))
 
     @hook_impl
     def after_node_retry(
@@ -434,7 +435,9 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-retry-result", data=data)
         else:  # pragma: no cover
-            self._handle_node_retry_result(data)  # Fallback if no reporter is available
+            self._handle_node_retry_result(
+                Event(type="daglite-logging-node-retry-result", data=data)
+            )
 
     @hook_impl
     def on_cache_hit(
@@ -510,10 +513,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         suffix = f" (format={format})" if format else ""
         self._logger.info(f"Loaded dataset from '{key}'{suffix} in {_format_duration(duration)}")
 
-    def _handle_node_start(self, event: dict[str, Any]) -> None:
-        node_id = event["node_id"]
-        node_key = event["node_key"]
-        backend_name = event.get("backend_name") or "inline"
+    def _handle_node_start(self, event: Event) -> None:
+        node_id = event.data["node_id"]
+        node_key = event.data["node_key"]
+        backend_name = event.data.get("backend_name") or "inline"
         if node_id in self._mapped_nodes:
             self._logger.debug(
                 f"Task '{node_key}' - Starting iteration using {backend_name} backend"
@@ -521,10 +524,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         else:
             self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
 
-    def _handle_node_complete(self, event: dict[str, Any]) -> None:
-        node_id = event["node_id"]
-        node_key = event["node_key"]
-        duration = event.get("duration", 0)
+    def _handle_node_complete(self, event: Event) -> None:
+        node_id = event.data["node_id"]
+        node_key = event.data["node_key"]
+        duration = event.data.get("duration", 0)
         if node_id in self._mapped_nodes:
             self._logger.debug(
                 f"Task '{node_key}' - Completed iteration successfully in "
@@ -535,12 +538,12 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}"
             )
 
-    def _handle_task_fail(self, event: dict[str, Any]) -> None:
-        node_id = event["node_id"]
-        node_key = event["node_key"]
-        error = event.get("error", "unknown error")
-        error_type = event.get("error_type", "Exception")
-        duration = event.get("duration", 0)
+    def _handle_task_fail(self, event: Event) -> None:
+        node_id = event.data["node_id"]
+        node_key = event.data["node_key"]
+        error = event.data.get("error", "unknown error")
+        error_type = event.data.get("error_type", "Exception")
+        duration = event.data.get("duration", 0)
         if node_id in self._mapped_nodes:
             self._logger.error(
                 f"Task '{node_key}' - Mapped iteration failed after "
@@ -552,19 +555,19 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"{error_type}: {error}"
             )
 
-    def _handle_node_retry(self, event: dict[str, Any]) -> None:
-        node_key = event["node_key"]
-        attempt = event["attempt"]
-        error_type = event.get("error_type", "Exception")
-        error = event.get("error", "unknown error")
+    def _handle_node_retry(self, event: Event) -> None:
+        node_key = event.data["node_key"]
+        attempt = event.data["attempt"]
+        error_type = event.data.get("error_type", "Exception")
+        error = event.data.get("error", "unknown error")
         self._logger.warning(
             f"Task '{node_key}' - Retrying after failure (attempt {attempt}): {error_type}: {error}"
         )
 
-    def _handle_node_retry_result(self, event: dict[str, Any]) -> None:
-        node_key = event["node_key"]
-        attempt = event["attempt"]
-        succeeded = event["succeeded"]
+    def _handle_node_retry_result(self, event: Event) -> None:
+        node_key = event.data["node_key"]
+        attempt = event.data["attempt"]
+        succeeded = event.data["succeeded"]
         if succeeded:
             self._logger.info(f"Task '{node_key}' - Retry succeeded on attempt {attempt}")
         else:

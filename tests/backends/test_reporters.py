@@ -12,6 +12,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from daglite.plugins.events import Event
 from daglite.plugins.reporters import DirectEventReporter
 from daglite.plugins.reporters import ProcessEventReporter
 
@@ -32,7 +33,7 @@ class TestDirectReporter:
 
         reporter.report("test_event", {"key": "value"})
 
-        callback.assert_called_once_with({"type": "test_event", "key": "value"})
+        callback.assert_called_once_with(Event(type="test_event", data={"key": "value"}))
 
     def test_report_with_multiple_events(self) -> None:
         """report() can be called multiple times."""
@@ -43,8 +44,8 @@ class TestDirectReporter:
         reporter.report("event2", {"data": 2})
 
         assert callback.call_count == 2
-        callback.assert_any_call({"type": "event1", "data": 1})
-        callback.assert_any_call({"type": "event2", "data": 2})
+        callback.assert_any_call(Event(type="event1", data={"data": 1}))
+        callback.assert_any_call(Event(type="event2", data={"data": 2}))
 
     def test_report_handles_callback_exception(self, caplog) -> None:
         """report() handles exceptions from callback gracefully."""
@@ -97,7 +98,7 @@ class TestProcessReporter:
 
         reporter.report("test_event", {"key": "value"})
 
-        queue.put.assert_called_once_with({"type": "test_event", "key": "value"})
+        queue.put.assert_called_once_with(Event(type="test_event", data={"key": "value"}))
 
     def test_report_multiple_events(self) -> None:
         """report() can send multiple events."""
@@ -108,8 +109,8 @@ class TestProcessReporter:
         reporter.report("event2", {"data": 2})
 
         assert queue.put.call_count == 2
-        queue.put.assert_any_call({"type": "event1", "data": 1})
-        queue.put.assert_any_call({"type": "event2", "data": 2})
+        queue.put.assert_any_call(Event(type="event1", data={"data": 1}))
+        queue.put.assert_any_call(Event(type="event2", data={"data": 2}))
 
     def test_report_handles_queue_exception(self, caplog) -> None:
         """report() handles exceptions when putting to queue."""
