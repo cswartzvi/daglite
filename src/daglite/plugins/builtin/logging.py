@@ -276,7 +276,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
 
         if os.environ.get("DAGLITE_DEBUG"):
             loggers = config.get("loggers", {})
-            if "daglite" in loggers and "daglite.lifecycle" in loggers:
+            if "daglite" in loggers and "daglite.lifecycle" in loggers:  # pragma: no branch
                 loggers["daglite"]["handlers"] = loggers["daglite.lifecycle"]["handlers"]
 
         return config
