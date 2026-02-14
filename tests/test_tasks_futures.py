@@ -321,6 +321,137 @@ class TestParameterValidation:
             divide.partial(z=5)
 
 
+class TestPositionalArguments:
+    """Test positional argument support for task and partial task invocation."""
+
+    def test_task_call_all_positional(self) -> None:
+        """Task can be called with all positional arguments."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future = add(1, 2)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {"x": 1, "y": 2}
+
+    def test_task_call_mixed_positional_and_keyword(self) -> None:
+        """Task can be called with a mix of positional and keyword arguments."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        future = add(1, y=2)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {"x": 1, "y": 2}
+
+    def test_task_call_single_positional(self) -> None:
+        """Task with single parameter can be called positionally."""
+
+        @task
+        def double(x: int) -> int:  # pragma: no cover
+            return x * 2
+
+        future = double(5)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {"x": 5}
+
+    def test_task_call_too_many_positional(self) -> None:
+        """Calling with more positional args than parameters fails."""
+
+        @task
+        def double(x: int) -> int:  # pragma: no cover
+            return x * 2
+
+        with pytest.raises(ParameterError, match="Too many positional arguments"):
+            double(1, 2)
+
+    def test_task_call_positional_conflicts_with_keyword(self) -> None:
+        """Calling with a positional arg that overlaps a keyword arg fails."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        with pytest.raises(ParameterError, match="conflict with keyword arguments"):
+            add(1, x=2)
+
+    def test_partial_task_call_positional(self) -> None:
+        """PartialTask can be called with positional arguments for remaining params."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        partial = add.partial(x=10)
+        future = partial(20)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {"x": 10, "y": 20}
+
+    def test_partial_task_call_positional_multiple_remaining(self) -> None:
+        """PartialTask maps positional args to remaining unbound parameters."""
+
+        @task
+        def score(x: int, y: int, z: int) -> float:  # pragma: no cover
+            return (x + y) / z
+
+        partial = score.partial(x=1)
+        future = partial(2, 3)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {"x": 1, "y": 2, "z": 3}
+
+    def test_partial_task_call_positional_too_many(self) -> None:
+        """PartialTask fails when too many positional args for remaining params."""
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        partial = add.partial(x=10)
+        with pytest.raises(ParameterError, match="Too many positional arguments"):
+            partial(20, 30)
+
+    def test_partial_task_call_positional_conflict_with_keyword(self) -> None:
+        """PartialTask fails when positional arg conflicts with keyword arg."""
+
+        @task
+        def score(x: int, y: int, z: int) -> float:  # pragma: no cover
+            return (x + y) / z
+
+        partial = score.partial(x=1)
+        with pytest.raises(ParameterError, match="conflict with keyword arguments"):
+            partial(2, y=3)
+
+    def test_task_call_with_task_future_positional(self) -> None:
+        """Positional arguments can be TaskFuture objects."""
+
+        @task
+        def double(x: int) -> int:  # pragma: no cover
+            return x * 2
+
+        @task
+        def add(x: int, y: int) -> int:  # pragma: no cover
+            return x + y
+
+        upstream = double(x=5)
+        future = add(upstream, 10)
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs["x"] is upstream
+        assert future.kwargs["y"] == 10
+
+    def test_task_call_no_args_zero_params(self) -> None:
+        """Zero-parameter task works with no arguments."""
+
+        @task
+        def noop() -> None:  # pragma: no cover
+            pass
+
+        future = noop()
+        assert isinstance(future, TaskFuture)
+        assert future.kwargs == {}
+
+
 class TestProductOperationErrors:
     """Test error handling for mapped operations in product mode."""
 

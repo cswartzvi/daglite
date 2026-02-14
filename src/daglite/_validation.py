@@ -7,6 +7,50 @@ from inspect import Signature
 from daglite.exceptions import ParameterError
 
 
+def resolve_positional_args(
+    signature: Signature, args: tuple, kwargs: dict, task_name: str
+) -> dict:
+    """
+    Resolves positional arguments to keyword arguments using the task function's signature.
+
+    Maps positional arguments to parameter names based on their position in the function
+    signature, then merges them with any explicitly provided keyword arguments.
+
+    Args:
+        signature: Signature of the task function.
+        args: Positional arguments to resolve.
+        kwargs: Keyword arguments already provided.
+        task_name: Name of the task (used for error messages).
+
+    Returns:
+        A merged dictionary of keyword arguments.
+
+    Raises:
+        ParameterError: If too many positional arguments are provided or if a positional
+            argument conflicts with an explicit keyword argument.
+    """
+    if not args:
+        return kwargs
+
+    param_names = list(signature.parameters.keys())
+
+    if len(args) > len(param_names):
+        raise ParameterError(
+            f"Too many positional arguments for task '{task_name}': "
+            f"expected at most {len(param_names)}, got {len(args)}"
+        )
+
+    positional_kwargs = dict(zip(param_names, args))
+
+    if overlap := sorted(positional_kwargs.keys() & kwargs.keys()):
+        raise ParameterError(
+            f"Positional arguments for task '{task_name}' conflict with "
+            f"keyword arguments: {overlap}"
+        )
+
+    return {**positional_kwargs, **kwargs}
+
+
 def check_invalid_params(signature: Signature, kwargs: dict, task_name: str) -> None:
     """
     Checks that all provided parameters are valid for the given task function signature.
