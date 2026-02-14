@@ -1,4 +1,3 @@
-import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -29,9 +28,8 @@ class RichLifecycleLoggingPlugin(LifecycleLoggingPlugin):
     ):
         super().__init__(name=name, level=level, config=config)
 
+    @property
     @override
-    def _load_default_config(self) -> dict[str, Any]:
-        """Load rich-specific logging configuration from logging.json."""
-        config_path = Path(__file__).parent / "logging.json"
-        with open(config_path) as f:
-            return json.load(f)
+    def _config_path(self) -> Path:
+        """Path to the rich-specific logging configuration file."""
+        return Path(__file__).parent / "logging.json"

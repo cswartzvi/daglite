@@ -9,6 +9,7 @@ send log records from workers back to the coordinator/main process.
 import json
 import logging
 import logging.config
+import os
 import threading
 from pathlib import Path
 from typing import Any, MutableMapping
@@ -252,14 +253,33 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         config = config if config is not None else self._load_default_config()
         self._apply_logging_config(config)
 
+    @property
+    def _config_path(self) -> Path:
+        """Path to the default logging configuration file."""
+        return Path(__file__).parent / "logging.json"
+
     def _load_default_config(self) -> dict[str, Any]:
-        """Load default logging configuration from logging.json."""
-        config_path = Path(__file__).parent / "logging.json"
+        """
+        Load default logging configuration from :attr:`_config_path`.
+
+        If the `DAGLITE_DEBUG` environment variable is set (any truthy value), the base `daglite`
+        logger is configured with the `file` handler so that internal debug logs (logs outside of
+        `daglite.lifecycle` and daglite.tasks`) are written to `run.log`. By default these are
+        suppressed.
+        """
+        config_path = self._config_path
         if config_path.exists():
             with open(config_path) as f:
-                return json.load(f)
+                config = json.load(f)
         else:  # pragma: no cover
             raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
+
+        if os.environ.get("DAGLITE_DEBUG"):
+            loggers = config.get("loggers", {})
+            if "daglite" in loggers and "daglite.lifecycle" in loggers:
+                loggers["daglite"]["handlers"] = loggers["daglite.lifecycle"]["handlers"]
+
+        return config
 
     def _apply_logging_config(self, config: dict[str, Any]) -> None:
         """Apply logging configuration using dictConfig."""
