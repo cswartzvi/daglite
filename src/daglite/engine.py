@@ -4,14 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from collections.abc import AsyncGenerator
-from collections.abc import AsyncIterator
-from collections.abc import Coroutine
-from collections.abc import Generator
-from collections.abc import Iterator
 from dataclasses import dataclass
-from types import CoroutineType
-from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from uuid import uuid4
 
@@ -29,87 +23,8 @@ from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes.base import BaseGraphNode
-from daglite.tasks import MapTaskFuture
-from daglite.tasks import TaskFuture
-
-P = ParamSpec("P")
-R = TypeVar("R")
-T = TypeVar("T")
-
 
 # region Evaluation
-
-
-# NOTE: Due to limitations in Python's type system, we need to repeat all overloads for both
-# evaluate_sync() and evaluate_async(). Changes to overloads in one function should be mirrored in
-# the other.
-
-
-# Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload
-def evaluate(
-    future: TaskFuture[CoroutineType[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[Coroutine[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[AsyncIterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[AsyncGenerator[T, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# Overloads for Generators and iterators are materialized to lists
-@overload
-def evaluate(
-    future: TaskFuture[Generator[T, Any, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[Iterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# General overloads
-@overload
-def evaluate(
-    future: MapTaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-def evaluate(
-    future: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
 
 
 def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
@@ -167,73 +82,6 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
             "Cannot call evaluate() from an async context. Use evaluate_async() instead."
         )
     return asyncio.run(evaluate_async(future, plugins=plugins))
-
-
-# Coroutine/Generator/Iterator overloads must come first (most specific)
-@overload
-async def evaluate_async(
-    future: TaskFuture[CoroutineType[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[Coroutine[Any, Any, T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[AsyncGenerator[T, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[AsyncIterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# Overloads for Generators and iterators are materialized to lists
-@overload
-async def evaluate_async(
-    future: TaskFuture[Generator[T, Any, Any]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[Iterator[T]],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-# General overloads
-@overload
-async def evaluate_async(
-    future: MapTaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> list[T]: ...
-
-
-@overload
-async def evaluate_async(
-    future: TaskFuture[T],
-    *,
-    plugins: list[Any] | None = None,
-) -> T: ...
 
 
 async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> Any:

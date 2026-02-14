@@ -2,8 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
+from collections.abc import AsyncIterator
+from collections.abc import Coroutine
+from collections.abc import Generator
+from collections.abc import Iterator
 from collections.abc import Mapping
 from dataclasses import dataclass
+from types import CoroutineType
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
@@ -62,6 +68,104 @@ class TaskFuture(BaseTaskFuture[R]):
 
     def __repr__(self) -> str:
         return build_repr("TaskFuture", self.task.name, kwargs=self.kwargs)
+
+    @overload
+    def run(
+        self: TaskFuture[CoroutineType[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Coroutine[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    def run(
+        self: TaskFuture[AsyncIterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[AsyncGenerator[T, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Generator[T, Any, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(
+        self: TaskFuture[Iterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    def run(self, *, plugins: list[Any] | None = None) -> R: ...
+
+    @override
+    def run(self, *, plugins: list[Any] | None = None) -> Any:
+        return super().run(plugins=plugins)
+
+    @overload
+    async def run_async(
+        self: TaskFuture[CoroutineType[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Coroutine[Any, Any, T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> T: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[AsyncGenerator[T, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[AsyncIterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Generator[T, Any, Any]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(
+        self: TaskFuture[Iterator[T]],
+        *,
+        plugins: list[Any] | None = None,
+    ) -> list[T]: ...
+
+    @overload
+    async def run_async(self, *, plugins: list[Any] | None = None) -> R: ...
+
+    @override
+    async def run_async(self, *, plugins: list[Any] | None = None) -> Any:
+        return await super().run_async(plugins=plugins)
 
     def then(
         self,

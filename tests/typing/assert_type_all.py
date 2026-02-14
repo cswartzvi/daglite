@@ -7,7 +7,6 @@ from typing import Any
 
 from typing_extensions import assert_type
 
-from daglite import evaluate
 from daglite import pipeline
 from daglite import task
 from daglite.futures import MapTaskFuture
@@ -71,6 +70,7 @@ def test_bind_basic() -> None:
     """Test basic task binding with scalar parameters."""
     result = add(x=1, y=2)
     assert_type(result, TaskFuture[int])
+    assert_type(result.run(), int)
 
 
 def test_bind_with_dependencies() -> None:
@@ -78,21 +78,26 @@ def test_bind_with_dependencies() -> None:
     dep = double(x=5)
     result = add(x=dep, y=10)
     assert_type(result, TaskFuture[int])
+    assert_type(result.run(), int)
 
 
 def test_bind_return_types() -> None:
     """Test that bind() preserves various return types."""
     int_result = add(x=1, y=2)
     assert_type(int_result, TaskFuture[int])
+    assert_type(int_result.run(), int)
 
     str_result = to_string(x=5)
     assert_type(str_result, TaskFuture[str])
+    assert_type(str_result.run(), str)
 
     dict_result = get_dict()
     assert_type(dict_result, TaskFuture[dict[str, Any]])
+    assert_type(dict_result.run(), dict[str, Any])
 
     optional_result = maybe_none(x=5)
     assert_type(optional_result, TaskFuture[int | None])
+    assert_type(optional_result.run(), int | None)
 
 
 # -- Core API: partial() --
@@ -103,12 +108,14 @@ def test_partial_binding() -> None:
     partial_add = add.partial(y=10)
     result = partial_add(x=5)
     assert_type(result, TaskFuture[int])
+    assert_type(result.run(), int)
 
 
 def test_partial_with_options() -> None:
     """Test that partial() and with_options() work together."""
     partial_with_opts = add.partial(y=10).with_options(backend_name="threading")(x=5)
     assert_type(partial_with_opts, TaskFuture[int])
+    assert_type(partial_with_opts.run(), int)
 
 
 # -- Fan-out API: product() and zip() --
@@ -118,27 +125,32 @@ def test_product_basic() -> None:
     """Test product() creates MapTaskFuture."""
     result = double.map(x=[1, 2, 3])
     assert_type(result, MapTaskFuture[int])
+    assert_type(result.run(), list[int])
 
 
 def test_zip_basic() -> None:
     """Test zip() creates MapTaskFuture."""
     result = add.map(x=[1, 2, 3], y=[10, 20, 30])
     assert_type(result, MapTaskFuture[int])
+    assert_type(result.run(), list[int])
 
 
 def test_product_vs_zip_semantics() -> None:
     """Test Cartesian product vs pairwise zip."""
     cartesian = add.map(x=[1, 2], y=[10, 20], map_mode="product")
     assert_type(cartesian, MapTaskFuture[int])
+    assert_type(cartesian.run(), list[int])
 
     pairwise = add.map(x=[1, 2], y=[10, 20])
     assert_type(pairwise, MapTaskFuture[int])
+    assert_type(pairwise.run(), list[int])
 
 
 def test_product_with_partial() -> None:
     """Test product() with partially fixed parameters."""
     result = add.partial(y=10).map(x=[1, 2, 3])
     assert_type(result, MapTaskFuture[int])
+    assert_type(result.run(), list[int])
 
 
 def test_product_nested() -> None:
@@ -146,6 +158,7 @@ def test_product_nested() -> None:
     level1 = double.map(x=[1, 2, 3])
     level2 = add.map(x=level1, y=[100, 200])
     assert_type(level2, MapTaskFuture[int])
+    assert_type(level2.run(), list[int])
 
 
 # -- Map API: then() --
@@ -155,18 +168,21 @@ def test_then_basic() -> None:
     """Test then() for mapping over MapTaskFuture."""
     mapped = double.map(x=[1, 2, 3]).then(double)
     assert_type(mapped, MapTaskFuture[int])
+    assert_type(mapped.run(), list[int])
 
 
 def test_then_type_transformation() -> None:
     """Test then() with type transformation."""
     result = double.map(x=[1, 2, 3]).then(to_string)
     assert_type(result, MapTaskFuture[str])
+    assert_type(result.run(), list[str])
 
 
 def test_then_chaining() -> None:
     """Test chaining multiple then() calls."""
     result = double.map(x=[1, 2, 3]).then(double).then(to_string)
     assert_type(result, MapTaskFuture[str])
+    assert_type(result.run(), list[str])
 
 
 # -- Join API: join() --
@@ -176,18 +192,21 @@ def test_join_from_product() -> None:
     """Test join() aggregates MapTaskFuture to TaskFuture."""
     result = double.map(x=[1, 2, 3]).join(sum_list)
     assert_type(result, TaskFuture[int])
+    assert_type(result.run(), int)
 
 
 def test_join_with_type_change() -> None:
     """Test join() with type transformation."""
     result = double.map(x=[1, 2, 3]).then(to_string).join(join_strings)
     assert_type(result, TaskFuture[str])
+    assert_type(result.run(), str)
 
 
 def test_join_after_then_chain() -> None:
     """Test join() after chained then() operations."""
     result = double.map(x=[1, 2, 3]).then(double).then(add.partial(y=10)).join(sum_list)
     assert_type(result, TaskFuture[int])
+    assert_type(result.run(), int)
 
 
 # -- Fluent API: then_map() --
@@ -198,6 +217,7 @@ def test_then_map_product_basic() -> None:
     prep = double(x=5)
     result = prep.then_map(add, y=[10, 20, 30], map_mode="product")
     assert_type(result, MapTaskFuture[int])
+    assert_type(result.run(), list[int])
 
 
 def test_then_map_product_chaining() -> None:
@@ -205,6 +225,7 @@ def test_then_map_product_chaining() -> None:
     prep = double(x=5)
     chained = prep.then_map(add, y=[10, 20], map_mode="product").then(double).join(sum_list)
     assert_type(chained, TaskFuture[int])
+    assert_type(chained.run(), int)
 
 
 def test_then_map_zip_basic() -> None:
@@ -212,6 +233,7 @@ def test_then_map_zip_basic() -> None:
     prep = double(x=5)
     result = prep.then_map(add, y=[10, 20, 30])
     assert_type(result, MapTaskFuture[int])
+    assert_type(result.run(), list[int])
 
 
 def test_then_map_zip_chaining() -> None:
@@ -219,6 +241,7 @@ def test_then_map_zip_chaining() -> None:
     prep = double(x=5)
     chained = prep.then_map(add, y=[10, 20]).then(to_string).join(join_strings)
     assert_type(chained, TaskFuture[str])
+    assert_type(chained.run(), str)
 
 
 # -- Pipeline decorator --
@@ -264,7 +287,7 @@ def test_mixed_sync_async() -> None:
 
 
 def test_sync_generator_types() -> None:
-    """Sync generators preserve static type, evaluate() returns list."""
+    """Sync generators preserve static type, run() returns list."""
     from collections.abc import Generator
 
     @task
@@ -274,9 +297,7 @@ def test_sync_generator_types() -> None:
 
     future = generate(n=5)
     assert_type(future, TaskFuture[Generator[int, None, None]])
-
-    result = evaluate(future)
-    assert_type(result, list[int])
+    assert_type(future.run(), list[int])
 
 
 def test_async_generator_types() -> None:
