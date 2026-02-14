@@ -70,7 +70,7 @@ def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginM
     # Add execution-specific plugins
     register_plugins(*plugins, _plugin_manager=new_manager)
 
-    # Register event handlers from bidirectional plugins
+    # Register event handlers from handler  plugins
     for plugin in new_manager.get_plugins():
         if isinstance_event_handler_plugin(plugin):  # pragma: no cover
             plugin.register_event_handlers(registry)

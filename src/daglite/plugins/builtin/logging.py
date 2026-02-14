@@ -264,7 +264,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
 
         If the `DAGLITE_DEBUG` environment variable is set (any truthy value), the base `daglite`
         logger is configured with the `file` handler so that internal debug logs (logs outside of
-        `daglite.lifecycle` and daglite.tasks`) are written to `run.log`. By default these are
+        `daglite.lifecycle` and `daglite.tasks`) are written to `run.log`. By default these are
         suppressed.
         """
         config_path = self._config_path
