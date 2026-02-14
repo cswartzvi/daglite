@@ -28,6 +28,7 @@ class Backend(abc.ABC):
     event_reporter: EventReporter
     dataset_processor: DatasetProcessor
     dataset_reporter: DatasetReporter | None
+    _started: bool = False
 
     @abc.abstractmethod
     def _get_event_reporter(self) -> EventReporter:
@@ -56,12 +57,16 @@ class Backend(abc.ABC):
             event_processor: Event processor for event handling
             dataset_processor: Dataset processor for persisting outputs
         """
+        if self._started:  # pragma: no cover
+            raise RuntimeError("Backend is already started.")
+
         self.plugin_manager = plugin_manager
         self.event_processor = event_processor
         self.dataset_processor = dataset_processor
         self.event_reporter = self._get_event_reporter()
         self.dataset_reporter = self._get_dataset_reporter()
         self._start()
+        self._started = True
 
     def _start(self) -> None:
         """
@@ -78,14 +83,11 @@ class Backend(abc.ABC):
 
         Subclasses should NOT override this method. Instead, override ``_stop()``.
         """
+        if not self._started:  # pragma: no cover
+            return
+
         self._stop()
-        delattr(self, "plugin_manager")
-        delattr(self, "event_processor")
-        if hasattr(self, "event_reporter"):  # pragma: no branch
-            del self.event_reporter
-        delattr(self, "dataset_processor")
-        if hasattr(self, "dataset_reporter"):  # pragma: no branch
-            del self.dataset_reporter
+        self._started = False
 
     def _stop(self) -> None:
         """
