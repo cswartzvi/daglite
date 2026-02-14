@@ -186,7 +186,7 @@ class TestMapTaskNodes:
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2, 3])},
         )
 
-        assert node.mode == "extend"
+        assert node.mode == "product"
 
     def test_zip_mode(self) -> None:
         """MapTaskNode initializes with zip mode."""
