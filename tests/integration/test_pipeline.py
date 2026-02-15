@@ -2,6 +2,7 @@
 
 import asyncio
 
+from daglite import Dag
 from daglite import pipeline
 from daglite import task
 
@@ -17,7 +18,7 @@ class TestPipelineEvaluation:
             return x + y
 
         @pipeline
-        def simple_pipeline(x: int, y: int):
+        def simple_pipeline(x: int, y: int) -> Dag[int]:
             return add(x=x, y=y)
 
         graph = simple_pipeline(5, 10)
@@ -36,7 +37,7 @@ class TestPipelineEvaluation:
             return x * factor
 
         @pipeline
-        def chained_pipeline(x: int, y: int, factor: int):
+        def chained_pipeline(x: int, y: int, factor: int) -> Dag[int]:
             sum_result = add(x=x, y=y)
             return multiply(x=sum_result, factor=factor)
 
@@ -52,7 +53,7 @@ class TestPipelineEvaluation:
             return x * x
 
         @pipeline
-        def map_pipeline(values: list[int]):
+        def map_pipeline(values: list[int]) -> Dag[int]:
             return square.map(x=values)
 
         graph = map_pipeline([1, 2, 3, 4])
@@ -71,7 +72,7 @@ class TestPipelineEvaluation:
             return sum(values)
 
         @pipeline
-        def map_reduce_pipeline(values: list[int]):
+        def map_reduce_pipeline(values: list[int]) -> Dag[int]:
             doubled = double.map(x=values)
             return doubled.join(sum_all)
 
@@ -87,7 +88,7 @@ class TestPipelineEvaluation:
             return x * factor
 
         @pipeline
-        def pipeline_with_defaults(x: int, factor: int = 2):
+        def pipeline_with_defaults(x: int, factor: int = 2) -> Dag[int]:
             return multiply(x=x, factor=factor)
 
         # Use default
@@ -112,7 +113,7 @@ class TestPipelineEvaluation:
             return x * y
 
         @pipeline
-        def async_pipeline(a: int, b: int, c: int):
+        def async_pipeline(a: int, b: int, c: int) -> Dag[int]:
             # Create parallel branches
             sum_result = add(x=a, y=b)
             prod_result = multiply(x=b, y=c)
@@ -126,3 +127,124 @@ class TestPipelineEvaluation:
 
         result = asyncio.run(run())
         assert result == 9  # (1+2) + (2*3) = 3 + 6 = 9
+
+
+class TestPipelineRunMethod:
+    """Tests for Pipeline.run() and Pipeline.run_async() methods."""
+
+    def test_pipeline_run_basic(self) -> None:
+        """Pipeline.run() evaluates in a single step."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @pipeline
+        def simple_pipeline(x: int, y: int) -> Dag[int]:
+            return add(x=x, y=y)
+
+        result = simple_pipeline.run(5, 10)
+        assert result == 15
+
+    def test_pipeline_run_with_chained_tasks(self) -> None:
+        """Pipeline.run() works with chained tasks."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        @pipeline
+        def chained_pipeline(x: int, y: int, factor: int) -> Dag[int]:
+            sum_result = add(x=x, y=y)
+            return multiply(x=sum_result, factor=factor)
+
+        result = chained_pipeline.run(5, 10, 3)
+        assert result == 45
+
+    def test_pipeline_run_with_map(self) -> None:
+        """Pipeline.run() works with MapTaskFuture."""
+
+        @task
+        def square(x: int) -> int:
+            return x * x
+
+        @pipeline
+        def map_pipeline(values: list[int]) -> Dag[int]:
+            return square.map(x=values)
+
+        result = map_pipeline.run([1, 2, 3, 4])
+        assert result == [1, 4, 9, 16]
+
+    def test_pipeline_run_with_map_reduce(self) -> None:
+        """Pipeline.run() works with map-reduce pattern."""
+
+        @task
+        def double(x: int) -> int:
+            return x * 2
+
+        @task
+        def sum_all(values: list[int]) -> int:
+            return sum(values)
+
+        @pipeline
+        def map_reduce_pipeline(values: list[int]) -> Dag[int]:
+            doubled = double.map(x=values)
+            return doubled.join(sum_all)
+
+        result = map_reduce_pipeline.run([1, 2, 3, 4])
+        assert result == 20
+
+    def test_pipeline_run_with_defaults(self) -> None:
+        """Pipeline.run() works with default parameters."""
+
+        @task
+        def multiply(x: int, factor: int) -> int:
+            return x * factor
+
+        @pipeline
+        def pipeline_with_defaults(x: int, factor: int = 2) -> Dag[int]:
+            return multiply(x=x, factor=factor)
+
+        assert pipeline_with_defaults.run(10) == 20
+        assert pipeline_with_defaults.run(10, factor=3) == 30
+
+    def test_pipeline_run_async(self) -> None:
+        """Pipeline.run_async() evaluates asynchronously."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task
+        def multiply(x: int, y: int) -> int:
+            return x * y
+
+        @pipeline
+        def async_pipeline(a: int, b: int, c: int) -> Dag[int]:
+            sum_result = add(x=a, y=b)
+            prod_result = multiply(x=b, y=c)
+            return add(x=sum_result, y=prod_result)
+
+        async def run():
+            return await async_pipeline.run_async(1, 2, 3)
+
+        result = asyncio.run(run())
+        assert result == 9  # (1+2) + (2*3) = 3 + 6 = 9
+
+    def test_pipeline_run_with_kwargs(self) -> None:
+        """Pipeline.run() works with keyword arguments."""
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @pipeline
+        def simple_pipeline(x: int, y: int) -> Dag[int]:
+            return add(x=x, y=y)
+
+        result = simple_pipeline.run(x=5, y=10)
+        assert result == 15

@@ -8,8 +8,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, ParamSpec, TypeVar, overload
 
+from daglite.futures.base import BaseTaskFuture
+
 P = ParamSpec("P")
 R = TypeVar("R")
+
+Dag = BaseTaskFuture
+"""
+Type alias for pipeline return annotations.
+
+Pipelines are entry points — the ``Dag`` alias provides a readable annotation
+for functions that build and return a task graph:
+
+    @pipeline
+    def compute(x: int, y: int) -> Dag[int]:
+        return add(x=x, y=y)
+
+    @pipeline
+    def sweep(n: int) -> Dag[int]:
+        return double.map(x=list(range(n)))
+"""
 
 
 @overload
@@ -33,14 +51,18 @@ def pipeline(
     """
     Decorator to convert a Python function into a daglite `Pipeline`.
 
-    Pipelines are functions that return a `NodeBuilder` (typically a `TaskFuture` or
-    `MapTaskFuture`). They serve as entry points for CLI execution and provide a way
-    to parameterize DAG construction.
+    Pipelines are **entry points** for DAG execution. They wrap a function that
+    builds a task graph (returning a `TaskFuture` or `MapTaskFuture`) and
+    provide convenient methods to evaluate it:
+
+    - Call the pipeline to get the underlying future for manual evaluation.
+    - Use `.run()` / `.run_async()` to build and evaluate in one step.
+    - Run from the command line with `daglite run module.my_pipeline`.
 
     Args:
         func: The function to wrap. When used without parentheses (`@pipeline`), this is
             automatically passed. When used with parentheses (`@pipeline()`), this is None.
-        name: Custom name for the pipeline. Defaults to the function's `__name__`.
+        name: Custom name for the pipeline. Defaults to the function's ``__name__``.
         description: Pipeline description. Defaults to the function's docstring.
 
     Returns:
@@ -58,15 +80,15 @@ def pipeline(
         >>> @pipeline
         ... def my_pipeline(x: int, y: int) -> TaskFuture[int]:
         ...     return some_task(x=x, y=y)
-        >>> my_pipeline(2, 3)  # doctest: +ELLIPSIS
-        TaskFuture(...)
+        >>> my_pipeline.run(2, 3)
+        5
 
         With parameters
         >>> @pipeline(name="custom_pipeline", description="Does something cool")
         ... def my_pipeline(x: int, y: int) -> TaskFuture[int]:
         ...     return some_task(x=x, y=y)
-        >>> my_pipeline(5, 7)  # doctest: +ELLIPSIS
-        TaskFuture(...)
+        >>> my_pipeline.run(5, 7)
+        12
     """
 
     def decorator(fn: Callable[P, R]) -> Pipeline[P, R]:
@@ -89,13 +111,20 @@ def pipeline(
 @dataclass(frozen=True)
 class Pipeline(Generic[P, R]):
     """
-    Wraps a Python function as a pipeline that returns a `NodeBuilder`.
+    Entry point for building and running a task graph.
 
-    Users should **not** directly instantiate this class, use the `@pipeline` decorator instead.
+    Users should **not** directly instantiate this class — use the ``@pipeline``
+    decorator instead.
 
-    A pipeline function should accept parameters and return a `NodeBuilder` (e.g., `TaskFuture`
-    or `MapTaskFuture`). These parameters can be provided via the CLI, allowing for dynamic
-    DAG construction based on user input.
+    A pipeline wraps a function that accepts parameters and returns a
+    ``TaskFuture`` or ``MapTaskFuture``.  Pipelines can be invoked three ways:
+
+    1. **Call** — ``pipeline(...)`` returns the underlying future for manual
+       evaluation or further composition.
+    2. **Run** — ``pipeline.run(...)`` / ``pipeline.run_async(...)`` builds and
+       evaluates the DAG in a single step.
+    3. **CLI** — ``daglite run module.pipeline --param key=value`` executes the
+       pipeline from the command line.
     """
 
     func: Callable[P, R]
@@ -119,6 +148,74 @@ class Pipeline(Generic[P, R]):
             The result of calling the pipeline function (typically a BaseTaskFuture).
         """
         return self.func(*args, **kwargs)
+
+    def run(self, *args: P.args, **kwargs: P.kwargs) -> Any:
+        """
+        Build and evaluate the pipeline synchronously.
+
+        This is the primary way to execute a pipeline from scripts, notebooks,
+        or the REPL.  It calls the underlying function to build the task graph
+        and immediately evaluates it.
+
+        Cannot be called from within an async context (e.g., inside an
+        ``async def`` or running event loop).  Use ``.run_async()`` instead.
+
+        Args:
+            *args: Positional arguments forwarded to the pipeline function.
+            **kwargs: Keyword arguments forwarded to the pipeline function.
+
+        Returns:
+            The evaluated result of the pipeline.
+
+        Raises:
+            RuntimeError: If called from within an async context.
+
+        Examples:
+            >>> from daglite import Dag, pipeline, task
+            >>> @task
+            ... def add(x: int, y: int) -> int:
+            ...     return x + y
+            >>> @pipeline
+            ... def my_pipeline(x: int, y: int) -> Dag[int]:
+            ...     return add(x=x, y=y)
+            >>> my_pipeline.run(5, 10)
+            15
+        """
+        future = self.func(*args, **kwargs)
+        from daglite.engine import evaluate
+
+        return evaluate(future)
+
+    async def run_async(self, *args: P.args, **kwargs: P.kwargs) -> Any:
+        """
+        Build and evaluate the pipeline asynchronously.
+
+        Async counterpart of ``.run()``.  Use this when running inside an
+        existing event loop or when the pipeline contains async tasks.
+
+        Args:
+            *args: Positional arguments forwarded to the pipeline function.
+            **kwargs: Keyword arguments forwarded to the pipeline function.
+
+        Returns:
+            The evaluated result of the pipeline.
+
+        Examples:
+            >>> import asyncio
+            >>> from daglite import Dag, pipeline, task
+            >>> @task
+            ... def add(x: int, y: int) -> int:
+            ...     return x + y
+            >>> @pipeline
+            ... def my_pipeline(x: int, y: int) -> Dag[int]:
+            ...     return add(x=x, y=y)
+            >>> asyncio.run(my_pipeline.run_async(5, 10))
+            15
+        """
+        future = self.func(*args, **kwargs)
+        from daglite.engine import evaluate_async
+
+        return await evaluate_async(future)
 
     @property
     def signature(self) -> inspect.Signature:
