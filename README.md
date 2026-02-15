@@ -22,9 +22,6 @@ A lightweight, type-safe Python framework for building and executing DAGs (Direc
 
 ```bash
 uv pip install daglite
-
-# With CLI support
-uv pip install daglite[cli]
 ```
 
 ### Your First DAG

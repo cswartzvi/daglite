@@ -1,14 +1,8 @@
-# CLI Plugin
+# Command-Line Interface
 
-The `daglite-cli` plugin provides a command-line interface for running pipelines defined with the `@pipeline` decorator. This makes it easy to execute workflows from the terminal, CI/CD systems, or scheduled jobs.
-
-## Installation
-
-```bash
-uv pip install daglite[cli]
-```
-
-This installs the `daglite` command-line tool.
+The `daglite` CLI is built in — no extra install needed. It lets you run pipelines
+defined with the `@pipeline` decorator from the terminal, CI/CD systems, or
+scheduled jobs.
 
 ---
 
@@ -59,6 +53,17 @@ daglite run myproject.pipelines.data_pipeline \
     --param multiplier=5
 ```
 
+### Running from Python
+
+```python
+# Build and evaluate in one step
+data_pipeline.run(
+    input_file="data.txt",
+    output_file="output.txt",
+    multiplier=5,
+)
+```
+
 ---
 
 ## Command Reference
@@ -79,12 +84,12 @@ daglite run [OPTIONS] PIPELINE
 
 - `--param NAME=VALUE`, `-p NAME=VALUE` - Pipeline parameter (can be specified multiple times)
 - `--backend NAME`, `-b NAME` - Execution backend (`inline`, `threading`, `processes`)
-- `--async` - Use async evaluation (for async tasks or event loop integration)
+- `--parallel` - Enable sibling parallelism via async evaluation
 - `--settings NAME=VALUE`, `-s NAME=VALUE` - Override global settings (can be specified multiple times)
 
 !!! note "Parallel Execution"
-    Sibling tasks run in parallel when using `--backend threading` or `--backend processes`, even without `--async`.
-    Use `--async` only when you have async tasks or need async/await semantics.
+    Use `--parallel` together with `--backend threading` or `--backend processes` to run
+    independent sibling tasks concurrently.
 
 ---
 
@@ -105,12 +110,12 @@ daglite run myproject.pipelines.etl_pipeline \
     --param batch_size=1000
 ```
 
-### Async Execution
+### Parallel Execution
 
 ```bash
 daglite run myproject.pipelines.parallel_pipeline \
     --param input_dir=./data \
-    --async
+    --parallel
 ```
 
 ### Custom Backend
@@ -129,7 +134,7 @@ daglite run myproject.pipelines.ml_pipeline \
     --param data_path=train.csv \
     --param epochs=50 \
     --param learning_rate=0.001 \
-    --async
+    --parallel
 ```
 
 ---
@@ -200,11 +205,11 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install daglite[cli]
+      - run: pip install daglite
       - run: |
           daglite run myproject.pipelines.daily_etl \
             --param date=$(date +%Y-%m-%d) \
-            --async
+            --parallel
 ```
 
 ### GitLab CI
@@ -212,7 +217,7 @@ jobs:
 ```yaml
 pipeline:
   script:
-    - pip install daglite[cli]
+    - pip install daglite
     - daglite run myproject.pipelines.deployment_pipeline
         --param environment=production
         --param version=$CI_COMMIT_TAG
@@ -312,5 +317,5 @@ daglite run myproject.pipelines.pipeline
 
 ## See Also
 
-- [Pipelines User Guide](../user-guide/pipelines.md) - Learn about the `@pipeline` decorator
-- [Creating Plugins](creating.md) - Extend the CLI with custom commands
+- [Pipelines User Guide](pipelines.md) - Learn about the `@pipeline` decorator
+- [Creating Plugins](../plugins/creating.md) - Extend Daglite with custom hooks

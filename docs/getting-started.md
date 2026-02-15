@@ -19,15 +19,7 @@ Daglite requires Python 3.10 or higher.
 uv pip install daglite
 ```
 
-This installs the core library with minimal dependencies.
-
-### With CLI Support
-
-To use the `daglite` command-line tool:
-
-```bash
-uv pip install daglite[cli]
-```
+This installs the core library including the `daglite` command-line tool.
 
 ### Development Installation
 

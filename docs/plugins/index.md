@@ -12,20 +12,13 @@ Plugins shipped with the core `daglite` package that require no additional insta
 
 [→ Learn more about built-in plugins](built-in.md)
 
+**CLI** - Built-in command-line interface for running pipelines from the terminal.
+
+[→ Learn more about the CLI](../user-guide/cli.md)
+
 ### Extension Plugins
 
 Optional packages that extend Daglite with additional capabilities.
-
-#### daglite-cli
-
-Command-line interface for running pipelines from the terminal.
-
-- Run pipelines with `daglite run`
-- Pass parameters via command line
-- Choose execution backends (inline, threading, multiprocessing)
-- Enable async execution for parallel task execution
-
-[→ Learn more about daglite-cli](cli.md)
 
 #### daglite-serialization
 
@@ -59,15 +52,12 @@ Install extension plugins as needed:
 #### Install All Extension Plugins
 
 ```bash
-uv pip install daglite[cli] daglite-serialization[all]
+uv pip install daglite-serialization[all]
 ```
 
 #### Install Specific Extension Plugins
 
 ```bash
-# CLI only
-uv pip install daglite[cli]
-
 # Serialization with specific libraries
 uv pip install daglite-serialization[numpy]
 uv pip install daglite-serialization[pandas]

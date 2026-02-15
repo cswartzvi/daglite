@@ -92,10 +92,10 @@ nav:
       - Fluent API: user-guide/fluent-api.md
       - Evaluation: user-guide/evaluation.md
       - Pipelines & CLI: user-guide/pipelines.md
+      - CLI Reference: user-guide/cli.md
   - Plugins:
       - Overview: plugins/index.md
       - Built-in: plugins/built-in.md
-      - CLI: plugins/cli.md
       - Serialization: plugins/serialization.md
       - Creating Plugins: plugins/creating.md
   - Examples:

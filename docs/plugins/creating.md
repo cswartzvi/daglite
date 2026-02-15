@@ -503,4 +503,4 @@ class MetricsExporter:
 
 - [pluggy documentation](https://pluggy.readthedocs.io/) - Plugin framework used by Daglite
 - [Hook Specifications Source](https://github.com/cswartzvi/daglite/blob/main/src/daglite/plugins/hooks/specs.py) - Complete hook specifications
-- [CLI Plugin Source](https://github.com/cswartzvi/daglite/tree/main/extras/cli) - Example plugin implementation
+- [Serialization Plugin Source](https://github.com/cswartzvi/daglite/tree/main/extras/serialization) - Example plugin implementation
