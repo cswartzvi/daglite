@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
-from daglite_cli.base import cli
-from daglite_cli.utils import parse_param_value
+
+from daglite.cli._shared import parse_param_value
+from daglite.cli.base import cli
 
 
 class TestRunCommand:

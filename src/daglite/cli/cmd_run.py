@@ -1,4 +1,4 @@
-"""CLI commands for daglite."""
+"""CLI ``run`` command for executing pipelines."""
 
 from __future__ import annotations
 
@@ -9,12 +9,12 @@ from typing import Any
 
 import click
 
+from daglite.cli._shared import parse_param_value
 from daglite.engine import evaluate
 from daglite.engine import evaluate_async
 from daglite.pipelines import load_pipeline
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
-from daglite_cli.utils import parse_param_value
 
 
 @click.command()

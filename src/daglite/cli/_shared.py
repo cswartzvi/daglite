@@ -1,3 +1,5 @@
+"""Utility functions for CLI parameter parsing."""
+
 from typing import Any
 
 
