@@ -54,7 +54,7 @@ def save(items: list, path: str) -> None:
     with open(path, "w") as f:
         json.dump(items, f)
 
-# Build the DAG (lazy - doesn't execute yet)
+# Build and evaluate the DAG
 result = evaluate(
     fetch_data(url="https://api.example.com/data")
     .then(transform, multiplier=10)
@@ -108,16 +108,16 @@ result = (
 Built-in support for fan-out/fan-in operations:
 
 ```python
-# Cartesian product
-results = task.product(x=[1, 2, 3], y=[10, 20])
+# Cartesian product (all combinations)
+results = my_task.map(x=[1, 2, 3], y=[10, 20], map_mode="product")
 
-# Pairwise zip
-results = task.zip(x=[1, 2, 3], y=[10, 20, 30])
+# Pairwise zip (element-by-element)
+results = my_task.map(x=[1, 2, 3], y=[10, 20, 30])
 
 # Map and reduce
 total = (
-    square.product(x=[1, 2, 3, 4])
-    .map(double)
+    square.map(x=[1, 2, 3, 4], map_mode="product")
+    .then(double)
     .join(sum_all)
 )
 ```
@@ -135,13 +135,11 @@ result = process(data=df)
 reveal_type(result)  # TaskFuture[dict[str, float]]
 ```
 
-### Async Execution
+### Parallel Execution
 
-Run tasks in parallel with threading or multiprocessing:
+Run tasks in parallel with threading or multiprocessing backends:
 
 ```python
-result = evaluate(my_dag, use_async=True)
-
 # Per-task backends
 @task(backend_name="threading")
 def io_task(url: str) -> bytes:
@@ -156,9 +154,9 @@ def cpu_task(data: np.ndarray) -> np.ndarray:
 
 ## Next Steps
 
-- **[Getting Started](getting-started.md)** - Install Daglite and learn the basics in 5 minutes
+- **[Getting Started](getting-started.md)** - Install Daglite and learn the basics
 - **[User Guide](user-guide/tasks.md)** - In-depth guides on tasks, composition, and evaluation
 - **[CLI & Pipelines](user-guide/pipelines.md)** - Command-line interface and pipeline definitions
-- **[Plugins](plugins/)** - Extend Daglite with serialization and more
-- **[Examples](examples/)** - Real-world examples and patterns
-- **[API Reference](api-reference/)** - Complete API documentation
+- **[Plugins](plugins/index.md)** - Extend Daglite with serialization and more
+- **[Examples](examples/index.md)** - Real-world examples and patterns
+- **[API Reference](api-reference/index.md)** - Complete API documentation

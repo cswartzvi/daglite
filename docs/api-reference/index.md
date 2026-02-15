@@ -9,17 +9,16 @@ Complete API documentation for Daglite's core modules and functions.
 Task definition and composition.
 
 - `@task` decorator
-- `Task` class
+- `Task` class — `.map()`, `.partial()`, `.with_options()`
 - `PartialTask` class
-- `.product()`, `.zip()`, `.partial()` methods
 
 ### [Futures](futures.md)
 
 Task futures and fluent operations.
 
-- `TaskFuture` class
-- `MapTaskFuture` class
-- `.then()`, `.map()`, `.join()` methods
+- `TaskFuture` class — `.then()`, `.then_map()`, `.split()`, `.save()`
+- `MapTaskFuture` class — `.then()`, `.join()`, `.save()`
+- `DatasetFuture` class
 
 ### [Engine](engine.md)
 
@@ -40,12 +39,19 @@ CLI pipeline definition.
 Global configuration.
 
 - `DagliteSettings` class
-- `set_global_settings()` function
+- `get_global_settings()` / `set_global_settings()` functions
+
+### [Exceptions](exceptions.md)
+
+Error types raised by Daglite.
+
+- `DagliteError` base exception
+- `TaskError`, `GraphError`, `ParameterError`, `BackendError`, `DatasetError`, `ExecutionError`
 
 ---
 
 ## Quick Links
 
 - [User Guide](../user-guide/tasks.md) - Learn how to use Daglite
-- [Examples](../examples/) - Real-world usage examples
+- [Examples](../examples/index.md) - Real-world usage examples
 - [Source Code](https://github.com/cswartzvi/daglite) - View on GitHub

@@ -11,7 +11,7 @@ CLI pipeline definition and loading.
 
 ## Pipeline Loading
 
-::: daglite.load_pipeline
+::: daglite.pipelines.load_pipeline
     options:
       show_root_heading: true
       show_source: false

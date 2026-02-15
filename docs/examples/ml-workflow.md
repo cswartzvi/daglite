@@ -11,7 +11,7 @@ Machine learning workflows typically involve:
 3. **Evaluation** - Assess model performance
 4. **Selection** - Choose the best performing model
 
-Daglite's `.product()` method makes hyperparameter sweeps easy, while `.map()` and `.join()` handle parallel training and result aggregation.
+Daglite's `.map(..., map_mode="product")` method makes hyperparameter sweeps easy, while `.map()` and `.join()` handle parallel training and result aggregation.
 
 ## Basic ML Pipeline
 
@@ -90,7 +90,7 @@ print(f"Model accuracy: {result['accuracy']:.3f}")
 
 ## Hyperparameter Tuning
 
-### Grid Search with `.product()`
+### Grid Search with `.map(map_mode="product")`
 
 ```python
 @task
@@ -139,11 +139,12 @@ data = evaluate(
 
 # Hyperparameter grid search
 best_model = evaluate(
-    train_model.product(
+    train_model.map(
         data=[data],  # Fixed parameter
         n_estimators=[50, 100, 200],
         max_depth=[5, 10, 15, None],
-        min_samples_split=[2, 5, 10]
+        min_samples_split=[2, 5, 10],
+        map_mode="product"
     )
     .join(find_best_model)
 )
@@ -183,8 +184,8 @@ data = evaluate(
 )
 
 best_model = evaluate(
-    generate_random_params.product(seed=range(20))
-    .map(train_with_params, data=data)
+    generate_random_params.map(seed=list(range(20)), map_mode="product")
+    .then(train_with_params, data=data)
     .join(find_best_model)
 )
 ```
@@ -253,10 +254,11 @@ folds = evaluate(
 
 # Train on each fold
 cv_score = evaluate(
-    train_on_fold.product(
+    train_on_fold.map(
         fold=folds,
         n_estimators=[100],
-        max_depth=[10]
+        max_depth=[10],
+        map_mode="product"
     )
     .join(average_scores)
 )
@@ -310,10 +312,11 @@ folds = evaluate(
 
 # Grid search with cross-validation
 best_params = evaluate(
-    cv_with_params.product(
+    cv_with_params.map(
         folds=[folds],
         n_estimators=[50, 100, 200],
-        max_depth=[5, 10, 15]
+        max_depth=[5, 10, 15],
+        map_mode="product"
     )
     .join(find_best_params)
 )
@@ -456,21 +459,24 @@ data = evaluate(
 )
 
 # Train all models with different hyperparameters
-lr_models = train_logistic_regression.product(
+lr_models = train_logistic_regression.map(
     data=[data],
-    C=[0.01, 0.1, 1.0, 10.0]
+    C=[0.01, 0.1, 1.0, 10.0],
+    map_mode="product"
 )
 
-svm_models = train_svm.product(
+svm_models = train_svm.map(
     data=[data],
     C=[0.1, 1.0, 10.0],
-    kernel=["rbf", "linear"]
+    kernel=["rbf", "linear"],
+    map_mode="product"
 )
 
-gb_models = train_gradient_boosting.product(
+gb_models = train_gradient_boosting.map(
     data=[data],
     n_estimators=[50, 100],
-    learning_rate=[0.01, 0.1]
+    learning_rate=[0.01, 0.1],
+    map_mode="product"
 )
 
 # Combine and find best

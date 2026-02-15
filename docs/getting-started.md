@@ -95,7 +95,7 @@ The `.then()` method automatically connects the output of one task to the input 
 
 ---
 
-## Fan-Out with `.product()`
+## Fan-Out with `.map()` (Product Mode)
 
 Process multiple inputs using Cartesian product:
 
@@ -106,7 +106,7 @@ def add(x: int, y: int) -> int:
 
 # Create all combinations of x and y
 results = evaluate(
-    add.product(x=[1, 2, 3], y=[10, 20])
+    add.map(x=[1, 2, 3], y=[10, 20], map_mode="product")
 )
 # Result: [11, 21, 12, 22, 13, 23]
 #         (1+10, 1+20, 2+10, 2+20, 3+10, 3+20)
@@ -129,7 +129,7 @@ def sum_all(values: list[int]) -> int:
 
 # Square each number, then sum them
 result = evaluate(
-    square.product(x=[1, 2, 3, 4])
+    square.map(x=[1, 2, 3, 4], map_mode="product")
     .join(sum_all)
 )
 # Result: 30 (1² + 2² + 3² + 4² = 1 + 4 + 9 + 16 = 30)
@@ -143,15 +143,15 @@ def double(x: int) -> int:
     return x * 2
 
 result = evaluate(
-    square.product(x=[1, 2, 3, 4])  # [1, 4, 9, 16]
-    .map(double)                     # [2, 8, 18, 32]
+    square.map(x=[1, 2, 3, 4], map_mode="product")  # [1, 4, 9, 16]
+    .then(double)                    # [2, 8, 18, 32]
     .join(sum_all)                   # 60
 )
 ```
 
 ---
 
-## Pairwise Operations with `.zip()`
+## Pairwise Operations with `.map()`
 
 Process sequences element-by-element:
 
@@ -162,7 +162,7 @@ def multiply(x: int, y: int) -> int:
 
 # Zip sequences together (must be same length)
 results = evaluate(
-    multiply.zip(x=[1, 2, 3], y=[10, 20, 30])
+    multiply.map(x=[1, 2, 3], y=[10, 20, 30])
 )
 # Result: [10, 40, 90]
 #         (1×10, 2×20, 3×30)
@@ -181,8 +181,8 @@ def scale(x: int, factor: int) -> int:
 
 # Inline parameter with .then()
 result = evaluate(
-    square.product(x=[1, 2, 3])
-    .map(scale, factor=10)  # Pass factor inline
+    square.map(x=[1, 2, 3], map_mode="product")
+    .then(scale, factor=10)  # Pass factor inline
 )
 # Result: [10, 40, 90]
 ```
@@ -259,7 +259,7 @@ def compute_heavy(x: int) -> int:
 
 # Run calculations in parallel across processes
 results = evaluate(
-    compute_heavy.product(x=[1000, 2000, 3000])
+    compute_heavy.map(x=[1000, 2000, 3000], map_mode="product")
 )
 ```
 
@@ -274,9 +274,9 @@ results = evaluate(
 Now that you understand the basics:
 
 - **[Learn more about tasks](user-guide/tasks.md)** - Task decorators, options, and patterns
-- **[Explore composition patterns](user-guide/composition.md)** - Calling tasks, `()`, `.product()`, `.zip()`, `.partial()`
+- **[Explore composition patterns](user-guide/composition.md)** - Calling tasks, `()`, `.map()`, `.partial()`
 - **[Master the fluent API](user-guide/fluent-api.md)** - `.then()`, `.map()`, `.join()`
-- **[See real examples](examples.md)** - ETL pipelines, ML workflows, and more
+- **[See real examples](examples/index.md)** - ETL pipelines, ML workflows, and more
 
 ---
 
@@ -297,8 +297,8 @@ result = (
 
 ```python
 results = (
-    fetch_user.product(user_id=[1, 2, 3, 4, 5])
-    .map(enrich, include_avatar=True)
+    fetch_user.map(user_id=[1, 2, 3, 4, 5], map_mode="product")
+    .then(enrich, include_avatar=True)
     .join(save_all)
 )
 ```
@@ -307,11 +307,12 @@ results = (
 
 ```python
 results = (
-    train_model.product(
+    train_model.map(
         lr=[0.001, 0.01, 0.1],
-        batch_size=[32, 64, 128]
+        batch_size=[32, 64, 128],
+        map_mode="product"
     )
-    .map(evaluate_model, test_data=test_set)
+    .then(evaluate_model, test_data=test_set)
     .join(find_best)
 )
 ```

@@ -260,7 +260,7 @@ class ErrorTrackingPlugin:
         })
 
     @hook_impl
-    def on_graph_error(self, root_id, error, duration, is_async):
+    def on_graph_error(self, root_id, error, duration):
         print(f"\nExecution failed after {duration:.2f}s")
         print(f"Total errors: {len(self.errors)}")
         for err in self.errors:
@@ -461,7 +461,7 @@ class StatefulPlugin:
         self.total_duration = 0
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         self.execution_count += 1
         self.total_duration += duration
 
@@ -492,7 +492,7 @@ class MetricsExporter:
         self.collector = collector
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration, is_async):
+    def after_graph_execute(self, root_id, result, duration):
         # Export metrics collected by MetricsCollector
         self.export_to_prometheus(self.collector.metrics)
 ```

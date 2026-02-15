@@ -27,7 +27,7 @@ Customize task behavior with decorator parameters:
 @task(
     name="custom_add",
     description="Adds two numbers with custom config",
-    backend="threading"
+    backend_name="threading"
 )
 def add(x: int, y: int) -> int:
     return x + y
@@ -37,7 +37,12 @@ def add(x: int, y: int) -> int:
 
 - `name` - Custom task name (default: function name)
 - `description` - Task description (default: docstring)
-- `backend` - Execution backend: `"inline"`, `"threading"`, or `"multiprocessing"`
+- `backend_name` - Execution backend: `"inline"`, `"threading"`, or `"multiprocessing"`
+- `retries` - Number of times to retry on failure (default: 0)
+- `timeout` - Maximum execution time in seconds
+- `cache` - Enable result caching (default: `False`)
+- `cache_ttl` - Time-to-live for cached results in seconds
+- `store` - Storage backend for task results
 
 ---
 
@@ -57,9 +62,7 @@ def process(data: pd.DataFrame, threshold: float = 0.5) -> dict[str, float]:
     }
 ```
 
-###
-
- Default Parameters
+### Default Parameters
 
 Tasks can have default values:
 
@@ -112,7 +115,7 @@ square = power.partial(exponent=2)
 
 # Use it in different contexts
 result1 = square(base=5)                # 25
-result2 = square.product(base=[1,2,3])  # [1, 4, 9]
+result2 = square.map(base=[1,2,3], map_mode="product")  # [1, 4, 9]
 result3 = square(base=7)                # 49
 ```
 
@@ -164,7 +167,7 @@ result = evaluate(doubled)  # 84
 Tasks run one at a time in the main thread:
 
 ```python
-@task  # backend="inline" by default
+@task  # backend_name="inline" by default
 def task1() -> int:
     return 42
 ```
@@ -176,7 +179,7 @@ def task1() -> int:
 Tasks run in separate threads (good for I/O-bound work):
 
 ```python
-@task(backend="threading")
+@task(backend_name="threading")
 def fetch_url(url: str) -> bytes:
     return requests.get(url).content
 ```
@@ -188,7 +191,7 @@ def fetch_url(url: str) -> bytes:
 Tasks run in separate processes (good for CPU-bound work):
 
 ```python
-@task(backend="multiprocessing")
+@task(backend_name="multiprocessing")
 def compute_fft(data: np.ndarray) -> np.ndarray:
     return np.fft.fft(data)
 ```
@@ -214,7 +217,7 @@ def process(data: list) -> list:
 # Create variant with different backend
 process_parallel = process.with_options(
     name="process_parallel",
-    backend="threading"
+    backend_name="threading"
 )
 ```
 
@@ -297,6 +300,6 @@ def test_add():
 
 ## Next Steps
 
-- **[Learn about composition patterns](composition.md)** - `()`, `.product()`, `.zip()`
-- **[Explore the fluent API](fluent-api.md)** - `.then()`, `.map()`, `.join()`
-- **[See real examples](../examples.md)** - ETL pipelines and more
+- **[Learn about composition patterns](composition.md)** - `()`, `.map()`, `.partial()`
+- **[Explore the fluent API](fluent-api.md)** - `.then()`, `.then_map()`, `.join()`
+- **[See real examples](../examples/index.md)** - ETL pipelines and more

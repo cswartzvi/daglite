@@ -9,9 +9,12 @@ Task futures and fluent operations.
       show_root_heading: true
       show_source: false
       members:
+        - run
+        - run_async
         - then
-        - then_product
-        - then_zip
+        - then_map
+        - split
+        - save
 
 ## MapTaskFuture
 
@@ -20,8 +23,15 @@ Task futures and fluent operations.
       show_root_heading: true
       show_source: false
       members:
-        - map
-        - join
+        - run
+        - run_async
         - then
-        - then_product
-        - then_zip
+        - join
+        - save
+
+## DatasetFuture
+
+::: daglite.futures.DatasetFuture
+    options:
+      show_root_heading: true
+      show_source: false

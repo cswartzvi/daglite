@@ -9,7 +9,7 @@
 
 A lightweight, type-safe Python framework for building and executing DAGs (Directed Acyclic Graphs) with explicit data flow and composable operations.
 
-**[📚 Documentation](https://cswartzvi.github.io/daglite/)** | **[🚀 Getting Started](https://cswartzvi.github.io/daglite/getting-started/)** | **[💡 Examples](https://cswartzvi.github.io/daglite/examples/)**
+**[Documentation](https://cswartzvi.github.io/daglite/)** | **[Getting Started](https://cswartzvi.github.io/daglite/getting-started/)** | **[Examples](https://cswartzvi.github.io/daglite/examples/)**
 
 ---
 
@@ -95,11 +95,11 @@ Daglite complements these excellent tools. Think of it like Flask vs Django—we
 
 - **Type-Safe Task Composition** - Complete type checking support with `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE catches errors before runtime.
 
-- **Fluent API** - Chain operations naturally with `.then()`, `.map()`, `.join()`. Build complex pipelines with readable code.
+- **Fluent API** - Chain operations naturally with `.then()`, `.then_map()`, `.join()`. Build complex pipelines with readable code.
 
 - **Lightweight Core** - No mandatory infrastructure—runs anywhere Python runs. Optional plugins add capabilities when you need them.
 
-- **Async Execution** - Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
+- **Parallel Execution** - Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
 
 - **Composable Patterns** - Mix and match patterns: Inline pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
 
@@ -124,13 +124,15 @@ def process_data(input: str, param: int = 10) -> dict:
 
 ### Lazy Evaluation
 
-Tasks return futures—they don't execute until you call `evaluate()`:
+Tasks return futures—they don't execute until you call `.run()` or `evaluate()`:
 
 ```python
-# Create a future (lazy evaluation)
+# Create a future (lazy)
 future = process_data(input="hello", param=5)
 
 # Execute when ready
+result = future.run()
+# or equivalently:
 result = evaluate(future)
 ```
 
@@ -139,9 +141,9 @@ result = evaluate(future)
 | Pattern | Method | Use Case |
 |---------|--------|----------|
 | Inline | `()` + `.then()` | Chain dependent operations |
-| Cartesian | `.product()` | Parameter sweeps, all combinations |
-| Pairwise | `.zip()` | Element-wise operations |
-| Transform | `.map()` | Apply function to each element |
+| Cartesian | `.map(map_mode="product")` | Parameter sweeps, all combinations |
+| Pairwise | `.map()` | Element-wise operations (zip mode, default) |
+| Transform | `MapTaskFuture.then()` | Apply function to each element |
 | Reduce | `.join()` | Aggregate sequence to single value |
 | Partial | `.partial()` | Fix parameters, reuse tasks |
 
@@ -186,7 +188,7 @@ def save_all(users: list[dict]) -> None:
 
 # Process multiple users in parallel
 result = evaluate(
-    fetch_user.product(user_id=[1, 2, 3, 4, 5])
+    fetch_user.map(user_id=[1, 2, 3, 4, 5], map_mode="product")
     .join(save_all)
 )
 ```
@@ -208,20 +210,17 @@ def sum_all(values: list[int]) -> int:
 
 # Fan-out, transform, reduce
 result = evaluate(
-    square.product(x=[1, 2, 3, 4])
-    .map(double)
+    square.map(x=[1, 2, 3, 4], map_mode="product")
+    .then(double)
     .join(sum_all)
 )
 # Result: 60 = (2 + 8 + 18 + 32)
 ```
 
-### Async Execution
+### Parallel Execution
 
 ```python
-# Run DAG with threading backend
-result = evaluate(my_dag, use_async=True)
-
-# Per-task backends
+# Per-task backends for parallel execution
 @task(backend_name="threading")
 def io_bound_task(url: str) -> bytes:
     return requests.get(url).content
@@ -247,7 +246,7 @@ def ml_pipeline(model_path: str, data_path: str, epochs: int = 10):
 Run from command line:
 
 ```bash
-daglite run ml_pipeline --model-path model.pkl --data-path data.csv --epochs 20
+daglite run ml_pipeline --param model_path=model.pkl --param data_path=data.csv --param epochs=20
 ```
 
 ---
@@ -266,15 +265,15 @@ Full documentation is available at **[cswartzvi.github.io/daglite](https://cswar
 
 ## Community
 
-### 🤝 Contributing
+### Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-### 💬 Discussions
+### Discussions
 
 Join the conversation on [GitHub Discussions](https://github.com/cswartzvi/daglite/discussions).
 
-### 🐛 Issues
+### Issues
 
 Found a bug or have a feature request? [Open an issue](https://github.com/cswartzvi/daglite/issues).
 

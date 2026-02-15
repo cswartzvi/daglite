@@ -224,7 +224,7 @@ def process_date(date: str) -> None:
 
 # Process all dates in parallel
 evaluate(
-    process_date.product(date=dates)
+    process_date.map(date=dates, map_mode="product")
 )
 ```
 
@@ -252,14 +252,14 @@ def combine_api_results(dfs: list[pd.DataFrame]) -> pd.DataFrame:
 endpoints = ["users", "orders", "products", "reviews"]
 
 result = evaluate(
-    fetch_api_data.product(
+    fetch_api_data.map(
         endpoint=endpoints,
-        api_key="your_api_key"
+        api_key="your_api_key",
+        map_mode="product"
     )
     .join(combine_api_results)
     .then(transform, columns=["id", "name", "value"])
-    .then(load, destination="api_data.parquet"),
-    use_async=True  # Enable async execution
+    .then(load, destination="api_data.parquet")
 )
 ```
 

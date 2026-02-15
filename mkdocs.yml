@@ -91,12 +91,14 @@ nav:
       - Composition: user-guide/composition.md
       - Fluent API: user-guide/fluent-api.md
       - Evaluation: user-guide/evaluation.md
+      - Datasets & Persistence: user-guide/datasets.md
       - Pipelines & CLI: user-guide/pipelines.md
       - CLI Reference: user-guide/cli.md
   - Plugins:
       - Overview: plugins/index.md
       - Built-in: plugins/built-in.md
       - Serialization: plugins/serialization.md
+      - Rich Output: plugins/rich.md
       - Creating Plugins: plugins/creating.md
   - Examples:
       - Overview: examples/index.md
@@ -110,6 +112,7 @@ nav:
       - Engine: api-reference/engine.md
       - Pipelines: api-reference/pipelines.md
       - Settings: api-reference/settings.md
+      - Exceptions: api-reference/exceptions.md
 
 extra_javascript:
   - javascripts/mathjax.js

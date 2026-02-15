@@ -45,7 +45,7 @@ def process_data(x: int) -> int:
 plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
 result = evaluate(
-    process_data.product(x=[1, 2, 3]),
+    process_data.map(x=[1, 2, 3], map_mode="product"),
     plugins=[plugin]
 )
 # Output:
@@ -136,9 +136,8 @@ def cpu_intensive_task(n: int) -> int:
 plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
 result = evaluate(
-    cpu_intensive_task.product(n=[1000, 2000, 3000]),
+    cpu_intensive_task.map(n=[1000, 2000, 3000], map_mode="product"),
     plugins=[plugin],
-    use_async=True  # Runs in multiprocessing
 )
 ```
 
@@ -334,9 +333,8 @@ plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
 # Logs from all threads appear in order
 result = evaluate(
-    io_task.product(url=urls),
+    io_task.map(url=urls, map_mode="product"),
     plugins=[plugin],
-    use_async=True
 )
 ```
 
@@ -468,11 +466,11 @@ plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
 ```python
 # Without plugin - logs may not appear in async mode
-evaluate(my_dag, use_async=True)
+evaluate(my_dag)
 
 # With plugin - logs work correctly
 plugin = CentralizedLoggingPlugin(level=logging.INFO)
-evaluate(my_dag, plugins=[plugin], use_async=True)
+evaluate(my_dag, plugins=[plugin])
 ```
 
 ### Duplicate Logs

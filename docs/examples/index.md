@@ -19,7 +19,7 @@ Build data extraction, transformation, and loading pipelines with Pandas.
 Create machine learning workflows with hyperparameter tuning.
 
 **Learn about:**
-- Parameter sweeps with `.product()`
+- Parameter sweeps with `.map(map_mode="product")`
 - Model training and evaluation
 - Finding optimal hyperparameters
 - Parallel model training
@@ -39,9 +39,9 @@ Process data in parallel with fan-out/fan-in patterns.
 ## More Resources
 
 - **[User Guide](../user-guide/tasks.md)** - In-depth documentation
-- **[API Reference](../api-reference/)** - Complete API docs
+- **[API Reference](../api-reference/index.md)** - Complete API docs
 - **[Test Suite](https://github.com/cswartzvi/daglite/tree/main/tests)** - Additional usage patterns
-- **[Plugins](../plugins/)** - Extend Daglite with plugins
+- **[Plugins](../plugins/index.md)** - Extend Daglite with plugins
 
 ---
 

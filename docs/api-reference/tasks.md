@@ -17,8 +17,7 @@ Task definition and composition.
       show_source: false
       members:
         - __call__
-        - product
-        - zip
+        - map
         - partial
         - with_options
 
@@ -28,5 +27,4 @@ Task definition and composition.
       show_source: false
       members:
         - __call__
-        - product
-        - zip
+        - map

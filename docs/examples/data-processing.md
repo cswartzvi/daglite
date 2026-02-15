@@ -10,7 +10,7 @@ Data processing often involves:
 2. **Process** - Transform each piece independently
 3. **Fan-in** - Aggregate results back together
 
-Daglite provides `.product()`, `.map()`, and `.join()` for these patterns, with optional async execution for I/O-bound workloads.
+Daglite provides `.map()` (with `map_mode="product"` for cartesian products) and `.join()` for these patterns, with optional async execution for I/O-bound workloads.
 
 ## Basic Parallel Processing
 
@@ -43,7 +43,7 @@ def combine_files(dfs: list[pd.DataFrame]) -> pd.DataFrame:
 files = ["data_2023.csv", "data_2024.csv", "data_2025.csv"]
 
 result = evaluate(
-    process_file.product(path=files)
+    process_file.map(path=files, map_mode="product")
     .join(combine_files)
 )
 
@@ -77,8 +77,8 @@ def save_all(items: list[dict]) -> None:
 
 # Fetch, enrich, and save
 evaluate(
-    fetch_data.product(id=range(1, 101))
-    .map(enrich, category="products")
+    fetch_data.map(id=list(range(1, 101)), map_mode="product")
+    .then(enrich, category="products")
     .join(save_all)
 )
 ```
@@ -190,8 +190,8 @@ def merge_counts(counts: list[dict[str, int]]) -> dict[str, int]:
 files = ["doc1.txt", "doc2.txt", "doc3.txt"]
 
 word_counts = evaluate(
-    read_file.product(path=files)
-    .map(count_words)
+    read_file.map(path=files, map_mode="product")
+    .then(count_words)
     .join(merge_counts)
 )
 
@@ -241,8 +241,8 @@ def merge_stats(stats: list[dict]) -> dict:
 
 # Compute statistics across 100 partitions
 stats = evaluate(
-    load_partition.product(partition=range(100))
-    .map(compute_stats)
+    load_partition.map(partition=list(range(100)), map_mode="product")
+    .then(compute_stats)
     .join(merge_stats)
 )
 ```
@@ -278,9 +278,8 @@ def summarize(results: list[dict]) -> dict:
 urls = [f"https://example.com/page{i}" for i in range(100)]
 
 summary = evaluate(
-    fetch_url.product(url=urls)
-    .join(summarize),
-    use_async=True  # Enable async execution
+    fetch_url.map(url=urls, map_mode="product")
+    .join(summarize)
 )
 ```
 
@@ -305,9 +304,8 @@ def sum_results(results: list[float]) -> float:
 
 # Run CPU-intensive tasks in parallel
 result = evaluate(
-    compute_intensive.product(n=[1000000, 2000000, 3000000])
-    .join(sum_results),
-    use_async=True
+    compute_intensive.map(n=[1000000, 2000000, 3000000], map_mode="product")
+    .join(sum_results)
 )
 ```
 
@@ -366,12 +364,13 @@ def generate_report(
 files = ["file1.csv", "file2.csv", "file3.csv"]
 expected_cols = ["id", "name", "value", "date"]
 
-schema_checks = validate_schema.product(
+schema_checks = validate_schema.map(
     path=files,
-    expected_columns=[expected_cols]
+    expected_columns=[expected_cols],
+    map_mode="product"
 )
 
-quality_checks = check_data_quality.product(path=files)
+quality_checks = check_data_quality.map(path=files, map_mode="product")
 
 report = evaluate(
     generate_report(
@@ -381,7 +380,7 @@ report = evaluate(
 )
 ```
 
-## Pairwise Operations with `.zip()`
+## Pairwise Operations with `.map()`
 
 ### Process Pairs
 
@@ -404,7 +403,7 @@ current_files = ["current_1.csv", "current_2.csv", "current_3.csv"]
 previous_files = ["previous_1.csv", "previous_2.csv", "previous_3.csv"]
 
 comparisons = evaluate(
-    compare_files.zip(file1=current_files, file2=previous_files)
+    compare_files.map(file1=current_files, file2=previous_files)
 )
 ```
 
@@ -417,14 +416,14 @@ def merge_data(main: pd.DataFrame, supplementary: pd.DataFrame) -> pd.DataFrame:
     return main.merge(supplementary, on="id", how="left")
 
 # Load main files
-main_dfs = load_file.product(path=["main_1.csv", "main_2.csv"])
+main_dfs = load_file.map(path=["main_1.csv", "main_2.csv"], map_mode="product")
 
 # Load supplementary files
-supp_dfs = load_file.product(path=["supp_1.csv", "supp_2.csv"])
+supp_dfs = load_file.map(path=["supp_1.csv", "supp_2.csv"], map_mode="product")
 
 # Merge pairwise
 merged = evaluate(
-    merge_data.zip(main=main_dfs, supplementary=supp_dfs)
+    merge_data.map(main=main_dfs, supplementary=supp_dfs)
 )
 ```
 
@@ -504,7 +503,7 @@ tracker = ProgressTracker()
 register_plugins(tracker)
 
 result = evaluate(
-    process_file.product(path=files)
+    process_file.map(path=files, map_mode="product")
     .join(combine_files)
 )
 ```
@@ -514,13 +513,13 @@ result = evaluate(
 ```python
 # Bad: One API call per item (100 calls)
 results = evaluate(
-    fetch_single_item.product(id=range(100))
+    fetch_single_item.map(id=list(range(100)), map_mode="product")
 )
 
 # Good: Batch API calls (10 calls)
 batches = create_batches(list(range(100)), batch_size=10)
 results = evaluate(
-    fetch_batch.product(batch=batches)
+    fetch_batch.map(batch=batches, map_mode="product")
     .join(flatten_results)
 )
 ```
