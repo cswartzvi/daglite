@@ -148,8 +148,8 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Unknown parameter" in result.output
 
-    def test_run_pipeline_with_backend(self):
-        """Test running with a specific backend."""
+    def test_run_pipeline_with_parallel(self):
+        """Test running with parallel (async) execution."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
@@ -160,31 +160,11 @@ class TestRunCommand:
                 "x=5",
                 "--param",
                 "y=10",
-                "--backend",
-                "threading",
+                "--parallel",
             ],
         )
         assert result.exit_code == 0
-        assert "Backend: threading" in result.output
-        assert "Result: 30" in result.output
-
-    def test_run_pipeline_with_async(self):
-        """Test running with async execution."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.pipelines.math_pipeline",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--async",
-            ],
-        )
-        assert result.exit_code == 0
-        assert "Async execution: enabled" in result.output
+        assert "Parallel execution: enabled" in result.output
         assert "Result: 30" in result.output
 
     def test_run_pipeline_with_settings(self):
@@ -244,6 +224,64 @@ class TestRunCommand:
         )
         assert result.exit_code != 0
         assert "Invalid value" in result.output
+
+    def test_run_pipeline_with_bool_setting(self):
+        """Test that boolean settings are parsed correctly."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "run",
+                "tests.examples.pipelines.math_pipeline",
+                "--param",
+                "x=5",
+                "--param",
+                "y=10",
+                "--settings",
+                "enable_plugin_tracing=true",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Result: 30" in result.output
+
+    def test_run_pipeline_with_union_type_setting(self):
+        """Test that Union-typed settings (e.g. datastore_store: str | DatasetStore) are parsed."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "run",
+                "tests.examples.pipelines.math_pipeline",
+                "--param",
+                "x=5",
+                "--param",
+                "y=10",
+                "--settings",
+                "datastore_store=/tmp/test_store",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Result: 30" in result.output
+
+    def test_run_pipeline_backend_applied(self):
+        """Test that --backend is reported and applied via settings."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            [
+                "run",
+                "tests.examples.pipelines.math_pipeline",
+                "--param",
+                "x=5",
+                "--param",
+                "y=10",
+                "--backend",
+                "threading",
+            ],
+        )
+        assert result.exit_code == 0
+        assert "Backend: threading" in result.output
+        assert "Result: 30" in result.output
 
     def test_run_pipeline_type_conversion_int(self):
         """Test that integer parameters are properly converted."""

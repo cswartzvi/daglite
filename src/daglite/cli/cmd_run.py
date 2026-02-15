@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import types
+import typing
 import warnings
-from typing import Any
+from typing import Any, Union, get_args, get_origin
 
 import click
 
@@ -32,10 +34,9 @@ from daglite.settings import set_global_settings
     help="Backend to use for execution (e.g., 'inline', 'threading').",
 )
 @click.option(
-    "--async",
-    "use_async",
+    "--parallel",
     is_flag=True,
-    help="Enable async execution with sibling parallelism.",
+    help="Enable sibling parallelism via async evaluation.",
 )
 @click.option(
     "--settings",
@@ -47,7 +48,7 @@ def run(
     pipeline: str,
     param: tuple[str, ...],
     backend: str,
-    use_async: bool,
+    parallel: bool,
     settings: tuple[str, ...],
 ) -> None:
     r"""
@@ -117,8 +118,9 @@ def run(
             f"Use --param name=value to provide them."
         )
 
-    # Parse settings and apply them globally for this run
-    settings_dict: dict[str, Any] = {}
+    # Build settings dict: start with --backend, then layer --settings overrides
+    settings_dict: dict[str, Any] = {"default_backend": backend}
+
     for s in settings:
         if "=" not in s:
             raise click.BadParameter(f"Invalid setting format: '{s}'. Expected 'name=value'")
@@ -126,24 +128,27 @@ def run(
         setting_name, setting_value = s.split("=", 1)
 
         # Validate setting name
-        if setting_name not in DagliteSettings.__dataclass_fields__:
+        fields = DagliteSettings.__dataclass_fields__
+        if setting_name not in fields:
             raise click.BadParameter(
-                f"Unknown setting: '{setting_name}'. "
-                "Available settings: max_backend_threads, max_parallel_processes"
+                f"Unknown setting: '{setting_name}'. Available settings: {', '.join(fields)}"
             )
 
-        # Parse setting value (all current settings are ints)
+        # Parse setting value using field type introspection
+        type_hints = typing.get_type_hints(DagliteSettings)
+        field_type = type_hints[setting_name]
+        # For Union types (e.g. str | DatasetStore), use the first concrete type
+        if get_origin(field_type) is Union or isinstance(field_type, types.UnionType):
+            field_type = get_args(field_type)[0]
         try:
-            settings_dict[setting_name] = int(setting_value)
+            settings_dict[setting_name] = parse_param_value(setting_value, field_type)
         except ValueError as e:
             raise click.BadParameter(
-                f"Invalid value for setting '{setting_name}': '{setting_value}'. "
-                "Expected an integer."
+                f"Invalid value for setting '{setting_name}': '{setting_value}'. {e}"
             ) from e
 
-    # Apply settings globally if provided
-    if settings_dict:
-        set_global_settings(DagliteSettings(**settings_dict))
+    # Apply settings globally for this run
+    set_global_settings(DagliteSettings(**settings_dict))
 
     # Call the pipeline to get the NodeBuilder
     try:
@@ -156,17 +161,14 @@ def run(
     if params:
         click.echo(f"Parameters: {params}")
     click.echo(f"Backend: {backend}")
-    if use_async:
-        click.echo("Async execution: enabled")
-    if settings_dict:
-        click.echo(f"Settings: {settings_dict}")
+    if parallel:
+        click.echo("Parallel execution: enabled")
 
     try:
-        if use_async:
-            # Use async execution with sibling parallelism
+        if parallel:
+            # Async evaluation enables sibling parallelism
             result = asyncio.run(evaluate_async(graph))
         else:
-            # Sync Inline execution
             result = evaluate(graph)
         click.echo("\nPipeline completed successfully!")
         click.echo(f"Result: {result}")

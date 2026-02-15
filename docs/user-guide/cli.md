@@ -84,12 +84,12 @@ daglite run [OPTIONS] PIPELINE
 
 - `--param NAME=VALUE`, `-p NAME=VALUE` - Pipeline parameter (can be specified multiple times)
 - `--backend NAME`, `-b NAME` - Execution backend (`inline`, `threading`, `processes`)
-- `--async` - Use async evaluation (for async tasks or event loop integration)
+- `--parallel` - Enable sibling parallelism via async evaluation
 - `--settings NAME=VALUE`, `-s NAME=VALUE` - Override global settings (can be specified multiple times)
 
 !!! note "Parallel Execution"
-    Sibling tasks run in parallel when using `--backend threading` or `--backend processes`, even without `--async`.
-    Use `--async` only when you have async tasks or need async/await semantics.
+    Use `--parallel` together with `--backend threading` or `--backend processes` to run
+    independent sibling tasks concurrently.
 
 ---
 
@@ -110,12 +110,12 @@ daglite run myproject.pipelines.etl_pipeline \
     --param batch_size=1000
 ```
 
-### Async Execution
+### Parallel Execution
 
 ```bash
 daglite run myproject.pipelines.parallel_pipeline \
     --param input_dir=./data \
-    --async
+    --parallel
 ```
 
 ### Custom Backend
@@ -134,7 +134,7 @@ daglite run myproject.pipelines.ml_pipeline \
     --param data_path=train.csv \
     --param epochs=50 \
     --param learning_rate=0.001 \
-    --async
+    --parallel
 ```
 
 ---
@@ -209,7 +209,7 @@ jobs:
       - run: |
           daglite run myproject.pipelines.daily_etl \
             --param date=$(date +%Y-%m-%d) \
-            --async
+            --parallel
 ```
 
 ### GitLab CI
