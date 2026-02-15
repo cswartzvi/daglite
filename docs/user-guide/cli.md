@@ -1,14 +1,8 @@
-# CLI Plugin
+# Command-Line Interface
 
-The `daglite-cli` plugin provides a command-line interface for running pipelines defined with the `@pipeline` decorator. This makes it easy to execute workflows from the terminal, CI/CD systems, or scheduled jobs.
-
-## Installation
-
-```bash
-uv pip install daglite[cli]
-```
-
-This installs the `daglite` command-line tool.
+The `daglite` CLI is built in — no extra install needed. It lets you run pipelines
+defined with the `@pipeline` decorator from the terminal, CI/CD systems, or
+scheduled jobs.
 
 ---
 
@@ -57,6 +51,17 @@ daglite run myproject.pipelines.data_pipeline \
     --param input_file=data.txt \
     --param output_file=output.txt \
     --param multiplier=5
+```
+
+### Running from Python
+
+```python
+# Build and evaluate in one step
+data_pipeline.run(
+    input_file="data.txt",
+    output_file="output.txt",
+    multiplier=5,
+)
 ```
 
 ---
@@ -200,7 +205,7 @@ jobs:
       - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-      - run: pip install daglite[cli]
+      - run: pip install daglite
       - run: |
           daglite run myproject.pipelines.daily_etl \
             --param date=$(date +%Y-%m-%d) \
@@ -212,7 +217,7 @@ jobs:
 ```yaml
 pipeline:
   script:
-    - pip install daglite[cli]
+    - pip install daglite
     - daglite run myproject.pipelines.deployment_pipeline
         --param environment=production
         --param version=$CI_COMMIT_TAG
@@ -312,5 +317,5 @@ daglite run myproject.pipelines.pipeline
 
 ## See Also
 
-- [Pipelines User Guide](../user-guide/pipelines.md) - Learn about the `@pipeline` decorator
-- [Creating Plugins](creating.md) - Extend the CLI with custom commands
+- [Pipelines User Guide](pipelines.md) - Learn about the `@pipeline` decorator
+- [Creating Plugins](../plugins/creating.md) - Extend Daglite with custom hooks

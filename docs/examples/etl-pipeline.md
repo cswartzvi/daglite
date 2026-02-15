@@ -304,10 +304,6 @@ def daily_etl(
 Run from command line:
 
 ```bash
-# Install CLI plugin
-uv pip install daglite[cli]
-
-# Run pipeline
 daglite run etl_pipeline.daily_etl \
     --param source=data.csv \
     --param destination=output.parquet \
@@ -403,4 +399,4 @@ def transform_with_logging(df: pd.DataFrame) -> pd.DataFrame:
 
 - [Pandas Documentation](https://pandas.pydata.org/docs/) - DataFrame operations
 - [Data Processing Example](data-processing.md) - Parallel processing patterns
-- [CLI Plugin](../plugins/cli.md) - Command-line interface for pipelines
+- [CLI Reference](../user-guide/cli.md) - Command-line interface for pipelines

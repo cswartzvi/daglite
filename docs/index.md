@@ -159,6 +159,6 @@ def cpu_task(data: np.ndarray) -> np.ndarray:
 - **[Getting Started](getting-started.md)** - Install Daglite and learn the basics in 5 minutes
 - **[User Guide](user-guide/tasks.md)** - In-depth guides on tasks, composition, and evaluation
 - **[CLI & Pipelines](user-guide/pipelines.md)** - Command-line interface and pipeline definitions
-- **[Plugins](plugins/)** - Extend Daglite with CLI, serialization, and more
+- **[Plugins](plugins/)** - Extend Daglite with serialization and more
 - **[Examples](examples/)** - Real-world examples and patterns
 - **[API Reference](api-reference/)** - Complete API documentation
