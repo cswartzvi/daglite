@@ -296,6 +296,54 @@ class CoordinatorSideNodeSpecs:
             duration: Execution time in seconds for all iterations.
         """
 
+    @hook_spec
+    def before_composite_execute(
+        self,
+        metadata: NodeMetadata,
+        chain_length: int,
+    ) -> None:
+        """
+        Called before a composite node begins execution.
+
+        Args:
+            metadata: Metadata for the composite node.
+            chain_length: Number of steps in the composite chain.
+        """
+
+    @hook_spec
+    def after_composite_execute(
+        self,
+        metadata: NodeMetadata,
+        chain_length: int,
+        duration: float,
+    ) -> None:
+        """
+        Called after a composite node completes execution successfully.
+
+        Args:
+            metadata: Metadata for the executed composite node.
+            chain_length: Number of steps in the composite chain.
+            duration: Total execution time in seconds for the composite.
+        """
+
+    @hook_spec
+    def on_composite_error(
+        self,
+        metadata: NodeMetadata,
+        chain_length: int,
+        error: Exception,
+        duration: float,
+    ) -> None:
+        """
+        Called when a composite node execution fails.
+
+        Args:
+            metadata: Metadata for the composite node.
+            chain_length: Number of steps in the composite chain.
+            error: The exception that was raised.
+            duration: Time taken before failure in seconds.
+        """
+
 
 class GraphSpec:
     """Hook specifications for graph-level execution events on the **coordinator**."""
