@@ -173,13 +173,14 @@ def get_unbound_params(
             f"Task '{task_name}' has no unbound parameters for "
             f"upstream value. All parameters already provided: {list(kwargs.keys())}"
         )
-    if len(unbound) < n:
+    if len(unbound) != n:
         raise ParameterError(
-            f"Task '{task_name}' must have at least {n} unbound parameter(s) for upstream value, "
+            f"Task '{task_name}' must have exactly {n} unbound parameter(s) for upstream value, "
             f"found {len(unbound)}: {unbound} (use `.partial()` to set scalar parameters)"
         )
     if n == 1:
         return unbound[0]
+
     return tuple(unbound[:n])
 
 
