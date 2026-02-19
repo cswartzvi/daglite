@@ -12,7 +12,7 @@ from daglite._typing import MapMode
 
 # NOTE: Any needed for plugins parameter type
 from daglite._validation import check_overlap_params
-from daglite._validation import get_unbound_param
+from daglite._validation import get_unbound_params
 from daglite.futures._shared import build_mapped_node_inputs
 from daglite.futures._shared import build_node_inputs
 from daglite.futures._shared import build_output_configs
@@ -138,7 +138,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             all_fixed = kwargs
             actual_task = mapped_task
 
-        unbound_param = get_unbound_param(actual_task.signature, all_fixed, actual_task.name)
+        unbound_param = get_unbound_params(actual_task.signature, all_fixed, actual_task.name)
         return MapTaskFuture(
             task=actual_task,
             mode="product",
@@ -181,7 +181,7 @@ class MapTaskFuture(BaseTaskFuture[R]):
             actual_task = reducer_task
 
         # Add unbound param to merged kwargs
-        unbound_param = get_unbound_param(actual_task.signature, all_fixed, actual_task.name)
+        unbound_param = get_unbound_params(actual_task.signature, all_fixed, actual_task.name)
         merged_kwargs = dict(all_fixed)
         merged_kwargs[unbound_param] = self
 

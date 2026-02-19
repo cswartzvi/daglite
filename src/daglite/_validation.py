@@ -3,6 +3,7 @@
 import string
 from collections.abc import Iterable
 from inspect import Signature
+from typing import Literal, overload
 
 from daglite.exceptions import ParameterError
 
@@ -133,17 +134,38 @@ def check_invalid_map_params(signature: Signature, kwargs: dict, task_name: str)
         )
 
 
-def get_unbound_param(signature: Signature, kwargs: dict, task_name: str) -> str:
+@overload
+def get_unbound_params(
+    signature: Signature, kwargs: dict, task_name: str, n: Literal[1] = 1
+) -> str: ...
+
+
+@overload
+def get_unbound_params(
+    signature: Signature, kwargs: dict, task_name: str, n: int
+) -> tuple[str, ...]: ...
+
+
+def get_unbound_params(
+    signature: Signature, kwargs: dict, task_name: str, n: int = 1
+) -> str | tuple[str, ...]:
     """
-    Returns the single unbound parameter name for the given task and provided arguments.
+    Gets name(s) of the unbound parameter(s) for a task function signature.
+
+    Ubound parameters are those that are not provided in `kwargs` and are expected to be filled by
+    upstream values at runtime. This function checks that there are exactly `n` unbound parameters.
 
     Args:
         signature: Signature of the task function.
         kwargs: Task function arguments to validate.
         task_name: Name of the task (used for error messages).
+        n: Number of unbound parameters expected (default is 1).
 
     Raises:
         ParameterError: If there are zero or multiple unbound parameters.
+
+    Returns:
+        The name of the unbound parameter if `n` is 1, otherwise a tuple of unbound parameter names.
     """
     unbound = [p for p in signature.parameters if p not in kwargs]
     if len(unbound) == 0:
@@ -151,13 +173,14 @@ def get_unbound_param(signature: Signature, kwargs: dict, task_name: str) -> str
             f"Task '{task_name}' has no unbound parameters for "
             f"upstream value. All parameters already provided: {list(kwargs.keys())}"
         )
-    if len(unbound) > 1:
+    if len(unbound) < n:
         raise ParameterError(
-            f"Task '{task_name}' must have exactly one "
-            f"unbound parameter for upstream value, found {len(unbound)}: {unbound} "
-            f"(use `.partial()` to set scalar parameters): {unbound[1:]}"
+            f"Task '{task_name}' must have at least {n} unbound parameter(s) for upstream value, "
+            f"found {len(unbound)}: {unbound} (use `.partial()` to set scalar parameters)"
         )
-    return unbound[0]
+    if n == 1:
+        return unbound[0]
+    return tuple(unbound[:n])
 
 
 def check_key_template(key: str) -> None:
