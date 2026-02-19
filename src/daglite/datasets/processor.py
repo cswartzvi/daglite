@@ -15,6 +15,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from pluggy import HookRelay
+
 from daglite._processor import BackgroundQueueProcessor
 from daglite.datasets.events import DatasetSaveRequest
 
@@ -36,7 +38,7 @@ class DatasetProcessor(BackgroundQueueProcessor):
             processor's daemon thread does not inherit the worker's context vars.
     """
 
-    def __init__(self, hook: Any | None = None) -> None:
+    def __init__(self, hook: HookRelay | None = None) -> None:
         super().__init__(name="DatasetProcessor")
         self._hook = hook
 
