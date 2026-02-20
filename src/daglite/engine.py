@@ -229,7 +229,9 @@ def _setup_workflow_execution_state(
     from daglite.settings import get_global_settings
 
     nodes = build_graph_multi(futures)
-    name_for: dict[UUID, str] = {f.id: nodes[f.id].name for f in futures}
+    name_for: dict[UUID, str] = {
+        f.id: f._alias if f._alias is not None else nodes[f.id].name for f in futures
+    }
 
     id_mapping: dict[UUID, UUID] = {}
     if get_global_settings().enable_graph_optimization:

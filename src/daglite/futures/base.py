@@ -44,12 +44,16 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
     # Future outputs to be saved after execution, accumulated via save() calls.
     _output_futures: tuple[OutputFuture, ...] = field(init=False, repr=False, default=())
 
+    # Optional name override used by WorkflowResult to index this sink node.
+    _alias: str | None = field(init=False, repr=False, default=None)
+
     task_store: DatasetStore | None = field(default=None, kw_only=True)
 
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())
         object.__setattr__(self, "_output_futures", ())
+        object.__setattr__(self, "_alias", None)
 
     @property
     @override
@@ -151,8 +155,42 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
         # Create a new future with the same ID and updated future outputs
         new_future = replace(self)
         object.__setattr__(new_future, "_id", self._id)
-        object.__setattr__(new_future, "_output_futures", new_configs)  # Must match attribute name
+        object.__setattr__(new_future, "_output_futures", new_configs)
+        object.__setattr__(new_future, "_alias", self._alias)
 
+        return new_future
+
+    def alias(self, name: str) -> Self:
+        """
+        Return a copy of this future with an override display name for ``WorkflowResult``.
+
+        When two sink nodes share the same task function name (e.g., two calls to
+        ``add``), ``WorkflowResult.__getitem__`` raises ``AmbiguousResultError``.
+        Calling ``.alias()`` on each future gives them distinct names so they can
+        be looked up unambiguously.
+
+        Args:
+            name: The name to use when indexing this sink in a ``WorkflowResult``.
+
+        Returns:
+            A copy of this future (same UUID, same upstream graph) with the alias set.
+
+        Examples:
+            >>> from daglite import task, workflow
+            >>> @task
+            ... def add(x: int, y: int) -> int:
+            ...     return x + y
+            >>> @workflow
+            ... def wf(x: int):
+            ...     return add(x=x, y=1).alias("small"), add(x=x, y=100).alias("large")
+            >>> result = wf.run(x=5)
+            >>> result["small"], result["large"]
+            (6, 105)
+        """
+        new_future = replace(self)
+        object.__setattr__(new_future, "_id", self._id)
+        object.__setattr__(new_future, "_output_futures", self._output_futures)
+        object.__setattr__(new_future, "_alias", name)
         return new_future
 
     def run(self, *, plugins: list[Any] | None = None) -> Any:

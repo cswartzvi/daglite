@@ -49,6 +49,43 @@ class WorkflowResult:
             )
         return self._results[uuids[0]]
 
+    def single(self, name: str) -> Any:
+        """
+        Return the result for ``name``, asserting there is exactly one.
+
+        Equivalent to ``result[name]`` — raises ``AmbiguousResultError`` if
+        multiple sinks share this name, or ``KeyError`` if none do.  The method
+        name makes the intent explicit when reading code.
+
+        Args:
+            name: Task name or alias to look up.
+
+        Returns:
+            The evaluated output of the single matching sink node.
+
+        Raises:
+            KeyError: If no sink with this name exists.
+            AmbiguousResultError: If multiple sinks share this name.
+        """
+        return self[name]
+
+    def all(self, name: str) -> list[Any]:
+        """
+        Return all results for ``name`` as a list.
+
+        Unlike ``result[name]``, this never raises ``AmbiguousResultError``.
+        Useful for fan-out patterns where multiple sink nodes intentionally
+        share the same name and you want all of their values.
+
+        Args:
+            name: Task name or alias to look up.
+
+        Returns:
+            A list of evaluated outputs for all matching sink nodes.
+            Returns an empty list if no sink with this name exists.
+        """
+        return [self._results[uid] for uid in self._by_name.get(name, [])]
+
     def keys(self) -> Iterator[str]:
         """Iterate over sink node names."""
         return iter(self._by_name)

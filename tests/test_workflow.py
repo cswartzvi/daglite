@@ -193,6 +193,84 @@ class TestWorkflowResult:
         assert "alpha" in repr(result)
 
 
+class TestWorkflowResultSingleAndAll:
+    def _make_result(self, data: dict[str, int]) -> WorkflowResult:
+        results = {}
+        name_for = {}
+        for name, value in data.items():
+            uid = uuid4()
+            results[uid] = value
+            name_for[uid] = name
+        return WorkflowResult._build(results, name_for)
+
+    def test_single_returns_value(self):
+        result = self._make_result({"add": 5})
+        assert result.single("add") == 5
+
+    def test_single_raises_on_missing(self):
+        result = self._make_result({"add": 5})
+        with pytest.raises(KeyError):
+            result.single("missing")
+
+    def test_single_raises_on_ambiguous(self):
+        uid1, uid2 = uuid4(), uuid4()
+        result = WorkflowResult._build(
+            {uid1: 10, uid2: 20},
+            {uid1: "task", uid2: "task"},
+        )
+        from daglite.exceptions import AmbiguousResultError
+
+        with pytest.raises(AmbiguousResultError):
+            result.single("task")
+
+    def test_all_returns_list_for_single(self):
+        result = self._make_result({"add": 5})
+        assert result.all("add") == [5]
+
+    def test_all_returns_list_for_multiple(self):
+        uid1, uid2 = uuid4(), uuid4()
+        result = WorkflowResult._build(
+            {uid1: 10, uid2: 20},
+            {uid1: "task", uid2: "task"},
+        )
+        assert sorted(result.all("task")) == [10, 20]
+
+    def test_all_returns_empty_list_for_missing(self):
+        result = self._make_result({"add": 5})
+        assert result.all("missing") == []
+
+
+class TestFutureAlias:
+    def test_alias_sets_name(self):
+        future = add(x=1, y=2)
+        aliased = future.alias("my_add")
+        assert aliased._alias == "my_add"
+
+    def test_alias_preserves_id(self):
+        future = add(x=1, y=2)
+        aliased = future.alias("my_add")
+        assert aliased.id == future.id
+
+    def test_original_unaffected(self):
+        future = add(x=1, y=2)
+        _ = future.alias("my_add")
+        assert future._alias is None
+
+    def test_alias_survives_save_chain(self):
+        # alias should be carried forward when .save() is called after .alias()
+        future = add(x=1, y=2).alias("first").save("some_key")
+        assert future._alias == "first"
+
+    def test_alias_chaining(self):
+        """Last alias wins when chained."""
+        future = add(x=1, y=2).alias("first").alias("second")
+        assert future._alias == "second"
+
+    def test_default_alias_is_none(self):
+        future = add(x=1, y=2)
+        assert future._alias is None
+
+
 class TestBuildGraphMulti:
     def test_shared_node_included_once(self):
         shared = double(x=10)

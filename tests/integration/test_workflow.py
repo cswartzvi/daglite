@@ -115,6 +115,58 @@ class TestWorkflowEvaluation:
         with pytest.raises(KeyError):
             _ = result["mul"]
 
+    def test_alias_disambiguates_same_named_sinks(self):
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @workflow
+        def wf(x: int):
+            return add(x=x, y=1).alias("small"), add(x=x, y=100).alias("large")
+
+        result = wf.run(x=5)
+        assert result["small"] == 6
+        assert result["large"] == 105
+
+    def test_alias_overrides_task_name(self):
+        @task(name="my_task")
+        def compute(x: int) -> int:
+            return x * 2
+
+        @workflow
+        def wf(x: int):
+            return compute(x=x).alias("result")
+
+        result = wf.run(x=7)
+        assert result["result"] == 14
+        with pytest.raises(KeyError):
+            _ = result["my_task"]
+
+    def test_all_collects_same_named_sinks(self):
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @workflow
+        def wf(x: int):
+            return add(x=x, y=1), add(x=x, y=2)
+
+        result = wf.run(x=10)
+        values = result.all("add")
+        assert sorted(values) == [11, 12]
+
+    def test_single_on_alias(self):
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @workflow
+        def wf(x: int):
+            return add(x=x, y=1).alias("my_add")
+
+        result = wf.run(x=3)
+        assert result.single("my_add") == 4
+
     def test_run_async(self):
         @task
         def add(x: int, y: int) -> int:
