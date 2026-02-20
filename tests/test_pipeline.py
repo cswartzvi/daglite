@@ -10,9 +10,11 @@ import pytest
 
 from daglite import pipeline
 from daglite import task
+from daglite import workflow
 from daglite.futures import TaskFuture
 from daglite.pipelines import Pipeline
 from daglite.pipelines import load_pipeline
+from daglite.workflows import Workflow
 
 
 # Test fixtures
@@ -38,7 +40,7 @@ class TestPipeline:
         def simple_pipeline(x: int, y: int):  # pragma: no cover
             return add(x=x, y=y)
 
-        assert isinstance(simple_pipeline, Pipeline)
+        assert isinstance(simple_pipeline, Workflow)
         assert simple_pipeline.name == "simple_pipeline"
         assert simple_pipeline.description is None or simple_pipeline.description == ""
 
@@ -89,7 +91,7 @@ class TestLoadPipeline:
 
     def test_load_pipeline_invalid_path_no_dot(self):
         """Test load_pipeline with invalid path (no dot)."""
-        with pytest.raises(ValueError, match="Invalid pipeline path"):
+        with pytest.raises(ValueError, match="Invalid workflow path"):
             load_pipeline("invalid")
 
     def test_load_pipeline_module_not_found(self):
@@ -100,18 +102,18 @@ class TestLoadPipeline:
     def test_load_pipeline_attribute_not_found(self):
         """Test load_pipeline with non-existent attribute."""
         with pytest.raises(AttributeError, match="not found in module"):
-            load_pipeline("daglite.nonexistent_pipeline")
+            load_pipeline("daglite.nonexistent_workflow")
 
     def test_load_pipeline_not_a_pipeline(self):
-        """Test load_pipeline with non-Pipeline object."""
-        with pytest.raises(TypeError, match="is not a Pipeline"):
-            load_pipeline("daglite.task")  # task is a function, not a Pipeline
+        """Test load_pipeline with non-Workflow object."""
+        with pytest.raises(TypeError, match="is not a Workflow"):
+            load_pipeline("daglite.task")  # task is a function, not a Workflow
 
     def test_load_pipeline_success(self):
-        """Test successfully loading a pipeline."""
+        """Test successfully loading a workflow."""
         # Load from examples
         pipeline_obj = load_pipeline("tests.examples.pipelines.math_pipeline")
-        assert isinstance(pipeline_obj, Pipeline)
+        assert isinstance(pipeline_obj, Workflow)
         assert pipeline_obj.name == "math_pipeline"
 
 

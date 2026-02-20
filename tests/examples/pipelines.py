@@ -1,7 +1,7 @@
-"""Example pipelines for testing."""
+"""Example workflows for testing."""
 
-from daglite import pipeline
 from daglite import task
+from daglite import workflow
 
 
 @task
@@ -22,7 +22,7 @@ def failing_task(x: int) -> int:
     raise RuntimeError(f"Intentional failure with input: {x}")
 
 
-@pipeline
+@workflow
 def math_pipeline(x: int, y: int, factor: int = 2):
     """
     A pipeline demonstrating basic arithmetic operations.
@@ -41,7 +41,7 @@ def math_pipeline(x: int, y: int, factor: int = 2):
     return multiply(x=sum_result, factor=factor)
 
 
-@pipeline
+@workflow
 def untyped_pipeline(x, y):  # noqa: ANN001
     """
     A pipeline with untyped parameters for testing warnings.
@@ -61,13 +61,13 @@ def untyped_pipeline(x, y):  # noqa: ANN001
     return add(x=int(x) if isinstance(x, str) else x, y=int(y) if isinstance(y, str) else y)
 
 
-@pipeline
+@workflow
 def failing_pipeline(x: int):
     """A pipeline that will fail during execution."""
     return failing_task(x=x)
 
 
-@pipeline
+@workflow
 def empty_pipeline():
     """A pipeline with no parameters for testing output branches."""
     return add(x=1, y=2)
