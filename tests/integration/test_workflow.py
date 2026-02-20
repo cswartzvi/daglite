@@ -94,6 +94,27 @@ class TestWorkflowEvaluation:
         with pytest.raises(TypeError, match="@workflow function must return"):
             wf.run()
 
+    def test_custom_task_name_used_as_result_key(self):
+        @task(name="my_sum")
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        @task(name="my_product")
+        def mul(x: int, y: int) -> int:
+            return x * y
+
+        @workflow
+        def wf(x: int, y: int):
+            return add(x=x, y=y), mul(x=x, y=y)
+
+        result = wf.run(x=3, y=4)
+        assert result["my_sum"] == 7
+        assert result["my_product"] == 12
+        with pytest.raises(KeyError):
+            _ = result["add"]
+        with pytest.raises(KeyError):
+            _ = result["mul"]
+
     def test_run_async(self):
         @task
         def add(x: int, y: int) -> int:
