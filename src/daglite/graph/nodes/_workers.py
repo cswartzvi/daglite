@@ -397,7 +397,7 @@ def _save_outputs(
         format_vars = {**resolved_inputs, **output_deps[idx], **key_extras}
         try:
             key = config.key.format(**format_vars)
-        except KeyError as e:
+        except KeyError as e:  # pragma: no cover – check_key_placeholders at build time
             available = sorted(format_vars.keys())
             raise ValueError(
                 f"Output key template '{config.key}' references {e} which is not available.\n"

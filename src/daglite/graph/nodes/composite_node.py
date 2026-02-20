@@ -586,7 +586,7 @@ async def _run_composite_map_step(
 
     for link in chain:
         resolved = resolve_inputs(link.external_params, snapshot)
-        if link.flow_param is not None:
+        if link.flow_param is not None:  # pragma: no branch – map chain links must have flow_param
             resolved[link.flow_param] = result
 
         output_parameters = resolve_output_parameters(link.output_configs, snapshot)

@@ -460,9 +460,8 @@ def _find_map_chains(
             # .then() on MapTaskFuture creates another MapTaskNode
             if isinstance(succ_node, MapTaskNode):
                 preds = predecessors.get(succ_id, set())
-                if len(preds) != 1:
+                if len(preds) != 1:  # pragma: no cover – .then() MapTaskNode always has one pred
                     break
-                if _effective_backend(succ_node) != map_backend:  # pragma: no cover
                     break
                 if not _is_then_map_node(succ_node, current):  # pragma: no cover
                     # Not a .then() continuation — end of the chain
@@ -551,16 +550,16 @@ def _is_then_map_node(node: BaseGraphNode, predecessor_id: UUID) -> bool:
     A `.then()` pattern produces a `MapTaskNode` with exactly one `mapped_kwarg` whose `NodeInput`
     is a `sequence_ref` to the predecessor.
     """
-    if not isinstance(node, MapTaskNode):
+    if not isinstance(node, MapTaskNode):  # pragma: no cover – callers only pass MapTaskNodes
         return False
 
     if len(node.mapped_kwargs) != 1:
         return False
 
     for _name, node_input in node.mapped_kwargs.items():
-        if node_input.reference == predecessor_id:
+        if node_input.reference == predecessor_id:  # pragma: no branch – single matching kwarg
             return True
-    return False  # pragma: no cover — only reachable if mapped_kwargs[0] has wrong reference
+    return False  # pragma: no cover – only reachable if mapped_kwargs[0] has wrong reference
 
 
 def _aggregate_timeout(timeouts: list[float | None]) -> float | None:

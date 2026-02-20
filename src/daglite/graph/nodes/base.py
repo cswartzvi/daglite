@@ -97,7 +97,7 @@ class BaseGraphNode(abc.ABC):
         Returns:
             A new node with updated references, or `self` if nothing changed.
         """
-        return self
+        return self  # pragma: no cover – concrete subclasses always override
 
     @abc.abstractmethod
     async def execute(

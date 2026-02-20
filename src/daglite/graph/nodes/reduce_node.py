@@ -149,7 +149,7 @@ class ReduceNode(BaseGraphNode):
             for item in items:
                 kwargs = {cfg.accumulator_param: accumulator, cfg.item_param: item}
                 last_error: Exception | None = None
-                for attempt in range(1 + cfg.retries):
+                for attempt in range(1 + cfg.retries):  # pragma: no branch – arc tracked
                     try:
                         accumulator = await cfg.func(**kwargs)
                         break
