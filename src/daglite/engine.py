@@ -25,6 +25,7 @@ else:
 from daglite.backends import BackendManager
 from daglite.exceptions import ExecutionError
 from daglite.graph.builder import build_graph
+from daglite.graph.builder import build_graph_multi
 from daglite.graph.nodes.base import BaseGraphNode
 
 # region Evaluation
@@ -139,36 +140,9 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         event_processor.start()
         dataset_processor.start()
 
-        nodes_to_process = state.get_source_nodes()
-
-        while nodes_to_process:
-            # Submit all ready siblings
-            tasks: dict[asyncio.Task[Any], UUID] = {}
-            for nid in nodes_to_process:
-                node = state.nodes[nid]
-                backend = backend_manager.get(node.backend_name)
-                coro = node.execute(backend, state.completed_nodes, plugin_manager.hook)
-                task = asyncio.create_task(coro)
-                tasks[task] = nid
-
-            # Wait for completion, returning early on first exception for fail-fast
-            done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_EXCEPTION)
-
-            # Collect results and mark complete; cancel pending tasks on exception
-            nodes_to_process = []
-            try:
-                for task in done:
-                    nid = tasks[task]
-                    result = task.result()
-                    nodes_to_process.extend(state.mark_complete(nid, result))
-            except Exception:
-                for t in pending:  # pragma: no cover - difficult to simulate
-                    t.cancel()
-                await asyncio.gather(*tasks.keys(), return_exceptions=True)
-                raise
+        await _execute_graph(state, backend_manager, plugin_manager.hook)
 
         # Finalize state and results
-        state.check_complete()
         result = state.get_result(future.id)
         duration = time.perf_counter() - start_time
 
@@ -191,6 +165,43 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     return result
 
 
+async def _execute_graph(
+    state: _ExecutionState,
+    backend_manager: BackendManager,
+    hook: HookRelay,
+) -> None:
+    """Run all nodes in the graph to completion, storing results in state."""
+    nodes_to_process = state.get_source_nodes()
+
+    while nodes_to_process:
+        # Submit all ready siblings
+        tasks: dict[asyncio.Task[Any], UUID] = {}
+        for nid in nodes_to_process:
+            node = state.nodes[nid]
+            backend = backend_manager.get(node.backend_name)
+            coro = node.execute(backend, state.completed_nodes, hook)
+            task = asyncio.create_task(coro)
+            tasks[task] = nid
+
+        # Wait for completion, returning early on first exception for fail-fast
+        done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_EXCEPTION)
+
+        # Collect results and mark complete; cancel pending tasks on exception
+        nodes_to_process = []
+        try:
+            for task in done:
+                nid = tasks[task]
+                result = task.result()
+                nodes_to_process.extend(state.mark_complete(nid, result))
+        except Exception:
+            for t in pending:  # pragma: no cover - difficult to simulate
+                t.cancel()
+            await asyncio.gather(*tasks.keys(), return_exceptions=True)
+            raise
+
+    state.check_complete()
+
+
 def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
     """Builds the graph execution state, including graph optimization if enabled."""
     from daglite.graph.optimizer import optimize_graph
@@ -205,6 +216,115 @@ def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
 
     state = _ExecutionState.from_nodes(nodes, id_mapping)
     return state
+
+
+def _setup_workflow_execution_state(
+    futures: list[Any],
+) -> tuple[_ExecutionState, dict[UUID, str]]:
+    """Builds the workflow execution state from multiple root futures.
+
+    Captures task names before optimisation so they survive any node folding.
+    """
+    from daglite.graph.optimizer import optimize_graph
+    from daglite.settings import get_global_settings
+
+    nodes = build_graph_multi(futures)
+    name_for: dict[UUID, str] = {f.id: nodes[f.id].name for f in futures}
+
+    id_mapping: dict[UUID, UUID] = {}
+    if get_global_settings().enable_graph_optimization:
+        nodes, id_mapping = optimize_graph(nodes)
+
+    return _ExecutionState.from_nodes(nodes, id_mapping), name_for
+
+
+async def evaluate_workflow_async(
+    futures: list[Any], *, plugins: list[Any] | None = None
+) -> Any:
+    """
+    Evaluate multiple task futures as a single workflow asynchronously.
+
+    Builds one merged graph from all sink futures, executes it in a single pass,
+    and returns a `WorkflowResult` indexable by task name or UUID.
+
+    Args:
+        futures: List of task futures representing the workflow's sink nodes.
+        plugins: Additional plugins to include with globally registered plugins.
+
+    Returns:
+        A WorkflowResult containing the evaluated outputs of all sink nodes.
+    """
+    from daglite.backends.context import get_current_task
+    from daglite.workflow_result import WorkflowResult
+
+    if get_current_task():
+        raise RuntimeError("Cannot call evaluate_workflow_async() from within another task.")
+
+    graph_id = uuid4()
+    state, name_for = _setup_workflow_execution_state(futures)
+
+    plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
+    dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
+    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
+
+    hook_ids = {"graph_id": graph_id, "root_id": futures[0].id if futures else graph_id}
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
+
+    start_time = time.perf_counter()
+    try:
+        backend_manager.start()
+        event_processor.start()
+        dataset_processor.start()
+
+        await _execute_graph(state, backend_manager, plugin_manager.hook)
+
+        results = {f.id: state.get_result(f.id) for f in futures}
+        workflow_result = WorkflowResult._build(results, name_for)
+        duration = time.perf_counter() - start_time
+
+        event_processor.flush()
+        dataset_processor.flush()
+
+        plugin_manager.hook.after_graph_execute(
+            **hook_ids, result=workflow_result, duration=duration
+        )
+
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        plugin_manager.hook.on_graph_error(**hook_ids, error=e, duration=duration)
+        raise
+
+    finally:
+        event_processor.stop()
+        dataset_processor.stop()
+        backend_manager.stop()
+
+    return workflow_result
+
+
+def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
+    """
+    Evaluate multiple task futures as a single workflow synchronously.
+
+    Cannot be called from within an async context. Use `evaluate_workflow_async()` instead.
+
+    Args:
+        futures: List of task futures representing the workflow's sink nodes.
+        plugins: Additional plugins to include with globally registered plugins.
+
+    Returns:
+        A WorkflowResult containing the evaluated outputs of all sink nodes.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # No loop running, safe to proceed
+    else:
+        raise RuntimeError(
+            "Cannot call evaluate_workflow() from an async context. "
+            "Use evaluate_workflow_async() instead."
+        )
+    return asyncio.run(evaluate_workflow_async(futures, plugins=plugins))
 
 
 def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProcessor]:

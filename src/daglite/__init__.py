@@ -11,16 +11,20 @@ from daglite.pipelines import Dag
 from daglite.pipelines import pipeline
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.tasks import task
+from daglite.workflow_result import WorkflowResult
+from daglite.workflows import workflow
 
 # Initialize hooks system on module import
 _initialize_plugin_system()
 
 __all__ = [
     "Dag",
+    "WorkflowResult",
     "backends",
     "futures",
     "load_dataset",
     "pipeline",
     "settings",
     "task",
+    "workflow",
 ]

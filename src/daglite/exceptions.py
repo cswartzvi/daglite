@@ -31,3 +31,7 @@ class DatasetError(DagliteError):
 
 class ExecutionError(DagliteError):
     """Raised when there's an error during task graph execution."""
+
+
+class AmbiguousResultError(DagliteError):
+    """Raised when a WorkflowResult is indexed by a name that matches multiple sink nodes."""
