@@ -17,6 +17,7 @@ from typing import Any
 from uuid import UUID
 
 from pluggy import HookRelay
+from typing_extensions import override
 
 from daglite._typing import NodeKind
 from daglite._typing import ParamKind
@@ -82,6 +83,50 @@ class BaseGraphNode(abc.ABC):
         """
         ...
 
+    def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> BaseGraphNode:
+        """
+        Returns a copy of this node with all references remapped according to *id_mapping*.
+
+        Subclasses that hold reference-bearing fields (`kwargs`, `fixed_kwargs`, `source_id`, etc.)
+        **must** override this method to remap those fields.  The base implementation is a no-op
+        that returns `self` unchanged.
+
+        Args:
+            id_mapping: Mapping from old node IDs to their replacement IDs.
+
+        Returns:
+            A new node with updated references, or `self` if nothing changed.
+        """
+        return self
+
+    @abc.abstractmethod
+    async def execute(
+        self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
+    ) -> Any:
+        """
+        Executes the node on the specified backend.
+
+        Args:
+            backend: Backend where node will be executed.
+            completed_nodes: Mapping from node IDs to their computed results.
+            hooks: Pluggy relay for preforming hook calls.
+
+        Returns:
+            Materialized result of the node execution.
+        """
+        ...
+
+
+@dataclass(frozen=True)
+class PrepareCollectNode(BaseGraphNode, abc.ABC):
+    """
+    Base class for nodes that follow the prepare → submit → gather → collect pattern.
+
+    Subclasses implement `_prepare` to build backend submissions and `_collect` to post-process
+    gathered results.  The default `execute` method orchestrates the full flow.  Subclasses may
+    still override `execute` if they need coordinator-side hooks.
+    """
+
     @abc.abstractmethod
     def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
         """
@@ -105,24 +150,10 @@ class BaseGraphNode(abc.ABC):
         """
         ...
 
+    @override
     async def execute(
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
-        """
-        Executes the node on the specified backend.
-
-        The default implementation calls ``_prepare`` → ``backend.submit`` →
-        ``asyncio.gather`` → ``_collect``.  Subclasses that need coordinator-side
-        hooks (e.g. ``MapTaskNode``) can override this method.
-
-        Args:
-            backend: Backend where node will be executed.
-            completed_nodes: Mapping from node IDs to their computed results.
-            hooks: Pluggy relay for preforming hook calls.
-
-        Returns:
-            Materialized result of the node execution.
-        """
         import asyncio
 
         submissions = self._prepare(completed_nodes)

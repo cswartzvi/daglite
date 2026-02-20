@@ -28,8 +28,10 @@ from daglite.utils import build_repr
 # block. If runtime imports are needed, they should be done locally within methods. Be careful,
 # forgetting to import at runtime will lead to hard to debug errors.
 if TYPE_CHECKING:
+    from daglite.futures.reduce_future import ReduceFuture
     from daglite.futures.task_future import TaskFuture
 else:
+    ReduceFuture = object
     TaskFuture = object
 
 P = ParamSpec("P")
@@ -188,6 +190,76 @@ class MapTaskFuture(BaseTaskFuture[R]):
         return TaskFuture(
             task=actual_task,
             kwargs=merged_kwargs,
+            backend_name=self.backend_name,
+            task_store=self.task_store,
+        )
+
+    def reduce(
+        self,
+        reduce_task: Task[Any, T] | PartialTask[Any, T],
+        *,
+        initial: Any,
+        ordered: bool = True,
+    ) -> ReduceFuture[T]:
+        """
+        Streaming fold over this sequence, accumulating results with O(1) memory.
+
+        When graph optimization is enabled (the default), items are folded as they complete — no
+        intermediate list is ever materialized. When optimization is disabled, the upstream sequence
+        is collected first and `functools.reduce` is applied.
+
+        Args:
+            reduce_task: A `Task` (or `PartialTask`) with exactly two unbound parameters
+                `(accumulator, item)` that returns the new accumulator value.
+            initial: Starting value for the accumulator.
+            ordered: If `True` (default), items are processed in iteration order.  If `False`,
+                items are processed in completion order for maximum throughput (safe for
+                commutative/associative operations like sum or max).
+
+        Returns:
+            A `ReduceFuture` representing the final accumulated value.
+
+        Examples:
+            >>> from daglite import task
+            >>> @task
+            ... def double(x: int) -> int:
+            ...     return x * 2
+            >>> @task
+            ... def accumulate(acc: int, item: int) -> int:
+            ...     return acc + item
+
+            Streaming reduce with O(1) memory
+            >>> result = double.map(x=[1, 2, 3]).reduce(accumulate, initial=0)
+            >>> result.run()
+            12
+
+            Unordered reduce for commutative operations
+            >>> result = double.map(x=[1, 2, 3]).reduce(accumulate, initial=0, ordered=False)
+            >>> result.run()
+            12
+        """
+        from daglite._typing import ReduceMode
+        from daglite.futures.reduce_future import ReduceFuture
+
+        if isinstance(reduce_task, PartialTask):
+            actual_task = reduce_task.task
+        else:
+            actual_task = reduce_task
+
+        all_fixed = dict(reduce_task.fixed_kwargs) if isinstance(reduce_task, PartialTask) else {}
+        acc_param, item_param = get_unbound_params(
+            actual_task.signature, all_fixed, actual_task.name, n=2
+        )
+
+        reduce_mode: ReduceMode = "ordered" if ordered else "unordered"
+
+        return ReduceFuture(
+            source=self,
+            reduce_task=actual_task,
+            initial=initial,
+            reduce_mode=reduce_mode,
+            accumulator_param=acc_param,
+            item_param=item_param,
             backend_name=self.backend_name,
             task_store=self.task_store,
         )

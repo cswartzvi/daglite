@@ -1,9 +1,12 @@
 """Dataset load node representation within the graph IR."""
 
+from __future__ import annotations
+
 import functools
 from collections.abc import Mapping
 from dataclasses import dataclass
 from dataclasses import field
+from dataclasses import replace
 from typing import Any
 from uuid import UUID
 
@@ -11,17 +14,18 @@ from typing_extensions import override
 
 from daglite.datasets.store import DatasetStore
 from daglite.graph.nodes._shared import collect_dependencies
+from daglite.graph.nodes._shared import remap_node_changes
 from daglite.graph.nodes._shared import resolve_inputs
 from daglite.graph.nodes._shared import resolve_output_parameters
-from daglite.graph.nodes._workers import run_dataset_load
-from daglite.graph.nodes.base import BaseGraphNode
+from daglite.graph.nodes._workers import load_dataset_worker
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeKind
+from daglite.graph.nodes.base import PrepareCollectNode
 from daglite.graph.nodes.base import Submission
 
 
 @dataclass(frozen=True)
-class DatasetNode(BaseGraphNode):
+class DatasetNode(PrepareCollectNode):
     """
     Dataset load node representation within the graph IR.
 
@@ -61,11 +65,16 @@ class DatasetNode(BaseGraphNode):
         return collect_dependencies(self.kwargs, self.output_configs)
 
     @override
+    def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> DatasetNode:
+        changes = remap_node_changes(id_mapping, self.output_configs, kwargs=self.kwargs)
+        return replace(self, **changes) if changes else self
+
+    @override
     def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
         resolved_inputs = resolve_inputs(self.kwargs, completed_nodes)
         output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
         func = functools.partial(
-            run_dataset_load,
+            load_dataset_worker,
             store=self.store,
             load_key=self.load_key,
             return_type=self.return_type,
