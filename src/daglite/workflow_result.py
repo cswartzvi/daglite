@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import ItemsView
+from collections.abc import Mapping
+from collections.abc import ValuesView
 from dataclasses import dataclass
 from typing import Any, Iterator
 from uuid import UUID
@@ -10,7 +13,7 @@ from daglite.exceptions import AmbiguousResultError
 
 
 @dataclass(frozen=True)
-class WorkflowResult:
+class WorkflowResult(Mapping[str, Any]):
     """
     Holds the evaluated outputs of a ``@workflow``, indexable by task name or UUID.
 
@@ -26,7 +29,7 @@ class WorkflowResult:
     """Secondary index: task name → list of UUIDs (typically one, but may be many)."""
 
     @classmethod
-    def _build(cls, results: dict[UUID, Any], name_for: dict[UUID, str]) -> WorkflowResult:
+    def build(cls, results: dict[UUID, Any], name_for: dict[UUID, str]) -> WorkflowResult:
         """Build a WorkflowResult from raw results and a uuid→name mapping."""
         by_name: dict[str, list[UUID]] = {}
         for uid, name in name_for.items():
@@ -86,26 +89,53 @@ class WorkflowResult:
         """
         return [self._results[uid] for uid in self._by_name.get(name, [])]
 
-    def keys(self) -> Iterator[str]:
-        """Iterate over sink node names."""
+    def values(self) -> ValuesView[Any]:
+        """Iterate over all results in name-index order, expanding duplicate-named sinks."""
+        return _WorkflowValuesView(self)
+
+    def items(self) -> ItemsView[str, Any]:
+        """
+        Iterate over (name, value) pairs, expanding duplicate-named sinks.
+
+        Unlike ``result[name]``, this never raises ``AmbiguousResultError``.
+        Duplicate-named sinks each appear as a separate ``(name, value)`` pair.
+        """
+        return _WorkflowItemsView(self)
+
+    def __iter__(self) -> Iterator[str]:
         return iter(self._by_name)
 
-    def values(self) -> Iterator[Any]:
-        """Iterate over results in name-index order."""
-        for uuids in self._by_name.values():
-            for uid in uuids:
-                yield self._results[uid]
-
-    def items(self) -> Iterator[tuple[str, Any]]:
-        """
-        Iterate over (name, value) pairs.
-
-        Raises:
-            AmbiguousResultError: If two sink nodes share the same name.
-        """
-        for name in self._by_name:
-            yield name, self[name]
+    def __len__(self) -> int:
+        return len(self._by_name)
 
     def __repr__(self) -> str:
         names = list(self._by_name)
         return f"WorkflowResult({names})"
+
+
+class _WorkflowValuesView(ValuesView[Any]):
+    """ValuesView that expands duplicate-named sinks instead of raising."""
+
+    _mapping: WorkflowResult  # type: ignore[assignment]
+
+    def __iter__(self) -> Iterator[Any]:
+        for uuids in self._mapping._by_name.values():
+            for uid in uuids:
+                yield self._mapping._results[uid]
+
+    def __len__(self) -> int:
+        return len(self._mapping._results)
+
+
+class _WorkflowItemsView(ItemsView[str, Any]):
+    """ItemsView that expands duplicate-named sinks instead of raising."""
+
+    _mapping: WorkflowResult  # type: ignore[assignment]
+
+    def __iter__(self) -> Iterator[tuple[str, Any]]:
+        for name, uuids in self._mapping._by_name.items():
+            for uid in uuids:
+                yield name, self._mapping._results[uid]
+
+    def __len__(self) -> int:
+        return len(self._mapping._results)
