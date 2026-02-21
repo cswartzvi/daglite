@@ -462,7 +462,6 @@ def _find_map_chains(
                 preds = predecessors.get(succ_id, set())
                 if len(preds) != 1:  # pragma: no cover – .then() MapTaskNode always has one pred
                     break
-                    break
                 if not _is_then_map_node(succ_node, current):  # pragma: no cover
                     # Not a .then() continuation — end of the chain
                     break
