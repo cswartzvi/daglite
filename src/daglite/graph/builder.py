@@ -52,9 +52,11 @@ def build_graph_multi(roots: list[NodeBuilder]) -> dict[UUID, BaseGraphNode]:
     nodes: dict[UUID, BaseGraphNode] = {}
     visiting: set[UUID] = set()
     stack: list[tuple[NodeBuilder, bool]] = []
+    seen_root_ids: set[UUID] = set()
 
     for root in reversed(roots):
-        if root.id not in nodes:
+        if root.id not in seen_root_ids:
+            seen_root_ids.add(root.id)
             stack.append((root, False))
 
     while stack:
