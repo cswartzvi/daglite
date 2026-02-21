@@ -190,9 +190,21 @@ class TestWorkflowResult:
         result = self._make_result({"a": 1, "b": 2})
         assert set(result.values()) == {1, 2}
 
+    def test_len(self):
+        result = self._make_result({"a": 1, "b": 2})
+        assert len(result) == 2
+
+    def test_values_len(self):
+        result = self._make_result({"a": 1, "b": 2})
+        assert len(result.values()) == 2
+
     def test_items(self):
         result = self._make_result({"a": 1, "b": 2})
         assert dict(result.items()) == {"a": 1, "b": 2}
+
+    def test_items_len(self):
+        result = self._make_result({"a": 1, "b": 2})
+        assert len(result.items()) == 2
 
     def test_items_expands_duplicates(self):
         uid1, uid2 = uuid4(), uuid4()
