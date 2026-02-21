@@ -185,3 +185,67 @@ class TestWorkflowEvaluation:
         assert isinstance(result, WorkflowResult)
         assert result["add"] == 9
         assert result["mul"] == 20
+
+    def test_workflow_with_optimization_disabled(self):
+        """Running with optimization disabled must still produce correct results."""
+        from daglite.settings import DagliteSettings
+        from daglite.settings import get_global_settings
+        from daglite.settings import set_global_settings
+
+        original = get_global_settings()
+        try:
+            set_global_settings(DagliteSettings(enable_graph_optimization=False))
+
+            @task
+            def add(x: int, y: int) -> int:
+                return x + y
+
+            @workflow
+            def wf(x: int, y: int):
+                return add(x=x, y=y)
+
+            result = wf.run(x=2, y=3)
+            assert result["add"] == 5
+        finally:
+            set_global_settings(original)
+
+    def test_failing_task_propagates_error(self):
+        """An exception raised inside a task must propagate out of wf.run()."""
+
+        @task
+        def bad() -> int:
+            raise ValueError("intentional failure")
+
+        @workflow
+        def wf():
+            return bad()
+
+        with pytest.raises(ValueError, match="intentional failure"):
+            wf.run()
+
+    def test_evaluate_workflow_in_async_context_raises(self):
+        """evaluate_workflow() must raise when called from inside a running event loop."""
+        from daglite.engine import evaluate_workflow
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        async def call_from_async() -> None:
+            evaluate_workflow([add(x=1, y=2)])
+
+        with pytest.raises(RuntimeError, match="async context"):
+            asyncio.run(call_from_async())
+
+    def test_evaluate_workflow_async_within_task_raises(self, mocker):
+        """evaluate_workflow_async() must raise when called from within a task."""
+        from daglite.engine import evaluate_workflow_async
+
+        mocker.patch("daglite.backends.context.get_current_task", return_value=object())
+
+        @task
+        def add(x: int, y: int) -> int:
+            return x + y
+
+        with pytest.raises(RuntimeError, match="within another task"):
+            asyncio.run(evaluate_workflow_async([add(x=1, y=2)]))
