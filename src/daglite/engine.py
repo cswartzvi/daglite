@@ -207,7 +207,7 @@ async def evaluate_workflow_async(
         A WorkflowResult containing the evaluated outputs of all sink nodes.
     """
     from daglite.backends.context import get_current_task
-    from daglite.workflow_result import WorkflowResult
+    from daglite.workflows import WorkflowResult
 
     if get_current_task():
         raise RuntimeError("Cannot call evaluate_workflow_async() from within another task.")
@@ -230,7 +230,7 @@ async def evaluate_workflow_async(
 
         await _execute_graph(state, backend_manager, plugin_manager.hook)
         results = {f.id: state.get_result(f.id) for f in futures}
-        result = WorkflowResult._build(results, name_for)
+        result = WorkflowResult.build(results, name_for)
 
         duration = time.perf_counter() - start_time
         plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)

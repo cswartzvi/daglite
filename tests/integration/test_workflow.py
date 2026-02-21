@@ -8,7 +8,7 @@ import pytest
 
 from daglite import task
 from daglite import workflow
-from daglite.workflow_result import WorkflowResult
+from daglite.workflows import WorkflowResult
 
 
 class TestWorkflowEvaluation:

@@ -16,8 +16,8 @@ from daglite import workflow
 from daglite.exceptions import AmbiguousResultError
 from daglite.exceptions import GraphError
 from daglite.graph.builder import build_graph_multi
-from daglite.workflow_result import WorkflowResult
 from daglite.workflows import Workflow
+from daglite.workflows import WorkflowResult
 
 
 @task
@@ -142,7 +142,7 @@ class TestWorkflowResult:
             uid = uuid4()
             results[uid] = value
             name_for[uid] = name
-        return WorkflowResult._build(results, name_for)
+        return WorkflowResult.build(results, name_for)
 
     def test_getitem_by_name(self):
         result = self._make_result({"add": 5, "mul": 6})
@@ -151,7 +151,7 @@ class TestWorkflowResult:
 
     def test_getitem_by_uuid(self):
         uid = uuid4()
-        result = WorkflowResult._build({uid: 99}, {uid: "task"})
+        result = WorkflowResult.build({uid: 99}, {uid: "task"})
         assert result[uid] == 99
 
     def test_getitem_missing_name_raises_key_error(self):
@@ -166,7 +166,7 @@ class TestWorkflowResult:
 
     def test_ambiguous_name_raises_error(self):
         uid1, uid2 = uuid4(), uuid4()
-        result = WorkflowResult._build(
+        result = WorkflowResult.build(
             {uid1: 10, uid2: 20},
             {uid1: "task", uid2: "task"},
         )
@@ -175,7 +175,7 @@ class TestWorkflowResult:
 
     def test_uuid_lookup_works_on_name_collision(self):
         uid1, uid2 = uuid4(), uuid4()
-        result = WorkflowResult._build(
+        result = WorkflowResult.build(
             {uid1: 10, uid2: 20},
             {uid1: "task", uid2: "task"},
         )
@@ -194,14 +194,16 @@ class TestWorkflowResult:
         result = self._make_result({"a": 1, "b": 2})
         assert dict(result.items()) == {"a": 1, "b": 2}
 
-    def test_items_raises_on_collision(self):
+    def test_items_expands_duplicates(self):
         uid1, uid2 = uuid4(), uuid4()
-        result = WorkflowResult._build(
+        result = WorkflowResult.build(
             {uid1: 10, uid2: 20},
             {uid1: "task", uid2: "task"},
         )
-        with pytest.raises(AmbiguousResultError):
-            list(result.items())
+        pairs = list(result.items())
+        assert len(pairs) == 2
+        assert all(name == "task" for name, _ in pairs)
+        assert {v for _, v in pairs} == {10, 20}
 
     def test_repr(self):
         result = self._make_result({"alpha": 1})
@@ -217,7 +219,7 @@ class TestWorkflowResultSingleAndAll:
             uid = uuid4()
             results[uid] = value
             name_for[uid] = name
-        return WorkflowResult._build(results, name_for)
+        return WorkflowResult.build(results, name_for)
 
     def test_single_returns_value(self):
         result = self._make_result({"add": 5})
@@ -230,7 +232,7 @@ class TestWorkflowResultSingleAndAll:
 
     def test_single_raises_on_ambiguous(self):
         uid1, uid2 = uuid4(), uuid4()
-        result = WorkflowResult._build(
+        result = WorkflowResult.build(
             {uid1: 10, uid2: 20},
             {uid1: "task", uid2: "task"},
         )
@@ -245,7 +247,7 @@ class TestWorkflowResultSingleAndAll:
 
     def test_all_returns_list_for_multiple(self):
         uid1, uid2 = uuid4(), uuid4()
-        result = WorkflowResult._build(
+        result = WorkflowResult.build(
             {uid1: 10, uid2: 20},
             {uid1: "task", uid2: "task"},
         )

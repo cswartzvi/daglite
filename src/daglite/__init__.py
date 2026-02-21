@@ -11,7 +11,7 @@ from daglite.pipelines import Dag
 from daglite.pipelines import pipeline
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.tasks import task
-from daglite.workflow_result import WorkflowResult
+from daglite.workflows import WorkflowResult
 from daglite.workflows import workflow
 
 # Initialize hooks system on module import
