@@ -6,7 +6,8 @@ import asyncio
 
 import pytest
 
-from daglite import task, workflow
+from daglite import task
+from daglite import workflow
 from daglite.workflow_result import WorkflowResult
 
 

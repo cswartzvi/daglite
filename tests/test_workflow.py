@@ -10,7 +10,8 @@ from uuid import uuid4
 
 import pytest
 
-from daglite import task, workflow
+from daglite import task
+from daglite import workflow
 from daglite.exceptions import AmbiguousResultError
 from daglite.graph.builder import build_graph_multi
 from daglite.workflow_result import WorkflowResult

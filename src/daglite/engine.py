@@ -221,7 +221,8 @@ def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
 def _setup_workflow_execution_state(
     futures: list[Any],
 ) -> tuple[_ExecutionState, dict[UUID, str]]:
-    """Builds the workflow execution state from multiple root futures.
+    """
+    Builds the workflow execution state from multiple root futures.
 
     Captures task names before optimisation so they survive any node folding.
     """
@@ -240,9 +241,7 @@ def _setup_workflow_execution_state(
     return _ExecutionState.from_nodes(nodes, id_mapping), name_for
 
 
-async def evaluate_workflow_async(
-    futures: list[Any], *, plugins: list[Any] | None = None
-) -> Any:
+async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate multiple task futures as a single workflow asynchronously.
 

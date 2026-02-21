@@ -89,7 +89,9 @@ def workflow(
         return Workflow(
             func=fn,
             name=name if name is not None else getattr(fn, "__name__", "unnamed_workflow"),
-            description=description if description is not None else getattr(fn, "__doc__", "") or "",
+            description=description
+            if description is not None
+            else getattr(fn, "__doc__", "") or "",
         )
 
     if func is not None:
