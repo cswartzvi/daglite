@@ -19,86 +19,80 @@ class TestRunCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0
-        assert "Run a daglite pipeline" in result.output
+        assert "Run a daglite workflow" in result.output
         assert "--param" in result.output
         assert "--backend" in result.output
 
-    def test_run_without_pipeline_path(self):
-        """Test run command without pipeline path."""
+    def test_run_without_workflow_path(self):
+        """Test run command without workflow path."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run"])
         assert result.exit_code != 0
         assert "Missing argument" in result.output
 
-    def test_run_with_invalid_pipeline_path(self):
-        """Test run command with invalid pipeline path (no dot)."""
+    def test_run_with_invalid_workflow_path(self):
+        """Test run command with invalid workflow path (no dot)."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "invalid"])
         assert result.exit_code != 0
-        assert "Invalid pipeline path" in result.output
+        assert "Invalid workflow path" in result.output
 
     def test_run_with_nonexistent_module(self):
         """Test run command with non-existent module."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["run", "nonexistent.module.pipeline"])
+        result = runner.invoke(cli, ["run", "nonexistent.module.workflow"])
         assert result.exit_code != 0
         assert "No module named" in result.output
 
-    def test_run_with_nonexistent_pipeline(self):
-        """Test run command with non-existent pipeline in existing module."""
+    def test_run_with_nonexistent_workflow(self):
+        """Test run command with non-existent workflow in existing module."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["run", "daglite.nonexistent_pipeline"])
+        result = runner.invoke(cli, ["run", "daglite.nonexistent_workflow"])
         assert result.exit_code != 0
         assert "not found" in result.output
 
-    def test_run_with_non_pipeline_object(self):
-        """Test run command with object that's not a Pipeline."""
+    def test_run_with_non_workflow_object(self):
+        """Test run command with object that's not a Workflow."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "daglite.task"])
         assert result.exit_code != 0
-        assert "is not a Pipeline" in result.output
+        assert "is not a Workflow" in result.output
 
-    def test_run_simple_pipeline(self):
-        """Test running a simple pipeline."""
+    def test_run_simple_workflow(self):
+        """Test running a simple workflow."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
-            ["run", "tests.examples.pipelines.math_pipeline", "--param", "x=5", "--param", "y=10"],
+            ["run", "tests.examples.workflows.math_workflow", "--param", "x=5", "--param", "y=10"],
         )
         assert result.exit_code == 0
-        assert "Running pipeline: math_pipeline" in result.output
-        assert "Pipeline completed successfully" in result.output
-        assert "Result: 30" in result.output
 
-    def test_run_empty_pipeline(self):
-        """Test running a pipeline with no parameters."""
+    def test_run_empty_workflow(self):
+        """Test running a workflow with no parameters."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["run", "tests.examples.pipelines.empty_pipeline"])
+        result = runner.invoke(cli, ["run", "tests.examples.workflows.empty_workflow"])
         assert result.exit_code == 0
-        assert "Running pipeline: empty_pipeline" in result.output
         # Should not show "Parameters:" line when there are no parameters
         assert "Parameters:" not in result.output
-        assert "Result: 3" in result.output
 
-    def test_run_pipeline_with_default_params(self):
-        """Test running a pipeline using default parameter values."""
+    def test_run_workflow_with_default_params(self):
+        """Test running a workflow using default parameter values."""
         runner = CliRunner()
-        # math_pipeline has factor=2 as default
+        # math_workflow has factor=2 as default
         result = runner.invoke(
             cli,
-            ["run", "tests.examples.pipelines.math_pipeline", "--param", "x=5", "--param", "y=10"],
+            ["run", "tests.examples.workflows.math_workflow", "--param", "x=5", "--param", "y=10"],
         )
         assert result.exit_code == 0
-        assert "Result: 30" in result.output  # (5+10)*2 = 30
 
-    def test_run_pipeline_override_default_params(self):
-        """Test running a pipeline and overriding default parameter."""
+    def test_run_workflow_override_default_params(self):
+        """Test running a workflow and overriding default parameter."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -108,35 +102,34 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Result: 45" in result.output  # (5+10)*3 = 45
 
-    def test_run_pipeline_missing_required_param(self):
-        """Test running a pipeline without required parameters."""
+    def test_run_workflow_missing_required_param(self):
+        """Test running a workflow without required parameters."""
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["run", "tests.examples.pipelines.math_pipeline", "--param", "x=5"]
+            cli, ["run", "tests.examples.workflows.math_workflow", "--param", "x=5"]
         )
         assert result.exit_code != 0
         assert "Missing required parameters" in result.output
         assert "y" in result.output
 
-    def test_run_pipeline_with_invalid_param_format(self):
+    def test_run_workflow_with_invalid_param_format(self):
         """Test running with invalid parameter format."""
         runner = CliRunner()
         result = runner.invoke(
-            cli, ["run", "tests.examples.pipelines.math_pipeline", "--param", "invalid_format"]
+            cli, ["run", "tests.examples.workflows.math_workflow", "--param", "invalid_format"]
         )
         assert result.exit_code != 0
         assert "Invalid parameter format" in result.output
 
-    def test_run_pipeline_with_unknown_param(self):
+    def test_run_workflow_with_unknown_param(self):
         """Test running with unknown parameter name."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -148,14 +141,14 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Unknown parameter" in result.output
 
-    def test_run_pipeline_with_parallel(self):
+    def test_run_workflow_with_parallel(self):
         """Test running with parallel (async) execution."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -164,17 +157,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Parallel execution: enabled" in result.output
-        assert "Result: 30" in result.output
 
-    def test_run_pipeline_with_settings(self):
+    def test_run_workflow_with_settings(self):
         """Test running with settings override."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -184,17 +175,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "30" in result.output
-        assert "Result: 30" in result.output
 
-    def test_run_pipeline_with_invalid_setting_name(self):
+    def test_run_workflow_with_invalid_setting_name(self):
         """Test running with invalid setting name."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -206,14 +195,14 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Unknown setting" in result.output
 
-    def test_run_pipeline_with_invalid_setting_value(self):
+    def test_run_workflow_with_invalid_setting_value(self):
         """Test running with invalid setting value."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -225,14 +214,14 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Invalid value" in result.output
 
-    def test_run_pipeline_with_bool_setting(self):
+    def test_run_workflow_with_bool_setting(self):
         """Test that boolean settings are parsed correctly."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -242,16 +231,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Result: 30" in result.output
 
-    def test_run_pipeline_with_union_type_setting(self):
+    def test_run_workflow_with_union_type_setting(self):
         """Test that Union-typed settings (e.g. datastore_store: str | DatasetStore) are parsed."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -261,16 +249,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Result: 30" in result.output
 
-    def test_run_pipeline_backend_applied(self):
-        """Test that --backend is reported and applied via settings."""
+    def test_run_workflow_backend_applied(self):
+        """Test that --backend flag is applied to workflow execution."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -280,17 +267,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Backend: threading" in result.output
-        assert "Result: 30" in result.output
 
-    def test_run_pipeline_type_conversion_int(self):
+    def test_run_workflow_type_conversion_int(self):
         """Test that integer parameters are properly converted."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -300,16 +285,15 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code == 0
-        assert "Result: 45" in result.output
 
-    def test_run_pipeline_invalid_setting_format(self):
+    def test_run_workflow_invalid_setting_format(self):
         """Test running with invalid setting format (no =)."""
         runner = CliRunner()
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 "--param",
                 "x=5",
                 "--param",
@@ -321,40 +305,40 @@ class TestRunCommand:
         assert result.exit_code != 0
         assert "Invalid setting format" in result.output
 
-    def test_run_pipeline_call_error(self):
-        """Test error when calling pipeline with wrong parameters."""
+    def test_run_workflow_call_error(self):
+        """Test error when calling workflow with wrong parameters."""
         runner = CliRunner()
-        # Create a pipeline that will fail when called
+        # Create a workflow that will fail when called
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.math_pipeline",
+                "tests.examples.workflows.math_workflow",
                 # Missing required parameters will cause error during call
             ],
         )
         assert result.exit_code != 0
         assert "Missing required parameters" in result.output
 
-    def test_run_pipeline_execution_error(self):
-        """Test handling of pipeline execution errors."""
+    def test_run_workflow_execution_error(self):
+        """Test handling of workflow execution errors."""
         runner = CliRunner()
-        # Use a pipeline that will fail during execution
+        # Use a workflow that will fail during execution
         result = runner.invoke(
             cli,
             [
                 "run",
-                "tests.examples.pipelines.failing_pipeline",
+                "tests.examples.workflows.failing_workflow",
                 "--param",
                 "x=42",
             ],
         )
         assert result.exit_code != 0
-        assert "Pipeline execution failed" in result.output
+        assert "Workflow execution failed" in result.output
         assert "Intentional failure" in result.output
 
-    def test_run_untyped_pipeline_warning(self):
-        """Test warning when using untyped pipeline parameters."""
+    def test_run_untyped_workflow_warning(self):
+        """Test warning when using untyped workflow parameters."""
         import warnings
 
         runner = CliRunner()
@@ -364,7 +348,7 @@ class TestRunCommand:
                 cli,
                 [
                     "run",
-                    "tests.examples.pipelines.untyped_pipeline",
+                    "tests.examples.workflows.untyped_workflow",
                     "--param",
                     "x=5",
                     "--param",
@@ -375,7 +359,6 @@ class TestRunCommand:
         assert result.exit_code == 0
         # The warning goes to stderr, but click captures it
         # We can check that it ran successfully
-        assert "Result:" in result.output
 
 
 class TestParseParamValue:

@@ -1,31 +1,51 @@
-"""CLI ``run`` command for executing pipelines."""
+"""CLI ``run`` command for executing workflows."""
 
 from __future__ import annotations
 
 import asyncio
-import inspect
-import types
-import typing
-import warnings
-from typing import Any, Union, get_args, get_origin
+from typing import Any
 
 import click
 
-from daglite.cli._shared import parse_param_value
-from daglite.engine import evaluate
-from daglite.engine import evaluate_async
-from daglite.pipelines import load_pipeline
+from daglite.cli._shared import parse_settings_overrides
+from daglite.cli._shared import parse_workflow_params
+from daglite.plugins.manager import has_plugin
+from daglite.plugins.manager import register_plugins
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
+from daglite.workflows import load_workflow
+
+
+def _setup_cli_plugins() -> None:
+    """
+    Auto-register output plugins for CLI runs.
+
+    Prefers daglite-rich (progress bars + rich logging) when installed;
+    falls back to the builtin LifecycleLoggingPlugin.  Skips registration
+    if the user has already registered a compatible plugin.
+    """
+    try:
+        from daglite_rich.logging import RichLifecycleLoggingPlugin
+        from daglite_rich.progress import RichProgressPlugin
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        if not has_plugin(LifecycleLoggingPlugin):
+            register_plugins(RichLifecycleLoggingPlugin(), RichProgressPlugin())
+    except ImportError:
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        if not has_plugin(LifecycleLoggingPlugin):
+            register_plugins(LifecycleLoggingPlugin())
 
 
 @click.command()
-@click.argument("pipeline")
+@click.argument("workflow")
 @click.option(
     "--param",
     "-p",
     multiple=True,
-    help="Pipeline parameter in format 'name=value'. Can be specified multiple times.",
+    help="Workflow parameter in format 'name=value'. Can be specified multiple times.",
 )
 @click.option(
     "--backend",
@@ -45,132 +65,64 @@ from daglite.settings import set_global_settings
     help="Setting override in format 'name=value'. Can be specified multiple times.",
 )
 def run(
-    pipeline: str,
+    workflow: str,
     param: tuple[str, ...],
     backend: str,
     parallel: bool,
     settings: tuple[str, ...],
 ) -> None:
     r"""
-    Run a daglite pipeline.
+    Run a daglite workflow.
 
-    PIPELINE should be a dotted path to a pipeline function decorated with @pipeline,
-    e.g., 'myproject.pipelines.my_pipeline'.
+    WORKFLOW should be a dotted path to a workflow function decorated with @workflow,
+    e.g., 'myproject.workflows.my_workflow'.
 
     Examples:
     \b
-    # Run a simple pipeline
-    daglite run myproject.pipelines.simple_pipeline
+    # Run a simple workflow
+    daglite run myproject.workflows.simple_workflow
 
     \b
     # Run with parameters
-    daglite run myproject.pipelines.data_pipeline --param input_file=data.csv
+    daglite run myproject.workflows.data_workflow --param input_file=data.csv
     --param num_workers=4
 
     \b
     # Run with custom backend and settings
-    daglite run myproject.pipelines.parallel_pipeline --backend threading
+    daglite run myproject.workflows.parallel_workflow --backend threading
     --settings max_backend_threads=16
     """
-    # Load the pipeline
     try:
-        pipeline_obj = load_pipeline(pipeline)
+        workflow_obj = load_workflow(workflow)
     except (ValueError, ModuleNotFoundError, AttributeError, TypeError) as e:
         raise click.ClickException(str(e)) from e
 
-    params: dict[str, Any] = {}
-    typed_params = pipeline_obj.get_typed_params()
+    _setup_cli_plugins()
+    params = parse_workflow_params(workflow_obj, param)
 
-    # Warn if passing params to an untyped pipeline
-    if param and not pipeline_obj.has_typed_params():
-        warnings.warn(
-            f"Pipeline '{pipeline_obj.name}' has untyped parameters. "
-            "Parameter values will be passed as strings. "
-            "Consider adding type annotations for automatic type conversion.",
-            UserWarning,
-            stacklevel=2,
-        )
-
-    for p in param:
-        if "=" not in p:
-            raise click.BadParameter(f"Invalid parameter format: '{p}'. Expected 'name=value'")
-
-        param_name, param_value = p.split("=", 1)
-
-        if param_name not in typed_params:
-            raise click.BadParameter(
-                f"Unknown parameter: '{param_name}'. "
-                f"Available parameters: {list(typed_params.keys())}"
-            )
-
-        params[param_name] = parse_param_value(param_value, typed_params[param_name])
-
-    # Check for missing required parameters
-    sig = pipeline_obj.signature
-    missing_params = []
-    for param_name, param_info in sig.parameters.items():
-        if param_info.default == inspect.Parameter.empty and param_name not in params:
-            missing_params.append(param_name)
-
-    if missing_params:
-        raise click.BadParameter(
-            f"Missing required parameters: {missing_params}. "
-            f"Use --param name=value to provide them."
-        )
-
-    # Build settings dict: start with --backend, then layer --settings overrides
+    # Apply settings overrides
     settings_dict: dict[str, Any] = {"default_backend": backend}
-
-    for s in settings:
-        if "=" not in s:
-            raise click.BadParameter(f"Invalid setting format: '{s}'. Expected 'name=value'")
-
-        setting_name, setting_value = s.split("=", 1)
-
-        # Validate setting name
-        fields = DagliteSettings.__dataclass_fields__
-        if setting_name not in fields:
-            raise click.BadParameter(
-                f"Unknown setting: '{setting_name}'. Available settings: {', '.join(fields)}"
-            )
-
-        # Parse setting value using field type introspection
-        type_hints = typing.get_type_hints(DagliteSettings)
-        field_type = type_hints[setting_name]
-        # For Union types (e.g. str | DatasetStore), use the first concrete type
-        if get_origin(field_type) is Union or isinstance(field_type, types.UnionType):
-            field_type = get_args(field_type)[0]
-        try:
-            settings_dict[setting_name] = parse_param_value(setting_value, field_type)
-        except ValueError as e:
-            raise click.BadParameter(
-                f"Invalid value for setting '{setting_name}': '{setting_value}'. {e}"
-            ) from e
-
-    # Apply settings globally for this run
+    settings_dict.update(parse_settings_overrides(settings))
     set_global_settings(DagliteSettings(**settings_dict))
 
-    # Call the pipeline to get the NodeBuilder
-    try:
-        graph = pipeline_obj(**params)
-    except Exception as e:  # pragma: no cover
-        raise click.ClickException(f"Error calling pipeline: {e}") from e
+    # Execute the workflow
+    from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
-    # Execute the graph
-    click.echo(f"Running pipeline: {pipeline_obj.name}")
-    if params:
-        click.echo(f"Parameters: {params}")
-    click.echo(f"Backend: {backend}")
-    if parallel:
-        click.echo("Parallel execution: enabled")
+    verbose = not has_plugin(LifecycleLoggingPlugin)
+    if verbose:
+        click.echo(f"Running workflow: {workflow_obj.name}")
+        if params:
+            click.echo(f"Parameters: {params}")
+        click.echo(f"Backend: {backend}")
+        if parallel:
+            click.echo("Parallel execution: enabled")
 
     try:
         if parallel:
-            # Async evaluation enables sibling parallelism
-            result = asyncio.run(evaluate_async(graph))
+            asyncio.run(workflow_obj.run_async(**params))  # type: ignore[call-arg]
         else:
-            result = evaluate(graph)
-        click.echo("\nPipeline completed successfully!")
-        click.echo(f"Result: {result}")
+            workflow_obj.run(**params)  # type: ignore[call-arg]
+        if verbose:
+            click.echo("\nWorkflow completed successfully!")
     except Exception as e:
-        raise click.ClickException(f"Pipeline execution failed: {e}") from e
+        raise click.ClickException(f"Workflow execution failed: {e}") from e
