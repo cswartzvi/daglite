@@ -55,7 +55,6 @@ class CompositeTaskNode(BaseGraphNode):
 
     @override
     def get_dependencies(self) -> set[UUID]:
-        """External dependencies: union of all links' deps minus internal chain IDs."""
         internal_ids = {step.id for step in self.steps}
         all_deps: set[UUID] = set()
         for step in self.steps:
@@ -69,7 +68,7 @@ class CompositeTaskNode(BaseGraphNode):
         if new_steps is not None or new_output_configs is not None:
             changes: dict[str, Any] = {}
             if new_steps is not None:
-                changes["chain"] = new_steps
+                changes["steps"] = new_steps
             if new_output_configs is not None:
                 changes["output_configs"] = new_output_configs
             return replace(self, **changes)
@@ -79,7 +78,6 @@ class CompositeTaskNode(BaseGraphNode):
     async def execute(
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
-        """Submit the full chain as a single closure to the backend."""
         steps = self.steps
         snapshot = dict(completed_nodes)
 
@@ -88,7 +86,7 @@ class CompositeTaskNode(BaseGraphNode):
         start_time = time.perf_counter()
         hooks.before_composite_execute(
             metadata=self.metadata,
-            chain_length=len(steps),
+            num_steps=len(steps),
         )
 
         try:
@@ -98,7 +96,7 @@ class CompositeTaskNode(BaseGraphNode):
             duration = time.perf_counter() - start_time
             hooks.on_composite_error(
                 metadata=self.metadata,
-                chain_length=len(steps),
+                num_steps=len(steps),
                 error=e,
                 duration=duration,
             )
@@ -107,7 +105,7 @@ class CompositeTaskNode(BaseGraphNode):
         duration = time.perf_counter() - start_time
         hooks.after_composite_execute(
             metadata=self.metadata,
-            chain_length=len(steps),
+            num_steps=len(steps),
             duration=duration,
         )
         return result
@@ -178,10 +176,10 @@ class CompositeMapTaskNode(BaseGraphNode):
             internal_ids.add(self.join_step.id)
         oc_mapping = {k: v for k, v in id_mapping.items() if k not in internal_ids}
 
-        # Remap chain steps
-        new_chain = _remap_steps(self.steps, id_mapping)
-        if new_chain is not None:
-            changes["chain"] = new_chain
+        # Remap steps
+        new_steps = _remap_steps(self.steps, id_mapping)
+        if new_steps is not None:
+            changes["steps"] = new_steps
 
         # Remap source_map
         new_source = self.source_map.remap_references(id_mapping)
@@ -227,7 +225,7 @@ class CompositeMapTaskNode(BaseGraphNode):
         snapshot = dict(completed_nodes)
 
         # Build picklable runners via functools.partial of module-level function
-        def _make_chain_runner(source_fn: Submission, iteration_index: int) -> Submission:
+        def _make_steps_runner(source_fn: Submission, iteration_index: int) -> Submission:
             return functools.partial(
                 _run_composite_map_step,
                 source_fn=source_fn,
@@ -239,19 +237,19 @@ class CompositeMapTaskNode(BaseGraphNode):
         start_time = time.perf_counter()
         hooks.before_composite_execute(
             metadata=self.metadata,
-            chain_length=len(steps) + 1,  # +1 for source map
+            num_steps=len(steps) + 1,  # +1 for source map
         )
 
         try:
             if self.terminal == "reduce" and self.reduce_config is not None:
                 result = await self._execute_reduce(
-                    backend, source_submissions, _make_chain_runner, hooks, completed_nodes
+                    backend, source_submissions, _make_steps_runner, hooks, completed_nodes
                 )
             else:
                 result = await self._execute_batch(
                     backend,
                     source_submissions,
-                    _make_chain_runner,
+                    _make_steps_runner,
                     hooks,
                     iteration_count,
                     snapshot,
@@ -260,7 +258,7 @@ class CompositeMapTaskNode(BaseGraphNode):
             duration = time.perf_counter() - start_time
             hooks.on_composite_error(
                 metadata=self.metadata,
-                chain_length=len(steps) + 1,
+                num_steps=len(steps) + 1,
                 error=e,
                 duration=duration,
             )
@@ -269,7 +267,7 @@ class CompositeMapTaskNode(BaseGraphNode):
         duration = time.perf_counter() - start_time
         hooks.after_composite_execute(
             metadata=self.metadata,
-            chain_length=len(steps) + 1,
+            num_steps=len(steps) + 1,
             duration=duration,
         )
         return result
@@ -422,7 +420,7 @@ class CompositeStep:
     """
 
     external_params: Mapping[str, NodeInput]
-    """Parameters sourced from outside the chain (literals or refs to completed nodes)."""
+    """Parameters sourced from outside the sequence (literals or refs to completed nodes)."""
 
     output_configs: tuple[NodeOutputConfig, ...]
     """Output save/checkpoint configurations for this step."""

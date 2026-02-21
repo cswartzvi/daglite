@@ -300,21 +300,21 @@ class CoordinatorSideNodeSpecs:
     def before_composite_execute(
         self,
         metadata: NodeMetadata,
-        chain_length: int,
+        num_steps: int,
     ) -> None:
         """
         Called before a composite node begins execution.
 
         Args:
             metadata: Metadata for the composite node.
-            chain_length: Number of steps in the composite chain.
+            num_steps: Number of steps in the composite.
         """
 
     @hook_spec
     def after_composite_execute(
         self,
         metadata: NodeMetadata,
-        chain_length: int,
+        num_steps: int,
         duration: float,
     ) -> None:
         """
@@ -322,7 +322,7 @@ class CoordinatorSideNodeSpecs:
 
         Args:
             metadata: Metadata for the executed composite node.
-            chain_length: Number of steps in the composite chain.
+            num_steps: Number of steps in the composite.
             duration: Total execution time in seconds for the composite.
         """
 
@@ -330,7 +330,7 @@ class CoordinatorSideNodeSpecs:
     def on_composite_error(
         self,
         metadata: NodeMetadata,
-        chain_length: int,
+        num_steps: int,
         error: Exception,
         duration: float,
     ) -> None:
@@ -339,7 +339,7 @@ class CoordinatorSideNodeSpecs:
 
         Args:
             metadata: Metadata for the composite node.
-            chain_length: Number of steps in the composite chain.
+            num_steps: Number of steps in the composite.
             error: The exception that was raised.
             duration: Time taken before failure in seconds.
         """

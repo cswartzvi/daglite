@@ -55,12 +55,12 @@ class ReduceNode(BaseGraphNode):
     Reduces a sequence (from an upstream map node) into a single value.
 
     When graph optimization is **enabled**, the optimizer folds this node
-    together with its upstream map chain into a ``CompositeMapTaskNode`` with
-    ``terminal='reduce'``, enabling true streaming accumulation.
+    together with its upstream map chain into a `CompositeMapTaskNode` with
+    `terminal='reduce'`, enabling true streaming accumulation.
 
     When optimization is **disabled**, this node executes as a standalone
-    fallback: it materializes the upstream sequence from ``completed_nodes``
-    and applies ``functools.reduce`` over it.
+    fallback: it materializes the upstream sequence from `completed_nodes`
+    and applies `functools.reduce` over it.
     """
 
     source_id: UUID
