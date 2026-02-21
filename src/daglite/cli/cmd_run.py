@@ -9,34 +9,10 @@ import click
 
 from daglite.cli._shared import parse_settings_overrides
 from daglite.cli._shared import parse_workflow_params
-from daglite.plugins.manager import has_plugin
-from daglite.plugins.manager import register_plugins
+from daglite.cli._shared import setup_cli_plugins
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
 from daglite.workflows import load_workflow
-
-
-def _setup_cli_plugins() -> None:
-    """
-    Auto-register output plugins for CLI runs.
-
-    Prefers daglite-rich (progress bars + rich logging) when installed;
-    falls back to the builtin LifecycleLoggingPlugin.  Skips registration
-    if the user has already registered a compatible plugin.
-    """
-    try:
-        from daglite_rich.logging import RichLifecycleLoggingPlugin
-        from daglite_rich.progress import RichProgressPlugin
-
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(RichLifecycleLoggingPlugin(), RichProgressPlugin())
-    except ImportError:
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(LifecycleLoggingPlugin())
 
 
 @click.command()
@@ -97,7 +73,7 @@ def run(
     except (ValueError, ModuleNotFoundError, AttributeError, TypeError) as e:
         raise click.ClickException(str(e)) from e
 
-    _setup_cli_plugins()
+    setup_cli_plugins()
     params = parse_workflow_params(workflow_obj, param)
 
     # Apply settings overrides
@@ -106,23 +82,10 @@ def run(
     set_global_settings(DagliteSettings(**settings_dict))
 
     # Execute the workflow
-    from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
-
-    verbose = not has_plugin(LifecycleLoggingPlugin)
-    if verbose:
-        click.echo(f"Running workflow: {workflow_obj.name}")
-        if params:
-            click.echo(f"Parameters: {params}")
-        click.echo(f"Backend: {backend}")
-        if parallel:
-            click.echo("Parallel execution: enabled")
-
     try:
         if parallel:
             asyncio.run(workflow_obj.run_async(**params))  # type: ignore[call-arg]
         else:
             workflow_obj.run(**params)  # type: ignore[call-arg]
-        if verbose:
-            click.echo("\nWorkflow completed successfully!")
     except Exception as e:
         raise click.ClickException(f"Workflow execution failed: {e}") from e

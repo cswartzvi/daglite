@@ -8,8 +8,34 @@ from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
 
 import click
 
+from daglite.plugins.manager import has_plugin
+from daglite.plugins.manager import register_plugins
+
 if TYPE_CHECKING:
     from daglite.workflows import Workflow
+
+
+def setup_cli_plugins() -> None:
+    """
+    Auto-register output plugins for CLI runs.
+
+    Prefers daglite-rich (progress bars + rich logging) when installed;
+    falls back to the builtin LifecycleLoggingPlugin.  Skips registration
+    if the user has already registered a compatible plugin.
+    """
+    try:
+        from daglite_rich.logging import RichLifecycleLoggingPlugin
+        from daglite_rich.progress import RichProgressPlugin
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        if not has_plugin(LifecycleLoggingPlugin):
+            register_plugins(RichLifecycleLoggingPlugin(), RichProgressPlugin())
+    except ImportError:
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        if not has_plugin(LifecycleLoggingPlugin):
+            register_plugins(LifecycleLoggingPlugin())
 
 
 def parse_param_value(value: str, param_type: type | None) -> Any:
