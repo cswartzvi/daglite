@@ -43,10 +43,7 @@ async def run_task_worker(
     iteration_index: int | None = None,
 ) -> Any:
     """
-    Execute a task function and persist outputs.
-
-    Worker-side entry point for `TaskNode` and `MapTaskNode`. Combines execution
-    (via `_execute_task`) with output saving in a single picklable call.
+    Execute a task function on a backend worker and persist outputs.
 
     Args:
         func: The task function to execute (sync or async).
@@ -102,9 +99,6 @@ async def load_dataset_worker(
 ) -> Any:
     """
     Load a dataset from a store on the backend worker with lifecycle hooks.
-
-    Worker-side entry point for `DatasetNode`. Handles key-template formatting,
-    context setup, hook calls, and chained output saving.
 
     Args:
         store: The dataset store to load from.
@@ -187,10 +181,7 @@ async def _run_task_func(
     iteration_index: int | None = None,
 ) -> Any:
     """
-    Execute a task function with full lifecycle support.
-
-    Handles context setup, caching, retries, generator materialization, and hook calls.
-    Does **not** persist outputs — use `run_task_worker` for the common execute-then-save path.
+    Execute a task function on a backend worker with full lifecycle support.
 
     Args:
         func: The task function to execute (sync or async).
@@ -274,6 +265,7 @@ async def _run_task_func(
                 # Materialize async generators/iterators to lists
                 if isinstance(result, (AsyncGenerator, AsyncIterator)):
                     result = [item async for item in result]
+
                 # Materialize sync generators/iterators to lists
                 elif isinstance(result, (Generator, Iterator)) and not isinstance(
                     result, (str, bytes)
@@ -350,16 +342,15 @@ def _save_outputs(
     """
     Save task outputs via the dataset reporter or directly.
 
-    For each output config the store is resolved (explicit store on the config,
-    or the settings-level default).  Routing then depends on the driver's
-    locality:
+    For each output config the store is resolved (explicit store on the config, or the
+    settings-level default). Routing then depends on the driver's locality:
 
-    * **Local drivers** (filesystem, SQLite) – save through the
-      ``DatasetReporter`` so that the coordinator process performs the write.
-    * **Remote drivers** (S3, GCS, …) – save directly from the worker since
+    * **Local drivers** (filesystem, SQLite) - save through the
+      `DatasetReporter` so that the coordinator process performs the write.
+    * **Remote drivers** (S3, GCS, …) - save directly from the worker since
       the remote store is accessible everywhere.
 
-    Exceptions are **not** caught – a failed save fails the task.
+    Exceptions are **not** caught - a failed save fails the task.
 
     Args:
         result: The task execution result to save.
