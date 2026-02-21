@@ -165,8 +165,6 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         dataset_processor.start()
 
         await _execute_graph(state, backend_manager, plugin_manager.hook)
-
-        # Finalize state and results
         result = state.get_result(future.id)
 
         duration = time.perf_counter() - start_time
@@ -224,8 +222,6 @@ async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | No
         dataset_processor.start()
 
         await _execute_graph(state, backend_manager, plugin_manager.hook)
-
-        # Build workflow result from all sink nodes
         results = {f.id: state.get_result(f.id) for f in futures}
         result = WorkflowResult._build(results, name_for)
 
