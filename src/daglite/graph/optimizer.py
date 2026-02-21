@@ -171,6 +171,7 @@ def _fold_map_chains(
             join_node = nodes[mc.join_id]
             assert isinstance(join_node, TaskNode)
             flow_param = _identify_flow_param(join_node.kwargs, tail_id)
+            assert flow_param is not None, "join terminal must consume upstream mapped output"
             join_link = _build_chain_link(join_node, flow_param, tail_id)
             tail_id = mc.join_id
 
@@ -494,8 +495,10 @@ def _find_map_chains(
                 and term_id not in visited
                 and _effective_backend(term_node) == map_backend
             ):
-                # Potential .join() — the task takes the map's list output
-                join_id = term_id
+                flow_param = _identify_flow_param(term_node.kwargs, current)
+                if flow_param is not None:
+                    # Potential .join() — the task takes the map's list output
+                    join_id = term_id
 
         # A chain is valid if there's at least one .then() node, or a terminal
         if then_chain or reduce_id is not None or join_id is not None:
