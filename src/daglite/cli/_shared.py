@@ -31,7 +31,7 @@ def setup_cli_plugins() -> None:
 
         if not has_plugin(LifecycleLoggingPlugin):
             register_plugins(RichLifecycleLoggingPlugin(), RichProgressPlugin())
-    except ImportError:
+    except ImportError:  # pragma: no cover – only reached when daglite-rich is not installed
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         if not has_plugin(LifecycleLoggingPlugin):

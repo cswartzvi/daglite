@@ -3,6 +3,7 @@ from __future__ import annotations
 import click
 
 import daglite
+from daglite.cli.cmd_list import list_workflows
 from daglite.cli.cmd_run import run
 
 
@@ -14,3 +15,4 @@ def cli(ctx: click.Context) -> None:
 
 
 cli.add_command(run)
+cli.add_command(list_workflows)

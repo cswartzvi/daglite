@@ -357,3 +357,61 @@ class TestBuildGraphMulti:
         assert shared.id in nodes
         assert a.id in nodes
         assert b.id in nodes
+
+
+class TestGetTypedParams:
+    """Tests for Workflow.get_typed_params() and Workflow.has_typed_params()."""
+
+    def test_typed_params_resolved(self):
+        """Parameters with standard type annotations are returned as real types."""
+
+        @workflow
+        def wf(x: int, y: str, z: float) -> None:  # pragma: no cover
+            pass
+
+        assert wf.get_typed_params() == {"x": int, "y": str, "z": float}
+
+    def test_untyped_params_return_none(self):
+        """Parameters without annotations map to None."""
+
+        @workflow
+        def wf(x, y):  # noqa: ANN001  # pragma: no cover
+            pass
+
+        assert wf.get_typed_params() == {"x": None, "y": None}
+
+    def test_get_type_hints_failure_falls_back_to_none(self):
+        """
+        When get_type_hints raises (e.g. an unresolvable forward reference) every
+        parameter falls back to None so the CLI can still run with string values.
+        """
+
+        def _bad_func(x: NonExistentType) -> None:  # type: ignore[name-defined]  # pragma: no cover  # noqa: F821
+            pass
+
+        # Directly construct a Workflow with the broken function so we can call
+        # get_typed_params() without going through the decorator magic.
+        wf = Workflow(func=_bad_func, name="bad", description="")
+        result = wf.get_typed_params()
+        assert result == {"x": None}
+
+    def test_has_typed_params_true(self):
+        @workflow
+        def wf(x: int) -> None:  # pragma: no cover
+            pass
+
+        assert wf.has_typed_params() is True
+
+    def test_has_typed_params_false(self):
+        @workflow
+        def wf(x) -> None:  # noqa: ANN001  # pragma: no cover
+            pass
+
+        assert wf.has_typed_params() is False
+
+    def test_has_typed_params_mixed_returns_false(self):
+        @workflow
+        def wf(x: int, y) -> None:  # noqa: ANN001  # pragma: no cover
+            pass
+
+        assert wf.has_typed_params() is False

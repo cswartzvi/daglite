@@ -71,3 +71,16 @@ def failing_workflow(x: int):
 def empty_workflow():
     """A workflow with no parameters for testing output branches."""
     return add(x=1, y=2)
+
+
+@workflow
+def verbose_workflow():
+    """
+    This is a workflow with a very long description that exceeds the display column limit and
+    should be truncated when listed."""
+    return add(x=1, y=2)
+
+
+@workflow
+def no_description_workflow():
+    return add(x=1, y=2)

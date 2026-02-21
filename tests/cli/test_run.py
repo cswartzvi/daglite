@@ -113,6 +113,18 @@ class TestRunCommand:
         assert "Missing required parameters" in result.output
         assert "y" in result.output
 
+    def test_run_workflow_with_invalid_param_value(self):
+        """Test running with a value that can't be converted to the parameter's type."""
+        runner = CliRunner()
+        # 'x' expects int but "notanumber" can't be converted
+        result = runner.invoke(
+            cli,
+            ["run", "tests.examples.workflows.math_workflow", "--param", "x=notanumber"],
+        )
+        assert result.exit_code != 0
+        assert "Invalid value for parameter" in result.output
+        assert "notanumber" in result.output
+
     def test_run_workflow_with_invalid_param_format(self):
         """Test running with invalid parameter format."""
         runner = CliRunner()
@@ -359,6 +371,25 @@ class TestRunCommand:
         assert result.exit_code == 0
         # The warning goes to stderr, but click captures it
         # We can check that it ran successfully
+
+
+class TestSetupCliPlugins:
+    """Tests for setup_cli_plugins() in _shared.py."""
+
+    def test_skips_registration_when_plugin_already_present(self):
+        """Calling setup_cli_plugins twice must not re-register the plugin."""
+        from daglite.cli._shared import setup_cli_plugins
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+        from daglite.plugins.manager import has_plugin
+        from daglite.plugins.manager import register_plugins
+
+        # Pre-register a lifecycle plugin so setup_cli_plugins should skip.
+        register_plugins(LifecycleLoggingPlugin())
+        assert has_plugin(LifecycleLoggingPlugin)
+
+        # Must be a no-op — no error and still exactly one instance registered.
+        setup_cli_plugins()
+        assert has_plugin(LifecycleLoggingPlugin)
 
 
 class TestParseParamValue:
