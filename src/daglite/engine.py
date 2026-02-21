@@ -16,10 +16,12 @@ if TYPE_CHECKING:
     from daglite.datasets.processor import DatasetProcessor
     from daglite.graph.builder import NodeBuilder
     from daglite.plugins.processor import EventProcessor
+    from daglite.workflows import WorkflowResult
 else:
     NodeBuilder = Any
     DatasetProcessor = Any
     EventProcessor = Any
+    WorkflowResult = Any
 
 
 from daglite.backends import BackendManager
@@ -186,7 +188,9 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     return result
 
 
-async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
+async def evaluate_workflow_async(
+    futures: list[Any], *, plugins: list[Any] | None = None
+) -> WorkflowResult:
     """
     Evaluate multiple task futures as a single workflow asynchronously.
 
