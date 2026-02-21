@@ -135,10 +135,23 @@ class Workflow(Generic[P]):
         if isinstance(raw, BaseTaskFuture):
             return [raw]
         if isinstance(raw, (tuple, list)):
-            return list(raw)
+            futures = list(raw)
+            if not futures:
+                raise TypeError(
+                    "@workflow function must return one or more BaseTaskFuture "
+                    "objects; received an empty tuple/list."
+                )
+            for idx, item in enumerate(futures):
+                if not isinstance(item, BaseTaskFuture):
+                    raise TypeError(
+                        "@workflow function must return only BaseTaskFuture objects; "
+                        f"element at index {idx} has invalid type "
+                        f"{type(item).__name__!r}."
+                    )
+            return futures
         raise TypeError(
-            f"@workflow function must return a BaseTaskFuture or a tuple/list of them, "
-            f"got {type(raw).__name__!r}"
+            "@workflow function must return a BaseTaskFuture or a non-empty "
+            f"tuple/list of them, got {type(raw).__name__!r}."
         )
 
     def run(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:

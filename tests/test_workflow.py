@@ -6,6 +6,7 @@ Tests in this file should NOT focus on evaluation. Evaluation tests are in tests
 
 from __future__ import annotations
 
+from uuid import UUID
 from uuid import uuid4
 
 import pytest
@@ -13,6 +14,7 @@ import pytest
 from daglite import task
 from daglite import workflow
 from daglite.exceptions import AmbiguousResultError
+from daglite.exceptions import GraphError
 from daglite.graph.builder import build_graph_multi
 from daglite.workflow_result import WorkflowResult
 from daglite.workflows import Workflow
@@ -117,6 +119,19 @@ class TestCollectFutures:
     def test_invalid_string_raises_type_error(self):
         with pytest.raises(TypeError, match="str"):
             self.wf._collect_futures("not_a_future")
+
+    def test_empty_list_raises(self):
+        with pytest.raises(TypeError, match="empty"):
+            self.wf._collect_futures([])
+
+    def test_empty_tuple_raises(self):
+        with pytest.raises(TypeError, match="empty"):
+            self.wf._collect_futures(())
+
+    def test_list_with_non_future_element_raises(self):
+        future = add(x=1, y=2)
+        with pytest.raises(TypeError, match="index 1"):
+            self.wf._collect_futures([future, 42])
 
 
 class TestWorkflowResult:
@@ -284,3 +299,47 @@ class TestBuildGraphMulti:
         assert shared.id in nodes
         assert sink_a.id in nodes
         assert sink_b.id in nodes
+
+    def test_duplicate_root_does_not_raise(self):
+        """Passing the same future twice must not trigger a false cycle error."""
+        future = add(x=1, y=2)
+        nodes = build_graph_multi([future, future])
+        assert len(nodes) == 1
+        assert future.id in nodes
+
+    def test_circular_dependency_raises(self):
+        """A genuine cycle in the builder graph must raise GraphError."""
+
+        class FakeNode:
+            def __init__(self, node_id: UUID, upstreams: list) -> None:
+                self.id = node_id
+                self._upstreams = upstreams
+
+            def get_upstream_builders(self) -> list:
+                return self._upstreams
+
+            def build_node(self) -> None:  # pragma: no cover
+                raise NotImplementedError
+
+        a = FakeNode(uuid4(), [])
+        b = FakeNode(uuid4(), [a])
+        a._upstreams = [b]  # a -> b -> a
+
+        with pytest.raises(GraphError, match="Circular dependency"):
+            build_graph_multi([a])  # type: ignore
+
+    def test_shared_ancestor_visited_once(self):
+        """A diamond graph (b→a→shared, b→shared) must not duplicate nodes."""
+        # b's upstreams are [a, shared]; a's upstream is [shared].
+        # This forces 'shared' onto the DFS stack twice; the guard on
+        # line 68 (``continue``) discards the redundant pop.
+        shared = double(x=5)
+        a = negate(x=shared)
+        b = add(x=a, y=shared)
+
+        nodes = build_graph_multi([b])
+
+        assert len(nodes) == 3
+        assert shared.id in nodes
+        assert a.id in nodes
+        assert b.id in nodes
