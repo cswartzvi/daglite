@@ -368,7 +368,7 @@ class TestErrorCases:
 
         value = double(x=5)
 
-        with pytest.raises(Exception, match="exactly one"):
+        with pytest.raises(Exception, match="exactly 1"):
             value.then(two_params)
 
     def test_then_with_fixed_param_task(self) -> None:

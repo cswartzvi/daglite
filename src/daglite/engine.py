@@ -9,12 +9,15 @@ from typing import TYPE_CHECKING, Any
 from uuid import UUID
 from uuid import uuid4
 
+from pluggy import HookRelay
 from pluggy import PluginManager
 
 if TYPE_CHECKING:
     from daglite.datasets.processor import DatasetProcessor
+    from daglite.graph.builder import NodeBuilder
     from daglite.plugins.processor import EventProcessor
 else:
+    NodeBuilder = Any
     DatasetProcessor = Any
     EventProcessor = Any
 
@@ -31,9 +34,8 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    This is the internal implementation backing `TaskFuture.run()`. It creates an event loop
-    internally via `asyncio.run()`, so it **cannot** be called from within an async context. In
-    those cases, use `_evaluate_async()` instead.
+    Important: This function creates an event loop internally via `asyncio.run()`, so it **cannot**
+    be called from within an async context. In those cases, use `evaluate_async()` instead.
 
     Args:
         future: Task future that will be evaluated.
@@ -87,10 +89,9 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     """
     Evaluate the results of a task future via asynchronous execution.
 
-    This is the internal implementation backing `TaskFuture.run_async()`. The future can contain
-    any combination of sync and async task futures, and the engine will execute them in an
-    async-first manner. Sibling tasks can be executed concurrently if they use an async coroutine
-    and/or an async-capable backend (e.g., threading or process).
+    The task future can contain any combination of sync and async task futures, and the engine will
+    execute them in an async-first manner. Sibling tasks can be executed concurrently if they use
+    an async coroutine and/or an async-capable backend (e.g., threading or process).
 
     Args:
         future: Task future that will be evaluated.
@@ -123,15 +124,14 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         raise RuntimeError("Cannot call evaluate()/evaluate_async() from within another task.")
 
     graph_id = uuid4()
-    nodes = build_graph(future)
-    state = _ExecutionState.from_nodes(nodes)
+    state = _setup_graph_execution_state(future)
 
     plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
     dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
     backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
 
     hook_ids = {"graph_id": graph_id, "root_id": future.id}
-    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(nodes))
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
 
     start_time = time.perf_counter()
     try:
@@ -142,13 +142,14 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
         nodes_to_process = state.get_source_nodes()
 
         while nodes_to_process:
-            # Submit all ready siblings via polymorphic node.execute()
+            # Submit all ready siblings
             tasks: dict[asyncio.Task[Any], UUID] = {}
             for nid in nodes_to_process:
                 node = state.nodes[nid]
                 backend = backend_manager.get(node.backend_name)
                 coro = node.execute(backend, state.completed_nodes, plugin_manager.hook)
-                tasks[asyncio.create_task(coro)] = nid
+                task = asyncio.create_task(coro)
+                tasks[task] = nid
 
             # Wait for completion, returning early on first exception for fail-fast
             done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_EXCEPTION)
@@ -161,17 +162,20 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
                     result = task.result()
                     nodes_to_process.extend(state.mark_complete(nid, result))
             except Exception:
-                for t in pending:  # pragma: no cover
+                for t in pending:  # pragma: no cover - difficult to simulate
                     t.cancel()
                 await asyncio.gather(*tasks.keys(), return_exceptions=True)
                 raise
 
+        # Finalize state and results
         state.check_complete()
-        result = state.completed_nodes[future.id]
+        result = state.get_result(future.id)
         duration = time.perf_counter() - start_time
 
-        event_processor.flush()  # Drain event queue before after_graph_execute
+        # Flush any remaining events/dataset processors
+        event_processor.flush()
         dataset_processor.flush()
+
         plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)
 
     except Exception as e:
@@ -187,17 +191,24 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     return result
 
 
+def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
+    """Builds the graph execution state, including graph optimization if enabled."""
+    from daglite.graph.optimizer import optimize_graph
+    from daglite.settings import get_global_settings
+
+    nodes = build_graph(future)
+    settings = get_global_settings()
+
+    id_mapping: dict[UUID, UUID] = {}
+    if settings.enable_graph_optimization:
+        nodes, id_mapping = optimize_graph(nodes)
+
+    state = _ExecutionState.from_nodes(nodes, id_mapping)
+    return state
+
+
 def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProcessor]:
-    """
-    Sets up plugin system (manager, processor, registry) for this engine.
-
-    Args:
-        plugins: List of plugin implementations to use for this execution. These are combined
-            with any globally registered plugins.
-
-    Returns:
-        Tuple of (PluginManager, EventProcessor) initialized with the appropriate registry.
-    """
+    """Sets up plugin system (manager, processor, registry) for this engine."""
     from daglite.plugins.manager import build_plugin_manager
     from daglite.plugins.processor import EventProcessor
     from daglite.plugins.registry import EventRegistry
@@ -208,24 +219,13 @@ def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProces
     return plugin_manager, event_processor
 
 
-def _setup_dataset_processor(hook: Any = None) -> "DatasetProcessor":
-    """
-    Create a ``DatasetProcessor`` for draining queue-based dataset saves.
-
-    Always created regardless of whether any nodes have output configs.
-    An idle processor is just a sleeping daemon thread with zero overhead,
-    matching how the ``EventProcessor`` is unconditionally started.
-
-    Args:
-        hook: Optional pluggy ``HookRelay`` forwarded to the processor so
-            that ``before_dataset_save`` / ``after_dataset_save`` hooks can
-            fire on the coordinator's daemon thread.
-
-    Returns:
-        A ``DatasetProcessor`` instance.
-    """
+def _setup_dataset_processor(hook: HookRelay | None = None) -> DatasetProcessor:
+    """Creates a `DatasetProcessor` for draining queue-based dataset saves."""
     from daglite.datasets.processor import DatasetProcessor
 
+    # Always created regardless of whether any nodes have output configs.
+    # An idle processor is just a sleeping daemon thread with zero overhead,
+    # matching how the `EventProcessor` is unconditionally started.
     return DatasetProcessor(hook=hook)
 
 
@@ -253,8 +253,13 @@ class _ExecutionState:
     completed_nodes: dict[UUID, Any]
     """Results of completed node executions."""
 
+    id_mapping: dict[UUID, UUID]
+    """Maps original folded node IDs to their composite node IDs."""
+
     @classmethod
-    def from_nodes(cls, nodes: dict[UUID, BaseGraphNode]) -> _ExecutionState:
+    def from_nodes(
+        cls, nodes: dict[UUID, BaseGraphNode], id_mapping: dict[UUID, UUID] | None = None
+    ) -> _ExecutionState:
         """
         Build execution state from a graph node dictionary.
 
@@ -263,6 +268,8 @@ class _ExecutionState:
 
         Args:
             nodes: Mapping from node IDs to GraphNode instances.
+            id_mapping: Optional mapping from original folded node IDs to
+                composite node IDs (from the graph optimizer).
 
         Returns:
             Initialized ExecutionState instance.
@@ -282,7 +289,13 @@ class _ExecutionState:
             indegree=indegree,
             successors=dict(successors),
             completed_nodes={},
+            id_mapping=id_mapping or {},
         )
+
+    def get_result(self, node_id: UUID) -> Any:
+        """Resolves a node result, accounting for any ID remapping from graph optimization."""
+        resolved = self.id_mapping.get(node_id, node_id)
+        return self.completed_nodes[resolved]
 
     def get_source_nodes(self) -> list[UUID]:
         """Gets all nodes with no remaining dependencies (source nodes)."""

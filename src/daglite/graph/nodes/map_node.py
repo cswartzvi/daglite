@@ -1,10 +1,13 @@
 """Map task node representation within the graph IR."""
 
+from __future__ import annotations
+
 import asyncio
 import functools
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import replace
 from itertools import product
 from typing import Any, Callable
 from uuid import UUID
@@ -17,17 +20,18 @@ from daglite.backends.base import Backend
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
 from daglite.graph.nodes._shared import collect_dependencies
+from daglite.graph.nodes._shared import remap_node_changes
 from daglite.graph.nodes._shared import resolve_inputs
 from daglite.graph.nodes._shared import resolve_output_parameters
-from daglite.graph.nodes._workers import run_task
-from daglite.graph.nodes.base import BaseGraphNode
+from daglite.graph.nodes._workers import run_task_worker
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeKind
+from daglite.graph.nodes.base import PrepareCollectNode
 from daglite.graph.nodes.base import Submission
 
 
 @dataclass(frozen=True)
-class MapTaskNode(BaseGraphNode):
+class MapTaskNode(PrepareCollectNode):
     """Map function task node representation within the graph IR."""
 
     func: Callable
@@ -68,6 +72,16 @@ class MapTaskNode(BaseGraphNode):
         return collect_dependencies(kwargs, self.output_configs)
 
     @override
+    def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> MapTaskNode:
+        changes = remap_node_changes(
+            id_mapping,
+            self.output_configs,
+            fixed_kwargs=self.fixed_kwargs,
+            mapped_kwargs=self.mapped_kwargs,
+        )
+        return replace(self, **changes) if changes else self
+
+    @override
     def _prepare(self, completed_nodes: Mapping[UUID, Any]) -> list[Submission]:
         inputs = resolve_inputs({**self.fixed_kwargs, **self.mapped_kwargs}, completed_nodes)
         iteration_calls = self.build_iteration_calls(inputs)
@@ -75,7 +89,7 @@ class MapTaskNode(BaseGraphNode):
         submissions: list[Submission] = []
         for idx, iteration_call in enumerate(iteration_calls):
             submission = functools.partial(
-                run_task,
+                run_task_worker,
                 func=self.func,
                 metadata=self.metadata,
                 inputs=iteration_call,

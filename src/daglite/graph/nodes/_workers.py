@@ -1,9 +1,13 @@
 """
 Worker-side execution functions for graph nodes.
 
-These functions run on the backend worker (inline, thread, or process) and handle
-context setup, hook calls, retries, caching, generator materialization, and output saving.
+These functions run on the backend worker (inline, thread, or process) and handle context setup,
+hook calls, retries, caching, generator materialization, and output saving.
 """
+
+# NOTE Functions should be defined at module level to be picklable for process backends.
+
+from __future__ import annotations
 
 import inspect
 import time
@@ -26,7 +30,7 @@ from daglite.graph.nodes.base import NodeOutputConfig
 _DIRECT_REPORTER = DirectDatasetReporter()
 
 
-async def run_task(
+async def run_task_worker(
     func: Callable[..., Any],
     metadata: NodeMetadata,
     inputs: dict[str, Any],
@@ -39,10 +43,7 @@ async def run_task(
     iteration_index: int | None = None,
 ) -> Any:
     """
-    Execute a task function on the backend worker with full lifecycle support.
-
-    Handles context setup, caching, retries, generator materialization, hook calls,
-    and output saving.
+    Execute a task function on a backend worker and persist outputs.
 
     Args:
         func: The task function to execute (sync or async).
@@ -50,6 +51,142 @@ async def run_task(
         inputs: Dictionary of resolved input values for the function execution.
         output_configs: Output configuration tuple for this node.
         output_parameters: List of resolved output parameters for each output config.
+        retries: Number of times to retry on failure.
+        cache_enabled: Whether caching is enabled for this node.
+        cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        key_extras: Additional variables for key formatting.
+        iteration_index: Optional index for map iterations, used for metadata key formatting.
+
+    Returns:
+        Result of the function execution.
+    """
+    # Build effective key_extras once, including iteration_index when present,
+    # so both _run_task_func and _save_outputs see the same variables.
+    effective_extras = dict(key_extras) if key_extras else {}
+    if iteration_index is not None:
+        effective_extras["iteration_index"] = iteration_index
+
+    result = await _run_task_func(
+        func=func,
+        metadata=metadata,
+        inputs=inputs,
+        retries=retries,
+        cache_enabled=cache_enabled,
+        cache_ttl=cache_ttl,
+        key_extras=effective_extras,
+        iteration_index=iteration_index,
+    )
+    _save_outputs(
+        result=result,
+        resolved_inputs=inputs,
+        output_config=output_configs,
+        output_deps=output_parameters,
+        key_extras=effective_extras,
+    )
+    return result
+
+
+async def load_dataset_worker(
+    store: DatasetStore,
+    load_key: str,
+    return_type: type | None,
+    load_format: str | None,
+    load_options: dict[str, Any],
+    metadata: NodeMetadata,
+    resolved_inputs: dict[str, Any],
+    output_configs: tuple[NodeOutputConfig, ...],
+    output_parameters: list[dict[str, Any]],
+) -> Any:
+    """
+    Load a dataset from a store on the backend worker with lifecycle hooks.
+
+    Args:
+        store: The dataset store to load from.
+        load_key: Storage key template (may contain ``{param}`` placeholders).
+        return_type: Expected Python type for deserialization dispatch.
+        load_format: Explicit serialization format hint.
+        load_options: Additional options forwarded to the Dataset constructor.
+        metadata: Metadata for the node being executed.
+        resolved_inputs: Resolved inputs for key-template formatting.
+        output_configs: Output configuration tuple for this node.
+        output_parameters: Resolved output parameters for each output config.
+
+    Returns:
+        The deserialized dataset value.
+    """
+    from dataclasses import replace as dc_replace
+
+    # Format the key template with resolved dependency values
+    try:
+        key = load_key.format(**resolved_inputs)
+    except KeyError as e:
+        available = sorted(resolved_inputs.keys())
+        raise ValueError(
+            f"Dataset key template '{load_key}' references {e} "
+            f"which is not available.\n"
+            f"Available variables: {', '.join(available)}"
+        ) from e
+
+    node_metadata = dc_replace(metadata, key=metadata.name)
+    token = set_current_task(node_metadata)
+
+    try:
+        hook = get_plugin_manager().hook
+        hook.before_dataset_load(
+            key=key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+        )
+
+        start_time = time.time()
+        result = store.load(
+            key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+        )
+        duration = time.time() - start_time
+
+        hook.after_dataset_load(
+            key=key,
+            return_type=return_type,
+            format=load_format,
+            options=load_options or None,
+            result=result,
+            duration=duration,
+        )
+
+        # Save outputs if chained via .save()
+        _save_outputs(
+            result=result,
+            resolved_inputs=resolved_inputs,
+            output_config=output_configs,
+            output_deps=output_parameters,
+        )
+
+        return result
+    finally:
+        reset_current_task(token)
+
+
+async def _run_task_func(
+    func: Callable[..., Any],
+    metadata: NodeMetadata,
+    inputs: dict[str, Any],
+    retries: int = 0,
+    cache_enabled: bool = False,
+    cache_ttl: int | None = None,
+    key_extras: dict[str, Any] | None = None,
+    iteration_index: int | None = None,
+) -> Any:
+    """
+    Execute a task function on a backend worker with full lifecycle support.
+
+    Args:
+        func: The task function to execute (sync or async).
+        metadata: Metadata for the node being executed.
+        inputs: Dictionary of resolved input values for the function execution.
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
@@ -128,6 +265,7 @@ async def run_task(
                 # Materialize async generators/iterators to lists
                 if isinstance(result, (AsyncGenerator, AsyncIterator)):
                     result = [item async for item in result]
+
                 # Materialize sync generators/iterators to lists
                 elif isinstance(result, (Generator, Iterator)) and not isinstance(
                     result, (str, bytes)
@@ -158,15 +296,6 @@ async def run_task(
                     result=result,
                     cache_enabled=cache_enabled,
                     cache_ttl=cache_ttl,
-                )
-
-                # Save outputs via dataset reporter if configured
-                save_outputs(
-                    result=result,
-                    resolved_inputs=inputs,
-                    output_config=output_configs,
-                    output_deps=output_parameters,
-                    key_extras=key_extras or {},
                 )
 
                 return result
@@ -203,93 +332,7 @@ async def run_task(
         reset_current_task(token)
 
 
-async def run_dataset_load(
-    store: DatasetStore,
-    load_key: str,
-    return_type: type | None,
-    load_format: str | None,
-    load_options: dict[str, Any],
-    metadata: NodeMetadata,
-    resolved_inputs: dict[str, Any],
-    output_configs: tuple[NodeOutputConfig, ...],
-    output_parameters: list[dict[str, Any]],
-) -> Any:
-    """
-    Load a dataset from a store on the backend worker with lifecycle hooks.
-
-    Handles key-template formatting, context setup, hook calls, and chained output saving.
-
-    Args:
-        store: The dataset store to load from.
-        load_key: Storage key template (may contain ``{param}`` placeholders).
-        return_type: Expected Python type for deserialization dispatch.
-        load_format: Explicit serialization format hint.
-        load_options: Additional options forwarded to the Dataset constructor.
-        metadata: Metadata for the node being executed.
-        resolved_inputs: Resolved inputs for key-template formatting.
-        output_configs: Output configuration tuple for this node.
-        output_parameters: Resolved output parameters for each output config.
-
-    Returns:
-        The deserialized dataset value.
-    """
-    from dataclasses import replace as dc_replace
-
-    # Format the key template with resolved dependency values
-    try:
-        key = load_key.format(**resolved_inputs)
-    except KeyError as e:
-        available = sorted(resolved_inputs.keys())
-        raise ValueError(
-            f"Dataset key template '{load_key}' references {e} "
-            f"which is not available.\n"
-            f"Available variables: {', '.join(available)}"
-        ) from e
-
-    node_metadata = dc_replace(metadata, key=metadata.name)
-    token = set_current_task(node_metadata)
-
-    try:
-        hook = get_plugin_manager().hook
-        hook.before_dataset_load(
-            key=key,
-            return_type=return_type,
-            format=load_format,
-            options=load_options or None,
-        )
-
-        start_time = time.time()
-        result = store.load(
-            key,
-            return_type=return_type,
-            format=load_format,
-            options=load_options or None,
-        )
-        duration = time.time() - start_time
-
-        hook.after_dataset_load(
-            key=key,
-            return_type=return_type,
-            format=load_format,
-            options=load_options or None,
-            result=result,
-            duration=duration,
-        )
-
-        # Save outputs if chained via .save()
-        save_outputs(
-            result=result,
-            resolved_inputs=resolved_inputs,
-            output_config=output_configs,
-            output_deps=output_parameters,
-        )
-
-        return result
-    finally:
-        reset_current_task(token)
-
-
-def save_outputs(
+def _save_outputs(
     result: Any,
     resolved_inputs: dict[str, Any],
     output_config: tuple[NodeOutputConfig, ...],
@@ -299,16 +342,15 @@ def save_outputs(
     """
     Save task outputs via the dataset reporter or directly.
 
-    For each output config the store is resolved (explicit store on the config,
-    or the settings-level default).  Routing then depends on the driver's
-    locality:
+    For each output config the store is resolved (explicit store on the config, or the
+    settings-level default). Routing then depends on the driver's locality:
 
-    * **Local drivers** (filesystem, SQLite) – save through the
-      ``DatasetReporter`` so that the coordinator process performs the write.
-    * **Remote drivers** (S3, GCS, …) – save directly from the worker since
+    * **Local drivers** (filesystem, SQLite) - save through the
+      `DatasetReporter` so that the coordinator process performs the write.
+    * **Remote drivers** (S3, GCS, …) - save directly from the worker since
       the remote store is accessible everywhere.
 
-    Exceptions are **not** caught – a failed save fails the task.
+    Exceptions are **not** caught - a failed save fails the task.
 
     Args:
         result: The task execution result to save.
@@ -346,7 +388,7 @@ def save_outputs(
         format_vars = {**resolved_inputs, **output_deps[idx], **key_extras}
         try:
             key = config.key.format(**format_vars)
-        except KeyError as e:
+        except KeyError as e:  # pragma: no cover – check_key_placeholders at build time
             available = sorted(format_vars.keys())
             raise ValueError(
                 f"Output key template '{config.key}' references {e} which is not available.\n"

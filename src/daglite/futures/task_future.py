@@ -18,7 +18,7 @@ from daglite._typing import MapMode
 from daglite._validation import check_invalid_map_params
 from daglite._validation import check_invalid_params
 from daglite._validation import check_overlap_params
-from daglite._validation import get_unbound_param
+from daglite._validation import get_unbound_params
 from daglite.exceptions import DagliteError
 from daglite.exceptions import ParameterError
 from daglite.futures._shared import build_node_inputs
@@ -208,7 +208,7 @@ class TaskFuture(BaseTaskFuture[R]):
             all_fixed = kwargs
             actual_task = next_task
 
-        unbound_param = get_unbound_param(actual_task.signature, all_fixed, actual_task.name)
+        unbound_param = get_unbound_params(actual_task.signature, all_fixed, actual_task.name)
         return actual_task(**{unbound_param: self}, **all_fixed)
 
     def then_map(
@@ -285,7 +285,7 @@ class TaskFuture(BaseTaskFuture[R]):
                 )
 
         merged = {**all_fixed, **mapped_kwargs}
-        unbound_param = get_unbound_param(actual_task.signature, merged, actual_task.name)
+        unbound_param = get_unbound_params(actual_task.signature, merged, actual_task.name)
 
         # Scalar broadcasting: self goes in fixed_kwargs, not mapped_kwargs
         all_fixed = {**all_fixed, unbound_param: self}

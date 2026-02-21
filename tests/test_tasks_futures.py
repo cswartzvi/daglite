@@ -721,7 +721,7 @@ class TestFluentAPIErrors:
 
         prepared = prepare(data=10)
 
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.then(add)
 
     def test_task_map_with_invalid_signature(self) -> None:
@@ -736,7 +736,7 @@ class TestFluentAPIErrors:
             return a + b
 
         prepared = prepare.map(data=[1, 2, 3])
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.then(mapping)
 
     def test_task_map_with_kwargs(self) -> None:
@@ -767,7 +767,7 @@ class TestFluentAPIErrors:
             return x + y + z
 
         prepared = prepare.map(data=[1, 2, 3])
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.then(add, z=5)
 
     def test_task_map_with_overlapping_kwargs(self) -> None:
@@ -819,7 +819,7 @@ class TestFluentAPIErrors:
 
         prepared = prepare.map(data=[1, 2, 3])
         mapped = prepared.then(mapping)
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             mapped.join(joining)
 
     def test_task_join_with_kwargs_multiple_unbound(self) -> None:
@@ -834,7 +834,7 @@ class TestFluentAPIErrors:
             return sum(xs) + y + z
 
         prepared = prepare.map(data=[1, 2, 3])
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.join(reduce_three, z=5)
 
     def test_task_join_with_overlapping_kwargs(self) -> None:
@@ -871,7 +871,7 @@ class TestPartialTaskErrors:
         prepared = prepare(data=10)
         fixed_add = add.partial(z=20)
 
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.then(fixed_add)
 
     def test_partial_task_then_with_no_unbound_params(self) -> None:
@@ -921,7 +921,7 @@ class TestPartialTaskErrors:
 
         prepared = prepare.map(data=[1, 2, 3])
         fixed_mapping = mapping.partial(c=20)
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             prepared.then(fixed_mapping)
 
     def test_partial_task_join_with_invalid_signature(self) -> None:
@@ -942,7 +942,7 @@ class TestPartialTaskErrors:
         prepared = prepare.map(data=[1, 2, 3])
         mapped = prepared.then(mapping)
         fixed_joining = joining.partial(c=10)
-        with pytest.raises(ParameterError, match="must have exactly one unbound parameter"):
+        with pytest.raises(ParameterError, match="must have exactly 1 unbound parameter"):
             mapped.join(fixed_joining)
 
 

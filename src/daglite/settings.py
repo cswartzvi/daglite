@@ -53,6 +53,20 @@ class DagliteSettings:
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
     """
 
+    enable_graph_optimization: bool = field(
+        default_factory=lambda: _env_get_bool("DAGLITE_ENABLE_GRAPH_OPTIMIZATION", True)
+    )
+    """
+    Enable graph optimization passes (e.g., composite node folding).
+
+    When enabled, linear sequences of nodes sharing the same backend are folded into composite nodes
+    for reduced submission overhead. Disable for debugging or when exact per-node scheduling control
+    is needed.
+
+    Can be set via DAGLITE_ENABLE_GRAPH_OPTIMIZATION environment variable (1/true/yes to enable,
+    0/false/no to disable). Defaults to True.
+    """
+
     datastore_store: str | DatasetStore = field(
         default_factory=lambda: os.getenv("DAGLITE_DATASTORE_STORE") or "."
     )
