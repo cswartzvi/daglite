@@ -28,14 +28,14 @@ from daglite.graph.builder import build_graph
 from daglite.graph.builder import build_graph_multi
 from daglite.graph.nodes.base import BaseGraphNode
 
-# region Evaluation
+# region API
 
 
 def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    Important: This function creates an event loop internally via `asyncio.run()`, so it **cannot**
+    This function creates an event loop internally via `asyncio.run()`, so it **cannot**
     be called from within an async context. In those cases, use `evaluate_async()` instead.
 
     Args:
@@ -84,6 +84,31 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
             "Cannot call evaluate() from an async context. Use evaluate_async() instead."
         )
     return asyncio.run(evaluate_async(future, plugins=plugins))
+
+
+def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
+    """
+    Evaluate multiple task futures as a single workflow synchronously.
+
+    Cannot be called from within an async context. Use `evaluate_workflow_async()` instead.
+
+    Args:
+        futures: List of task futures representing the workflow's sink nodes.
+        plugins: Additional plugins to include with globally registered plugins.
+
+    Returns:
+        A WorkflowResult containing the evaluated outputs of all sink nodes.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        pass  # No loop running, safe to proceed
+    else:
+        raise RuntimeError(
+            "Cannot call evaluate_workflow() from an async context. "
+            "Use evaluate_workflow_async() instead."
+        )
+    return asyncio.run(evaluate_workflow_async(futures, plugins=plugins))
 
 
 async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> Any:
@@ -165,6 +190,68 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     return result
 
 
+async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
+    """
+    Evaluate multiple task futures as a single workflow asynchronously.
+
+    Builds one merged graph from all sink futures, executes it in a single pass,
+    and returns a `WorkflowResult` indexable by task name or UUID.
+
+    Args:
+        futures: List of task futures representing the workflow's sink nodes.
+        plugins: Additional plugins to include with globally registered plugins.
+
+    Returns:
+        A WorkflowResult containing the evaluated outputs of all sink nodes.
+    """
+    from daglite.backends.context import get_current_task
+    from daglite.workflow_result import WorkflowResult
+
+    if get_current_task():
+        raise RuntimeError("Cannot call evaluate_workflow_async() from within another task.")
+
+    graph_id = uuid4()
+    state, name_for = _setup_workflow_execution_state(futures)
+
+    plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
+    dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
+    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
+
+    hook_ids = {"graph_id": graph_id, "root_id": futures[0].id if futures else graph_id}
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
+
+    start_time = time.perf_counter()
+    try:
+        backend_manager.start()
+        event_processor.start()
+        dataset_processor.start()
+
+        await _execute_graph(state, backend_manager, plugin_manager.hook)
+
+        results = {f.id: state.get_result(f.id) for f in futures}
+        workflow_result = WorkflowResult._build(results, name_for)
+        duration = time.perf_counter() - start_time
+
+        event_processor.flush()
+        dataset_processor.flush()
+
+        plugin_manager.hook.after_graph_execute(
+            **hook_ids, result=workflow_result, duration=duration
+        )
+
+    except Exception as e:
+        duration = time.perf_counter() - start_time
+        plugin_manager.hook.on_graph_error(**hook_ids, error=e, duration=duration)
+        raise
+
+    finally:
+        event_processor.stop()
+        dataset_processor.stop()
+        backend_manager.stop()
+
+    return workflow_result
+
+
 async def _execute_graph(
     state: _ExecutionState,
     backend_manager: BackendManager,
@@ -239,93 +326,6 @@ def _setup_workflow_execution_state(
         nodes, id_mapping = optimize_graph(nodes)
 
     return _ExecutionState.from_nodes(nodes, id_mapping), name_for
-
-
-async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
-    """
-    Evaluate multiple task futures as a single workflow asynchronously.
-
-    Builds one merged graph from all sink futures, executes it in a single pass,
-    and returns a `WorkflowResult` indexable by task name or UUID.
-
-    Args:
-        futures: List of task futures representing the workflow's sink nodes.
-        plugins: Additional plugins to include with globally registered plugins.
-
-    Returns:
-        A WorkflowResult containing the evaluated outputs of all sink nodes.
-    """
-    from daglite.backends.context import get_current_task
-    from daglite.workflow_result import WorkflowResult
-
-    if get_current_task():
-        raise RuntimeError("Cannot call evaluate_workflow_async() from within another task.")
-
-    graph_id = uuid4()
-    state, name_for = _setup_workflow_execution_state(futures)
-
-    plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
-    dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
-    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
-
-    hook_ids = {"graph_id": graph_id, "root_id": futures[0].id if futures else graph_id}
-    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
-
-    start_time = time.perf_counter()
-    try:
-        backend_manager.start()
-        event_processor.start()
-        dataset_processor.start()
-
-        await _execute_graph(state, backend_manager, plugin_manager.hook)
-
-        results = {f.id: state.get_result(f.id) for f in futures}
-        workflow_result = WorkflowResult._build(results, name_for)
-        duration = time.perf_counter() - start_time
-
-        event_processor.flush()
-        dataset_processor.flush()
-
-        plugin_manager.hook.after_graph_execute(
-            **hook_ids, result=workflow_result, duration=duration
-        )
-
-    except Exception as e:
-        duration = time.perf_counter() - start_time
-        plugin_manager.hook.on_graph_error(**hook_ids, error=e, duration=duration)
-        raise
-
-    finally:
-        event_processor.stop()
-        dataset_processor.stop()
-        backend_manager.stop()
-
-    return workflow_result
-
-
-def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
-    """
-    Evaluate multiple task futures as a single workflow synchronously.
-
-    Cannot be called from within an async context. Use `evaluate_workflow_async()` instead.
-
-    Args:
-        futures: List of task futures representing the workflow's sink nodes.
-        plugins: Additional plugins to include with globally registered plugins.
-
-    Returns:
-        A WorkflowResult containing the evaluated outputs of all sink nodes.
-    """
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        pass  # No loop running, safe to proceed
-    else:
-        raise RuntimeError(
-            "Cannot call evaluate_workflow() from an async context. "
-            "Use evaluate_workflow_async() instead."
-        )
-    return asyncio.run(evaluate_workflow_async(futures, plugins=plugins))
 
 
 def _setup_plugin_system(plugins: list[Any]) -> tuple[PluginManager, EventProcessor]:
