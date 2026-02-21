@@ -35,8 +35,7 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    This function creates an event loop internally via `asyncio.run()`, so it **cannot**
-    be called from within an async context. In those cases, use `evaluate_async()` instead.
+    Cannot be called from within an async context. Use `evaluate_async()` instead.
 
     Args:
         future: Task future that will be evaluated.
@@ -190,8 +189,10 @@ async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | No
     """
     Evaluate multiple task futures as a single workflow asynchronously.
 
-    Builds one merged graph from all sink futures, executes it in a single pass,
-    and returns a `WorkflowResult` indexable by task name or UUID.
+    Builds one merged graph from all task futures, executes it in a single pass. The task futures
+    can contain any combination of sync and async task futures, and the engine will execute them in
+    an async-first manner. Sibling tasks can be executed concurrently if they use an async
+    coroutine and/or an async-capable backend (e.g., threading or process).
 
     Args:
         futures: List of task futures representing the workflow's sink nodes.
@@ -244,6 +245,9 @@ async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | No
     return result
 
 
+# region Execution Helpers
+
+
 async def _execute_graph(
     state: _ExecutionState,
     backend_manager: BackendManager,
@@ -281,6 +285,9 @@ async def _execute_graph(
     state.check_complete()
 
 
+# region Setup Helpers
+
+
 def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
     """Builds the graph execution state, including graph optimization if enabled."""
     from daglite.graph.optimizer import optimize_graph
@@ -297,13 +304,11 @@ def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:
     return state
 
 
-def _setup_workflow_execution_state(
-    futures: list[Any],
-) -> tuple[_ExecutionState, dict[UUID, str]]:
+def _setup_workflow_execution_state(futures: list[Any]) -> tuple[_ExecutionState, dict[UUID, str]]:
     """
     Builds the workflow execution state from multiple root futures.
 
-    Captures task names before optimisation so they survive any node folding.
+    Captures task names before optimization so they survive any node folding.
     """
     from daglite.graph.optimizer import optimize_graph
     from daglite.settings import get_global_settings
@@ -342,7 +347,7 @@ def _setup_dataset_processor(hook: HookRelay | None = None) -> DatasetProcessor:
     return DatasetProcessor(hook=hook)
 
 
-# region State
+# region Execution State
 
 
 @dataclass
