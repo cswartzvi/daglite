@@ -34,8 +34,8 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
-    Import: This function creates an event loop internally via `asyncio.run()`, so it **cannot** be
-    called from within an async context. In those cases, use `evaluate_async()` instead.
+    Important: This function creates an event loop internally via `asyncio.run()`, so it **cannot**
+    be called from within an async context. In those cases, use `evaluate_async()` instead.
 
     Args:
         future: Task future that will be evaluated.

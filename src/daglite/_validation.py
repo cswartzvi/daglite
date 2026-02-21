@@ -152,7 +152,7 @@ def get_unbound_params(
     """
     Gets name(s) of the unbound parameter(s) for a task function signature.
 
-    Ubound parameters are those that are not provided in `kwargs` and are expected to be filled by
+    Unbound parameters are those that are not provided in `kwargs` and are expected to be filled by
     upstream values at runtime. This function checks that there are exactly `n` unbound parameters.
 
     Args:
@@ -175,7 +175,8 @@ def get_unbound_params(
         )
     if len(unbound) != n:
         raise ParameterError(
-            f"Task '{task_name}' must have exactly {n} unbound parameter(s) for upstream value, "
+            f"Task '{task_name}' must have exactly {n} unbound "
+            f"{'parameter' if n == 1 else 'parameters'} for upstream value, "
             f"found {len(unbound)}: {unbound} (use `.partial()` to set scalar parameters)"
         )
     if n == 1:
