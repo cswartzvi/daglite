@@ -45,7 +45,7 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         The result of evaluating the root task
 
     Raises:
-        RuntimeError: If called from within an async context with a running event loop
+        RuntimeError: If called from within an async context with a running event loop.
 
     Examples:
         >>> from daglite import task
@@ -97,6 +97,9 @@ def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -
 
     Returns:
         A WorkflowResult containing the evaluated outputs of all sink nodes.
+
+    Raises:
+        RuntimeError: If called from within an async context with a running event loop.
     """
     try:
         asyncio.get_running_loop()
