@@ -169,12 +169,8 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
 
         # Finalize state and results
         result = state.get_result(future.id)
+
         duration = time.perf_counter() - start_time
-
-        # Flush any remaining events/dataset processors
-        event_processor.flush()
-        dataset_processor.flush()
-
         plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)
 
     except Exception as e:
@@ -228,16 +224,12 @@ async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | No
 
         await _execute_graph(state, backend_manager, plugin_manager.hook)
 
+        # Build workflow result from all sink nodes
         results = {f.id: state.get_result(f.id) for f in futures}
-        workflow_result = WorkflowResult._build(results, name_for)
+        result = WorkflowResult._build(results, name_for)
+
         duration = time.perf_counter() - start_time
-
-        event_processor.flush()
-        dataset_processor.flush()
-
-        plugin_manager.hook.after_graph_execute(
-            **hook_ids, result=workflow_result, duration=duration
-        )
+        plugin_manager.hook.after_graph_execute(**hook_ids, result=result, duration=duration)
 
     except Exception as e:
         duration = time.perf_counter() - start_time
@@ -249,7 +241,7 @@ async def evaluate_workflow_async(futures: list[Any], *, plugins: list[Any] | No
         dataset_processor.stop()
         backend_manager.stop()
 
-    return workflow_result
+    return result
 
 
 async def _execute_graph(
