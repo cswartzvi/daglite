@@ -39,25 +39,32 @@ class NodeBuilder(Protocol):
         ...
 
 
-def build_graph(root: NodeBuilder) -> dict[UUID, BaseGraphNode]:
+def build_graph_multi(roots: list[NodeBuilder]) -> dict[UUID, BaseGraphNode]:
     """
-    Compile a `NodeBuilder` tree into a dict of GraphNodes keyed by node id.
+    Compile multiple `NodeBuilder` roots into a shared dict of GraphNodes keyed by node id.
 
     Uses an iterative post-order traversal to avoid stack overflow on deep chains.
+    Common ancestors shared across multiple roots are visited exactly once.
 
     Raises:
-        GraphConstructionError: If a circular dependency is detected.
+        GraphError: If a circular dependency is detected.
     """
     nodes: dict[UUID, BaseGraphNode] = {}
     visiting: set[UUID] = set()
-    stack: list[tuple[NodeBuilder, bool]] = [(root, False)]
+    stack: list[tuple[NodeBuilder, bool]] = []
+    seen_root_ids: set[UUID] = set()
+
+    for root in reversed(roots):
+        if root.id not in seen_root_ids:
+            seen_root_ids.add(root.id)
+            stack.append((root, False))
 
     while stack:
         node_like, deps_collected = stack.pop()
         node_id = node_like.id
 
-        # Skip if already processed (defensive check)
-        if node_id in nodes:  # pragma: no cover
+        # Skip if already processed via another root
+        if node_id in nodes:
             continue
 
         if not deps_collected:
@@ -78,8 +85,19 @@ def build_graph(root: NodeBuilder) -> dict[UUID, BaseGraphNode]:
                     stack.append((upstream_builder, False))
         else:
             # Second visit: all upstream builders processed, now build this node
-            node = node_like.build_node()
-            nodes[node_id] = node
+            nodes[node_id] = node_like.build_node()
             visiting.discard(node_id)
 
     return nodes
+
+
+def build_graph(root: NodeBuilder) -> dict[UUID, BaseGraphNode]:
+    """
+    Compile a `NodeBuilder` tree into a dict of GraphNodes keyed by node id.
+
+    Uses an iterative post-order traversal to avoid stack overflow on deep chains.
+
+    Raises:
+        GraphError: If a circular dependency is detected.
+    """
+    return build_graph_multi([root])

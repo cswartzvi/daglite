@@ -148,8 +148,8 @@ def _find_task_paths(
             succ_id = next(iter(succs))
             succ_node = nodes.get(succ_id)
 
-            if succ_id in visited:
-                break  # pragma: no branch
+            if succ_id in visited:  # pragma: no cover
+                break
             if not isinstance(succ_node, TaskNode):
                 break  # Non-task node breaks the path
 
@@ -377,8 +377,8 @@ def _find_map_task_paths(
             succ_id = next(iter(succs))
             succ_node = nodes.get(succ_id)
 
-            if succ_id in visited:
-                break  # pragma: no branch
+            if succ_id in visited:  # pragma: no cover
+                break
 
             # .then() on MapTaskFuture creates another MapTaskNode
             if isinstance(succ_node, MapTaskNode):
