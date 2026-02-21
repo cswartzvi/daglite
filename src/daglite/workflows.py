@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
 import inspect
+import sys
 from collections.abc import Callable
 from collections.abc import Iterator
 from collections.abc import Mapping
 from collections.abc import ValuesView
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Generic, ItemsView, ParamSpec, overload
 from uuid import UUID
 
@@ -100,6 +103,49 @@ def workflow(
     return decorator
 
 
+def load_workflow(workflow_path: str) -> Workflow[Any]:
+    """
+    Load a workflow from a module path.
+
+    Args:
+        workflow_path: Dotted path to the workflow (e.g., 'mymodule.my_workflow').
+
+    Returns:
+        The loaded Workflow instance.
+
+    Raises:
+        ValueError: If the workflow path is invalid.
+        ModuleNotFoundError: If the module cannot be found.
+        AttributeError: If the workflow attribute does not exist in the module.
+        TypeError: If the loaded object is not a Workflow instance.
+    """
+    if "." not in workflow_path:
+        raise ValueError(
+            f"Invalid workflow path: '{workflow_path}'. Expected format: 'module.workflow_name'"
+        )
+
+    module_path, attr_name = workflow_path.rsplit(".", 1)
+
+    # Add current directory to Python path if not already there
+    cwd = str(Path.cwd())
+    if cwd not in sys.path:  # pragma: no cover
+        sys.path.insert(0, cwd)
+
+    module = importlib.import_module(module_path)
+
+    if not hasattr(module, attr_name):
+        raise AttributeError(f"Workflow '{attr_name}' not found in module '{module_path}'")
+
+    workflow_obj = getattr(module, attr_name)
+
+    if not isinstance(workflow_obj, Workflow):
+        raise TypeError(
+            f"'{workflow_path}' is not a Workflow. Did you forget to use the @workflow decorator?"
+        )
+
+    return workflow_obj
+
+
 @dataclass(frozen=True)
 class Workflow(Generic[P]):
     """
@@ -129,7 +175,7 @@ class Workflow(Generic[P]):
         return self.func(*args, **kwargs)
 
     def _collect_futures(self, raw: Any) -> list[BaseTaskFuture]:
-        """Normalise the decorated function's return value to a list of futures."""
+        """Normalize the decorated function's return value to a list of futures."""
         if isinstance(raw, BaseTaskFuture):
             return [raw]
         if isinstance(raw, (tuple, list)):
@@ -185,6 +231,39 @@ class Workflow(Generic[P]):
 
         futures = self._collect_futures(self.func(*args, **kwargs))
         return await evaluate_workflow_async(futures)
+
+    @property
+    def signature(self) -> inspect.Signature:
+        """Get the signature of the underlying workflow function."""
+        return inspect.signature(self.func)
+
+    def get_typed_params(self) -> dict[str, type | None]:
+        """
+        Extract parameter names and their type annotations from the workflow function.
+
+        Returns:
+            Dictionary mapping parameter names to their type annotations. If a parameter has no
+            annotation, the value is None.
+        """
+        sig = self.signature
+        typed_params: dict[str, type | None] = {}
+
+        for param_name, param in sig.parameters.items():
+            if param.annotation == inspect.Parameter.empty:
+                typed_params[param_name] = None
+            else:
+                typed_params[param_name] = param.annotation
+
+        return typed_params
+
+    def has_typed_params(self) -> bool:
+        """
+        Check if all parameters have type annotations.
+
+        Returns:
+            True if all parameters are typed, False otherwise.
+        """
+        return all(t is not None for t in self.get_typed_params().values())
 
 
 @dataclass(frozen=True)
