@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import sys
+import typing
 from collections.abc import Callable
 from collections.abc import Iterator
 from collections.abc import Mapping
@@ -241,18 +242,22 @@ class Workflow(Generic[P]):
         """
         Extract parameter names and their type annotations from the workflow function.
 
+        Uses ``typing.get_type_hints`` rather than the raw ``inspect.Signature``
+        so that stringified annotations (produced by ``from __future__ import
+        annotations``) are resolved to their actual types.
+
         Returns:
             Dictionary mapping parameter names to their type annotations. If a parameter has no
             annotation, the value is None.
         """
-        sig = self.signature
-        typed_params: dict[str, type | None] = {}
+        try:
+            hints = typing.get_type_hints(self.func)
+        except Exception:
+            hints = {}
 
-        for param_name, param in sig.parameters.items():
-            if param.annotation == inspect.Parameter.empty:
-                typed_params[param_name] = None
-            else:
-                typed_params[param_name] = param.annotation
+        typed_params: dict[str, type | None] = {}
+        for param_name in self.signature.parameters:
+            typed_params[param_name] = hints.get(param_name)
 
         return typed_params
 
