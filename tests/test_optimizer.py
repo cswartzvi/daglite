@@ -9,12 +9,18 @@ the engine — execution tests live in ``tests/integration/``.
 
 from typing import Any
 from uuid import UUID
+from uuid import uuid4
 
 from daglite import task
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import CompositeMapTaskNode
 from daglite.graph.nodes import CompositeTaskNode
+from daglite.graph.nodes.base import NodeInput
+from daglite.graph.nodes.base import NodeOutputConfig
+from daglite.graph.nodes.map_node import MapTaskNode
+from daglite.graph.nodes.task_node import TaskNode
 from daglite.graph.optimizer import _aggregate_timeout
+from daglite.graph.optimizer import _build_adjacency
 from daglite.graph.optimizer import optimize_graph
 
 
@@ -772,3 +778,67 @@ class TestReduceRetriesOptimizer:
         assert composite.terminal == "reduce"
         assert composite.reduce_config is not None
         assert composite.reduce_config.retries == 2
+
+
+class TestBuildAdjacency:
+    """_build_adjacency should ignore dependencies pointing outside the node dict."""
+
+    def test_external_dependency_is_ignored(self) -> None:
+        """A NodeInput.from_ref to an ID not in the nodes dict does not create an edge."""
+        external_id = uuid4()
+        node_id = uuid4()
+        node = TaskNode(
+            id=node_id,
+            name="t",
+            func=lambda x: x,
+            kwargs={"x": NodeInput.from_ref(external_id)},
+        )
+        nodes = {node_id: node}  # external_id is intentionally absent
+        predecessors, successors = _build_adjacency(nodes)  # type: ignore
+        assert external_id not in predecessors
+        assert external_id not in successors
+        assert node_id not in predecessors  # no edges found
+
+
+class TestMapJoinFlowParamDetection:
+    """Optimizer should not fold a task as a join when it has no kwargs flow param."""
+
+    def test_task_dep_via_output_config_only_not_treated_as_join(self) -> None:
+        """
+        A TaskNode depending on a MapTaskNode only through output_configs (not kwargs)
+        does not satisfy the join flow-param requirement and is not folded.
+        """
+        map_id = uuid4()
+        task_id = uuid4()
+
+        map_node = MapTaskNode(
+            id=map_id,
+            name="mapper",
+            func=lambda x: x,
+            mode="zip",
+            fixed_kwargs={},
+            mapped_kwargs={"x": NodeInput.from_value([1, 2])},
+        )
+        # This task references the map only through output_configs, not kwargs.
+        # _identify_flow_param checks kwargs only, so flow_param will be None.
+        task_node = TaskNode(
+            id=task_id,
+            name="consumer",
+            func=lambda y: y,
+            kwargs={"y": NodeInput.from_value(42)},
+            output_configs=(
+                NodeOutputConfig(
+                    key="out_{v}.txt",
+                    dependencies={"v": NodeInput.from_ref(map_id)},
+                ),
+            ),
+        )
+
+        nodes = {map_id: map_node, task_id: task_node}
+        optimized, _ = optimize_graph(nodes)
+
+        # No CompositeMapTaskNode — the task was not eligible as a join terminal
+        assert not any(isinstance(n, CompositeMapTaskNode) for n in optimized.values())
+        # Both original nodes survive unchanged
+        assert map_id in optimized
+        assert task_id in optimized

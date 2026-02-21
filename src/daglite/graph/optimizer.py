@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
 from collections.abc import Mapping
 from dataclasses import dataclass
 from uuid import UUID
@@ -18,6 +19,8 @@ from daglite.graph.nodes.map_node import MapTaskNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
 from daglite.graph.nodes.reduce_node import ReduceNode
 from daglite.graph.nodes.task_node import TaskNode
+
+# region API
 
 
 def optimize_graph(
@@ -44,6 +47,9 @@ def optimize_graph(
     nodes, map_mapping = _fold_map_paths(nodes)
     id_mapping.update(map_mapping)
     return nodes, id_mapping
+
+
+# region Find Composites
 
 
 def _fold_task_paths(
@@ -93,7 +99,7 @@ def _fold_task_paths(
             timeout=_aggregate_timeout([step.timeout for step in steps]),
         )
 
-        # Remove chain nodes from result, add composite
+        # Remove path nodes from result, add composite
         for nid in segment_id:
             result.pop(nid, None)
         result[composite_id] = composite
@@ -107,6 +113,116 @@ def _fold_task_paths(
     return result, id_mapping
 
 
+def _find_task_paths(
+    nodes: dict[UUID, BaseGraphNode],
+    predecessors: dict[UUID, set[UUID]],
+    successors: dict[UUID, set[UUID]],
+) -> list[list[UUID]]:
+    """Detects maximal linear paths of `TaskNode`s in the graph."""
+    visited: set[UUID] = set()
+    paths: list[list[UUID]] = []
+
+    for nid, node in nodes.items():
+        if not isinstance(node, TaskNode):
+            continue
+        if nid in visited:
+            continue
+
+        backend = _effective_backend(node)
+
+        def _can_extend(pred_id: UUID, _head: UUID) -> bool:
+            pred_node = nodes.get(pred_id)
+            return isinstance(pred_node, TaskNode) and _effective_backend(pred_node) == backend
+
+        head = _find_path_head(nid, predecessors, successors, visited, _can_extend)
+
+        # Walk forward from the true head through .then() nodes
+        path = [head]
+        visited.add(head)
+        current = head
+        while True:
+            succs = successors.get(current, set())
+            if len(succs) != 1:
+                break  # Fan-out or terminal — end path
+
+            succ_id = next(iter(succs))
+            succ_node = nodes.get(succ_id)
+
+            if succ_id in visited:
+                break  # pragma: no branch
+            if not isinstance(succ_node, TaskNode):
+                break  # Non-task node breaks the path
+
+            if len(predecessors.get(succ_id, set())) != 1:
+                break  # Fan-in — end path
+
+            if _effective_backend(succ_node) != backend:
+                break
+
+            path.append(succ_id)
+            visited.add(succ_id)
+            current = succ_id
+
+        if len(path) >= 2:
+            paths.append(path)
+
+    return paths
+
+
+def _build_composite_step(
+    node: TaskNode,
+    flow_param: str | None,
+    predecessor_id: UUID | None,
+) -> CompositeStep:
+    """
+    Build a `CompositeStep` from a `TaskNode`.
+
+    External params are those that don't reference the immediate predecessor in the path (the flow
+    param is separated out).
+    """
+    external_params: dict[str, NodeInput] = {}
+
+    for param_name, node_input in node.kwargs.items():
+        if param_name == flow_param:
+            continue  # Handled by the composite flow
+        external_params[param_name] = node_input
+
+    return CompositeStep(
+        id=node.id,
+        name=node.name,
+        description=node.description,
+        func=node.func,
+        flow_param=flow_param,
+        external_params=external_params,
+        output_configs=node.output_configs,
+        retries=node.retries,
+        cache=node.cache,
+        cache_ttl=node.cache_ttl,
+        timeout=node.timeout,
+        step_kind=node.kind,
+    )
+
+
+# region Find Composite Maps
+
+
+@dataclass
+class _MapPath:
+    """Detected map path ready for folding."""
+
+    map_id: UUID
+    """Head `MapTaskNode` ID."""
+
+    then_ids: list[UUID]
+    """IDs of `.then()` nodes (`MapTaskNode` or `TaskNode`) following the head."""
+
+    join_id: UUID | None = None
+    """If present, ID of the `.join()` `TaskNode` terminal."""
+
+    reduce_id: UUID | None = None
+    """If present, ID of the `.reduce()` `ReduceNode` terminal."""
+
+
 def _fold_map_paths(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, BaseGraphNode], dict[UUID, UUID]]:
@@ -115,7 +231,7 @@ def _fold_map_paths(
     `CompositeMapTaskNode` instances.
     """
     predecessors, successors = _build_adjacency(nodes)
-    map_paths = _find_map_paths(nodes, predecessors, successors)
+    map_paths = _find_map_task_paths(nodes, predecessors, successors)
 
     if not map_paths:
         return nodes, {}
@@ -210,176 +326,13 @@ def _fold_map_paths(
         id_mapping[map_path.map_id] = composite_id
         for nid in map_path.then_ids:
             id_mapping[nid] = composite_id
-        if (
-            map_path.join_id is not None and map_path.join_id != tail_id
-        ):  # pragma: no cover — tail_id is set to join_id above
-            id_mapping[map_path.join_id] = composite_id
-        if (
-            map_path.reduce_id is not None and map_path.reduce_id != tail_id
-        ):  # pragma: no cover — tail_id is set to reduce_id above
-            id_mapping[map_path.reduce_id] = composite_id
 
     result = _remap_dependencies(result, id_mapping)
 
     return result, id_mapping
 
 
-def _remap_dependencies(
-    nodes: dict[UUID, BaseGraphNode],
-    id_mapping: dict[UUID, UUID],
-) -> dict[UUID, BaseGraphNode]:
-    """
-    Remap `NodeInput` references in remaining nodes so that references to folded node IDs point to
-    the composite node that replaced them.
-
-    This handles downstream nodes that depend on a node that was folded into a composite — their
-    `NodeInput.reference` must be updated to point to the composite's ID.
-
-    Delegates to each node's `remap_references` method so that every node type is responsible for
-    knowing which of its own fields contain references.
-    """
-    if not id_mapping:  # pragma: no cover
-        return nodes
-
-    return {nid: node.remap_references(id_mapping) for nid, node in nodes.items()}
-
-
-def _find_task_paths(
-    nodes: dict[UUID, BaseGraphNode],
-    predecessors: dict[UUID, set[UUID]],
-    successors: dict[UUID, set[UUID]],
-) -> list[list[UUID]]:
-    """
-    Detect maximal linear paths of `TaskNode`s in the graph.
-
-    A path is a sequence `[A, B, C, ...]` where:
-    - Every node is a `TaskNode` (not `MapTaskNode`, `DatasetNode` etc.)
-    - Each interior node has exactly **one predecessor** and **one successor**
-      within the graph.
-    - The head may have any number of predecessors.
-    - The tail may have any number of successors.
-    - All nodes share the same `backend_name`.
-    - Path length ≥ 2.
-    """
-    visited: set[UUID] = set()
-    segments: list[list[UUID]] = []
-
-    for nid, node in nodes.items():
-        if not isinstance(node, TaskNode):
-            continue
-        if nid in visited:
-            continue
-
-        # Walk backward to find the true chain head — ensures maximal paths
-        # regardless of dict iteration order.
-        head = nid
-        backend = _effective_backend(node)
-        while True:
-            preds = predecessors.get(head, set())
-            if len(preds) != 1:
-                break  # Multiple or no predecessors — head is head
-            pred_id = next(iter(preds))
-            pred_node = nodes.get(pred_id)
-            if pred_id in visited:  # pragma: no cover
-                break
-            if not isinstance(pred_node, TaskNode):
-                break
-            if _effective_backend(pred_node) != backend:  # pragma: no cover
-                break
-            # Predecessor must have exactly one successor (head)
-            pred_succs = successors.get(pred_id, set())
-            if len(pred_succs) != 1:
-                break
-            head = pred_id
-
-        # Walk forward from the true head
-        segment = [head]
-        visited.add(head)
-        current = head
-        while True:
-            succs = successors.get(current, set())
-            if len(succs) != 1:
-                break  # Fan-out or terminal — end path
-
-            succ_id = next(iter(succs))
-            succ_node = nodes.get(succ_id)
-
-            if succ_id in visited:  # pragma: no cover
-                break  # Already in another path
-            if not isinstance(succ_node, TaskNode):
-                break  # Non-task node breaks the path
-
-            # The successor must have exactly one predecessor (current)
-            preds = predecessors.get(succ_id, set())
-            if len(preds) != 1:
-                break  # Fan-in — end path
-
-            # Backend must match
-            if _effective_backend(succ_node) != backend:
-                break
-
-            segment.append(succ_id)
-            visited.add(succ_id)
-            current = succ_id
-
-        if len(segment) >= 2:
-            segments.append(segment)
-
-    return segments
-
-
-def _build_composite_step(
-    node: TaskNode,
-    flow_param: str | None,
-    predecessor_id: UUID | None,
-) -> CompositeStep:
-    """
-    Build a `CompositeStep` from a `TaskNode`.
-
-    External params are those that don't reference the immediate predecessor in the path (the flow
-    param is separated out).
-    """
-    external_params: dict[str, NodeInput] = {}
-
-    for param_name, node_input in node.kwargs.items():
-        if param_name == flow_param:
-            continue  # Handled by the composite flow
-        external_params[param_name] = node_input
-
-    return CompositeStep(
-        id=node.id,
-        name=node.name,
-        description=node.description,
-        func=node.func,
-        flow_param=flow_param,
-        external_params=external_params,
-        output_configs=node.output_configs,
-        retries=node.retries,
-        cache=node.cache,
-        cache_ttl=node.cache_ttl,
-        timeout=node.timeout,
-        step_kind=node.kind,
-    )
-
-
-@dataclass
-class _MapPath:
-    """Detected map path ready for folding."""
-
-    map_id: UUID
-    """Head `MapTaskNode` ID."""
-
-    then_ids: list[UUID]
-    """IDs of `.then()` nodes (`MapTaskNode` or `TaskNode`) following the head."""
-
-    join_id: UUID | None = None
-    """If present, ID of the `.join()` `TaskNode` terminal."""
-
-    reduce_id: UUID | None = None
-    """If present, ID of the `.reduce()` `ReduceNode` terminal."""
-
-
-def _find_map_paths(
+def _find_map_task_paths(
     nodes: dict[UUID, BaseGraphNode],
     predecessors: dict[UUID, set[UUID]],
     successors: dict[UUID, set[UUID]],
@@ -402,33 +355,20 @@ def _find_map_paths(
 
         map_backend = _effective_backend(node)
 
-        # Walk backward to find the true path head — ensures maximal paths
-        # regardless of dict iteration order.
-        head = nid
-        while True:
-            preds = predecessors.get(head, set())
-            if len(preds) != 1:
-                break
-            pred_id = next(iter(preds))
+        def _can_extend(pred_id: UUID, current_head: UUID) -> bool:
             pred_node = nodes.get(pred_id)
-            if pred_id in visited:  # pragma: no cover
-                break
-            if not isinstance(pred_node, MapTaskNode):
-                break
-            if _effective_backend(pred_node) != map_backend:  # pragma: no cover
-                break
-            # Predecessor must have exactly one successor (head)
-            if len(successors.get(pred_id, set())) != 1:
-                break
-            # head must be a .then() continuation of pred_id
-            if not _is_then_map_node(nodes[head], pred_id):  # pragma: no cover
-                break
-            head = pred_id
+            return (
+                isinstance(pred_node, MapTaskNode)
+                and _effective_backend(pred_node) == map_backend
+                and _is_then_map_node(nodes[current_head], pred_id)
+            )
+
+        head = _find_path_head(nid, predecessors, successors, visited, _can_extend)
 
         then_path: list[UUID] = []
         current = head
 
-        # Walk the .then() path (MapTaskNode → MapTaskNode → ...)
+        # Walk forward from the true head through .then() nodes
         while True:
             succs = successors.get(current, set())
             if len(succs) != 1:
@@ -437,8 +377,8 @@ def _find_map_paths(
             succ_id = next(iter(succs))
             succ_node = nodes.get(succ_id)
 
-            if succ_id in visited:  # pragma: no cover
-                break
+            if succ_id in visited:
+                break  # pragma: no branch
 
             # .then() on MapTaskFuture creates another MapTaskNode
             if isinstance(succ_node, MapTaskNode):
@@ -527,38 +467,7 @@ def _build_map_composite_step(node: MapTaskNode, flow_param: str | None) -> Comp
     )
 
 
-def _is_then_map_node(node: BaseGraphNode, predecessor_id: UUID) -> bool:
-    """
-    Check whether a `MapTaskNode` is a `.then()` continuation of `predecessor_id`.
-
-    A `.then()` pattern produces a `MapTaskNode` with exactly one `mapped_kwarg` whose `NodeInput`
-    is a `sequence_ref` to the predecessor.
-    """
-    if not isinstance(node, MapTaskNode):  # pragma: no cover – callers only pass MapTaskNodes
-        return False
-
-    if len(node.mapped_kwargs) != 1:
-        return False
-
-    for _name, node_input in node.mapped_kwargs.items():
-        if node_input.reference == predecessor_id:  # pragma: no branch – single matching kwarg
-            return True
-    return False  # pragma: no cover – only reachable if mapped_kwargs[0] has wrong reference
-
-
-def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
-    """
-    Compute an aggregate timeout from a list of individual timeouts.
-
-    Returns the sum of all values. If any value is `None` (unbounded), the result is also `None`
-    — since the total cannot be bounded.
-    """
-    total: float = 0.0
-    for t in timeouts:
-        if t is None:
-            return None
-        total += t
-    return total if total > 0.0 else None
+# region Helpers
 
 
 def _build_adjacency(
@@ -578,9 +487,38 @@ def _build_adjacency(
     return dict(predecessors), dict(successors)
 
 
-def _effective_backend(node: BaseGraphNode) -> str | None:
-    """Return the effective backend name for a node."""
-    return node.backend_name
+def _find_path_head(
+    start: UUID,
+    predecessors: dict[UUID, set[UUID]],
+    successors: dict[UUID, set[UUID]],
+    visited: set[UUID],
+    can_extend: Callable[[UUID, UUID], bool],
+) -> UUID:
+    """
+    Walk backward from `start` to find the true head of a maximal path.
+
+    Keeps extending backward while all of the following hold for each candidate predecessor:
+    - It has exactly one predecessor of its own (not a fan-in node).
+    - It is not already part of a discovered path.
+    - ``can_extend(pred_id, current_head)`` returns True.
+    - It has exactly one successor (not a fan-out node).
+
+    Ensures maximal paths are found regardless of graph iteration order.
+    """
+    head = start
+    while True:
+        preds = predecessors.get(head, set())
+        if len(preds) != 1:
+            break
+        pred_id = next(iter(preds))
+        if pred_id in visited:
+            break
+        if not can_extend(pred_id, head):
+            break
+        if len(successors.get(pred_id, set())) != 1:
+            break
+        head = pred_id
+    return head
 
 
 def _identify_flow_param(params: Mapping[str, NodeInput], predecessor_id: UUID) -> str | None:
@@ -594,3 +532,58 @@ def _identify_flow_param(params: Mapping[str, NodeInput], predecessor_id: UUID) 
         if node_input.reference == predecessor_id:
             return param_name
     return None
+
+
+def _remap_dependencies(
+    nodes: dict[UUID, BaseGraphNode],
+    id_mapping: dict[UUID, UUID],
+) -> dict[UUID, BaseGraphNode]:
+    """
+    Remap `NodeInput` references in remaining nodes so that references to folded node IDs point to
+    the composite node that replaced them.
+
+    This handles downstream nodes that depend on a node that was folded into a composite — their
+    `NodeInput.reference` must be updated to point to the composite's ID.
+
+    Delegates to each node's `remap_references` method so that every node type is responsible for
+    knowing which of its own fields contain references.
+    """
+    if not id_mapping:  # pragma: no cover
+        return nodes
+
+    return {nid: node.remap_references(id_mapping) for nid, node in nodes.items()}
+
+
+def _is_then_map_node(node: BaseGraphNode, predecessor_id: UUID) -> bool:
+    """
+    Check whether a `MapTaskNode` is a `.then()` continuation of `predecessor_id`.
+
+    A `.then()` pattern produces a `MapTaskNode` with exactly one `mapped_kwarg` whose `NodeInput`
+    is a `sequence_ref` to the predecessor.
+    """
+    if not isinstance(node, MapTaskNode):  # pragma: no cover – callers always pass MapTaskNodes
+        return False
+    if len(node.mapped_kwargs) != 1:
+        return False
+    ((_name, node_input),) = node.mapped_kwargs.items()
+    return node_input.reference == predecessor_id
+
+
+def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
+    """
+    Compute an aggregate timeout from a list of individual timeouts.
+
+    Returns the sum of all values. If any value is `None` (unbounded), the result is also `None`
+    — since the total cannot be bounded.
+    """
+    total: float = 0.0
+    for t in timeouts:
+        if t is None:
+            return None
+        total += t
+    return total if total > 0.0 else None
+
+
+def _effective_backend(node: BaseGraphNode) -> str | None:
+    """Return the effective backend name for a node."""
+    return node.backend_name
