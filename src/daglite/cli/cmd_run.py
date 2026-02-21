@@ -1,4 +1,4 @@
-"""CLI ``run`` command for executing workflows."""
+"""CLI ``run`` command for executing pipelines."""
 
 from __future__ import annotations
 
@@ -12,20 +12,20 @@ from typing import Any, Union, get_args, get_origin
 import click
 
 from daglite.cli._shared import parse_param_value
-from daglite.engine import evaluate_workflow
-from daglite.engine import evaluate_workflow_async
+from daglite.engine import evaluate
+from daglite.engine import evaluate_async
 from daglite.pipelines import load_pipeline
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
 
 
 @click.command()
-@click.argument("workflow")
+@click.argument("pipeline")
 @click.option(
     "--param",
     "-p",
     multiple=True,
-    help="Workflow parameter in format 'name=value'. Can be specified multiple times.",
+    help="Pipeline parameter in format 'name=value'. Can be specified multiple times.",
 )
 @click.option(
     "--backend",
@@ -45,46 +45,46 @@ from daglite.settings import set_global_settings
     help="Setting override in format 'name=value'. Can be specified multiple times.",
 )
 def run(
-    workflow: str,
+    pipeline: str,
     param: tuple[str, ...],
     backend: str,
     parallel: bool,
     settings: tuple[str, ...],
 ) -> None:
     r"""
-    Run a daglite workflow.
+    Run a daglite pipeline.
 
-    WORKFLOW should be a dotted path to a function decorated with @workflow,
-    e.g., 'myproject.workflows.my_workflow'.
+    PIPELINE should be a dotted path to a pipeline function decorated with @pipeline,
+    e.g., 'myproject.pipelines.my_pipeline'.
 
     Examples:
     \b
-    # Run a simple workflow
-    daglite run myproject.workflows.simple_workflow
+    # Run a simple pipeline
+    daglite run myproject.pipelines.simple_pipeline
 
     \b
     # Run with parameters
-    daglite run myproject.workflows.data_workflow --param input_file=data.csv
+    daglite run myproject.pipelines.data_pipeline --param input_file=data.csv
     --param num_workers=4
 
     \b
     # Run with custom backend and settings
-    daglite run myproject.workflows.parallel_workflow --backend threading
+    daglite run myproject.pipelines.parallel_pipeline --backend threading
     --settings max_backend_threads=16
     """
-    # Load the workflow
+    # Load the pipeline
     try:
-        workflow_obj = load_pipeline(workflow)
+        pipeline_obj = load_pipeline(pipeline)
     except (ValueError, ModuleNotFoundError, AttributeError, TypeError) as e:
         raise click.ClickException(str(e)) from e
 
     params: dict[str, Any] = {}
-    typed_params = workflow_obj.get_typed_params()
+    typed_params = pipeline_obj.get_typed_params()
 
-    # Warn if passing params to an untyped workflow
-    if param and not workflow_obj.has_typed_params():
+    # Warn if passing params to an untyped pipeline
+    if param and not pipeline_obj.has_typed_params():
         warnings.warn(
-            f"Workflow '{workflow_obj.name}' has untyped parameters. "
+            f"Pipeline '{pipeline_obj.name}' has untyped parameters. "
             "Parameter values will be passed as strings. "
             "Consider adding type annotations for automatic type conversion.",
             UserWarning,
@@ -106,7 +106,7 @@ def run(
         params[param_name] = parse_param_value(param_value, typed_params[param_name])
 
     # Check for missing required parameters
-    sig = workflow_obj.signature
+    sig = pipeline_obj.signature
     missing_params = []
     for param_name, param_info in sig.parameters.items():
         if param_info.default == inspect.Parameter.empty and param_name not in params:
@@ -150,15 +150,14 @@ def run(
     # Apply settings globally for this run
     set_global_settings(DagliteSettings(**settings_dict))
 
-    # Call the workflow to get the futures
+    # Call the pipeline to get the NodeBuilder
     try:
-        raw = workflow_obj(**params)
-        futures = workflow_obj._collect_futures(raw)
+        graph = pipeline_obj(**params)
     except Exception as e:  # pragma: no cover
-        raise click.ClickException(f"Error calling workflow: {e}") from e
+        raise click.ClickException(f"Error calling pipeline: {e}") from e
 
     # Execute the graph
-    click.echo(f"Running workflow: {workflow_obj.name}")
+    click.echo(f"Running pipeline: {pipeline_obj.name}")
     if params:
         click.echo(f"Parameters: {params}")
     click.echo(f"Backend: {backend}")
@@ -167,26 +166,11 @@ def run(
 
     try:
         if parallel:
-            result = asyncio.run(evaluate_workflow_async(futures))
+            # Async evaluation enables sibling parallelism
+            result = asyncio.run(evaluate_async(graph))
         else:
-            result = evaluate_workflow(futures)
-
-        click.echo("\nWorkflow completed successfully!")
-
-        # Display results — single sink: plain "Result: value";
-        # multi-sink: labelled "Results:\n  name: value"
-        names = list(result.keys())
-        if len(names) == 1 and len(result.all(names[0])) == 1:
-            click.echo(f"Result: {result.all(names[0])[0]}")
-        else:
-            click.echo("Results:")
-            for name in result.keys():
-                values = result.all(name)
-                if len(values) == 1:
-                    click.echo(f"  {name}: {values[0]}")
-                else:
-                    for i, value in enumerate(values):
-                        click.echo(f"  {name}[{i}]: {value}")
-
+            result = evaluate(graph)
+        click.echo("\nPipeline completed successfully!")
+        click.echo(f"Result: {result}")
     except Exception as e:
-        raise click.ClickException(f"Workflow execution failed: {e}") from e
+        raise click.ClickException(f"Pipeline execution failed: {e}") from e

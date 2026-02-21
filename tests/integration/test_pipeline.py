@@ -144,7 +144,7 @@ class TestPipelineRunMethod:
             return add(x=x, y=y)
 
         result = simple_pipeline.run(5, 10)
-        assert next(iter(result.values())) == 15
+        assert result == 15
 
     def test_pipeline_run_with_chained_tasks(self) -> None:
         """Pipeline.run() works with chained tasks."""
@@ -163,7 +163,7 @@ class TestPipelineRunMethod:
             return multiply(x=sum_result, factor=factor)
 
         result = chained_pipeline.run(5, 10, 3)
-        assert next(iter(result.values())) == 45
+        assert result == 45
 
     def test_pipeline_run_with_map(self) -> None:
         """Pipeline.run() works with MapTaskFuture."""
@@ -177,7 +177,7 @@ class TestPipelineRunMethod:
             return square.map(x=values)
 
         result = map_pipeline.run([1, 2, 3, 4])
-        assert next(iter(result.values())) == [1, 4, 9, 16]
+        assert result == [1, 4, 9, 16]
 
     def test_pipeline_run_with_map_reduce(self) -> None:
         """Pipeline.run() works with map-reduce pattern."""
@@ -196,7 +196,7 @@ class TestPipelineRunMethod:
             return doubled.join(sum_all)
 
         result = map_reduce_pipeline.run([1, 2, 3, 4])
-        assert next(iter(result.values())) == 20
+        assert result == 20
 
     def test_pipeline_run_with_defaults(self) -> None:
         """Pipeline.run() works with default parameters."""
@@ -209,8 +209,8 @@ class TestPipelineRunMethod:
         def pipeline_with_defaults(x: int, factor: int = 2) -> Dag[int]:
             return multiply(x=x, factor=factor)
 
-        assert next(iter(pipeline_with_defaults.run(10).values())) == 20
-        assert next(iter(pipeline_with_defaults.run(10, factor=3).values())) == 30
+        assert pipeline_with_defaults.run(10) == 20
+        assert pipeline_with_defaults.run(10, factor=3) == 30
 
     def test_pipeline_run_async(self) -> None:
         """Pipeline.run_async() evaluates asynchronously."""
@@ -233,7 +233,7 @@ class TestPipelineRunMethod:
             return await async_pipeline.run_async(1, 2, 3)
 
         result = asyncio.run(run())
-        assert next(iter(result.values())) == 9  # (1+2) + (2*3) = 3 + 6 = 9
+        assert result == 9  # (1+2) + (2*3) = 3 + 6 = 9
 
     def test_pipeline_run_with_kwargs(self) -> None:
         """Pipeline.run() works with keyword arguments."""
@@ -247,4 +247,4 @@ class TestPipelineRunMethod:
             return add(x=x, y=y)
 
         result = simple_pipeline.run(x=5, y=10)
-        assert next(iter(result.values())) == 15
+        assert result == 15

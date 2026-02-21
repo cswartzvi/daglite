@@ -13,7 +13,6 @@ from daglite import task
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 from daglite.futures.base import BaseTaskFuture
-from daglite.workflow_result import WorkflowResult
 
 # -- Helper tasks for type tests --
 
@@ -258,51 +257,51 @@ def test_pipeline_decorator() -> None:
         return add(x=x, y=y)
 
     result = compute(5, 10)
-    assert_type(result, Any)
+    assert_type(result, TaskFuture[int])
 
 
 def test_pipeline_run() -> None:
-    """Test Pipeline.run() returns WorkflowResult (pipeline is now an alias for workflow)."""
+    """Test Pipeline.run() returns Any (pipelines are entry points)."""
 
     @pipeline
     def compute(x: int, y: int) -> TaskFuture[int]:
         return add(x=x, y=y)
 
     result = compute.run(5, 10)
-    assert_type(result, WorkflowResult)
+    assert_type(result, Any)
 
 
 def test_pipeline_run_map() -> None:
-    """Test Pipeline.run() returns WorkflowResult for MapTaskFuture pipelines."""
+    """Test Pipeline.run() returns Any for MapTaskFuture pipelines."""
 
     @pipeline
     def sweep(values: list[int]) -> MapTaskFuture[int]:
         return double.map(x=values)
 
     result = sweep.run([1, 2, 3])
-    assert_type(result, WorkflowResult)
+    assert_type(result, Any)
 
 
 def test_pipeline_dag_annotation() -> None:
-    """Test Dag[T] annotation works as workflow return type."""
+    """Test Dag[T] annotation works as pipeline return type."""
 
     @pipeline
     def compute(x: int, y: int) -> Dag[int]:
         return add(x=x, y=y)
 
     result = compute(5, 10)
-    assert_type(result, Any)
+    assert_type(result, BaseTaskFuture[int])
 
 
 def test_pipeline_dag_annotation_map() -> None:
-    """Test Dag[T] annotation works for mapped workflows."""
+    """Test Dag[T] annotation works for mapped pipelines."""
 
     @pipeline
     def sweep(values: list[int]) -> Dag[int]:
         return double.map(x=values)
 
     result = sweep(values=[1, 2, 3])
-    assert_type(result, Any)
+    assert_type(result, BaseTaskFuture[int])
 
 
 # -- Async tasks --

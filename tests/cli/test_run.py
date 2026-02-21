@@ -19,44 +19,44 @@ class TestRunCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "--help"])
         assert result.exit_code == 0
-        assert "Run a daglite workflow" in result.output
+        assert "Run a daglite pipeline" in result.output
         assert "--param" in result.output
         assert "--backend" in result.output
 
     def test_run_without_pipeline_path(self):
-        """Test run command without workflow path."""
+        """Test run command without pipeline path."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run"])
         assert result.exit_code != 0
         assert "Missing argument" in result.output
 
     def test_run_with_invalid_pipeline_path(self):
-        """Test run command with invalid workflow path (no dot)."""
+        """Test run command with invalid pipeline path (no dot)."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "invalid"])
         assert result.exit_code != 0
-        assert "Invalid workflow path" in result.output
+        assert "Invalid pipeline path" in result.output
 
     def test_run_with_nonexistent_module(self):
         """Test run command with non-existent module."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["run", "nonexistent.module.workflow"])
+        result = runner.invoke(cli, ["run", "nonexistent.module.pipeline"])
         assert result.exit_code != 0
         assert "No module named" in result.output
 
     def test_run_with_nonexistent_pipeline(self):
-        """Test run command with non-existent workflow in existing module."""
+        """Test run command with non-existent pipeline in existing module."""
         runner = CliRunner()
-        result = runner.invoke(cli, ["run", "daglite.nonexistent_workflow"])
+        result = runner.invoke(cli, ["run", "daglite.nonexistent_pipeline"])
         assert result.exit_code != 0
         assert "not found" in result.output
 
     def test_run_with_non_pipeline_object(self):
-        """Test run command with object that's not a Workflow."""
+        """Test run command with object that's not a Pipeline."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "daglite.task"])
         assert result.exit_code != 0
-        assert "is not a Workflow" in result.output
+        assert "is not a Pipeline" in result.output
 
     def test_run_simple_pipeline(self):
         """Test running a simple pipeline."""
@@ -66,8 +66,8 @@ class TestRunCommand:
             ["run", "tests.examples.pipelines.math_pipeline", "--param", "x=5", "--param", "y=10"],
         )
         assert result.exit_code == 0
-        assert "Running workflow: math_pipeline" in result.output
-        assert "Workflow completed successfully" in result.output
+        assert "Running pipeline: math_pipeline" in result.output
+        assert "Pipeline completed successfully" in result.output
         assert "Result: 30" in result.output
 
     def test_run_empty_pipeline(self):
@@ -75,7 +75,7 @@ class TestRunCommand:
         runner = CliRunner()
         result = runner.invoke(cli, ["run", "tests.examples.pipelines.empty_pipeline"])
         assert result.exit_code == 0
-        assert "Running workflow: empty_pipeline" in result.output
+        assert "Running pipeline: empty_pipeline" in result.output
         # Should not show "Parameters:" line when there are no parameters
         assert "Parameters:" not in result.output
         assert "Result: 3" in result.output
@@ -350,7 +350,7 @@ class TestRunCommand:
             ],
         )
         assert result.exit_code != 0
-        assert "Workflow execution failed" in result.output
+        assert "Pipeline execution failed" in result.output
         assert "Intentional failure" in result.output
 
     def test_run_untyped_pipeline_warning(self):

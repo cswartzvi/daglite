@@ -139,37 +139,6 @@ class Workflow(Generic[P]):
             f"got {type(raw).__name__!r}"
         )
 
-    @property
-    def signature(self) -> inspect.Signature:
-        """Get the signature of the underlying workflow function."""
-        return inspect.signature(self.func)
-
-    def get_typed_params(self) -> dict[str, type | None]:
-        """
-        Extract parameter names and their type annotations from the workflow function.
-
-        Returns:
-            Dictionary mapping parameter names to their type annotations. If a parameter has no
-            annotation, the value is None.
-        """
-        sig = self.signature
-        typed_params: dict[str, type | None] = {}
-        for param_name, param in sig.parameters.items():
-            if param.annotation == inspect.Parameter.empty:
-                typed_params[param_name] = None
-            else:
-                typed_params[param_name] = param.annotation
-        return typed_params
-
-    def has_typed_params(self) -> bool:
-        """
-        Check if all parameters have type annotations.
-
-        Returns:
-            True if all parameters are typed, False otherwise.
-        """
-        return all(t is not None for t in self.get_typed_params().values())
-
     def run(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:
         """
         Build and evaluate the workflow synchronously.
