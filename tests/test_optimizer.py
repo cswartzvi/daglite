@@ -28,7 +28,7 @@ def _count_types(nodes: dict[UUID, Any]) -> dict[str, int]:
 
 
 class TestFoldTaskChains:
-    """Tests for _fold_task_chains via optimize_graph."""
+    """Tests for _fold_task_paths via optimize_graph."""
 
     def test_two_node_chain_folds(self) -> None:
         """A simple a → b chain is folded into a CompositeTaskNode."""
@@ -76,7 +76,7 @@ class TestFoldTaskChains:
         assert counts == {"CompositeTaskNode": 1}
 
         composite = next(n for n in optimized.values() if isinstance(n, CompositeTaskNode))
-        assert len(composite.chain) == 3
+        assert len(composite.steps) == 3
 
     def test_single_node_not_folded(self) -> None:
         """A single TaskNode is not folded."""
@@ -184,8 +184,8 @@ class TestFoldTaskChains:
         assert len(optimized) == 1
         assert future.id in id_mapping
 
-    def test_composite_preserves_chain_link_metadata(self) -> None:
-        """CompositeTaskNode chain links have correct names and flow params."""
+    def test_composite_preserves_step_metadata(self) -> None:
+        """CompositeTaskNode steps have correct names and flow params."""
 
         @task
         def step_a(x: int) -> int:  # pragma: no cover
@@ -200,15 +200,15 @@ class TestFoldTaskChains:
         optimized, _ = optimize_graph(graph)
 
         composite = next(n for n in optimized.values() if isinstance(n, CompositeTaskNode))
-        assert len(composite.chain) == 2
-        assert composite.chain[0].name == "step_a"
-        assert composite.chain[0].flow_param is None  # head has no flow param
-        assert composite.chain[1].name == "step_b"
-        assert composite.chain[1].flow_param == "val"  # receives from step_a
+        assert len(composite.steps) == 2
+        assert composite.steps[0].name == "step_a"
+        assert composite.steps[0].flow_param is None  # head has no flow param
+        assert composite.steps[1].name == "step_b"
+        assert composite.steps[1].flow_param == "val"  # receives from step_a
 
 
 class TestFoldMapChains:
-    """Tests for _fold_map_chains via optimize_graph."""
+    """Tests for _fold_map_paths via optimize_graph."""
 
     def test_map_then_chain_folds(self) -> None:
         """map().then() chain is folded into a CompositeMapTaskNode."""
@@ -253,7 +253,7 @@ class TestFoldMapChains:
         assert counts == {"CompositeMapTaskNode": 1}
 
         composite = next(n for n in optimized.values() if isinstance(n, CompositeMapTaskNode))
-        assert len(composite.chain) == 2  # add, negate (source_map is separate)
+        assert len(composite.steps) == 2  # add, negate (source_map is separate)
         assert composite.terminal == "collect"
 
     def test_map_join_folds(self) -> None:
@@ -275,8 +275,8 @@ class TestFoldMapChains:
 
         composite = next(n for n in optimized.values() if isinstance(n, CompositeMapTaskNode))
         assert composite.terminal == "join"
-        assert composite.join_link is not None
-        assert composite.join_link.name == "total"
+        assert composite.join_step is not None
+        assert composite.join_step.name == "total"
 
     def test_map_then_join_folds(self) -> None:
         """map().then().join() folds into a single CompositeMapTaskNode."""
@@ -301,7 +301,7 @@ class TestFoldMapChains:
 
         composite = next(n for n in optimized.values() if isinstance(n, CompositeMapTaskNode))
         assert composite.terminal == "join"
-        assert len(composite.chain) == 1  # add
+        assert len(composite.steps) == 1  # add
 
     def test_map_reduce_folds(self) -> None:
         """map().reduce() folds into a CompositeMapTaskNode with reduce terminal."""
@@ -483,7 +483,7 @@ class TestAggregateTimeout:
 
 
 class TestTimeoutPreservation:
-    """Optimizer should capture per-node timeout into ChainLink and aggregate on composite."""
+    """Optimizer should capture per-node timeout into CompositeStep and aggregate on composite."""
 
     def test_task_chain_aggregates_timeouts(self) -> None:
         """CompositeTaskNode timeout is sum of link timeouts."""
@@ -500,8 +500,8 @@ class TestTimeoutPreservation:
         optimized, _ = optimize_graph(graph)
         composite = next(n for n in optimized.values() if isinstance(n, CompositeTaskNode))
         assert composite.timeout == 15.0
-        assert composite.chain[0].timeout == 10.0
-        assert composite.chain[1].timeout == 5.0
+        assert composite.steps[0].timeout == 10.0
+        assert composite.steps[1].timeout == 5.0
 
     def test_task_chain_none_timeout_propagates(self) -> None:
         """If any link has no timeout, composite timeout is None."""
@@ -535,8 +535,8 @@ class TestTimeoutPreservation:
         composite = next(n for n in optimized.values() if isinstance(n, CompositeMapTaskNode))
         assert composite.timeout == 15.0
 
-    def test_chain_link_captures_link_kind(self) -> None:
-        """ChainLink.link_kind should reflect the original node kind."""
+    def test_composite_step_captures_step_kind(self) -> None:
+        """CompositeStep.step_kind should reflect the original node kind."""
 
         @task(timeout=1.0)
         def a(x: int) -> int:  # pragma: no cover
@@ -549,8 +549,8 @@ class TestTimeoutPreservation:
         graph = build_graph(a(x=1).then(b))
         optimized, _ = optimize_graph(graph)
         composite = next(n for n in optimized.values() if isinstance(n, CompositeTaskNode))
-        for link in composite.chain:
-            assert link.link_kind == "task"
+        for step in composite.steps:
+            assert step.step_kind == "task"
 
 
 class TestChainBackwardWalk:
@@ -585,7 +585,7 @@ class TestChainBackwardWalk:
         counts = _count_types(optimized)
         assert counts == {"CompositeTaskNode": 1}
         composite = next(n for n in optimized.values() if isinstance(n, CompositeTaskNode))
-        assert len(composite.chain) == 3
+        assert len(composite.steps) == 3
 
     def test_backward_walk_stops_at_fan_out(self) -> None:
         """Backward walk stops when predecessor has multiple successors (fan-out)."""
@@ -640,7 +640,7 @@ class TestMapChainBackwardWalk:
         counts = _count_types(optimized)
         assert counts == {"CompositeMapTaskNode": 1}
         composite = next(n for n in optimized.values() if isinstance(n, CompositeMapTaskNode))
-        assert len(composite.chain) == 2  # inc, neg (source_map is separate field)
+        assert len(composite.steps) == 2  # inc, neg (source_map is separate field)
 
     def test_map_backward_walk_stops_at_fan_out(self) -> None:
         """Map backward walk stops when predecessor has multiple successors."""
@@ -670,7 +670,7 @@ class TestMapChainBackwardWalk:
         composites = [n for n in optimized.values() if isinstance(n, CompositeMapTaskNode)]
         # No composite should include the shared map head
         for composite in composites:
-            assert len(composite.chain) == 0 or composite.source_map is not None
+            assert len(composite.steps) == 0 or composite.source_map is not None
 
 
 # ---------------------------------------------------------------------------

@@ -1,25 +1,16 @@
 """
 Composite node representations within the graph IR.
 
-Composite nodes fold linear chains of nodes into single execution units, reducing backend
+Composite nodes fold linear sequences of nodes into single execution units, reducing backend
 submission overhead. They are created by the graph optimizer and are transparent to the user — the
 same worker function handles per-node hooks, caching, retries, and output saving.
-
-Two composite types exist:
-
-- `CompositeTaskNode`:  folds a linear `TaskNode` chain into a single backend submission
-  (e.g. `a.then(b).then(c)`).
-- `CompositeMapTaskNode`:  folds a `MapTaskNode` head followed by `.then()` `TaskNode` links so the
-  full chain runs **per iteration** rather than level-by-level.  Supports three terminal modes:
-  * **collect** — gather all iteration results into a list (default)
-  * **join** — gather all, then run a reducer once
-  * **reduce** — streaming fold with O(1) memory
 """
 
 from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -52,20 +43,10 @@ TerminalKind = Literal["collect", "join", "reduce"]
 
 @dataclass(frozen=True)
 class CompositeTaskNode(BaseGraphNode):
-    """
-    A linear chain of `TaskNode`s folded into a single backend submission.
+    """A linear sequence of `TaskNode`s folded into a single node."""
 
-    Created by the graph optimizer when it detects a sequence of task nodes
-    where each node has exactly one predecessor and one successor in the chain,
-    all sharing the same backend.
-
-    The composite submits **one** closure to the backend that internally runs
-    the full chain sequentially via ``run_task_worker``, preserving per-node hooks,
-    caching, retries, and output saving.
-    """
-
-    chain: tuple[ChainLink, ...]
-    """Ordered sequence of chain links to execute."""
+    steps: tuple[CompositeStep, ...]
+    """Ordered sequence of steps to execute."""
 
     @property
     @override
@@ -75,22 +56,22 @@ class CompositeTaskNode(BaseGraphNode):
     @override
     def get_dependencies(self) -> set[UUID]:
         """External dependencies: union of all links' deps minus internal chain IDs."""
-        internal_ids = {link.id for link in self.chain}
+        internal_ids = {step.id for step in self.steps}
         all_deps: set[UUID] = set()
-        for link in self.chain:
-            all_deps |= collect_dependencies(link.external_params, link.output_configs)
+        for step in self.steps:
+            all_deps |= collect_dependencies(step.external_params, step.output_configs)
         return all_deps - internal_ids
 
     @override
     def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> CompositeTaskNode:
-        new_chain = _remap_chain(self.chain, id_mapping)
-        new_oc = remap_output_configs(self.output_configs, id_mapping)
-        if new_chain is not None or new_oc is not None:
+        new_steps = _remap_steps(self.steps, id_mapping)
+        new_output_configs = remap_output_configs(self.output_configs, id_mapping)
+        if new_steps is not None or new_output_configs is not None:
             changes: dict[str, Any] = {}
-            if new_chain is not None:
-                changes["chain"] = new_chain
-            if new_oc is not None:
-                changes["output_configs"] = new_oc
+            if new_steps is not None:
+                changes["chain"] = new_steps
+            if new_output_configs is not None:
+                changes["output_configs"] = new_output_configs
             return replace(self, **changes)
         return self
 
@@ -99,19 +80,15 @@ class CompositeTaskNode(BaseGraphNode):
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
         """Submit the full chain as a single closure to the backend."""
-        chain = self.chain
+        steps = self.steps
         snapshot = dict(completed_nodes)
 
-        runner = functools.partial(
-            _run_composite_chain,
-            chain=chain,
-            snapshot=snapshot,
-        )
+        runner = functools.partial(_run_composite_steps, steps=steps, snapshot=snapshot)
 
         start_time = time.perf_counter()
         hooks.before_composite_execute(
             metadata=self.metadata,
-            chain_length=len(chain),
+            chain_length=len(steps),
         )
 
         try:
@@ -121,7 +98,7 @@ class CompositeTaskNode(BaseGraphNode):
             duration = time.perf_counter() - start_time
             hooks.on_composite_error(
                 metadata=self.metadata,
-                chain_length=len(chain),
+                chain_length=len(steps),
                 error=e,
                 duration=duration,
             )
@@ -130,7 +107,7 @@ class CompositeTaskNode(BaseGraphNode):
         duration = time.perf_counter() - start_time
         hooks.after_composite_execute(
             metadata=self.metadata,
-            chain_length=len(chain),
+            chain_length=len(steps),
             duration=duration,
         )
         return result
@@ -139,11 +116,9 @@ class CompositeTaskNode(BaseGraphNode):
 @dataclass(frozen=True)
 class CompositeMapTaskNode(BaseGraphNode):
     """
-    A `MapTaskNode` head followed by `.then()` `TaskNode` links, folded so the full chain runs
-    **per iteration** rather than level-by-level.
+    A linear sequence of `MapTaskNode` followed by parallel `TaskNode`s folded into a single node.
 
     Supports three terminal modes:
-
     * **collect** — `asyncio.gather` all iteration results into a list.
     * **join** — collect all, then run a final reducer `TaskNode` once.
     * **reduce** — streaming fold via `ReduceConfig` with O(1) memory.
@@ -152,14 +127,14 @@ class CompositeMapTaskNode(BaseGraphNode):
     source_map: MapTaskNode
     """The originating map node that generates iterations."""
 
-    chain: tuple[ChainLink, ...] = field(default=())
-    """Ordered `.then()` links to run per iteration after the source map."""
+    steps: tuple[CompositeStep, ...] = field(default=())
+    """Ordered `.then()` steps to run per iteration after the source map."""
 
     terminal: TerminalKind = "collect"
     """How iteration results are aggregated."""
 
-    join_link: ChainLink | None = field(default=None)
-    """If `terminal='join'`, the reducer link that receives the full list."""
+    join_step: CompositeStep | None = field(default=None)
+    """If `terminal='join'`, the step that receives the full list."""
 
     reduce_config: ReduceConfig | None = field(default=None)
     """If `terminal='reduce'`, configuration for the streaming fold."""
@@ -174,18 +149,18 @@ class CompositeMapTaskNode(BaseGraphNode):
 
     @override
     def get_dependencies(self) -> set[UUID]:
-        internal_ids = {self.source_map.id} | {link.id for link in self.chain}
-        if self.join_link is not None:
-            internal_ids.add(self.join_link.id)
+        internal_ids = {self.source_map.id} | {step.id for step in self.steps}
+        if self.join_step is not None:
+            internal_ids.add(self.join_step.id)
 
         all_deps = self.source_map.get_dependencies()
 
-        for link in self.chain:
-            all_deps |= collect_dependencies(link.external_params, link.output_configs)
+        for step in self.steps:
+            all_deps |= collect_dependencies(step.external_params, step.output_configs)
 
-        if self.join_link is not None:
+        if self.join_step is not None:
             all_deps |= collect_dependencies(
-                self.join_link.external_params, self.join_link.output_configs
+                self.join_step.external_params, self.join_step.output_configs
             )
 
         if self.initial_input is not None and self.initial_input.reference is not None:
@@ -198,13 +173,13 @@ class CompositeMapTaskNode(BaseGraphNode):
         changes: dict[str, Any] = {}
 
         # Build filtered mapping for output_configs: exclude internal IDs
-        internal_ids = {self.source_map.id} | {link.id for link in self.chain}
-        if self.join_link is not None:
-            internal_ids.add(self.join_link.id)
+        internal_ids = {self.source_map.id} | {link.id for link in self.steps}
+        if self.join_step is not None:
+            internal_ids.add(self.join_step.id)
         oc_mapping = {k: v for k, v in id_mapping.items() if k not in internal_ids}
 
-        # Remap chain links
-        new_chain = _remap_chain(self.chain, id_mapping)
+        # Remap chain steps
+        new_chain = _remap_steps(self.steps, id_mapping)
         if new_chain is not None:
             changes["chain"] = new_chain
 
@@ -213,11 +188,11 @@ class CompositeMapTaskNode(BaseGraphNode):
         if new_source is not self.source_map:  # pragma: no cover — cross-composite remap
             changes["source_map"] = new_source
 
-        # Remap join_link
-        if self.join_link is not None:
-            new_join = _remap_chain_link(self.join_link, id_mapping, oc_mapping)
-            if new_join is not self.join_link:
-                changes["join_link"] = new_join
+        # Remap join_step
+        if self.join_step is not None:
+            new_join = _remap_composite_step(self.join_step, id_mapping, oc_mapping)
+            if new_join is not self.join_step:
+                changes["join_step"] = new_join
 
         # Remap initial_input
         if (
@@ -248,7 +223,7 @@ class CompositeMapTaskNode(BaseGraphNode):
         source_submissions = self.source_map._prepare(completed_nodes)
         iteration_count = len(source_submissions)
 
-        chain = self.chain
+        steps = self.steps
         snapshot = dict(completed_nodes)
 
         # Build picklable runners via functools.partial of module-level function
@@ -256,7 +231,7 @@ class CompositeMapTaskNode(BaseGraphNode):
             return functools.partial(
                 _run_composite_map_step,
                 source_fn=source_fn,
-                chain=chain,
+                steps=steps,
                 snapshot=snapshot,
                 iteration_index=iteration_index,
             )
@@ -264,7 +239,7 @@ class CompositeMapTaskNode(BaseGraphNode):
         start_time = time.perf_counter()
         hooks.before_composite_execute(
             metadata=self.metadata,
-            chain_length=len(chain) + 1,  # +1 for source map
+            chain_length=len(steps) + 1,  # +1 for source map
         )
 
         try:
@@ -285,7 +260,7 @@ class CompositeMapTaskNode(BaseGraphNode):
             duration = time.perf_counter() - start_time
             hooks.on_composite_error(
                 metadata=self.metadata,
-                chain_length=len(chain) + 1,
+                chain_length=len(steps) + 1,
                 error=e,
                 duration=duration,
             )
@@ -294,12 +269,10 @@ class CompositeMapTaskNode(BaseGraphNode):
         duration = time.perf_counter() - start_time
         hooks.after_composite_execute(
             metadata=self.metadata,
-            chain_length=len(chain) + 1,
+            chain_length=len(steps) + 1,
             duration=duration,
         )
         return result
-
-    # -- Terminal: collect / join --
 
     async def _execute_batch(
         self,
@@ -330,24 +303,24 @@ class CompositeMapTaskNode(BaseGraphNode):
         collected = list(results)
 
         # Terminal: join — run the reducer once on the full list
-        if self.terminal == "join" and self.join_link is not None:
-            link = self.join_link
-            resolved = resolve_inputs(link.external_params, snapshot)
-            if link.flow_param is not None:  # pragma: no branch
-                resolved[link.flow_param] = collected
+        if self.terminal == "join" and self.join_step is not None:
+            step = self.join_step
+            resolved = resolve_inputs(step.external_params, snapshot)
+            if step.flow_param is not None:  # pragma: no branch
+                resolved[step.flow_param] = collected
 
-            output_parameters = resolve_output_parameters(link.output_configs, snapshot)
+            output_parameters = resolve_output_parameters(step.output_configs, snapshot)
 
             join_runner = functools.partial(
                 run_task_worker,
-                func=link.func,
-                metadata=link.metadata,
+                func=step.func,
+                metadata=step.metadata,
                 inputs=resolved,
-                output_configs=link.output_configs,
+                output_configs=step.output_configs,
                 output_parameters=output_parameters,
-                retries=link.retries,
-                cache_enabled=link.cache,
-                cache_ttl=link.cache_ttl,
+                retries=step.retries,
+                cache_enabled=step.cache,
+                cache_ttl=step.cache_ttl,
             )
 
             future = backend.submit(join_runner, timeout=self.timeout)
@@ -364,19 +337,13 @@ class CompositeMapTaskNode(BaseGraphNode):
         completed_nodes: Mapping[UUID, Any],
     ) -> Any:
         """
-        Streaming fold: submit iterations to backend, accumulate results with
-        O(1) memory as they complete.
+        Streaming fold; submit iterations to backend, accumulate results.
 
-        .. note::
-
-            The reduce function runs on the **coordinator** (not on the backend) because it
-            needs to see results as they stream in from the backend.  Map iterations are
-            submitted to the backend as usual.  If you need a heavy post-processing step,
-            use ``.join()`` instead, which submits a single reducer to the backend after all
-            iterations complete.
+        The reduce function runs on the **coordinator** (not on the backend) because it needs to
+        see results as they stream in from the backend.  Map iterations are submitted to the
+        backend as usual.  If you need a heavy post-processing step, use ``.join()`` instead,
+        which submits a single reducer to the backend after all iterations complete.
         """
-        import inspect
-
         assert self.reduce_config is not None
         assert self.initial_input is not None
         cfg = self.reduce_config
@@ -429,16 +396,16 @@ class CompositeMapTaskNode(BaseGraphNode):
 
 
 @dataclass(frozen=True)
-class ChainLink:
+class CompositeStep:
     """
-    One step in a composite chain.
+    One step in a `CompositeTaskNode` or `CompositeMapTaskNode`.
 
     Captures everything ``run_task_worker`` needs to execute one step, plus the
     ``flow_param`` that receives the previous step's result.
     """
 
     id: UUID
-    """Original node ID for this link (used for result aliasing)."""
+    """Original node ID for this step (used for result aliasing)."""
 
     name: str
     """Human-readable name of the original node."""
@@ -447,159 +414,153 @@ class ChainLink:
     """Optional description of the original node."""
 
     func: Callable[..., Any]
-    """The task function to execute for this link."""
+    """The task function to execute for this step."""
 
     flow_param: str | None
     """
-    Parameter name receiving the previous link's result.
-
-    `None` only for the **first** link in a `CompositeTaskNode` chain (whose inputs come entirely
-    from `external_params`).
+    Parameter name receiving the previous step's result or None for first step in a composite.
     """
 
     external_params: Mapping[str, NodeInput]
     """Parameters sourced from outside the chain (literals or refs to completed nodes)."""
 
     output_configs: tuple[NodeOutputConfig, ...]
-    """Output save/checkpoint configurations for this link."""
+    """Output save/checkpoint configurations for this step."""
 
     retries: int = 0
-    """Number of times to retry this link on failure."""
+    """Number of times to retry this step on failure."""
 
     cache: bool = False
-    """Whether hash-based caching is enabled for this link."""
+    """Whether hash-based caching is enabled for this step."""
 
     cache_ttl: int | None = None
     """Time-to-live for cached results in seconds."""
 
     timeout: float | None = None
-    """Per-link timeout in seconds (preserved from the original node for aggregation)."""
+    """Per-step timeout in seconds (preserved from the original node for aggregation)."""
 
-    link_kind: NodeKind = "task"
-    """Kind of the original node this link was built from."""
+    step_kind: NodeKind = "task"
+    """Kind of the original node this step was built from."""
 
     @property
     def metadata(self) -> NodeMetadata:
-        """Build ``NodeMetadata`` for this link."""
+        """Build ``NodeMetadata`` for this step."""
         return NodeMetadata(
             id=self.id,
             name=self.name,
-            kind=self.link_kind,
+            kind=self.step_kind,
             description=self.description,
         )
 
 
-def _remap_chain_link(
-    link: ChainLink,
+def _remap_composite_step(
+    step: CompositeStep,
     id_mapping: Mapping[UUID, UUID],
     oc_mapping: Mapping[UUID, UUID] | None = None,
-) -> ChainLink:
+) -> CompositeStep:
     """
-    Remaps external_params and output_configs references in a ChainLink.
+    Remaps external_params and output_configs references in a CompositeStep.
 
     ``oc_mapping`` is used for output_configs remapping.  When ``None``,
-    ``id_mapping`` is used.  Callers that know which IDs are chain-internal
+    ``id_mapping`` is used.  Callers that know which IDs are step-internal
     should pass a filtered mapping that excludes them so that internal
-    references (resolved within the chain snapshot) are left untouched.
+    references (resolved within the composite snapshot) are left untouched.
     """
-    new_params = remap_node_inputs(link.external_params, id_mapping)
+    new_params = remap_node_inputs(step.external_params, id_mapping)
     new_oc = remap_output_configs(
-        link.output_configs, oc_mapping if oc_mapping is not None else id_mapping
+        step.output_configs, oc_mapping if oc_mapping is not None else id_mapping
     )
-    if new_params is not link.external_params or new_oc is not None:
+    if new_params is not step.external_params or new_oc is not None:
         return replace(
-            link,
+            step,
             external_params=new_params,
             **(dict(output_configs=new_oc) if new_oc is not None else {}),
         )
-    return link
+    return step
 
 
-def _remap_chain(
-    chain: tuple[ChainLink, ...], id_mapping: Mapping[UUID, UUID]
-) -> tuple[ChainLink, ...] | None:
+def _remap_steps(
+    steps: tuple[CompositeStep, ...], id_mapping: Mapping[UUID, UUID]
+) -> tuple[CompositeStep, ...] | None:
     """
-    Remaps an entire chain, returning None if nothing changed.
+    Remaps an entire sequence of steps, returning None if nothing changed.
 
-    Internal chain IDs are excluded from the output_configs remapping so that
-    references resolved within the chain's own snapshot are not broken.
+    Internal step IDs are excluded from the output_configs remapping so that
+    references resolved within the composite's own snapshot are not broken.
     """
-    internal_ids = {link.id for link in chain}
+    internal_ids = {step.id for step in steps}
     oc_mapping = {k: v for k, v in id_mapping.items() if k not in internal_ids}
-    new_links: list[ChainLink] = []
+    new_steps: list[CompositeStep] = []
     changed = False
-    for link in chain:
-        new_link = _remap_chain_link(link, id_mapping, oc_mapping)
-        if new_link is not link:
+    for step in steps:
+        new_step = _remap_composite_step(step, id_mapping, oc_mapping)
+        if new_step is not step:
             changed = True
-        new_links.append(new_link)
-    return tuple(new_links) if changed else None
+        new_steps.append(new_step)
+    return tuple(new_steps) if changed else None
 
 
-async def _run_composite_chain(
-    chain: tuple[ChainLink, ...],
-    snapshot: dict[UUID, Any],
-) -> Any:
+async def _run_composite_steps(steps: tuple[CompositeStep, ...], snapshot: dict[UUID, Any]) -> Any:
     """
-    Execute a `CompositeTaskNode` chain as a single sequential unit.
+    Execute a `CompositeTaskNode` steps as a single sequential unit.
 
     Defined at module level so it is picklable by `ProcessPoolExecutor`.
     """
     result: Any = None
 
-    for i, link in enumerate(chain):
-        resolved = resolve_inputs(link.external_params, snapshot)
-        if i > 0 and link.flow_param is not None:
-            resolved[link.flow_param] = result
+    for i, step in enumerate(steps):
+        resolved = resolve_inputs(step.external_params, snapshot)
+        if i > 0 and step.flow_param is not None:
+            resolved[step.flow_param] = result
 
-        output_parameters = resolve_output_parameters(link.output_configs, snapshot)
+        output_parameters = resolve_output_parameters(step.output_configs, snapshot)
 
         result = await run_task_worker(
-            func=link.func,
-            metadata=link.metadata,
+            func=step.func,
+            metadata=step.metadata,
             inputs=resolved,
-            output_configs=link.output_configs,
+            output_configs=step.output_configs,
             output_parameters=output_parameters,
-            retries=link.retries,
-            cache_enabled=link.cache,
-            cache_ttl=link.cache_ttl,
+            retries=step.retries,
+            cache_enabled=step.cache,
+            cache_ttl=step.cache_ttl,
         )
 
-        # Make result available for subsequent links' external_params
-        snapshot[link.id] = result
+        # Make result available for subsequent steps' external_params
+        snapshot[step.id] = result
 
     return result
 
 
 async def _run_composite_map_step(
     source_fn: Submission,
-    chain: tuple[ChainLink, ...],
+    steps: tuple[CompositeStep, ...],
     snapshot: dict[UUID, Any],
     iteration_index: int,
 ) -> Any:
     """
-    Execute one iteration of a `CompositeMapTaskNode`: source function then each chain link.
+    Executes one iteration of the composite map steps.
 
     Defined at module level so it is picklable by `ProcessPoolExecutor`.
     """
     result = await source_fn()
 
-    for link in chain:
-        resolved = resolve_inputs(link.external_params, snapshot)
-        if link.flow_param is not None:  # pragma: no branch – map chain links must have flow_param
-            resolved[link.flow_param] = result
+    for step in steps:
+        resolved = resolve_inputs(step.external_params, snapshot)
+        if step.flow_param is not None:  # pragma: no branch – map steps must have flow_param
+            resolved[step.flow_param] = result
 
-        output_parameters = resolve_output_parameters(link.output_configs, snapshot)
+        output_parameters = resolve_output_parameters(step.output_configs, snapshot)
 
         result = await run_task_worker(
-            func=link.func,
-            metadata=link.metadata,
+            func=step.func,
+            metadata=step.metadata,
             inputs=resolved,
-            output_configs=link.output_configs,
+            output_configs=step.output_configs,
             output_parameters=output_parameters,
-            retries=link.retries,
-            cache_enabled=link.cache,
-            cache_ttl=link.cache_ttl,
+            retries=step.retries,
+            cache_enabled=step.cache,
+            cache_ttl=step.cache_ttl,
             iteration_index=iteration_index,
         )
     return result

@@ -59,9 +59,9 @@ class DagliteSettings:
     """
     Enable graph optimization passes (e.g., composite node folding).
 
-    When enabled, linear chains of nodes sharing the same backend are folded into composite nodes
-    for reduced submission overhead. Disable for debugging or when exact per-node scheduling
-    control is needed.
+    When enabled, linear sequences of nodes sharing the same backend are folded into composite nodes
+    for reduced submission overhead. Disable for debugging or when exact per-node scheduling control
+    is needed.
 
     Can be set via DAGLITE_ENABLE_GRAPH_OPTIMIZATION environment variable (1/true/yes to enable,
     0/false/no to disable). Defaults to True.

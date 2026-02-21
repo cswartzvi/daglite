@@ -1,7 +1,7 @@
 """
 Unit tests for composite node IR types.
 
-Tests ChainLink, CompositeTaskNode, and CompositeMapTaskNode in isolation —
+Tests CompositeStep, CompositeTaskNode, and CompositeMapTaskNode in isolation —
 remap references, get_dependencies, and metadata correctness.
 Execution tests live in tests/integration/test_composite.py.
 """
@@ -19,9 +19,9 @@ from daglite.graph.nodes import CompositeTaskNode
 from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeOutputConfig
-from daglite.graph.nodes.composite_node import ChainLink
-from daglite.graph.nodes.composite_node import _remap_chain
-from daglite.graph.nodes.composite_node import _remap_chain_link
+from daglite.graph.nodes.composite_node import CompositeStep
+from daglite.graph.nodes.composite_node import _remap_composite_step
+from daglite.graph.nodes.composite_node import _remap_steps
 from daglite.graph.nodes.dataset_node import DatasetNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
 from daglite.graph.nodes.reduce_node import ReduceNode
@@ -32,18 +32,18 @@ def _dummy_func(x: int = 0) -> int:
     return x
 
 
-def _make_chain_link(
+def _make_composite_step(
     *,
     timeout: float | None = None,
-    link_kind: NodeKind = "task",
+    step_kind: NodeKind = "task",
     ref: UUID | None = None,
-) -> ChainLink:
+) -> CompositeStep:
     external: dict[str, NodeInput] = {}
     if ref is not None:
         external["x"] = NodeInput.from_ref(ref)
-    return ChainLink(
+    return CompositeStep(
         id=uuid4(),
-        name="link",
+        name="step",
         description=None,
         func=lambda x: x,
         flow_param="x",
@@ -53,7 +53,7 @@ def _make_chain_link(
         cache=False,
         cache_ttl=None,
         timeout=timeout,
-        link_kind=link_kind,
+        step_kind=step_kind,
     )
 
 
@@ -66,45 +66,45 @@ def _make_output_config(dep_id: UUID) -> tuple[NodeOutputConfig, ...]:
     )
 
 
-class TestChainLinkMetadata:
-    """ChainLink.metadata should use the link_kind field."""
+class TestCompositeStepMetadata:
+    """CompositeStep.metadata should use the step_kind field."""
 
     def test_metadata_kind_defaults_to_task(self) -> None:
-        link = _make_chain_link()
-        assert link.metadata.kind == "task"
+        step = _make_composite_step()
+        assert step.metadata.kind == "task"
 
-    def test_metadata_kind_uses_link_kind(self) -> None:
-        link = _make_chain_link(link_kind="map")
-        assert link.metadata.kind == "map"
+    def test_metadata_kind_uses_step_kind(self) -> None:
+        step = _make_composite_step(step_kind="map")
+        assert step.metadata.kind == "map"
 
 
-class TestRemapChainHelpers:
-    """Unit tests for chain remap helper functions."""
+class TestRemapStepHelpers:
+    """Unit tests for composite step remap helper functions."""
 
-    def test_remap_chain_link_changes_reference(self) -> None:
+    def test_remap_composite_step_changes_reference(self) -> None:
         old_id = uuid4()
         new_id = uuid4()
-        link = _make_chain_link(ref=old_id)
-        remapped = _remap_chain_link(link, {old_id: new_id})
+        step = _make_composite_step(ref=old_id)
+        remapped = _remap_composite_step(step, {old_id: new_id})
         assert remapped.external_params["x"].reference == new_id
-        assert remapped is not link
+        assert remapped is not step
 
-    def test_remap_chain_link_no_change_returns_same(self) -> None:
+    def test_remap_composite_step_no_change_returns_same(self) -> None:
         old_id = uuid4()
-        link = _make_chain_link(ref=old_id)
-        remapped = _remap_chain_link(link, {uuid4(): uuid4()})
-        assert remapped is link
+        step = _make_composite_step(ref=old_id)
+        remapped = _remap_composite_step(step, {uuid4(): uuid4()})
+        assert remapped is step
 
-    def test_remap_chain_returns_none_if_unchanged(self) -> None:
-        chain = (_make_chain_link(), _make_chain_link())
-        result = _remap_chain(chain, {uuid4(): uuid4()})
+    def test_remap_steps_returns_none_if_unchanged(self) -> None:
+        steps = (_make_composite_step(), _make_composite_step())
+        result = _remap_steps(steps, {uuid4(): uuid4()})
         assert result is None
 
-    def test_remap_chain_returns_new_tuple_if_changed(self) -> None:
+    def test_remap_steps_returns_new_tuple_if_changed(self) -> None:
         old_id = uuid4()
         new_id = uuid4()
-        chain = (_make_chain_link(), _make_chain_link(ref=old_id))
-        result = _remap_chain(chain, {old_id: new_id})
+        steps = (_make_composite_step(), _make_composite_step(ref=old_id))
+        result = _remap_steps(steps, {old_id: new_id})
         assert result is not None
         assert result[1].external_params["x"].reference == new_id
 
@@ -115,28 +115,28 @@ class TestCompositeTaskNodeRemapReferences:
     def test_remap_updates_chain_refs(self) -> None:
         old_id = uuid4()
         new_id = uuid4()
-        link = _make_chain_link(ref=old_id)
-        composite = CompositeTaskNode(id=uuid4(), name="c", chain=(link,))
+        step = _make_composite_step(ref=old_id)
+        composite = CompositeTaskNode(id=uuid4(), name="c", steps=(step,))
         remapped = composite.remap_references({old_id: new_id})
         assert remapped is not composite
-        assert remapped.chain[0].external_params["x"].reference == new_id
+        assert remapped.steps[0].external_params["x"].reference == new_id
 
     def test_remap_no_change_returns_self(self) -> None:
-        link = _make_chain_link()
-        composite = CompositeTaskNode(id=uuid4(), name="c", chain=(link,))
+        step = _make_composite_step()
+        composite = CompositeTaskNode(id=uuid4(), name="c", steps=(step,))
         result = composite.remap_references({uuid4(): uuid4()})
         assert result is composite
 
     def test_remap_only_output_configs_changes(self) -> None:
-        """When only the node's own output_configs dep changes (no chain ref), chain preserved."""
+        """When only the node's own output_configs dep changes (no step ref), chain preserved."""
         dep_id = uuid4()
         new_id = uuid4()
-        link = _make_chain_link()  # no external refs
+        step = _make_composite_step()  # no external refs
         oc = NodeOutputConfig(key="out_{v}.pkl", dependencies={"v": NodeInput.from_ref(dep_id)})
-        composite = CompositeTaskNode(id=uuid4(), name="c", chain=(link,), output_configs=(oc,))
+        composite = CompositeTaskNode(id=uuid4(), name="c", steps=(step,), output_configs=(oc,))
         remapped = composite.remap_references({dep_id: new_id})
         assert remapped is not composite
-        assert remapped.chain is composite.chain  # chain tuple identity preserved
+        assert remapped.steps is composite.steps  # chain tuple identity preserved
         assert remapped.output_configs[0].dependencies["v"].reference == new_id
 
 
@@ -157,24 +157,24 @@ class TestCompositeMapTaskNodeRemapReferences:
         old_id = uuid4()
         new_id = uuid4()
         source = self._make_source_map()
-        link = _make_chain_link(ref=old_id)
-        composite = CompositeMapTaskNode(id=uuid4(), name="cmap", source_map=source, chain=(link,))
+        step = _make_composite_step(ref=old_id)
+        composite = CompositeMapTaskNode(id=uuid4(), name="cmap", source_map=source, steps=(step,))
         remapped = composite.remap_references({old_id: new_id})
         assert remapped is not composite
-        assert remapped.chain[0].external_params["x"].reference == new_id
+        assert remapped.steps[0].external_params["x"].reference == new_id
 
-    def test_remap_join_link_refs(self) -> None:
+    def test_remap_join_step_refs(self) -> None:
         old_id = uuid4()
         new_id = uuid4()
         source = self._make_source_map()
-        join = _make_chain_link(ref=old_id)
+        join = _make_composite_step(ref=old_id)
         composite = CompositeMapTaskNode(
-            id=uuid4(), name="cmap", source_map=source, chain=(), terminal="join", join_link=join
+            id=uuid4(), name="cmap", source_map=source, steps=(), terminal="join", join_step=join
         )
         remapped = composite.remap_references({old_id: new_id})
         assert remapped is not composite
-        assert remapped.join_link is not None
-        assert remapped.join_link.external_params["x"].reference == new_id
+        assert remapped.join_step is not None
+        assert remapped.join_step.external_params["x"].reference == new_id
 
     def test_remap_initial_input_ref(self) -> None:
         old_id = uuid4()
@@ -184,7 +184,7 @@ class TestCompositeMapTaskNodeRemapReferences:
             id=uuid4(),
             name="cmap",
             source_map=source,
-            chain=(),
+            steps=(),
             terminal="reduce",
             reduce_config=ReduceConfig(func=lambda acc, item: acc + item),
             initial_input=NodeInput.from_ref(old_id),
@@ -196,7 +196,7 @@ class TestCompositeMapTaskNodeRemapReferences:
 
     def test_remap_no_change_returns_self(self) -> None:
         source = self._make_source_map()
-        composite = CompositeMapTaskNode(id=uuid4(), name="cmap", source_map=source, chain=())
+        composite = CompositeMapTaskNode(id=uuid4(), name="cmap", source_map=source, steps=())
         result = composite.remap_references({uuid4(): uuid4()})
         assert result is composite
 
@@ -207,11 +207,11 @@ class TestCompositeMapTaskNodeRemapReferences:
         source = self._make_source_map()
         oc = NodeOutputConfig(key="out_{v}.pkl", dependencies={"v": NodeInput.from_ref(dep_id)})
         composite = CompositeMapTaskNode(
-            id=uuid4(), name="cmap", source_map=source, chain=(), output_configs=(oc,)
+            id=uuid4(), name="cmap", source_map=source, steps=(), output_configs=(oc,)
         )
         remapped = composite.remap_references({dep_id: new_id})
         assert remapped is not composite
-        assert remapped.chain == composite.chain
+        assert remapped.steps == composite.steps
         assert remapped.output_configs[0].dependencies["v"].reference == new_id
 
 
@@ -232,7 +232,7 @@ class TestCompositeMapDependencyCoverage:
             id=uuid4(),
             name="cmap",
             source_map=source,
-            chain=(),
+            steps=(),
             terminal="reduce",
             reduce_config=ReduceConfig(func=lambda acc, item: acc + item),
             initial_input=NodeInput.from_ref(initial_ref),
@@ -294,11 +294,11 @@ class TestRemapReferencesOutputConfigs:
             )
             self._assert_remap_covers_deps(node)
 
-    def test_composite_task_node_chain_link(self) -> None:
+    def test_composite_task_node_composite_step(self) -> None:
         dep_id = uuid4()
-        link = ChainLink(
+        step = CompositeStep(
             id=uuid4(),
-            name="link",
+            name="step",
             description=None,
             func=_dummy_func,
             flow_param="x",
@@ -308,9 +308,9 @@ class TestRemapReferencesOutputConfigs:
             cache=False,
             cache_ttl=None,
             timeout=None,
-            link_kind="task",
+            step_kind="task",
         )
-        node = CompositeTaskNode(id=uuid4(), name="c", chain=(link,))
+        node = CompositeTaskNode(id=uuid4(), name="c", steps=(step,))
         self._assert_remap_covers_deps(node)
 
     def test_composite_map_task_node_join(self) -> None:
@@ -323,7 +323,7 @@ class TestRemapReferencesOutputConfigs:
             fixed_kwargs={},
             mapped_kwargs={"x": NodeInput.from_sequence([1, 2])},
         )
-        join_link = ChainLink(
+        join_step = CompositeStep(
             id=uuid4(),
             name="join",
             description=None,
@@ -335,15 +335,15 @@ class TestRemapReferencesOutputConfigs:
             cache=False,
             cache_ttl=None,
             timeout=None,
-            link_kind="task",
+            step_kind="task",
         )
         node = CompositeMapTaskNode(
             id=uuid4(),
             name="cm",
-            chain=(),
+            steps=(),
             source_map=source,
             terminal="join",
-            join_link=join_link,
+            join_step=join_step,
         )
         self._assert_remap_covers_deps(node)
 

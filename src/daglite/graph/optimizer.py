@@ -1,16 +1,4 @@
-"""
-Graph optimization passes for the daglite IR.
-
-The primary optimization is **composite node folding**: detecting linear chains
-of nodes that share the same backend and collapsing them into a single
-`CompositeTaskNode` or `CompositeMapTaskNode`. This reduces backend
-submission overhead from O(chain_length) to O(1) for task chains and from
-O(iterations × chain_length) to O(iterations) for map chains.
-
-The optimizer runs between `build_graph()` and engine execution, producing
-a rewritten graph and an `id_mapping` that the engine uses to alias
-intermediate results for downstream dependency resolution.
-"""
+"""Graph optimization passes for the daglite IR."""
 
 from __future__ import annotations
 
@@ -22,8 +10,8 @@ from uuid import uuid4
 
 from daglite.graph.nodes.base import BaseGraphNode
 from daglite.graph.nodes.base import NodeInput
-from daglite.graph.nodes.composite_node import ChainLink
 from daglite.graph.nodes.composite_node import CompositeMapTaskNode
+from daglite.graph.nodes.composite_node import CompositeStep
 from daglite.graph.nodes.composite_node import CompositeTaskNode
 from daglite.graph.nodes.composite_node import TerminalKind
 from daglite.graph.nodes.map_node import MapTaskNode
@@ -38,8 +26,8 @@ def optimize_graph(
     """
     Apply optimization passes to the graph IR.
 
-    Currently performs composite node folding — collapsing linear chains of nodes sharing the same
-    backend into `CompositeTaskNode` or `CompositeMapTaskNode` instances.
+    Currently performs composite node folding — collapsing linear sequences of nodes sharing the
+    same backend into `CompositeTaskNode` or `CompositeMapTaskNode` instances.
 
     Args:
         nodes: The original graph IR node dictionary.
@@ -52,150 +40,145 @@ def optimize_graph(
           of each chain is stored as a key so that downstream nodes
           depending on the tail can find the composite's result.
     """
-    nodes, id_mapping = _fold_task_chains(nodes)
-    nodes, map_mapping = _fold_map_chains(nodes)
+    nodes, id_mapping = _fold_task_paths(nodes)
+    nodes, map_mapping = _fold_map_paths(nodes)
     id_mapping.update(map_mapping)
     return nodes, id_mapping
 
 
-def _fold_task_chains(
+def _fold_task_paths(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, BaseGraphNode], dict[UUID, UUID]]:
     """
-    Fold linear `TaskNode` chains into `CompositeTaskNode` instances.
+    Fold linear `TaskNode` paths into `CompositeTaskNode` instances.
 
     Returns the rewritten graph and an ID mapping from original tail IDs to composite IDs.
     """
     predecessors, successors = _build_adjacency(nodes)
-    chains = _find_task_chains(nodes, predecessors, successors)
+    segments = _find_task_paths(nodes, predecessors, successors)
 
-    if not chains:
+    if not segments:
         return nodes, {}
 
     result = dict(nodes)
     id_mapping: dict[UUID, UUID] = {}
 
-    for chain_ids in chains:
-        # Build chain links
-        links: list[ChainLink] = []
-        for i, nid in enumerate(chain_ids):
+    # Create composite nodes for each segment
+    for segment_id in segments:
+        steps: list[CompositeStep] = []
+
+        for i, nid in enumerate(segment_id):
             node = nodes[nid]
             assert isinstance(node, TaskNode)
 
             if i == 0:
-                # First link — no flow param, all params are external
-                link = _build_chain_link(node, flow_param=None, predecessor_id=None)
+                # First step has all params as external
+                step = _build_composite_step(node, flow_param=None, predecessor_id=None)
             else:
-                predecessor_id = chain_ids[i - 1]
+                predecessor_id = segment_id[i - 1]
                 flow_param = _identify_flow_param(node.kwargs, predecessor_id)
-                link = _build_chain_link(node, flow_param, predecessor_id)
+                step = _build_composite_step(node, flow_param, predecessor_id)
 
-            links.append(link)
+            steps.append(step)
 
-        # Create composite node
         composite_id = uuid4()
-        head = nodes[chain_ids[0]]
-        tail_id = chain_ids[-1]
-
+        head = nodes[segment_id[0]]
+        tail_id = segment_id[-1]
         composite = CompositeTaskNode(
             id=composite_id,
-            name=f"composite({' → '.join(link.name for link in links)})",
-            description=f"Composite of {len(links)} chained tasks",
+            name=f"composite({' → '.join(step.name for step in steps)})",
+            description=f"Composite of {len(steps)} chained tasks",
             backend_name=_effective_backend(head),
-            chain=tuple(links),
-            timeout=_aggregate_timeout([link.timeout for link in links]),
+            steps=tuple(steps),
+            timeout=_aggregate_timeout([step.timeout for step in steps]),
         )
 
         # Remove chain nodes from result, add composite
-        for nid in chain_ids:
+        for nid in segment_id:
             result.pop(nid, None)
         result[composite_id] = composite
 
-        # Map tail ID → composite ID (downstream nodes depend on the tail)
+        # Map IDs to composite ID
         id_mapping[tail_id] = composite_id
-
-        # Also map all interior IDs for completeness
-        for nid in chain_ids[:-1]:
+        for nid in segment_id[:-1]:  # interior nodes
             id_mapping[nid] = composite_id
 
-    # Remap dependencies in remaining nodes that referenced chain members
     result = _remap_dependencies(result, id_mapping)
-
     return result, id_mapping
 
 
-def _fold_map_chains(
+def _fold_map_paths(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, BaseGraphNode], dict[UUID, UUID]]:
     """
-    Fold `MapTaskNode → MapTaskNode → ...` chains (with optional join/reduce terminals) into
+    Fold `MapTaskNode → MapTaskNode → ...` paths (with optional join/reduce terminals) into
     `CompositeMapTaskNode` instances.
     """
     predecessors, successors = _build_adjacency(nodes)
-    chains = _find_map_chains(nodes, predecessors, successors)
+    map_paths = _find_map_paths(nodes, predecessors, successors)
 
-    if not chains:
+    if not map_paths:
         return nodes, {}
 
     result = dict(nodes)
     id_mapping: dict[UUID, UUID] = {}
 
-    for mc in chains:
-        map_node = nodes[mc.map_id]
+    for map_path in map_paths:
+        map_node = nodes[map_path.map_id]
         assert isinstance(map_node, MapTaskNode)
 
-        # Build chain links for the .then() nodes
-        links: list[ChainLink] = []
-        prev_id = mc.map_id
-        for nid in mc.then_ids:
+        # Build composite steps for the .then() nodes
+        steps: list[CompositeStep] = []
+        prev_id = map_path.map_id
+        for nid in map_path.then_ids:
             node = nodes[nid]
             if isinstance(node, MapTaskNode):
                 flow_param = _identify_flow_param(node.mapped_kwargs, prev_id)
-                link = _build_map_chain_link(node, flow_param)
+                step = _build_map_composite_step(node, flow_param)
             else:  # pragma: no cover — .then() on MapTaskFuture always creates MapTaskNode
                 assert isinstance(node, TaskNode)
                 flow_param = _identify_flow_param(node.kwargs, prev_id)
-                link = _build_chain_link(node, flow_param, prev_id)
-            links.append(link)
+                step = _build_composite_step(node, flow_param, prev_id)
+            steps.append(step)
             prev_id = nid
 
         # Determine terminal
         terminal: TerminalKind = "collect"
-        join_link: ChainLink | None = None
+        join_step: CompositeStep | None = None
         reduce_config: ReduceConfig | None = None
         initial_input: NodeInput | None = None
-        tail_id = mc.then_ids[-1] if mc.then_ids else mc.map_id
+        tail_id = map_path.then_ids[-1] if map_path.then_ids else map_path.map_id
 
-        if mc.join_id is not None:
+        if map_path.join_id is not None:
             terminal = "join"
-            join_node = nodes[mc.join_id]
+            join_node = nodes[map_path.join_id]
             assert isinstance(join_node, TaskNode)
             flow_param = _identify_flow_param(join_node.kwargs, tail_id)
             assert flow_param is not None, "join terminal must consume upstream mapped output"
-            join_link = _build_chain_link(join_node, flow_param, tail_id)
-            tail_id = mc.join_id
+            join_step = _build_composite_step(join_node, flow_param, tail_id)
+            tail_id = map_path.join_id
 
-        if mc.reduce_id is not None:
+        if map_path.reduce_id is not None:
             terminal = "reduce"
-            reduce_node = nodes[mc.reduce_id]
+            reduce_node = nodes[map_path.reduce_id]
             assert isinstance(reduce_node, ReduceNode)
             reduce_config = reduce_node.reduce_config
             initial_input = reduce_node.initial_input
-            tail_id = mc.reduce_id
+            tail_id = map_path.reduce_id
 
         # Create composite
         composite_id = uuid4()
-        link_names = [link.name for link in links]
-        all_names = [map_node.name] + link_names
-        if join_link:
-            all_names.append(join_link.name)
+        step_names = [step.name for step in steps]
+        all_names = [map_node.name] + step_names
+        if join_step:
+            all_names.append(join_step.name)
         if reduce_config:
             all_names.append(f"reduce({reduce_config.name})")
 
-        # Aggregate timeout across source map, .then() links, and the terminal (join)
-        all_timeouts = [map_node.timeout] + [link.timeout for link in links]
-        if join_link is not None:
-            all_timeouts.append(join_link.timeout)
+        # Aggregate timeout across source map, .then() steps, and the terminal (join)
+        all_timeouts = [map_node.timeout] + [step.timeout for step in steps]
+        if join_step is not None:
+            all_timeouts.append(join_step.timeout)
         composite_timeout = _aggregate_timeout(all_timeouts)
 
         composite = CompositeMapTaskNode(
@@ -204,37 +187,37 @@ def _fold_map_chains(
             description=f"Composite map of {len(all_names)} chained steps",
             backend_name=_effective_backend(map_node),
             source_map=map_node,
-            chain=tuple(links),
+            steps=tuple(steps),
             terminal=terminal,
-            join_link=join_link,
+            join_step=join_step,
             reduce_config=reduce_config,
             initial_input=initial_input,
             timeout=composite_timeout,
         )
 
         # Remove folded nodes, add composite
-        result.pop(mc.map_id, None)
-        for nid in mc.then_ids:
+        result.pop(map_path.map_id, None)
+        for nid in map_path.then_ids:
             result.pop(nid, None)
-        if mc.join_id is not None:
-            result.pop(mc.join_id, None)
-        if mc.reduce_id is not None:
-            result.pop(mc.reduce_id, None)
+        if map_path.join_id is not None:
+            result.pop(map_path.join_id, None)
+        if map_path.reduce_id is not None:
+            result.pop(map_path.reduce_id, None)
         result[composite_id] = composite
 
         # Map all folded IDs → composite ID
         id_mapping[tail_id] = composite_id
-        id_mapping[mc.map_id] = composite_id
-        for nid in mc.then_ids:
+        id_mapping[map_path.map_id] = composite_id
+        for nid in map_path.then_ids:
             id_mapping[nid] = composite_id
         if (
-            mc.join_id is not None and mc.join_id != tail_id
+            map_path.join_id is not None and map_path.join_id != tail_id
         ):  # pragma: no cover — tail_id is set to join_id above
-            id_mapping[mc.join_id] = composite_id
+            id_mapping[map_path.join_id] = composite_id
         if (
-            mc.reduce_id is not None and mc.reduce_id != tail_id
+            map_path.reduce_id is not None and map_path.reduce_id != tail_id
         ):  # pragma: no cover — tail_id is set to reduce_id above
-            id_mapping[mc.reduce_id] = composite_id
+            id_mapping[map_path.reduce_id] = composite_id
 
     result = _remap_dependencies(result, id_mapping)
 
@@ -261,25 +244,25 @@ def _remap_dependencies(
     return {nid: node.remap_references(id_mapping) for nid, node in nodes.items()}
 
 
-def _find_task_chains(
+def _find_task_paths(
     nodes: dict[UUID, BaseGraphNode],
     predecessors: dict[UUID, set[UUID]],
     successors: dict[UUID, set[UUID]],
 ) -> list[list[UUID]]:
     """
-    Detect maximal linear chains of `TaskNode`s in the graph.
+    Detect maximal linear paths of `TaskNode`s in the graph.
 
-    A chain is a sequence `[A, B, C, ...]` where:
+    A path is a sequence `[A, B, C, ...]` where:
     - Every node is a `TaskNode` (not `MapTaskNode`, `DatasetNode` etc.)
     - Each interior node has exactly **one predecessor** and **one successor**
       within the graph.
     - The head may have any number of predecessors.
     - The tail may have any number of successors.
     - All nodes share the same `backend_name`.
-    - Chain length ≥ 2.
+    - Path length ≥ 2.
     """
     visited: set[UUID] = set()
-    chains: list[list[UUID]] = []
+    segments: list[list[UUID]] = []
 
     for nid, node in nodes.items():
         if not isinstance(node, TaskNode):
@@ -287,7 +270,7 @@ def _find_task_chains(
         if nid in visited:
             continue
 
-        # Walk backward to find the true chain head — ensures maximal chains
+        # Walk backward to find the true chain head — ensures maximal paths
         # regardless of dict iteration order.
         head = nid
         backend = _effective_backend(node)
@@ -310,60 +293,60 @@ def _find_task_chains(
             head = pred_id
 
         # Walk forward from the true head
-        chain = [head]
+        segment = [head]
         visited.add(head)
         current = head
         while True:
             succs = successors.get(current, set())
             if len(succs) != 1:
-                break  # Fan-out or terminal — end chain
+                break  # Fan-out or terminal — end path
 
             succ_id = next(iter(succs))
             succ_node = nodes.get(succ_id)
 
             if succ_id in visited:  # pragma: no cover
-                break  # Already in another chain
+                break  # Already in another path
             if not isinstance(succ_node, TaskNode):
-                break  # Non-task node breaks the chain
+                break  # Non-task node breaks the path
 
             # The successor must have exactly one predecessor (current)
             preds = predecessors.get(succ_id, set())
             if len(preds) != 1:
-                break  # Fan-in — end chain
+                break  # Fan-in — end path
 
             # Backend must match
             if _effective_backend(succ_node) != backend:
                 break
 
-            chain.append(succ_id)
+            segment.append(succ_id)
             visited.add(succ_id)
             current = succ_id
 
-        if len(chain) >= 2:
-            chains.append(chain)
+        if len(segment) >= 2:
+            segments.append(segment)
 
-    return chains
+    return segments
 
 
-def _build_chain_link(
+def _build_composite_step(
     node: TaskNode,
     flow_param: str | None,
     predecessor_id: UUID | None,
-) -> ChainLink:
+) -> CompositeStep:
     """
-    Build a `ChainLink` from a `TaskNode`.
+    Build a `CompositeStep` from a `TaskNode`.
 
-    External params are those that don't reference the immediate predecessor in the chain (the flow
+    External params are those that don't reference the immediate predecessor in the path (the flow
     param is separated out).
     """
     external_params: dict[str, NodeInput] = {}
 
     for param_name, node_input in node.kwargs.items():
         if param_name == flow_param:
-            continue  # Handled by the chain flow
+            continue  # Handled by the composite flow
         external_params[param_name] = node_input
 
-    return ChainLink(
+    return CompositeStep(
         id=node.id,
         name=node.name,
         description=node.description,
@@ -375,13 +358,13 @@ def _build_chain_link(
         cache=node.cache,
         cache_ttl=node.cache_ttl,
         timeout=node.timeout,
-        link_kind=node.kind,
+        step_kind=node.kind,
     )
 
 
 @dataclass
-class _MapChain:
-    """Detected map chain ready for folding."""
+class _MapPath:
+    """Detected map path ready for folding."""
 
     map_id: UUID
     """Head `MapTaskNode` ID."""
@@ -396,20 +379,19 @@ class _MapChain:
     """If present, ID of the `.reduce()` `ReduceNode` terminal."""
 
 
-def _find_map_chains(
+def _find_map_paths(
     nodes: dict[UUID, BaseGraphNode],
     predecessors: dict[UUID, set[UUID]],
     successors: dict[UUID, set[UUID]],
-) -> list[_MapChain]:
+) -> list[_MapPath]:
     """
-    Detect chains starting with a `MapTaskNode` followed by `MapTaskNode`s
-    (from `.then()`) and/or a terminal `ReduceNode` (from `.reduce()`).
+    Detect paths starting with a `MapTaskNode` followed by `MapTaskNode`s.
 
-    A `.then()` on a `MapTaskFuture` produces another `MapTaskNode` whose `mapped_kwargs` has a
-    single `sequence_ref` to the prior map. A `.join()` produces a `TaskNode` that depends on the
-    last map. A `.reduce()` produces a `ReduceNode` that depends on the last map.
+    This is the pattern produced by chaining `.then()` calls on a `MapTaskFuture`, optionally
+    ending with a `TaskNode` that joins the map output (from `.join()`) or a `ReduceNode` (from
+    `.reduce()`).
     """
-    chains: list[_MapChain] = []
+    map_paths: list[_MapPath] = []
     visited: set[UUID] = set()
 
     for nid, node in nodes.items():
@@ -420,7 +402,7 @@ def _find_map_chains(
 
         map_backend = _effective_backend(node)
 
-        # Walk backward to find the true chain head — ensures maximal chains
+        # Walk backward to find the true path head — ensures maximal paths
         # regardless of dict iteration order.
         head = nid
         while True:
@@ -443,10 +425,10 @@ def _find_map_chains(
                 break
             head = pred_id
 
-        then_chain: list[UUID] = []
+        then_path: list[UUID] = []
         current = head
 
-        # Walk the .then() chain (MapTaskNode → MapTaskNode → ...)
+        # Walk the .then() path (MapTaskNode → MapTaskNode → ...)
         while True:
             succs = successors.get(current, set())
             if len(succs) != 1:
@@ -466,7 +448,7 @@ def _find_map_chains(
                 if not _is_then_map_node(succ_node, current):  # pragma: no cover
                     # Not a .then() continuation — end of the chain
                     break
-                then_chain.append(succ_id)
+                then_path.append(succ_id)
                 current = succ_id
                 continue
 
@@ -500,36 +482,36 @@ def _find_map_chains(
                     # Potential .join() — the task takes the map's list output
                     join_id = term_id
 
-        # A chain is valid if there's at least one .then() node, or a terminal
-        if then_chain or reduce_id is not None or join_id is not None:
+        # A path is valid if there's at least one .then() node, or a terminal
+        if then_path or reduce_id is not None or join_id is not None:
             visited.add(head)
-            visited.update(then_chain)
+            visited.update(then_path)
             if join_id is not None:
                 visited.add(join_id)
             if reduce_id is not None:
                 visited.add(reduce_id)
-            chains.append(
-                _MapChain(
+            map_paths.append(
+                _MapPath(
                     map_id=head,
-                    then_ids=then_chain,
+                    then_ids=then_path,
                     join_id=join_id,
                     reduce_id=reduce_id,
                 )
             )
 
-    return chains
+    return map_paths
 
 
-def _build_map_chain_link(node: MapTaskNode, flow_param: str | None) -> ChainLink:
+def _build_map_composite_step(node: MapTaskNode, flow_param: str | None) -> CompositeStep:
     """
-    Build a `ChainLink` from a `.then()`-style `MapTaskNode`.
+    Build a `CompositeStep` from a `.then()`-style `MapTaskNode`.
 
     The `fixed_kwargs` become external params; the single `mapped_kwarg`
     (the flow) is separated out.
     """
     external_params: dict[str, NodeInput] = dict(node.fixed_kwargs)
 
-    return ChainLink(
+    return CompositeStep(
         id=node.id,
         name=node.name,
         description=node.description,
@@ -541,7 +523,7 @@ def _build_map_chain_link(node: MapTaskNode, flow_param: str | None) -> ChainLin
         cache=node.cache,
         cache_ttl=node.cache_ttl,
         timeout=node.timeout,
-        link_kind=node.kind,
+        step_kind=node.kind,
     )
 
 
@@ -582,19 +564,14 @@ def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
 def _build_adjacency(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, set[UUID]], dict[UUID, set[UUID]]]:
-    """
-    Build predecessor and successor adjacency maps from the graph.
-
-    Returns:
-        `(predecessors, successors)` — both mapping node IDs to sets of neighbour IDs.
-    """
+    """Builds predecessor and successor adjacency maps from the graph nodes."""
     predecessors: dict[UUID, set[UUID]] = defaultdict(set)
     successors: dict[UUID, set[UUID]] = defaultdict(set)
 
     for nid, node in nodes.items():
         deps = node.get_dependencies()
         for dep_id in deps:
-            if dep_id in nodes:  # only track deps within this graph  # pragma: no branch
+            if dep_id in nodes:
                 predecessors[nid].add(dep_id)
                 successors[dep_id].add(nid)
 
