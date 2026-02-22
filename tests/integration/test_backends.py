@@ -144,8 +144,8 @@ class TestBackendWithWorkflows:
             squared = square_proc.map(x=nums)
             return sum_values(values=squared)
 
-        result = compute_workflow(nums=[1, 2, 3, 4]).run()
-        assert result == 30  # 1+4+9+16
+        result = compute_workflow.run(nums=[1, 2, 3, 4])
+        assert result["sum_values"] == 30  # 1+4+9+16
 
 
 class TestBackendErrorHandling:
