@@ -1,7 +1,7 @@
-"""Example pipelines for testing."""
+"""Example workflows for testing."""
 
-from daglite import pipeline
 from daglite import task
+from daglite import workflow
 
 
 @task
@@ -22,12 +22,12 @@ def failing_task(x: int) -> int:
     raise RuntimeError(f"Intentional failure with input: {x}")
 
 
-@pipeline
-def math_pipeline(x: int, y: int, factor: int = 2):
+@workflow
+def math_workflow(x: int, y: int, factor: int = 2):
     """
-    A pipeline demonstrating basic arithmetic operations.
+    A workflow demonstrating basic arithmetic operations.
 
-    This pipeline adds two numbers and multiplies the result by a factor.
+    This workflow adds two numbers and multiplies the result by a factor.
 
     Args:
         x: First number to add.
@@ -41,12 +41,12 @@ def math_pipeline(x: int, y: int, factor: int = 2):
     return multiply(x=sum_result, factor=factor)
 
 
-@pipeline
-def untyped_pipeline(x, y):  # noqa: ANN001
+@workflow
+def untyped_workflow(x, y):  # noqa: ANN001
     """
-    A pipeline with untyped parameters for testing warnings.
+    A workflow with untyped parameters for testing warnings.
 
-    This pipeline demonstrates what happens when parameters lack type annotations.
+    This workflow demonstrates what happens when parameters lack type annotations.
     The CLI will issue a warning and treat all values as strings.
 
     Args:
@@ -61,13 +61,26 @@ def untyped_pipeline(x, y):  # noqa: ANN001
     return add(x=int(x) if isinstance(x, str) else x, y=int(y) if isinstance(y, str) else y)
 
 
-@pipeline
-def failing_pipeline(x: int):
-    """A pipeline that will fail during execution."""
+@workflow
+def failing_workflow(x: int):
+    """A workflow that will fail during execution."""
     return failing_task(x=x)
 
 
-@pipeline
-def empty_pipeline():
-    """A pipeline with no parameters for testing output branches."""
+@workflow
+def empty_workflow():
+    """A workflow with no parameters for testing output branches."""
+    return add(x=1, y=2)
+
+
+@workflow
+def verbose_workflow():
+    """
+    This is a workflow with a very long description that exceeds the display column limit and
+    should be truncated when listed."""
+    return add(x=1, y=2)
+
+
+@workflow
+def no_description_workflow():
     return add(x=1, y=2)

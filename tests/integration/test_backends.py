@@ -7,8 +7,8 @@ pickle support.
 
 import pytest
 
-from daglite import pipeline
 from daglite import task
+from daglite import workflow
 
 # Module-level tasks for processes backend pickle compatibility
 # Tasks MUST be defined at module level to be picklable by multiprocessing
@@ -67,8 +67,8 @@ def nested_computation(x: int) -> int:
     return helper(x) + helper(x)
 
 
-@pipeline
-def increment_all_pipeline(nums: list[int]):
+@workflow
+def increment_all_workflow(nums: list[int]):
     incremented = add.map(x=nums, y=[1] * len(nums))
     return incremented
 
@@ -132,20 +132,20 @@ class TestBackendIntegration:
         assert result == {"a": 1, "b": 2, "c": 3, "d": 4}
 
 
-class TestBackendWithPipelines:
-    """Tests for backends used within @pipeline decorated functions."""
+class TestBackendWithWorkflows:
+    """Tests for backends used within @workflow decorated functions."""
 
-    def test_pipeline_with_processes_backend(self) -> None:
-        """Pipeline can use processes backend for tasks."""
+    def test_workflow_with_processes_backend(self) -> None:
+        """Workflow can use processes backend for tasks."""
         square_proc = square.with_options(backend_name="processes")
 
-        @pipeline
-        def compute_pipeline(nums: list[int]):
+        @workflow
+        def compute_workflow(nums: list[int]):
             squared = square_proc.map(x=nums)
             return sum_values(values=squared)
 
-        result = compute_pipeline(nums=[1, 2, 3, 4]).run()
-        assert result == 30  # 1+4+9+16
+        result = compute_workflow.run(nums=[1, 2, 3, 4])
+        assert result["sum_values"] == 30  # 1+4+9+16
 
 
 class TestBackendErrorHandling:

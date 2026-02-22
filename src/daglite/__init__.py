@@ -7,8 +7,6 @@ from daglite import backends
 from daglite import futures
 from daglite import settings
 from daglite.futures import load_dataset
-from daglite.pipelines import Dag
-from daglite.pipelines import pipeline
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.tasks import task
 from daglite.workflows import WorkflowResult
@@ -18,12 +16,10 @@ from daglite.workflows import workflow
 _initialize_plugin_system()
 
 __all__ = [
-    "Dag",
     "WorkflowResult",
     "backends",
     "futures",
     "load_dataset",
-    "pipeline",
     "settings",
     "task",
     "workflow",

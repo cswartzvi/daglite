@@ -44,6 +44,38 @@ def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None
             _plugin_manager.register(plugin)
 
 
+def has_plugin(*plugin_types: type) -> bool:
+    """
+    Return True if at least one registered global plugin is an instance of any of the
+    given types.
+
+    Hookspec classes are excluded — only plugin *instances* are checked.  Uses
+    ``isinstance``, so subclasses match: checking for ``LifecycleLoggingPlugin``
+    also detects a registered ``RichLifecycleLoggingPlugin``.
+
+    Args:
+        plugin_types: One or more types to check against.
+
+    Returns:
+        True if a matching plugin instance is registered, False otherwise.
+    """
+    manager = _get_global_plugin_manager()
+    return any(
+        isinstance(p, plugin_types) for p in manager.get_plugins() if not isinstance(p, type)
+    )
+
+
+def reset_global_plugin_manager() -> None:
+    """
+    Reset the global plugin manager to its initial (empty) state.
+
+    This is intended for use in tests to ensure plugin state does not leak
+    between test cases.  It should not be called in production code.
+    """
+    global _PLUGIN_MANAGER
+    _PLUGIN_MANAGER = None
+
+
 def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginManager:
     """
     Creates a new plugin manager with both global and execution-specific plugins.

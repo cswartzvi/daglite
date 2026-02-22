@@ -16,6 +16,8 @@ from pluggy import HookRelay
 from typing_extensions import override
 
 from daglite._typing import MapMode
+from daglite._typing import NodeKind
+from daglite._typing import Submission
 from daglite.backends.base import Backend
 from daglite.exceptions import ExecutionError
 from daglite.exceptions import ParameterError
@@ -25,9 +27,7 @@ from daglite.graph.nodes._shared import resolve_inputs
 from daglite.graph.nodes._shared import resolve_output_parameters
 from daglite.graph.nodes._workers import run_task_worker
 from daglite.graph.nodes.base import NodeInput
-from daglite.graph.nodes.base import NodeKind
 from daglite.graph.nodes.base import PrepareCollectNode
-from daglite.graph.nodes.base import Submission
 
 
 @dataclass(frozen=True)
