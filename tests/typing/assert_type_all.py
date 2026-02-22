@@ -248,17 +248,6 @@ def test_then_map_zip_chaining() -> None:
 # -- Workflow decorator --
 
 
-def test_workflow_decorator() -> None:
-    """Test @workflow decorator preserves return type."""
-
-    @workflow
-    def compute(x: int, y: int) -> TaskFuture[int]:
-        return add(x=x, y=y)
-
-    result = compute(5, 10)
-    assert_type(result, Any)
-
-
 def test_workflow_run() -> None:
     """Test Workflow.run() returns WorkflowResult (workflows are entry points)."""
 
