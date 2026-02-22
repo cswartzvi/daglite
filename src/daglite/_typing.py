@@ -11,7 +11,7 @@ MapMode = Literal["product", "zip"]
 ParamKind = Literal["value", "ref", "sequence", "sequence_ref"]
 """Kind of node input parameter, determining how it should be resolved."""
 
-NodeKind = Literal["task", "map", "dataset", "composite_task", "composite_map", "reduce"]
+NodeKind = Literal["task", "map", "dataset", "composite_task", "composite_map", "reduce", "iter"]
 """Kind of graph node, determining its execution semantics and required fields."""
 
 ReduceMode = Literal["ordered", "unordered"]

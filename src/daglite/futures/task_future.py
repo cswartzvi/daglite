@@ -37,8 +37,10 @@ from daglite.utils import infer_tuple_size
 # block. If runtime imports are needed, they should be done locally within methods. Be careful,
 # forgetting to import at runtime will lead to hard to debug errors.
 if TYPE_CHECKING:
+    from daglite.futures.iter_future import IterFuture
     from daglite.futures.map_future import MapTaskFuture
 else:
+    IterFuture = object
     MapTaskFuture = object
 
 P = ParamSpec("P")
@@ -297,6 +299,40 @@ class TaskFuture(BaseTaskFuture[R]):
             mapped_kwargs=mapped_kwargs,
             backend_name=self.backend_name,
         )
+
+    def iter(self) -> "IterFuture":
+        """
+        Return a lazy iterator over this task's generator output.
+
+        Use this when the task returns a generator (or async generator) that is too large to
+        materialise in memory.  Unlike the default behaviour — which collects the generator into
+        a list before passing it to downstream tasks — :meth:`iter` defers consumption until the
+        downstream pipeline is submitted as a single backend job.
+
+        Call :meth:`~daglite.futures.IterFuture.map` on the returned
+        :class:`~daglite.futures.IterFuture` to apply a task to each yielded item::
+
+            result = generate_large_dataset().iter().map(process_item).reduce(add, initial=0)
+            result.run()
+
+        Returns:
+            An :class:`~daglite.futures.IterFuture` wrapping this future.
+
+        Examples:
+            >>> from typing import Iterator
+            >>> from daglite import task
+            >>> @task
+            ... def numbers(n: int) -> Iterator[int]:
+            ...     yield from range(n)
+            >>> @task
+            ... def double(x: int) -> int:
+            ...     return x * 2
+            >>> numbers(n=5).iter().map(double).run()
+            [0, 2, 4, 6, 8]
+        """
+        from daglite.futures.iter_future import IterFuture as _IterFuture
+
+        return _IterFuture(source=self)
 
     @overload
     def split(self: TaskFuture[tuple[S1]]) -> tuple[TaskFuture[S1]]: ...
