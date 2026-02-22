@@ -14,7 +14,9 @@ from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.composite_node import CompositeMapTaskNode
 from daglite.graph.nodes.composite_node import CompositeStep
 from daglite.graph.nodes.composite_node import CompositeTaskNode
+from daglite.graph.nodes.composite_node import IterSourceConfig
 from daglite.graph.nodes.composite_node import TerminalKind
+from daglite.graph.nodes.iter_node import IterNode
 from daglite.graph.nodes.map_node import MapTaskNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
 from daglite.graph.nodes.reduce_node import ReduceNode
@@ -222,6 +224,9 @@ class _MapPath:
     reduce_id: UUID | None = None
     """If present, ID of the `.reduce()` `ReduceNode` terminal."""
 
+    iter_node_id: UUID | None = None
+    """If present, ID of the `IterNode` feeding the head map node."""
+
 
 def _fold_map_paths(
     nodes: dict[UUID, BaseGraphNode],
@@ -309,6 +314,7 @@ def _fold_map_paths(
             reduce_config=reduce_config,
             initial_input=initial_input,
             timeout=composite_timeout,
+            iter_source=_build_iter_source(nodes, map_path.iter_node_id),
         )
 
         # Remove folded nodes, add composite
@@ -319,6 +325,8 @@ def _fold_map_paths(
             result.pop(map_path.join_id, None)
         if map_path.reduce_id is not None:
             result.pop(map_path.reduce_id, None)
+        if map_path.iter_node_id is not None:
+            result.pop(map_path.iter_node_id, None)
         result[composite_id] = composite
 
         # Map all folded IDs → composite ID
@@ -326,6 +334,8 @@ def _fold_map_paths(
         id_mapping[map_path.map_id] = composite_id
         for nid in map_path.then_ids:
             id_mapping[nid] = composite_id
+        if map_path.iter_node_id is not None:
+            id_mapping[map_path.iter_node_id] = composite_id
 
     result = _remap_dependencies(result, id_mapping)
 
@@ -422,20 +432,36 @@ def _find_map_task_paths(
                     # Potential .join() — the task takes the map's list output
                     join_id = term_id
 
-        # A path is valid if there's at least one .then() node, or a terminal
-        if then_path or reduce_id is not None or join_id is not None:
+        # A path is valid if there's at least one .then() node, a terminal, or an iter source
+        # Check if the head's sole predecessor is an IterNode
+        iter_node_id: UUID | None = None
+        head_preds = predecessors.get(head, set())
+        if len(head_preds) == 1:
+            pred_id = next(iter(head_preds))
+            pred_node = nodes.get(pred_id)
+            if (
+                isinstance(pred_node, IterNode)
+                and pred_id not in visited
+                and _is_iter_source(nodes[head], pred_id)
+            ):
+                iter_node_id = pred_id
+
+        if then_path or reduce_id is not None or join_id is not None or iter_node_id is not None:
             visited.add(head)
             visited.update(then_path)
             if join_id is not None:
                 visited.add(join_id)
             if reduce_id is not None:
                 visited.add(reduce_id)
+            if iter_node_id is not None:
+                visited.add(iter_node_id)
             map_paths.append(
                 _MapPath(
                     map_id=head,
                     then_ids=then_path,
                     join_id=join_id,
                     reduce_id=reduce_id,
+                    iter_node_id=iter_node_id,
                 )
             )
 
@@ -567,6 +593,40 @@ def _is_then_map_node(node: BaseGraphNode, predecessor_id: UUID) -> bool:
         return False
     ((_name, node_input),) = node.mapped_kwargs.items()
     return node_input.reference == predecessor_id
+
+
+def _is_iter_source(map_node: BaseGraphNode, pred_id: UUID) -> bool:
+    """
+    Checks whether `pred_id` is the iter source feeding a `MapTaskNode`.
+
+    Returns ``True`` when the map node has exactly one ``mapped_kwarg`` whose ``NodeInput``
+    references ``pred_id`` (i.e. the iter output feeds the sole mapped parameter).
+    """
+    if not isinstance(map_node, MapTaskNode):  # pragma: no cover
+        return False
+    if len(map_node.mapped_kwargs) != 1:
+        return False
+    ((_name, node_input),) = map_node.mapped_kwargs.items()
+    return node_input.reference == pred_id
+
+
+def _build_iter_source(
+    nodes: dict[UUID, BaseGraphNode], iter_node_id: UUID | None
+) -> IterSourceConfig | None:
+    """Build an ``IterSourceConfig`` from an ``IterNode`` if present."""
+    if iter_node_id is None:
+        return None
+    iter_node = nodes[iter_node_id]
+    assert isinstance(iter_node, IterNode)
+    return IterSourceConfig(
+        id=iter_node.id,
+        func=iter_node.func,
+        kwargs=iter_node.kwargs,
+        output_configs=iter_node.output_configs,
+        retries=iter_node.retries,
+        cache=iter_node.cache,
+        cache_ttl=iter_node.cache_ttl,
+    )
 
 
 def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
