@@ -90,6 +90,7 @@ nav:
       - Tasks: user-guide/tasks.md
       - Composition: user-guide/composition.md
       - Fluent API: user-guide/fluent-api.md
+      - Streaming: user-guide/streaming.md
       - Evaluation: user-guide/evaluation.md
       - Pipelines & CLI: user-guide/pipelines.md
       - CLI Reference: user-guide/cli.md
