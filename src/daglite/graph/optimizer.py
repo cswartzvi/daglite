@@ -82,11 +82,11 @@ def _fold_task_paths(
             assert isinstance(node, TaskNode)
 
             if i == 0:  # First step in path has all params as external
-                step = _build_composite_step(node, flow_param=None)
+                step = CompositeStep.from_node(node, flow_param=None)
             else:
                 predecessor_id = path[i - 1]
                 flow_param = _identify_flow_param(node.kwargs, predecessor_id)
-                step = _build_composite_step(node, flow_param)
+                step = CompositeStep.from_node(node, flow_param=flow_param)
 
             steps.append(step)
 
@@ -177,29 +177,6 @@ def _find_task_paths(
     return paths
 
 
-def _build_composite_step(
-    node: TaskNode,
-    flow_param: str | None,
-) -> CompositeStep:
-    """Builds a composite step for a task node."""
-    external_params = {k: v for k, v in node.kwargs.items() if k != flow_param}
-
-    return CompositeStep(
-        id=node.id,
-        name=node.name,
-        description=node.description,
-        func=node.func,
-        flow_param=flow_param,
-        external_params=external_params,
-        output_configs=node.output_configs,
-        retries=node.retries,
-        cache=node.cache,
-        cache_ttl=node.cache_ttl,
-        timeout=node.timeout,
-        step_kind=node.kind,
-    )
-
-
 # region Find Composite Maps
 
 
@@ -256,11 +233,10 @@ def _fold_map_paths(
             node = nodes[nid]
             if isinstance(node, MapTaskNode):
                 flow_param = _identify_flow_param(node.mapped_kwargs, prev_id)
-                step = _build_map_composite_step(node, flow_param)
             else:  # pragma: no cover — .then() on MapTaskFuture always creates MapTaskNode
                 assert isinstance(node, TaskNode)
                 flow_param = _identify_flow_param(node.kwargs, prev_id)
-                step = _build_composite_step(node, flow_param)
+            step = CompositeStep.from_node(node, flow_param=flow_param)
             steps.append(step)
             prev_id = nid
 
@@ -277,7 +253,7 @@ def _fold_map_paths(
             assert isinstance(join_node, TaskNode)
             flow_param = _identify_flow_param(join_node.kwargs, tail_id)
             assert flow_param is not None, "join terminal must consume upstream mapped output"
-            join_step = _build_composite_step(join_node, flow_param)
+            join_step = CompositeStep.from_node(join_node, flow_param=flow_param)
             tail_id = map_path.join_id
 
         if map_path.reduce_id is not None:
@@ -313,7 +289,7 @@ def _fold_map_paths(
             terminal=terminal,
             join_step=join_step,
             reduce_config=reduce_config,
-            initial_input=initial_input,
+            initial_accumulator=initial_input,
             timeout=composite_timeout,
             iter_source=_build_iter_source(nodes, map_path.iter_node_id),
         )
@@ -445,26 +421,6 @@ def _find_map_task_paths(
     return map_paths
 
 
-def _build_map_composite_step(node: MapTaskNode, flow_param: str | None) -> CompositeStep:
-    """Builds a composite step for a mapped task node."""
-    external_params: dict[str, NodeInput] = dict(node.fixed_kwargs)
-
-    return CompositeStep(
-        id=node.id,
-        name=node.name,
-        description=node.description,
-        func=node.func,
-        flow_param=flow_param,
-        external_params=external_params,
-        output_configs=node.output_configs,
-        retries=node.retries,
-        cache=node.cache,
-        cache_ttl=node.cache_ttl,
-        timeout=node.timeout,
-        step_kind=node.kind,
-    )
-
-
 # region Helpers
 
 
@@ -495,13 +451,13 @@ def _find_path_head(
     """
     Walks backward from `start` to find the true head of a maximal path.
 
+    Ensures maximal paths are found regardless of graph iteration order.
+
     Keeps extending backward while all of the following hold for each candidate predecessor:
     - It has exactly one predecessor of its own (not a fan-in node).
     - It is not already part of a discovered path.
     - It has exactly one successor (not a fan-out node).
     - `can_extend(pred_id, current_head)` returns True.
-
-    Ensures maximal paths are found regardless of graph iteration order.
     """
     head = start
     while True:
@@ -556,7 +512,7 @@ def _is_single_mapped_successor(node: BaseGraphNode, predecessor_id: UUID) -> bo
         return False
     if len(node.mapped_kwargs) != 1:
         return False
-    ((_name, node_input),) = node.mapped_kwargs.items()
+    (node_input,) = node.mapped_kwargs.values()
     return node_input.reference == predecessor_id
 
 
@@ -587,20 +543,12 @@ def _remap_dependencies(
 def _build_iter_source(
     nodes: dict[UUID, BaseGraphNode], iter_node_id: UUID | None
 ) -> IterSourceConfig | None:
-    """Builds and iteration source config object from the given iter node ID, if present."""
+    """Builds an iteration source config from the given iter node ID, if present."""
     if iter_node_id is None:
         return None
     iter_node = nodes[iter_node_id]
     assert isinstance(iter_node, IterNode)
-    return IterSourceConfig(
-        id=iter_node.id,
-        func=iter_node.func,
-        kwargs=iter_node.kwargs,
-        output_configs=iter_node.output_configs,
-        retries=iter_node.retries,
-        cache=iter_node.cache,
-        cache_ttl=iter_node.cache_ttl,
-    )
+    return IterSourceConfig.from_iter_node(iter_node)
 
 
 def _aggregate_timeout(timeouts: list[float | None]) -> float | None:

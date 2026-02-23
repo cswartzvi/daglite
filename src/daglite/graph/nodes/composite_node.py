@@ -12,8 +12,11 @@ import asyncio
 import functools
 import inspect
 import time
+from collections import deque
+from collections.abc import Iterable
 from collections.abc import Iterator
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import replace
@@ -37,8 +40,11 @@ from daglite.graph.nodes.base import BaseGraphNode
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.graph.nodes.base import NodeOutputConfig
+from daglite.graph.nodes.iter_node import IterNode
 from daglite.graph.nodes.map_node import MapTaskNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
+from daglite.graph.nodes.task_node import TaskNode
+from daglite.settings import get_global_settings
 
 TerminalKind = Literal["collect", "join", "reduce"]
 
@@ -48,7 +54,7 @@ TerminalKind = Literal["collect", "join", "reduce"]
 
 @dataclass(frozen=True)
 class CompositeTaskNode(BaseGraphNode):
-    """A linear sequence of `TaskNode`s folded into a single node."""
+    """A linear sequence of task nodes folded into a single node."""
 
     steps: tuple[CompositeStep, ...]
     """Ordered sequence of steps to execute."""
@@ -68,15 +74,14 @@ class CompositeTaskNode(BaseGraphNode):
 
     @override
     def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> CompositeTaskNode:
-        new_steps = _remap_steps(self.steps, id_mapping)
-        new_output_configs = remap_output_configs(self.output_configs, id_mapping)
-        if new_steps is not None or new_output_configs is not None:
-            changes: dict[str, Any] = {}
-            if new_steps is not None:
-                changes["steps"] = new_steps
-            if new_output_configs is not None:
-                changes["output_configs"] = new_output_configs
-            return replace(self, **changes)
+        new_steps = _remap_composite_steps(self.steps, id_mapping)
+        new_oc = remap_output_configs(self.output_configs, id_mapping)
+        if new_steps is not None or new_oc is not None:
+            return replace(
+                self,
+                steps=new_steps if new_steps is not None else self.steps,
+                output_configs=new_oc if new_oc is not None else self.output_configs,
+            )
         return self
 
     @override
@@ -84,34 +89,19 @@ class CompositeTaskNode(BaseGraphNode):
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
         steps = self.steps
-        snapshot = dict(completed_nodes)
-
-        runner = functools.partial(_run_composite_steps, steps=steps, snapshot=snapshot)
-
-        start_time = time.perf_counter()
-        hooks.before_composite_execute(metadata=self.metadata, num_steps=len(steps))
-
-        try:
-            future = backend.submit(runner, timeout=self.timeout)
-            result = await future
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            hooks.on_composite_error(
-                metadata=self.metadata, num_steps=len(steps), error=e, duration=duration
-            )
-            raise
-
-        duration = time.perf_counter() - start_time
-        hooks.after_composite_execute(
-            metadata=self.metadata, num_steps=len(steps), duration=duration
+        completed_results = dict(completed_nodes)
+        runner = functools.partial(
+            _run_composite_steps, steps=steps, completed_results=completed_results
         )
-        return result
+
+        async with _composite_hook_scope(hooks, self.metadata, len(steps)):
+            return await backend.submit(runner, timeout=self.timeout)
 
 
 @dataclass(frozen=True)
 class CompositeMapTaskNode(BaseGraphNode):
     """
-    A linear sequence of `MapTaskNode` followed by parallel `TaskNode`s folded into a single node.
+    A map task node followed by linear sequence of task nodes folded into a single node.
 
     Supports three terminal modes:
     * **collect** — `asyncio.gather` all iteration results into a list.
@@ -134,26 +124,39 @@ class CompositeMapTaskNode(BaseGraphNode):
     reduce_config: ReduceConfig | None = field(default=None)
     """If `terminal='reduce'`, configuration for the streaming fold."""
 
-    initial_input: NodeInput | None = field(default=None)
-    """If ``terminal='reduce'``, the initial accumulator value (may reference another node)."""
+    initial_accumulator: NodeInput | None = field(default=None)
+    """If `terminal='reduce'`, the initial accumulator value (may reference another node)."""
 
     iter_source: IterSourceConfig | None = field(default=None)
     """Iterator source config (enables lazy generation on coordinator if present)."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if self.terminal == "reduce":
+            assert self.reduce_config is not None, "reduce terminal requires reduce_config"
+            assert self.initial_accumulator is not None, (
+                "reduce terminal requires initial_accumulator"
+            )
+        elif self.terminal == "join":
+            assert self.join_step is not None, "join terminal requires join_step"
 
     @property
     @override
     def kind(self) -> NodeKind:
         return "composite_map"
 
+    @property
+    def _internal_ids(self) -> set[UUID]:
+        """Node IDs internal to this composite (excluded from graph-level dependencies)."""
+        ids = {self.source_map.id} | {step.id for step in self.steps}
+        if self.join_step is not None:
+            ids.add(self.join_step.id)
+        if self.iter_source is not None:
+            ids.add(self.iter_source.id)
+        return ids
+
     @override
     def get_dependencies(self) -> set[UUID]:
-        # Collect internal IDs to exclude from dependencies since they're not real graph nodes
-        internal_ids = {self.source_map.id} | {step.id for step in self.steps}
-        if self.join_step is not None:
-            internal_ids.add(self.join_step.id)
-        if self.iter_source is not None:
-            internal_ids.add(self.iter_source.id)
-
         all_deps = self.source_map.get_dependencies()
 
         # Include deps from iter_source kwargs and output_configs
@@ -172,23 +175,16 @@ class CompositeMapTaskNode(BaseGraphNode):
                 self.join_step.external_params, self.join_step.output_configs
             )
 
-        # Include initial_input ref if present
-        if self.initial_input is not None and self.initial_input.reference is not None:
-            all_deps.add(self.initial_input.reference)
+        # Include initial_accumulator ref if present
+        if self.initial_accumulator is not None and self.initial_accumulator.reference is not None:
+            all_deps.add(self.initial_accumulator.reference)
 
-        return all_deps - internal_ids
+        return all_deps - self._internal_ids
 
     @override
     def remap_references(self, id_mapping: Mapping[UUID, UUID]) -> CompositeMapTaskNode:
-        changes: dict[str, Any] = {}
-
-        # Build filtered mapping for output_configs: exclude internal IDs
-        internal_ids = {self.source_map.id} | {link.id for link in self.steps}
-        if self.join_step is not None:
-            internal_ids.add(self.join_step.id)
-        if self.iter_source is not None:
-            internal_ids.add(self.iter_source.id)
-        oc_mapping = {k: v for k, v in id_mapping.items() if k not in internal_ids}
+        oc_mapping = {k: v for k, v in id_mapping.items() if k not in self._internal_ids}
+        changed = False
 
         # Build mapping for source_map: exclude iter_source.id since that ref is internal to the
         # composite (the generator runs on the coordinator).
@@ -197,165 +193,129 @@ class CompositeMapTaskNode(BaseGraphNode):
             source_map_mapping = {k: v for k, v in id_mapping.items() if k != self.iter_source.id}
 
         # Remap steps
-        new_steps = _remap_steps(self.steps, id_mapping)
+        new_steps = _remap_composite_steps(self.steps, id_mapping)
         if new_steps is not None:
-            changes["steps"] = new_steps
+            changed = True
+        else:
+            new_steps = self.steps
 
         # Remap source_map
-        new_source = self.source_map.remap_references(source_map_mapping)
-        if new_source is not self.source_map:  # pragma: no cover — cross-composite remap
-            changes["source_map"] = new_source
+        new_source_map = self.source_map.remap_references(source_map_mapping)
+        if new_source_map is not self.source_map:  # pragma: no cover — cross-composite remap
+            changed = True
 
         # Remap join_step if present
+        new_join_step = self.join_step
         if self.join_step is not None:
-            new_join = _remap_composite_step(self.join_step, id_mapping, oc_mapping)
-            if new_join is not self.join_step:
-                changes["join_step"] = new_join
+            new_join_step = _remap_composite_step(self.join_step, id_mapping, oc_mapping)
+            if new_join_step is not self.join_step:
+                changed = True
 
-        # Remap initial_input ref if present
+        # Remap initial_accumulator ref if present
+        new_initial_accumulator = self.initial_accumulator
         if (
-            self.initial_input is not None and self.initial_input.reference is not None
-        ):  # pragma: no branch
-            if self.initial_input.reference in id_mapping:  # pragma: no cover
-                changes["initial_input"] = NodeInput(
-                    _kind=self.initial_input._kind,
-                    value=self.initial_input.value,
-                    reference=id_mapping[self.initial_input.reference],
-                )
+            self.initial_accumulator is not None
+            and self.initial_accumulator.reference is not None
+            and self.initial_accumulator.reference in id_mapping
+        ):  # pragma: no cover
+            new_initial_accumulator = NodeInput(
+                _kind=self.initial_accumulator._kind,
+                value=self.initial_accumulator.value,
+                reference=id_mapping[self.initial_accumulator.reference],
+            )
+            changed = True
 
         # Remap iter_source kwargs and output_configs
+        new_iter_source = self.iter_source
         if self.iter_source is not None:
             new_iter_kwargs = remap_node_inputs(self.iter_source.kwargs, id_mapping)
             new_iter_oc = remap_output_configs(self.iter_source.output_configs, oc_mapping)
             if new_iter_kwargs is not self.iter_source.kwargs or new_iter_oc is not None:
-                iter_changes: dict[str, Any] = {}
-                if new_iter_kwargs is not self.iter_source.kwargs:
-                    iter_changes["kwargs"] = new_iter_kwargs
-                if new_iter_oc is not None:
-                    iter_changes["output_configs"] = new_iter_oc
-                changes["iter_source"] = replace(self.iter_source, **iter_changes)
+                new_iter_source = replace(
+                    self.iter_source,
+                    kwargs=new_iter_kwargs,
+                    output_configs=(
+                        new_iter_oc if new_iter_oc is not None else self.iter_source.output_configs
+                    ),
+                )
+                changed = True
 
         # Remap output_configs
-        new_oc = remap_output_configs(self.output_configs, id_mapping)
-        if new_oc is not None:
-            changes["output_configs"] = new_oc
+        new_output_configs = remap_output_configs(self.output_configs, id_mapping)
+        if new_output_configs is not None:
+            changed = True
 
-        if changes:
-            return replace(self, **changes)
-        return self
+        if not changed:
+            return self
+        return replace(
+            self,
+            steps=new_steps,
+            source_map=new_source_map,
+            join_step=new_join_step,
+            initial_accumulator=new_initial_accumulator,
+            iter_source=new_iter_source,
+            output_configs=(
+                new_output_configs if new_output_configs is not None else self.output_configs
+            ),
+        )
 
     @override
     async def execute(
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
         steps = self.steps
-        snapshot = dict(completed_nodes)
+        completed_results = dict(completed_nodes)
 
-        start_time = time.perf_counter()
-        hooks.before_composite_execute(
-            metadata=self.metadata,
-            num_steps=len(steps) + 1,  # +1 for source map
-        )
-
-        try:
-
-            def _make_steps_runner(source_fn: Submission, iteration_index: int) -> Submission:
-                return functools.partial(
-                    _run_composite_map_step,
-                    source_fn=source_fn,
-                    steps=steps,
-                    snapshot=snapshot,
-                    iteration_index=iteration_index,
-                )
-
-            # Iter + reduce: true streaming with backpressure.
-            # Items are generated, submitted, awaited, and reduced
-            # incrementally — the generator is never fully consumed upfront.
-            if (
-                self.iter_source is not None
-                and self.terminal == "reduce"
-                and self.reduce_config is not None
-            ):
-                result = await self._execute_iter_streaming_reduce(
-                    backend,
-                    snapshot,
-                    _make_steps_runner,
-                    hooks,
-                    completed_nodes,
-                )
-            else:
-                # Submit iterations to the backend.
-                # For iter sources the generator is consumed lazily so each item
-                # is dispatched to a worker as it yields (enabling interleaving).
-                # For regular map sources all submissions are prepared upfront.
-                if self.iter_source is not None:
-                    futures: list[Awaitable[Any]] = []
-                    for idx, source_fn in enumerate(self._iter_submissions(snapshot)):
-                        runner = _make_steps_runner(source_fn, idx)
-                        futures.append(backend.submit(runner, timeout=self.timeout))
-                else:
-                    source_submissions = self.source_map._prepare(completed_nodes)
-                    runners = [
-                        _make_steps_runner(fn, idx) for idx, fn in enumerate(source_submissions)
-                    ]
-                    futures = [backend.submit(runner, timeout=self.timeout) for runner in runners]
-
-                iteration_count = len(futures)
-
-                if self.terminal == "reduce" and self.reduce_config is not None:
-                    result = await self._execute_reduce(
-                        futures, hooks, completed_nodes, iteration_count
-                    )
-                else:
-                    result = await self._execute_batch(
-                        backend,
-                        futures,
-                        hooks,
-                        iteration_count,
-                        snapshot,
-                    )
-        except Exception as e:
-            duration = time.perf_counter() - start_time
-            hooks.on_composite_error(
-                metadata=self.metadata,
-                num_steps=len(steps) + 1,
-                error=e,
-                duration=duration,
+        # Builds a runner function that executes the entire composite sequence for one iteration
+        def _make_steps_runner(source_fn: Submission, iteration_index: int) -> Submission:
+            return functools.partial(
+                _run_composite_map_steps,
+                source_fn=source_fn,
+                steps=steps,
+                completed_results=completed_results,
+                iteration_index=iteration_index,
             )
-            raise
 
-        duration = time.perf_counter() - start_time
-        hooks.after_composite_execute(
-            metadata=self.metadata,
-            num_steps=len(steps) + 1,
-            duration=duration,
-        )
-        return result
+        submissions: Iterable[tuple[int, Submission]]
+        if self.iter_source:
+            submissions = enumerate(self._iter_submissions(completed_results))  # lazy submissions
+        else:
+            submissions = enumerate(self.source_map._prepare(completed_nodes))  # eager submissions
 
-    def _iter_submissions(self, snapshot: dict[UUID, Any]) -> Iterator[Submission]:
-        """
-        Lazily yield source submissions from a generator.
+        async with _composite_hook_scope(hooks, self.metadata, len(steps) + 1):
+            if self.terminal == "reduce":
+                return await self._execute_with_reduce(
+                    backend, submissions, _make_steps_runner, hooks, completed_nodes
+                )
 
-        Iterates the generator on the coordinator, saves each yielded item when
-        ``output_configs`` are present, and yields ``Submission`` callables one
-        at a time so the caller can dispatch each to a backend worker as it
-        arrives — enabling true interleaving of generation and processing.
-        """
+            futures = [
+                backend.submit(_make_steps_runner(fn, idx), timeout=self.timeout)
+                for idx, fn in submissions
+            ]
+
+            if self.terminal == "join":
+                return await self._execute_with_join(backend, futures, hooks, completed_results)
+
+            return await self._execute_with_collect(futures, hooks)
+
+    def _iter_submissions(self, completed_results: dict[UUID, Any]) -> Iterator[Submission]:
+        """Lazily yield source submissions from a generator."""
         assert self.iter_source is not None
 
         # Resolve generator inputs and call on coordinator
-        gen_inputs = resolve_inputs(self.iter_source.kwargs, snapshot)
+        gen_inputs = resolve_inputs(self.iter_source.kwargs, completed_results)
         gen_result = self.iter_source.func(**gen_inputs)
 
         # Identify flow parameter (which mapped kwarg receives each item)
-        ((flow_param, _),) = self.source_map.mapped_kwargs.items()
+        (flow_param,) = self.source_map.mapped_kwargs.keys()
 
         # Resolve fixed kwargs for the map function
-        map_fixed = resolve_inputs(dict(self.source_map.fixed_kwargs), snapshot)
+        map_fixed = resolve_inputs(dict(self.source_map.fixed_kwargs), completed_results)
 
-        # Resolve output configs for iter source saves (once, outside loop)
+        # Resolve output configs for iter source saves (if any) and map step saves
         iter_oc = self.iter_source.output_configs
-        iter_oc_params = resolve_output_parameters(iter_oc, snapshot) if iter_oc else []
+        iter_oc_params = resolve_output_parameters(iter_oc, completed_results) if iter_oc else []
+        map_oc_params = resolve_output_parameters(self.source_map.output_configs, completed_results)
 
         for idx, item in enumerate(gen_result):
             # Save each yielded item if the iter source has output_configs
@@ -370,237 +330,202 @@ class CompositeMapTaskNode(BaseGraphNode):
 
             map_inputs = dict(map_fixed)
             map_inputs[flow_param] = item
-            output_parameters = resolve_output_parameters(self.source_map.output_configs, snapshot)
             yield functools.partial(
                 run_task_worker,
                 func=self.source_map.func,
                 metadata=self.source_map.metadata,
                 inputs=map_inputs,
                 output_configs=self.source_map.output_configs,
-                output_parameters=output_parameters,
+                output_parameters=map_oc_params,
                 retries=self.source_map.retries,
                 cache_enabled=self.source_map.cache,
                 cache_ttl=self.source_map.cache_ttl,
                 iteration_index=idx,
             )
 
-    async def _execute_batch(
-        self,
-        backend: Backend,
-        futures: list[Awaitable[Any]],
-        hooks: HookRelay,
-        iteration_count: int,
-        snapshot: dict[UUID, Any],
-    ) -> Any:
-        """Gather all iteration results, optionally run join reducer."""
+    async def _execute_with_collect(
+        self, futures: list[Awaitable[Any]], hooks: HookRelay
+    ) -> list[Any]:
+        """Gather all iteration results into a list."""
+        iteration_count = len(futures)
         hooks.before_mapped_node_execute(
-            metadata=self.source_map.metadata,
-            iteration_count=iteration_count,
+            metadata=self.source_map.metadata, iteration_count=iteration_count
         )
-
         map_start = time.perf_counter()
         results = await asyncio.gather(*futures)
-
         hooks.after_mapped_node_execute(
             metadata=self.source_map.metadata,
             iteration_count=iteration_count,
             duration=time.perf_counter() - map_start,
         )
+        return results
 
-        collected = list(results)
-
-        # Terminal: join — run the reducer once on the full list
-        if self.terminal == "join" and self.join_step is not None:
-            step = self.join_step
-            resolved = resolve_inputs(step.external_params, snapshot)
-            if step.flow_param is not None:  # pragma: no branch
-                resolved[step.flow_param] = collected
-
-            output_parameters = resolve_output_parameters(step.output_configs, snapshot)
-
-            join_runner = functools.partial(
-                run_task_worker,
-                func=step.func,
-                metadata=step.metadata,
-                inputs=resolved,
-                output_configs=step.output_configs,
-                output_parameters=output_parameters,
-                retries=step.retries,
-                cache_enabled=step.cache,
-                cache_ttl=step.cache_ttl,
-            )
-
-            future = backend.submit(join_runner, timeout=self.timeout)
-            return await future
-
-        return collected
-
-    async def _execute_iter_streaming_reduce(
+    async def _execute_with_join(
         self,
         backend: Backend,
-        snapshot: dict[UUID, Any],
+        futures: list[Awaitable[Any]],
+        hooks: HookRelay,
+        completed_results: dict[UUID, Any],
+    ) -> Any:
+        """Gather all iteration results, then run the join reducer once."""
+        results = await self._execute_with_collect(futures, hooks)
+
+        step = self.join_step
+        assert step is not None  # guaranteed by __post_init__
+        resolved = resolve_inputs(step.external_params, completed_results)
+        if step.flow_param is not None:  # pragma: no branch
+            resolved[step.flow_param] = results
+
+        output_parameters = resolve_output_parameters(step.output_configs, completed_results)
+
+        join_runner = functools.partial(
+            run_task_worker,
+            func=step.func,
+            metadata=step.metadata,
+            inputs=resolved,
+            output_configs=step.output_configs,
+            output_parameters=output_parameters,
+            retries=step.retries,
+            cache_enabled=step.cache,
+            cache_ttl=step.cache_ttl,
+        )
+        return await backend.submit(join_runner, timeout=self.timeout)
+
+    async def _execute_with_reduce(
+        self,
+        backend: Backend,
+        submissions: Iterable[tuple[int, Submission]],
         make_runner: Callable[[Submission, int], Submission],
         hooks: HookRelay,
         completed_nodes: Mapping[UUID, Any],
     ) -> Any:
-        """
-        True streaming reduce for iter sources using producer-consumer.
-
-        A **producer** task generates items and submits them to the backend,
-        placing the resulting futures into a bounded ``asyncio.Queue``.  A
-        **consumer** task pulls futures from the queue, awaits results, and
-        folds them into the accumulator.  Both tasks run concurrently on the
-        event loop so generation, worker execution, and reduction overlap.
-
-        The queue's ``maxsize`` provides natural backpressure — when it is full
-        the producer pauses until the consumer drains a slot.
-
-        For **ordered** mode the consumer awaits futures in FIFO order.
-        For **unordered** mode completed results are relayed to the consumer
-        via a separate result queue so reduction overlaps with generation.
-        """
+        """Streaming fold with bounded concurrency, dispatching by reduce mode."""
         assert self.reduce_config is not None
-        assert self.initial_input is not None
+        assert self.initial_accumulator is not None
         cfg = self.reduce_config
-        accumulator = self.initial_input.resolve(completed_nodes)
+        accumulator = self.initial_accumulator.resolve(completed_nodes)
 
         hooks.before_mapped_node_execute(
             metadata=self.source_map.metadata,
             iteration_count=0,  # unknown upfront for streaming
         )
-
         reduce_start = time.perf_counter()
 
-        _SENTINEL = object()
-        concurrency = 8  # max in-flight futures before backpressure kicks in
-        iteration_count = 0
-
         if cfg.mode == "ordered":
-            # Producer → bounded queue of futures → consumer awaits in FIFO order.
-            queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=concurrency)
-            producer_error: list[Exception] = []
-
-            async def _ordered_producer() -> None:
-                try:
-                    for idx, source_fn in enumerate(self._iter_submissions(snapshot)):
-                        runner = make_runner(source_fn, idx)
-                        future = backend.submit(runner, timeout=self.timeout)
-                        await queue.put(future)  # blocks when queue is full
-                except Exception as exc:
-                    producer_error.append(exc)
-                finally:
-                    await queue.put(_SENTINEL)
-
-            producer_task = asyncio.ensure_future(_ordered_producer())
-            while True:
-                item = await queue.get()
-                if item is _SENTINEL:
-                    break
-                result = await item
-                accumulator = await _apply_reduce(cfg, accumulator, result)
-                iteration_count += 1
-            await producer_task
-            if producer_error:
-                raise producer_error[0]
+            accumulator, iteration_count = await self._execute_with_reduce_ordered(
+                backend, submissions, make_runner, cfg, accumulator
+            )
         else:
-            # Unordered: producer submits to backend and spawns relay tasks
-            # that await each future and push completed results into a result
-            # queue.  A semaphore limits in-flight work.  The producer waits for
-            # all relay tasks to finish before sending the sentinel, guaranteeing
-            # the consumer sees every result without polling.
-            semaphore = asyncio.Semaphore(concurrency)
-            result_queue: asyncio.Queue[Any] = asyncio.Queue()
-            producer_error_u: list[Exception] = []
-
-            async def _relay(future: Any) -> None:
-                """Await a backend future and push the result (or error) to the queue."""
-                try:
-                    r = await future
-                    await result_queue.put(r)
-                except Exception as exc:
-                    await result_queue.put(_WorkerError(exc))
-                finally:
-                    semaphore.release()
-
-            async def _unordered_producer() -> None:
-                relay_tasks: list[asyncio.Task[None]] = []
-                try:
-                    for idx, source_fn in enumerate(self._iter_submissions(snapshot)):
-                        await semaphore.acquire()  # backpressure
-                        runner = make_runner(source_fn, idx)
-                        future = backend.submit(runner, timeout=self.timeout)
-                        relay_tasks.append(asyncio.ensure_future(_relay(future)))
-                except Exception as exc:
-                    producer_error_u.append(exc)
-                # Wait for all in-flight relay tasks before signalling completion.
-                if relay_tasks:
-                    await asyncio.gather(*relay_tasks, return_exceptions=True)
-                await result_queue.put(_SENTINEL)
-
-            producer_task = asyncio.ensure_future(_unordered_producer())
-            while True:
-                item = await result_queue.get()
-                if item is _SENTINEL:
-                    break
-                if isinstance(item, _WorkerError):
-                    raise item.exc
-                accumulator = await _apply_reduce(cfg, accumulator, item)
-                iteration_count += 1
-            await producer_task
-            if producer_error_u:
-                raise producer_error_u[0]
+            accumulator, iteration_count = await self._execute_with_reduce_unordered(
+                backend, submissions, make_runner, cfg, accumulator
+            )
 
         hooks.after_mapped_node_execute(
             metadata=self.source_map.metadata,
             iteration_count=iteration_count,
             duration=time.perf_counter() - reduce_start,
         )
-
         return accumulator
 
-    async def _execute_reduce(
+    async def _execute_with_reduce_ordered(
         self,
-        futures: list[Awaitable[Any]],
-        hooks: HookRelay,
-        completed_nodes: Mapping[UUID, Any],
-        iteration_count: int,
-    ) -> Any:
+        backend: Backend,
+        submissions: Iterable[tuple[int, Submission]],
+        make_runner: Callable[[Submission, int], Submission],
+        cfg: ReduceConfig,
+        accumulator: Any,
+    ) -> tuple[Any, int]:
         """
-        Streaming fold over pre-submitted futures (non-iter path).
+        Ordered streaming reduce using a sliding-window deque.
 
-        The reduce function runs on the **coordinator** (not on the backend) because it needs to
-        see results as they stream in from the backend.  Map iterations are submitted to the
-        backend as usual.  If you need a heavy post-processing step, use ``.join()`` instead,
-        which submits a single reducer to the backend after all iterations complete.
+        The oldest future is awaited and folded before a new one is submitted, preserving
+        submission order.
         """
-        assert self.reduce_config is not None
-        assert self.initial_input is not None
-        cfg = self.reduce_config
-        accumulator = self.initial_input.resolve(completed_nodes)
+        settings = get_global_settings()
+        concurrency = settings.iterator_back_pressure
 
-        hooks.before_mapped_node_execute(
-            metadata=self.source_map.metadata,
-            iteration_count=iteration_count,
-        )
+        iteration_count = 0
+        pending: deque[Awaitable[Any]] = deque()
 
-        reduce_start = time.perf_counter()
-
-        if cfg.mode == "ordered":
-            for future in futures:
-                item = await future
+        for idx, source_fn in submissions:
+            runner = make_runner(source_fn, idx)
+            pending.append(backend.submit(runner, timeout=self.timeout))
+            if len(pending) >= concurrency:
+                item = await pending.popleft()
                 accumulator = await _apply_reduce(cfg, accumulator, item)
-        else:
-            for coro in asyncio.as_completed(futures):
-                item = await coro
-                accumulator = await _apply_reduce(cfg, accumulator, item)
+                iteration_count += 1
 
-        hooks.after_mapped_node_execute(
-            metadata=self.source_map.metadata,
-            iteration_count=iteration_count,
-            duration=time.perf_counter() - reduce_start,
-        )
+        while pending:
+            item = await pending.popleft()
+            accumulator = await _apply_reduce(cfg, accumulator, item)
+            iteration_count += 1
 
-        return accumulator
+        return accumulator, iteration_count
+
+    async def _execute_with_reduce_unordered(
+        self,
+        backend: Backend,
+        submissions: Iterable[tuple[int, Submission]],
+        make_runner: Callable[[Submission, int], Submission],
+        cfg: ReduceConfig,
+        accumulator: Any,
+    ) -> tuple[Any, int]:
+        """
+        Unordered streaming reduce using a semaphore with relay tasks.
+
+        Relay tasks await each backend future and push the completed result into a queue so the
+        fastest-completing result is reduced first.
+        """
+        settings = get_global_settings()
+        concurrency = settings.iterator_back_pressure
+        semaphore = asyncio.Semaphore(concurrency)
+
+        iteration_count = 0
+        _SENTINEL = object()
+        result_queue: asyncio.Queue[Any] = asyncio.Queue()
+        producer_error: list[Exception] = []
+
+        # Producer task: submit all iterations, launching a relay task for each to push results
+        # into the queue as they complete. If any submission raises an exception, capture it and
+        # re-raise after all results have been processed.
+        async def _producer() -> None:
+            relay_tasks: list[asyncio.Task[None]] = []
+            try:
+                for idx, source_fn in submissions:
+                    await semaphore.acquire()
+                    runner = make_runner(source_fn, idx)
+                    future = backend.submit(runner, timeout=self.timeout)
+                    relay_tasks.append(asyncio.ensure_future(_relay(future)))
+            except Exception as exc:
+                producer_error.append(exc)
+            if relay_tasks:
+                await asyncio.gather(*relay_tasks, return_exceptions=True)
+            await result_queue.put(_SENTINEL)
+
+        async def _relay(future: Awaitable[Any]) -> None:
+            try:
+                r = await future
+                await result_queue.put(r)
+            except Exception as exc:
+                await result_queue.put(_WorkerError(exc))
+            finally:
+                semaphore.release()
+
+        # Start producer task and consume results as they arrive
+        producer_task = asyncio.ensure_future(_producer())
+        while True:
+            item = await result_queue.get()
+            if item is _SENTINEL:
+                break
+            if isinstance(item, _WorkerError):
+                raise item.exc
+            accumulator = await _apply_reduce(cfg, accumulator, item)
+            iteration_count += 1
+        await producer_task
+        if producer_error:
+            raise producer_error[0]
+
+        return accumulator, iteration_count
 
 
 # region Helper Types
@@ -609,10 +534,10 @@ class CompositeMapTaskNode(BaseGraphNode):
 @dataclass(frozen=True)
 class CompositeStep:
     """
-    One step in a `CompositeTaskNode` or `CompositeMapTaskNode`.
+    One step in a composite task or composite map task node.
 
-    Captures everything ``run_task_worker`` needs to execute one step, plus the
-    ``flow_param`` that receives the previous step's result.
+    Captures everything `run_task_worker` needs to execute one step, plus the
+    `flow_param` that receives the previous step's result.
     """
 
     id: UUID
@@ -628,15 +553,16 @@ class CompositeStep:
     """The task function to execute for this step."""
 
     flow_param: str | None
-    """
-    Parameter name receiving the previous step's result or None for first step in a composite.
-    """
+    """Parameter name receiving the previous step's result or None for first step in a composite."""
 
     external_params: Mapping[str, NodeInput]
     """Parameters sourced from outside the sequence (literals or refs to completed nodes)."""
 
     output_configs: tuple[NodeOutputConfig, ...]
     """Output save/checkpoint configurations for this step."""
+
+    step_kind: NodeKind = "task"
+    """Kind of the original node this step was built from."""
 
     retries: int = 0
     """Number of times to retry this step on failure."""
@@ -650,17 +576,73 @@ class CompositeStep:
     timeout: float | None = None
     """Per-step timeout in seconds (preserved from the original node for aggregation)."""
 
-    step_kind: NodeKind = "task"
-    """Kind of the original node this step was built from."""
-
     @property
     def metadata(self) -> NodeMetadata:
-        """Build ``NodeMetadata`` for this step."""
+        """Build a node metadata instance for this step."""
         return NodeMetadata(
             id=self.id,
             name=self.name,
             kind=self.step_kind,
             description=self.description,
+        )
+
+    @classmethod
+    def from_node(cls, node: BaseGraphNode, *, flow_param: str | None) -> CompositeStep:
+        """Build a composite step instance from a task or map node."""
+        if isinstance(node, MapTaskNode):
+            external_params: Mapping[str, NodeInput] = dict(node.fixed_kwargs)
+        elif isinstance(node, TaskNode):
+            external_params = {k: v for k, v in node.kwargs.items() if k != flow_param}
+        else:  # pragma: no cover
+            raise ValueError(f"Unsupported node type for composite step: {type(node)}")
+        return cls(
+            id=node.id,
+            name=node.name,
+            description=node.description,
+            func=node.func,
+            flow_param=flow_param,
+            external_params=external_params,
+            output_configs=node.output_configs,
+            retries=node.retries,
+            cache=node.cache,
+            cache_ttl=node.cache_ttl,
+            timeout=node.timeout,
+            step_kind=node.kind,
+        )
+
+
+@dataclass(frozen=True)
+class IterSourceConfig:
+    """Configuration for a lazy iterator source folded into a composite."""
+
+    id: UUID
+    """Original node ID for this iter source (used for result aliasing)."""
+
+    func: Callable[..., Any]
+    """Generator/iterator-returning function."""
+
+    kwargs: Mapping[str, NodeInput]
+    """Keyword parameters mapped to node inputs."""
+
+    output_configs: tuple[NodeOutputConfig, ...] = ()
+    """Output save/checkpoint configurations from the original iter node (if present)."""
+
+    retries: int = 0
+    cache: bool = False
+    cache_ttl: int | None = None
+
+    @classmethod
+    def from_iter_node(cls, node: IterNode) -> IterSourceConfig:
+        """Builds an iter source config instance from an iter node."""
+        assert node.kind == "iter", "Expected IterNode for IterSourceConfig"
+        return cls(
+            id=node.id,
+            func=node.func,
+            kwargs=node.kwargs,
+            output_configs=node.output_configs,
+            retries=node.retries,
+            cache=node.cache,
+            cache_ttl=node.cache_ttl,
         )
 
 
@@ -673,37 +655,31 @@ class _WorkerError:
         self.exc = exc
 
 
-@dataclass(frozen=True)
-class IterSourceConfig:
-    """Configuration for a lazy iterator source folded into a composite."""
-
-    id: UUID
-    """Original ``IterNode`` ID (used for dependency exclusion)."""
-
-    func: Callable[..., Any]
-    """Generator/iterator-returning function."""
-
-    kwargs: Mapping[str, NodeInput]
-    """Keyword parameters mapped to node inputs."""
-
-    output_configs: tuple[NodeOutputConfig, ...] = ()
-    """Output save/checkpoint configurations from the original ``IterNode``."""
-
-    retries: int = 0
-    cache: bool = False
-    cache_ttl: int | None = None
-
-
 # region Helper Functions
 
 
-async def _apply_reduce(cfg: ReduceConfig, acc: Any, item: Any) -> Any:
-    """
-    Apply the reduce function (sync or async) with retries.
+@asynccontextmanager
+async def _composite_hook_scope(hooks: HookRelay, metadata: NodeMetadata, num_steps: int):
+    """Context manager that wraps a composite execution with before/after/error hooks."""
+    start_time = time.perf_counter()
+    hooks.before_composite_execute(metadata=metadata, num_steps=num_steps)
+    try:
+        yield
+    except Exception as e:
+        hooks.on_composite_error(
+            metadata=metadata,
+            num_steps=num_steps,
+            error=e,
+            duration=time.perf_counter() - start_time,
+        )
+        raise
+    hooks.after_composite_execute(
+        metadata=metadata, num_steps=num_steps, duration=time.perf_counter() - start_time
+    )
 
-    Extracted to module level so it can be shared by ``_execute_reduce`` and
-    ``_execute_iter_reduce``.
-    """
+
+async def _apply_reduce(cfg: ReduceConfig, acc: Any, item: Any) -> Any:
+    """Apply the reduce function (sync or async) with retries."""
     kwargs = {cfg.accumulator_param: acc, cfg.item_param: item}
     last_error: Exception | None = None
     for attempt in range(1 + cfg.retries):
@@ -725,14 +701,7 @@ def _remap_composite_step(
     id_mapping: Mapping[UUID, UUID],
     oc_mapping: Mapping[UUID, UUID] | None = None,
 ) -> CompositeStep:
-    """
-    Remaps external_params and output_configs references in a CompositeStep.
-
-    ``oc_mapping`` is used for output_configs remapping.  When ``None``,
-    ``id_mapping`` is used.  Callers that know which IDs are step-internal
-    should pass a filtered mapping that excludes them so that internal
-    references (resolved within the composite snapshot) are left untouched.
-    """
+    """Remaps a single composite step, returning the original if no changes were made."""
     new_params = remap_node_inputs(step.external_params, id_mapping)
     new_oc = remap_output_configs(
         step.output_configs, oc_mapping if oc_mapping is not None else id_mapping
@@ -746,15 +715,10 @@ def _remap_composite_step(
     return step
 
 
-def _remap_steps(
+def _remap_composite_steps(
     steps: tuple[CompositeStep, ...], id_mapping: Mapping[UUID, UUID]
 ) -> tuple[CompositeStep, ...] | None:
-    """
-    Remaps an entire sequence of steps, returning None if nothing changed.
-
-    Internal step IDs are excluded from the output_configs remapping so that
-    references resolved within the composite's own snapshot are not broken.
-    """
+    """Remaps an entire sequence of steps, returning None if nothing changed."""
     internal_ids = {step.id for step in steps}
     oc_mapping = {k: v for k, v in id_mapping.items() if k not in internal_ids}
     new_steps: list[CompositeStep] = []
@@ -767,67 +731,55 @@ def _remap_steps(
     return tuple(new_steps) if changed else None
 
 
-async def _run_composite_steps(steps: tuple[CompositeStep, ...], snapshot: dict[UUID, Any]) -> Any:
-    """
-    Execute a `CompositeTaskNode` steps as a single sequential unit.
-
-    Defined at module level so it is picklable by `ProcessPoolExecutor`.
-    """
-    result: Any = None
-
-    for i, step in enumerate(steps):
-        resolved = resolve_inputs(step.external_params, snapshot)
-        if i > 0 and step.flow_param is not None:
-            resolved[step.flow_param] = result
-
-        output_parameters = resolve_output_parameters(step.output_configs, snapshot)
-
-        result = await run_task_worker(
-            func=step.func,
-            metadata=step.metadata,
-            inputs=resolved,
-            output_configs=step.output_configs,
-            output_parameters=output_parameters,
-            retries=step.retries,
-            cache_enabled=step.cache,
-            cache_ttl=step.cache_ttl,
-        )
-
-        # Make result available for subsequent steps' external_params
-        snapshot[step.id] = result
-
-    return result
+async def _run_composite_steps(
+    steps: tuple[CompositeStep, ...], completed_results: dict[UUID, Any]
+) -> Any:
+    """Execute a sequence of composite steps in a composite task node."""
+    previous_output: Any = None
+    for step in steps:
+        previous_output = await _run_step(step, previous_output, completed_results)
+        completed_results[step.id] = previous_output
+    return previous_output
 
 
-async def _run_composite_map_step(
+async def _run_composite_map_steps(
     source_fn: Submission,
     steps: tuple[CompositeStep, ...],
-    snapshot: dict[UUID, Any],
+    completed_results: dict[UUID, Any],
     iteration_index: int,
 ) -> Any:
-    """
-    Executes one iteration of the composite map steps.
-
-    Defined at module level so it is picklable by `ProcessPoolExecutor`.
-    """
-    result = await source_fn()
-
+    """Execute one iteration of the composite map steps."""
+    previous_output = await source_fn()
     for step in steps:
-        resolved = resolve_inputs(step.external_params, snapshot)
-        if step.flow_param is not None:  # pragma: no branch – map steps must have flow_param
-            resolved[step.flow_param] = result
-
-        output_parameters = resolve_output_parameters(step.output_configs, snapshot)
-
-        result = await run_task_worker(
-            func=step.func,
-            metadata=step.metadata,
-            inputs=resolved,
-            output_configs=step.output_configs,
-            output_parameters=output_parameters,
-            retries=step.retries,
-            cache_enabled=step.cache,
-            cache_ttl=step.cache_ttl,
-            iteration_index=iteration_index,
+        previous_output = await _run_step(
+            step, previous_output, completed_results, iteration_index=iteration_index
         )
-    return result
+    return previous_output
+
+
+async def _run_step(
+    step: CompositeStep,
+    previous_output: Any,
+    completed_results: dict[UUID, Any],
+    *,
+    iteration_index: int | None = None,
+) -> Any:
+    """Executes a single composite step."""
+    resolved = resolve_inputs(step.external_params, completed_results)
+
+    # Inject previous output into the flow parameter
+    if step.flow_param is not None:
+        resolved[step.flow_param] = previous_output
+
+    output_parameters = resolve_output_parameters(step.output_configs, completed_results)
+    return await run_task_worker(
+        func=step.func,
+        metadata=step.metadata,
+        inputs=resolved,
+        output_configs=step.output_configs,
+        output_parameters=output_parameters,
+        retries=step.retries,
+        cache_enabled=step.cache,
+        cache_ttl=step.cache_ttl,
+        iteration_index=iteration_index,
+    )
