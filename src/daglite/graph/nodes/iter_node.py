@@ -70,7 +70,6 @@ class IterNode(BaseGraphNode):
         output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
 
         if self.output_configs:
-            #
             runner = functools.partial(
                 run_task_worker,
                 func=self.func,
