@@ -9,6 +9,7 @@ same worker function handles per-node hooks, caching, retries, and output saving
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import functools
 import inspect
 import time
@@ -526,14 +527,21 @@ class CompositeMapTaskNode(BaseGraphNode):
 
         # Start producer task and consume results as they arrive
         producer_task = asyncio.ensure_future(_producer())
-        while True:
-            item = await result_queue.get()
-            if item is _SENTINEL:
-                break
-            if isinstance(item, _WorkerError):
-                raise item.exc
-            accumulator = await _apply_reduce(cfg, accumulator, item)
-            iteration_count += 1
+        try:
+            while True:
+                item = await result_queue.get()
+                if item is _SENTINEL:
+                    break
+                if isinstance(item, _WorkerError):
+                    raise item.exc
+                accumulator = await _apply_reduce(cfg, accumulator, item)
+                iteration_count += 1
+        except BaseException:
+            if not producer_task.done():  # pragma: no branch
+                producer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await producer_task
+            raise
         await producer_task
         if producer_error:
             raise producer_error[0]
