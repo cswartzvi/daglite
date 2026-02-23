@@ -1,11 +1,12 @@
 """Unit tests for IterTaskFuture and IterNode."""
 
-from typing import Iterator
+from typing import AsyncIterator, Iterator
 
 import pytest
 
 from daglite import task
 from daglite.exceptions import ParameterError
+from daglite.exceptions import TaskError
 from daglite.futures.iter_future import IterTaskFuture
 from daglite.graph.nodes.iter_node import IterNode
 
@@ -76,6 +77,27 @@ class TestIterTaskFutureBuildNode:
 
 class TestIterValidation:
     """Tests for .iter() parameter validation."""
+
+    def test_iter_validates_non_sync_generator_function(self) -> None:
+        """iter() rejects tasks whose functions don't return sync generators."""
+
+        @task
+        def not_a_generator(n: int) -> int:
+            return n * 2
+
+        with pytest.raises(TaskError, match="does not return a generator"):
+            not_a_generator.iter(n=5)
+
+    def test_iter_validates_async_generator_function(self) -> None:
+        """iter() rejects tasks whose functions return async generators."""
+
+        @task
+        async def async_generator(n: int) -> AsyncIterator[int]:
+            for i in range(n):
+                yield i
+
+        with pytest.raises(TaskError, match="does not return a generator"):
+            async_generator.iter(n=5)
 
     def test_iter_validates_missing_params(self) -> None:
         """iter() rejects calls with missing parameters."""

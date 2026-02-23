@@ -23,6 +23,7 @@ from daglite._validation import check_overlap_params
 from daglite._validation import resolve_positional_args
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ParameterError
+from daglite.exceptions import TaskError
 
 # NOTE: Tasks are the building blocks of daglite DAGs, however the fluent API for composing
 # DAGs allows for tasks to accept downstream types as parameters. To avoid circular imports,
@@ -536,6 +537,14 @@ class PartialTask(BaseTask[P, R]):
             An `IterTaskFuture` representing the lazy iterator invocation.
         """
         from daglite.futures.iter_future import IterTaskFuture
+
+        if not inspect.isgeneratorfunction(self.task.func) or not inspect.isgeneratorfunction(
+            self.task.func
+        ):
+            raise TaskError(
+                f"Task '{self.task.name}' cannot be used with .iter() because its function "
+                f"does not return a generator."
+            )
 
         merged = {**self.fixed_kwargs, **kwargs}
         check_invalid_params(self.signature, merged, self.name)
