@@ -244,6 +244,7 @@ def _fold_map_paths(
         terminal: TerminalKind = "collect"
         join_step: CompositeStep | None = None
         reduce_config: ReduceConfig | None = None
+        reduce_output_configs: tuple = ()
         initial_input: NodeInput | None = None
         tail_id = map_path.step_ids[-1] if map_path.step_ids else map_path.map_id
 
@@ -262,6 +263,7 @@ def _fold_map_paths(
             assert isinstance(reduce_node, ReduceNode)
             reduce_config = reduce_node.reduce_config
             initial_input = reduce_node.initial_input
+            reduce_output_configs = reduce_node.output_configs
             tail_id = map_path.reduce_id
 
         # Create composite
@@ -292,6 +294,7 @@ def _fold_map_paths(
             initial_accumulator=initial_input,
             timeout=composite_timeout,
             iter_source=_build_iter_source(nodes, map_path.iter_node_id),
+            output_configs=reduce_output_configs,
         )
 
         # Remove folded nodes, add composite
