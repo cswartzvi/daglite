@@ -63,11 +63,14 @@ class IterNode(BaseGraphNode):
     async def execute(
         self, backend: Backend, completed_nodes: Mapping[UUID, Any], hooks: HookRelay
     ) -> Any:
+        # NOTE: When this function is called, the node is being executed in either a non-optimized
+        # or outside of a composite context, so we always materialize the entire iterator.
+
         inputs = resolve_inputs(self.kwargs, completed_nodes)
         output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
 
         if self.output_configs:
-            # Per-item save path: iterate on coordinator so each item is saved individually
+            #
             runner = functools.partial(
                 run_task_worker,
                 func=self.func,
@@ -81,9 +84,9 @@ class IterNode(BaseGraphNode):
             )
             result = await backend.submit(runner, timeout=self.timeout)
 
-            # result is the materialized list (run_task_worker converts generators to lists)
-            if isinstance(result, (Generator, Iterator)):
-                result = list(result)  # pragma: no cover — defensive
+            # Defensive check: result should already be materialized by the worker
+            if isinstance(result, (Generator, Iterator)):  # pragma: no cover
+                result = list(result)
 
             items = result if isinstance(result, list) else [result]
             for idx, item in enumerate(items):
