@@ -81,7 +81,7 @@ source_pkgs = [
     "daglite_serialization",
     "daglite_rich",
 ] # Add new plugins here
-omit = ["tests/typing/assert_type_tests.py"]
+omit = ["tests/contracts/typing/*.py"]
 branch = true
 sigterm = true
 
@@ -140,6 +140,10 @@ testpaths = ["tests", "extras/*/tests", "src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "doctest: marks doctest examples in docstrings and documentation",
+    "behavior: marks behavior-level API execution tests",
+    "integration: marks cross-subsystem integration tests",
+    "contracts: marks contract/compatibility tests",
+    "typing_contract: marks typing contract tests",
 ]
 filterwarnings = [
     # Suppress fork() deprecation from multiprocessing when using pytest-cov

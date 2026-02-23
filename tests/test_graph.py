@@ -1,7 +1,7 @@
 """
 Unit Tests for graph construction and nodes in daglite.graph.
 
-Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/ and cross-subsystem scenarios are in tests/integration/.
 """
 
 from functools import cached_property

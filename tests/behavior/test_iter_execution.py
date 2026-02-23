@@ -1,5 +1,5 @@
 """
-Integration tests for lazy iterator (.iter()) support.
+Behavior tests for lazy iterator (.iter()) support.
 
 These tests verify end-to-end execution of pipelines using `.iter()` to lazily
 iterate a generator on the coordinator while dispatching map work to backend

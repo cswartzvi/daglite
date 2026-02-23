@@ -1,4 +1,4 @@
-"""Integration test for task evaluation using .run() with both sync and async tasks."""
+"""Behavior tests for task evaluation using .run() with both sync and async tasks."""
 
 import asyncio
 import os
@@ -482,7 +482,7 @@ class TestComplexPathEvaluation:
         assert result == 90  # 10 + 20 + 20 + 40
 
 
-class TestAsyncTasksWithEvaluate:
+class TestRunSyncWithAsyncTasks:
     """Tests that async tasks work through .run() via the async-first engine."""
 
     def test_async_task_works(self) -> None:
@@ -954,7 +954,7 @@ class TestSiblingParallelism:
         assert all(pid > 0 for pid in result["pids"])
 
 
-class TestEvaluateGuards:
+class TestRunSyncGuards:
     """Tests for .run() entry-point guards (loop detection, nested call prevention)."""
 
     def test_evaluate_rejects_running_loop(self) -> None:

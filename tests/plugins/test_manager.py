@@ -3,7 +3,7 @@ Unit tests for plugin manager functionality.
 
 These tests verify the plugin manager's registration, serialization, and utility functions.
 
-For integration tests with actual execution, see tests/evaluation/test_plugins.py.
+For execution-level plugin integration tests, see tests/integration/test_plugins.py.
 """
 
 import pytest

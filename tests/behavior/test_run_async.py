@@ -1,4 +1,4 @@
-"""Integration tests for async task evaluation with .run_async()."""
+"""Behavior tests for async task evaluation with .run_async()."""
 
 import asyncio
 import threading
@@ -46,7 +46,7 @@ def square_process(z: int) -> int:
     return z**2
 
 
-class TestSyncTasksWithEvaluateAsync:
+class TestRunAsyncWithSyncTasks:
     """Tests .run_async() with regular (sync) task functions."""
 
     def test_single_task_async(self) -> None:
@@ -300,7 +300,7 @@ class TestSyncTasksWithEvaluateAsync:
         assert result == [4, 16, 36]  # [2, 4, 6] squared
 
 
-class TestAsyncTasksWithEvaluateAsync:
+class TestRunAsyncWithAsyncTasks:
     """Tests .run_async() with async task functions (async def)."""
 
     def test_async_task_async_evaluation(self) -> None:
@@ -411,7 +411,7 @@ class TestAsyncTasksWithEvaluateAsync:
         assert final == 13
 
 
-class TestMappedOperationsWithEvaluateAsync:
+class TestRunAsyncMappedOperations:
     """Tests product/zip operations with async tasks and .run_async()."""
 
     def test_product_empty_sequence(self) -> None:
@@ -575,7 +575,7 @@ class TestMappedOperationsWithEvaluateAsync:
         assert result == 66
 
 
-class TestGeneratorMaterializationWithEvaluateAsync:
+class TestRunAsyncGeneratorMaterialization:
     """Tests async generator materialization with .run_async()."""
 
     def test_async_generator_is_materialized(self) -> None:
@@ -657,7 +657,7 @@ class TestGeneratorMaterializationWithEvaluateAsync:
         assert result == [1, 5, 14]
 
 
-class TestConcurrentSiblingTaskExecution:
+class TestRunAsyncSiblingConcurrency:
     """Tests for concurrent execution of sibling tasks without timing assertions."""
 
     def test_sync_tasks_with_threading_backend_in_async_context(self) -> None:

@@ -3,7 +3,7 @@ Unit tests for event reporters.
 
 These tests verify reporter implementations without requiring full evaluation.
 
-Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/evaluation/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/ and cross-subsystem scenarios are in tests/integration/.
 """
 
 from multiprocessing import Queue as MultiprocessingQueue
