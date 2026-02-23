@@ -425,6 +425,17 @@ class CompositeMapTaskNode(BaseGraphNode):
             iteration_count=iteration_count,
             duration=time.perf_counter() - reduce_start,
         )
+
+        # Save the final accumulator if the reduce terminal has output_configs
+        if self.output_configs:
+            output_parameters = resolve_output_parameters(self.output_configs, completed_nodes)
+            _save_outputs(
+                result=accumulator,
+                resolved_inputs={},
+                output_config=self.output_configs,
+                output_deps=output_parameters,
+            )
+
         return accumulator
 
     async def _execute_with_reduce_ordered(
