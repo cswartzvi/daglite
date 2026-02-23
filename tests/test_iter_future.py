@@ -190,6 +190,22 @@ class TestIterTaskFutureFluentAPI:
         result = generate.iter(n=5).join(sum_values)
         assert isinstance(result, TaskFuture)
 
+    def test_join_with_partial_task(self) -> None:
+        """IterTaskFuture.join() works with a PartialTask."""
+        from daglite.futures.task_future import TaskFuture
+
+        @task
+        def generate(n: int) -> Iterator[int]:
+            yield from range(n)
+
+        @task
+        def sum_offset(values: list[int], offset: int) -> int:
+            return sum(values) + offset
+
+        result = generate.iter(n=5).join(sum_offset.partial(offset=10))
+        assert isinstance(result, TaskFuture)
+        assert result.kwargs["offset"] == 10
+
     def test_reduce_returns_reduce_future(self) -> None:
         """IterTaskFuture.reduce() returns a ReduceFuture."""
         from daglite.futures.reduce_future import ReduceFuture
@@ -203,6 +219,22 @@ class TestIterTaskFutureFluentAPI:
             return acc + item
 
         result = generate.iter(n=5).reduce(add_acc, initial=0)
+        assert isinstance(result, ReduceFuture)
+        assert result.initial == 0
+
+    def test_reduce_with_partial_task(self) -> None:
+        """IterTaskFuture.reduce() works with a PartialTask."""
+        from daglite.futures.reduce_future import ReduceFuture
+
+        @task
+        def generate(n: int) -> Iterator[int]:
+            yield from range(n)
+
+        @task
+        def add_acc_scaled(acc: int, item: int, scale: int) -> int:
+            return acc + item * scale
+
+        result = generate.iter(n=5).reduce(add_acc_scaled.partial(scale=2), initial=0)
         assert isinstance(result, ReduceFuture)
         assert result.initial == 0
 
