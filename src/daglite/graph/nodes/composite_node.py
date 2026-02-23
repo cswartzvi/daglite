@@ -500,13 +500,15 @@ class CompositeMapTaskNode(BaseGraphNode):
         # into the queue as they complete. If any submission raises an exception, capture it and
         # re-raise after all results have been processed.
         async def _producer() -> None:
-            relay_tasks: list[asyncio.Task[None]] = []
+            relay_tasks: set[asyncio.Task[None]] = set()
             try:
                 for idx, source_fn in submissions:
                     await semaphore.acquire()
                     runner = make_runner(source_fn, idx)
                     future = backend.submit(runner, timeout=self.timeout)
-                    relay_tasks.append(asyncio.ensure_future(_relay(future)))
+                    relay_task = asyncio.ensure_future(_relay(future))
+                    relay_tasks.add(relay_task)
+                    relay_task.add_done_callback(relay_tasks.discard)
             except Exception as exc:
                 producer_error.append(exc)
             if relay_tasks:  # pragma: no branch
