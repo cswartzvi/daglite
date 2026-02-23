@@ -289,6 +289,7 @@ class CompositeMapTaskNode(BaseGraphNode):
                     backend, submissions, _make_steps_runner, hooks, completed_nodes
                 )
 
+            # For collect and join terminals, all futures are constructed eagerly
             futures = [
                 backend.submit(_make_steps_runner(fn, idx), timeout=self.timeout)
                 for idx, fn in submissions
