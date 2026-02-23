@@ -1,7 +1,8 @@
 """
 Unit tests for the @workflow decorator, Workflow, and WorkflowResult.
 
-Tests in this file should NOT focus on evaluation. Evaluation tests are in tests/integration/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/
+and cross-subsystem scenarios are in tests/integration/.
 """
 
 from __future__ import annotations

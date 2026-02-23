@@ -5,7 +5,8 @@ These tests focus on validating the behavior of the @task decorator, Task, and T
 when defining tasks and binding parameters. They ensure that invalid usages raise appropriate
 exceptions.
 
-Tests in this file should NOT focus on evaluation. Evaluation behavior tests currently live under tests/integration/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/
+and cross-subsystem scenarios are in tests/integration/.
 """
 
 import pytest

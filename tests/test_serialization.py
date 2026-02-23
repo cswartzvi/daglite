@@ -1,7 +1,8 @@
 """
 Unit tests for serialization registry and hash strategies.
 
-Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/ and cross-subsystem scenarios are in tests/integration/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/
+and cross-subsystem scenarios are in tests/integration/.
 """
 
 import pickle

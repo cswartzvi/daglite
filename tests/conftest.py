@@ -14,16 +14,19 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
     """Apply suite markers based on test location and mark doctest items."""
     for item in items:
         path = Path(str(item.fspath)).as_posix()
+        normed = f"/{path}"
 
         if isinstance(item, pytest.DoctestItem):
             item.add_marker(pytest.mark.doctest)
 
-        if "/tests/behavior/" in f"/{path}":
+        if "/tests/behavior/" in normed:
             item.add_marker(pytest.mark.behavior)
-        elif "/tests/integration/" in f"/{path}":
+        elif "/tests/integration/" in normed or "/tests/cli/" in normed:
             item.add_marker(pytest.mark.integration)
-        elif "/tests/contracts/" in f"/{path}":
+        elif "/tests/contracts/" in normed:
             item.add_marker(pytest.mark.contracts)
 
-            if "/tests/contracts/typing/" in f"/{path}":
+            if "/tests/contracts/typing/" in normed:
                 item.add_marker(pytest.mark.typing_contract)
+        elif "/tests/" in normed and "/tests/examples/" not in normed:
+            item.add_marker(pytest.mark.unit)

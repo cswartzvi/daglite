@@ -1,7 +1,8 @@
 """
 Unit tests for daglite settings configuration.
 
-Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/ and cross-subsystem scenarios are in tests/integration/.
+Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/
+and cross-subsystem scenarios are in tests/integration/.
 """
 
 from daglite.settings import DagliteSettings
