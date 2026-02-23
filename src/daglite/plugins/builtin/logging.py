@@ -551,9 +551,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"Task '{node_key}' - Starting iteration using {backend_name} backend"
             )
         elif hidden:
-            self._logger.debug(
-                f"Task '{node_key}' - Starting task using {backend_name} backend"
-            )
+            self._logger.debug(f"Task '{node_key}' - Starting task using {backend_name} backend")
         else:
             self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
 

@@ -246,7 +246,6 @@ class TestIterTaskFutureFluentAPI:
 
     def test_reduce_identity_node_is_hidden(self) -> None:
         """IterTaskFuture.reduce() marks the internal identity MapTaskFuture as hidden."""
-        from daglite.futures.map_future import MapTaskFuture
         from daglite.graph.builder import build_graph
 
         @task
