@@ -375,6 +375,20 @@ class TestIterSave:
             assert result == 42
             assert store.list_keys() == []
 
+    def test_reduce_save_stores_final_accumulator(self) -> None:
+        """reduce().save() saves the final accumulator value, not individual items."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = DatasetStore(tmpdir)
+            result = (
+                double.map(x=generate_numbers.iter(n=4))
+                .reduce(reduce_sum, initial=0)
+                .save("final_sum", save_store=store)
+                .run()
+            )
+            assert result == 12  # 0+2+4+6
+            assert store.list_keys() == ["final_sum"]
+            assert store.load("final_sum") == 12
+
 
 # -- Streaming behavior tests ------------------------------------------------
 
