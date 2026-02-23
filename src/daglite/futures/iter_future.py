@@ -154,43 +154,27 @@ class IterTaskFuture(BaseTaskFuture[R]):
 
         Each yielded item is accumulated using *reduce_task(acc, item)*.
 
-        For full lazy optimization (no intermediate list), chain via `.then()` first — the
-        optimizer folds `IterNode → MapTaskNode → ReduceNode` into a single composite. Calling
-        `.reduce()` directly on an `IterTaskFuture` works correctly but falls back to
-        materializing the list when the optimizer cannot fold the `IterNode → ReduceNode` pair.
-
         Args:
-            reduce_task: Either a `Task` or `PartialTask` with exactly **one** unbound parameter
-                that will receive each item yielded by this iterator.
+            reduce_task: Either a `Task` or `PartialTask` with exactly **two** unbound parameters
+                (accumulator and item).
             initial: Starting value for the accumulator.
             ordered: If `True` (default), items are processed in iteration order.  If `False`,
-            items are processed in completion order.
+                items are processed in completion order.
 
         Returns:
             A `ReduceFuture` representing the final accumulated value.
         """
-        from daglite._typing import ReduceMode
-        from daglite.futures.reduce_future import ReduceFuture
+        return self.then(_IDENTITY_TASK).reduce(reduce_task, initial=initial, ordered=ordered)
 
-        if isinstance(reduce_task, PartialTask):
-            actual_task = reduce_task.task
-        else:
-            actual_task = reduce_task
 
-        all_fixed = dict(reduce_task.fixed_kwargs) if isinstance(reduce_task, PartialTask) else {}
-        acc_param, item_param = get_unbound_params(
-            actual_task.signature, all_fixed, actual_task.name, n=2
-        )
+def _identity(x: Any) -> Any:
+    """Pass-through identity — used internally to bridge iter → reduce for streaming."""
+    return x
 
-        reduce_mode: ReduceMode = "ordered" if ordered else "unordered"
 
-        return ReduceFuture(
-            source=self,
-            reduce_task=actual_task,
-            initial=initial,
-            reduce_mode=reduce_mode,
-            accumulator_param=acc_param,
-            item_param=item_param,
-            backend_name=self.backend_name,
-            task_store=self.task_store,
-        )
+_IDENTITY_TASK: Task[Any, Any] = Task(
+    func=_identity,
+    name="_identity",
+    description="Internal identity task for iter→reduce streaming",
+    backend_name=None,
+)

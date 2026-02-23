@@ -295,6 +295,47 @@ class TestIterFluentJoin:
         assert result == 10
 
 
+class TestIterDirectReduce:
+    """Tests for gen.iter().reduce() — direct reduce without explicit .then() or .map()."""
+
+    def test_iter_reduce_direct_optimized(self) -> None:
+        """gen.iter().reduce() produces correct result with optimization enabled."""
+        result = generate_numbers.iter(n=10).reduce(reduce_sum, initial=0).run()
+        assert result == 45  # sum(0..9)
+
+    def test_iter_reduce_direct_unoptimized(self) -> None:
+        """gen.iter().reduce() produces correct result with optimization disabled."""
+        _with_optimization(False)
+        result = generate_numbers.iter(n=10).reduce(reduce_sum, initial=0).run()
+        assert result == 45
+
+    def test_iter_reduce_direct_ordered(self) -> None:
+        """gen.iter().reduce() preserves iteration order."""
+        result = generate_numbers.iter(n=5).reduce(reduce_str, initial="", ordered=True).run()
+        assert result == "0,1,2,3,4"
+
+    def test_iter_reduce_direct_unordered(self) -> None:
+        """gen.iter().reduce() unordered still produces correct result for commutative ops."""
+        result = generate_numbers.iter(n=10).reduce(reduce_sum, initial=0, ordered=False).run()
+        assert result == 45
+
+    def test_iter_reduce_direct_empty(self) -> None:
+        """gen.iter().reduce() with empty generator returns initial value."""
+        result = generate_numbers.iter(n=0).reduce(reduce_sum, initial=42).run()
+        assert result == 42
+
+    def test_iter_reduce_direct_matches_then_identity(self) -> None:
+        """gen.iter().reduce() matches gen.iter().then(identity).reduce()."""
+
+        @task
+        def identity(x: int) -> int:
+            return x
+
+        direct = generate_numbers.iter(n=10).reduce(reduce_sum, initial=0).run()
+        explicit = generate_numbers.iter(n=10).then(identity).reduce(reduce_sum, initial=0).run()
+        assert direct == explicit
+
+
 class TestIterSave:
     """Tests for .save() on IterTaskFuture — each yielded item saved with iteration_index."""
 
@@ -446,6 +487,45 @@ class TestIterStreamingBehavior:
             f"First reduce at log position {first_reduce_pos} should be before "
             f"last gen at position {last_gen_pos}. Reduction did not interleave "
             f"with generation."
+        )
+
+    def test_direct_iter_reduce_streams_without_then(self) -> None:
+        """gen.iter().reduce() (no explicit .then()) should also stream.
+
+        Internally an identity map is inserted, so generation and reduction should
+        interleave identically to the explicit `.then(identity)` case.
+        """
+        log: list[tuple[str, int]] = []
+        lock = threading.Lock()
+
+        @task(backend_name="threading")
+        def logging_gen(n: int) -> Iterator[int]:
+            for i in range(n):
+                with lock:
+                    log.append(("gen", i))
+                yield i
+
+        @task
+        def logging_reduce(acc: int, item: int) -> int:
+            with lock:
+                log.append(("reduce", item))
+            return acc + item
+
+        result = logging_gen.iter(n=20).reduce(logging_reduce, initial=0, ordered=True).run()
+        assert result == sum(range(20))
+
+        gen_indices = [i for i, (kind, _) in enumerate(log) if kind == "gen"]
+        reduce_indices = [i for i, (kind, _) in enumerate(log) if kind == "reduce"]
+
+        assert len(gen_indices) == 20
+        assert len(reduce_indices) == 20
+
+        # Generation and reduction must interleave — not materialise-then-reduce.
+        first_reduce_pos = reduce_indices[0]
+        last_gen_pos = gen_indices[-1]
+        assert first_reduce_pos < last_gen_pos, (
+            f"First reduce at log position {first_reduce_pos} should be before "
+            f"last gen at position {last_gen_pos}. Direct iter().reduce() did not stream."
         )
 
     def test_unordered_reduce_interleaves_generation_and_reduction(self) -> None:
