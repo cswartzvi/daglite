@@ -115,10 +115,17 @@ executionEnvironments = [ # Add new plugins here
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
 exclude = [
+    "**/.*",
+    "**/node_modules",
+    ".venv",
     "**/__pycache__",
     "**/.pytest_cache",
     "**/.mypy_cache",
     "**/.ruff_cache",
+    "./tests/contracts/typing/assert_type_mypy.py",
+    "./tests/contracts/typing/assert_type_pyrefly.py",
+    "./tests/contracts/typing/assert_type_ty.py",
+
 ]
 typeCheckingMode = "standard"
 reportUnnecessaryTypeIgnoreComments = true
