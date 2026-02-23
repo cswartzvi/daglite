@@ -20,6 +20,7 @@ from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeOutputConfig
 from daglite.graph.nodes.composite_node import CompositeStep
+from daglite.graph.nodes.composite_node import IterSourceConfig
 from daglite.graph.nodes.composite_node import _remap_composite_step
 from daglite.graph.nodes.composite_node import _remap_composite_steps
 from daglite.graph.nodes.dataset_node import DatasetNode
@@ -193,6 +194,24 @@ class TestCompositeMapTaskNodeRemapReferences:
         assert remapped is not composite
         assert remapped.initial_accumulator is not None
         assert remapped.initial_accumulator.reference == new_id
+
+    def test_remap_iter_source_kwargs_ref(self) -> None:
+        """When iter_source kwargs reference a remapped node, the ref is updated."""
+        old_id = uuid4()
+        new_id = uuid4()
+        source = self._make_source_map()
+        iter_src = IterSourceConfig(
+            id=uuid4(),
+            func=lambda: iter([]),
+            kwargs={"data": NodeInput.from_ref(old_id)},
+        )
+        composite = CompositeMapTaskNode(
+            id=uuid4(), name="cmap", source_map=source, steps=(), iter_source=iter_src
+        )
+        remapped = composite.remap_references({old_id: new_id})
+        assert remapped is not composite
+        assert remapped.iter_source is not None
+        assert remapped.iter_source.kwargs["data"].reference == new_id
 
     def test_remap_no_change_returns_self(self) -> None:
         source = self._make_source_map()
