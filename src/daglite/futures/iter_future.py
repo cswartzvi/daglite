@@ -164,7 +164,19 @@ class IterTaskFuture(BaseTaskFuture[R]):
         Returns:
             A `ReduceFuture` representing the final accumulated value.
         """
-        return self.then(_IDENTITY_TASK).reduce(reduce_task, initial=initial, ordered=ordered)
+        from daglite.futures.map_future import MapTaskFuture
+
+        unbound_param = get_unbound_params(_IDENTITY_TASK.signature, {}, _IDENTITY_TASK.name)
+        identity_map: MapTaskFuture[Any] = MapTaskFuture(
+            task=_IDENTITY_TASK,
+            mode="product",
+            fixed_kwargs={},
+            mapped_kwargs={unbound_param: self},
+            backend_name=self.backend_name,
+            task_store=self.task_store,
+            hidden=True,
+        )
+        return identity_map.reduce(reduce_task, initial=initial, ordered=ordered)
 
 
 def _identity(x: Any) -> Any:

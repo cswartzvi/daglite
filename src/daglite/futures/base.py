@@ -49,6 +49,9 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
 
     task_store: DatasetStore | None = field(default=None, kw_only=True)
 
+    hidden: bool = field(default=False, kw_only=True)
+    """If True, this node is an implementation detail and should not be visible to the user."""
+
     def __post_init__(self) -> None:
         """Generate unique ID at creation time."""
         object.__setattr__(self, "_id", uuid4())

@@ -290,4 +290,5 @@ class MapTaskFuture(BaseTaskFuture[R]):
             output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
+            hidden=self.hidden,
         )
