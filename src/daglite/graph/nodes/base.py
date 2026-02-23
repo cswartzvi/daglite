@@ -53,8 +53,7 @@ class BaseGraphNode(abc.ABC):
     """Output save/checkpoint configurations for this node."""
 
     hidden: bool = field(default=False, kw_only=True)
-    """If True, this node is an implementation detail and should be elided from
-    user-facing visualizations and trace output."""
+    """If True, this node is an implementation detail and should be elided from user-facing output."""
 
     def __post_init__(self) -> None:
         # This is unlikely to happen given timeout is checked at task level, but just in case
@@ -190,8 +189,7 @@ class NodeMetadata:
     """Optional key identifying this specific node in the IR graph."""
 
     hidden: bool = field(default=False, kw_only=True)
-    """If True, this node is an implementation detail and should be elided from
-    user-facing visualizations and trace output."""
+    """If True, this node is an implementation detail and should be elided from user-facing output."""
 
 
 @dataclass(frozen=True)
