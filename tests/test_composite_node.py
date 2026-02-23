@@ -20,8 +20,9 @@ from daglite.graph.nodes import MapTaskNode
 from daglite.graph.nodes.base import NodeInput
 from daglite.graph.nodes.base import NodeOutputConfig
 from daglite.graph.nodes.composite_node import CompositeStep
+from daglite.graph.nodes.composite_node import IterSourceConfig
 from daglite.graph.nodes.composite_node import _remap_composite_step
-from daglite.graph.nodes.composite_node import _remap_steps
+from daglite.graph.nodes.composite_node import _remap_composite_steps
 from daglite.graph.nodes.dataset_node import DatasetNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
 from daglite.graph.nodes.reduce_node import ReduceNode
@@ -97,14 +98,14 @@ class TestRemapStepHelpers:
 
     def test_remap_steps_returns_none_if_unchanged(self) -> None:
         steps = (_make_composite_step(), _make_composite_step())
-        result = _remap_steps(steps, {uuid4(): uuid4()})
+        result = _remap_composite_steps(steps, {uuid4(): uuid4()})
         assert result is None
 
     def test_remap_steps_returns_new_tuple_if_changed(self) -> None:
         old_id = uuid4()
         new_id = uuid4()
         steps = (_make_composite_step(), _make_composite_step(ref=old_id))
-        result = _remap_steps(steps, {old_id: new_id})
+        result = _remap_composite_steps(steps, {old_id: new_id})
         assert result is not None
         assert result[1].external_params["x"].reference == new_id
 
@@ -187,12 +188,30 @@ class TestCompositeMapTaskNodeRemapReferences:
             steps=(),
             terminal="reduce",
             reduce_config=ReduceConfig(func=lambda acc, item: acc + item),
-            initial_input=NodeInput.from_ref(old_id),
+            initial_accumulator=NodeInput.from_ref(old_id),
         )
         remapped = composite.remap_references({old_id: new_id})
         assert remapped is not composite
-        assert remapped.initial_input is not None
-        assert remapped.initial_input.reference == new_id
+        assert remapped.initial_accumulator is not None
+        assert remapped.initial_accumulator.reference == new_id
+
+    def test_remap_iter_source_kwargs_ref(self) -> None:
+        """When iter_source kwargs reference a remapped node, the ref is updated."""
+        old_id = uuid4()
+        new_id = uuid4()
+        source = self._make_source_map()
+        iter_src = IterSourceConfig(
+            id=uuid4(),
+            func=lambda: iter([]),
+            kwargs={"data": NodeInput.from_ref(old_id)},
+        )
+        composite = CompositeMapTaskNode(
+            id=uuid4(), name="cmap", source_map=source, steps=(), iter_source=iter_src
+        )
+        remapped = composite.remap_references({old_id: new_id})
+        assert remapped is not composite
+        assert remapped.iter_source is not None
+        assert remapped.iter_source.kwargs["data"].reference == new_id
 
     def test_remap_no_change_returns_self(self) -> None:
         source = self._make_source_map()
@@ -235,7 +254,7 @@ class TestCompositeMapDependencyCoverage:
             steps=(),
             terminal="reduce",
             reduce_config=ReduceConfig(func=lambda acc, item: acc + item),
-            initial_input=NodeInput.from_ref(initial_ref),
+            initial_accumulator=NodeInput.from_ref(initial_ref),
         )
         deps = composite.get_dependencies()
         assert initial_ref in deps

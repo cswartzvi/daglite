@@ -23,6 +23,7 @@ from daglite._validation import check_overlap_params
 from daglite._validation import resolve_positional_args
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import ParameterError
+from daglite.exceptions import TaskError
 
 # NOTE: Tasks are the building blocks of daglite DAGs, however the fluent API for composing
 # DAGs allows for tasks to accept downstream types as parameters. To avoid circular imports,
@@ -32,9 +33,11 @@ from daglite.exceptions import ParameterError
 if TYPE_CHECKING:
     from daglite.futures import MapTaskFuture
     from daglite.futures import TaskFuture
+    from daglite.futures.iter_future import IterTaskFuture
 else:
     MapTaskFuture = object
     TaskFuture = object
+    IterTaskFuture = object
 
 
 P = ParamSpec("P")
@@ -461,6 +464,20 @@ class Task(BaseTask[P, R]):
         # Create a PartialTask with no fixed params, then call map
         return self.partial().map(**kwargs, map_mode=map_mode)
 
+    def iter(self, *args: Any, **kwargs: Any) -> IterTaskFuture[R]:
+        """
+        Creates a lazy iterator that yields items one at a time.
+
+        Args:
+            *args: Positional arguments resolved to parameters by position.
+            **kwargs: Keyword arguments matching the task function's parameters.
+
+        Returns:
+            An `IterTaskFuture` representing the lazy iterator invocation.
+        """
+        kwargs = resolve_positional_args(self.signature, args, kwargs, self.name)
+        return self.partial().iter(**kwargs)
+
 
 @dataclass(frozen=True)
 class PartialTask(BaseTask[P, R]):
@@ -509,12 +526,44 @@ class PartialTask(BaseTask[P, R]):
             task=self.task, kwargs=merged, backend_name=self.backend_name, task_store=self.store
         )
 
+    def iter(self, **kwargs: Any) -> IterTaskFuture[R]:
+        """
+        Create a lazy iterator that yields items one at a time.
+
+        Args:
+            **kwargs: Keyword arguments for the remaining unbound parameters.
+
+        Returns:
+            An `IterTaskFuture` representing the lazy iterator invocation.
+        """
+        from daglite.futures.iter_future import IterTaskFuture
+
+        if not inspect.isgeneratorfunction(self.task.func) or not inspect.isgeneratorfunction(
+            self.task.func
+        ):
+            raise TaskError(
+                f"Task '{self.task.name}' cannot be used with .iter() because its function "
+                f"does not return a generator."
+            )
+
+        merged = {**self.fixed_kwargs, **kwargs}
+        check_invalid_params(self.signature, merged, self.name)
+        check_missing_params(self.signature, merged, self.name)
+        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
+        return IterTaskFuture(
+            task=self.task,
+            kwargs=merged,
+            backend_name=self.backend_name,
+            task_store=self.store,
+        )
+
     @override
     def map(
         self, *, map_mode: MapMode = "zip", **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]
     ) -> MapTaskFuture[R]:
         from daglite.futures import MapTaskFuture
         from daglite.futures.base import BaseTaskFuture
+        from daglite.futures.iter_future import IterTaskFuture
 
         merged = {**self.fixed_kwargs, **kwargs}
 
@@ -522,6 +571,14 @@ class PartialTask(BaseTask[P, R]):
         check_missing_params(self.signature, merged, self.name)
         check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
         check_invalid_map_params(self.signature, kwargs, self.name)
+
+        # Validate: .iter() sources cannot be mixed with other mapped arguments
+        iter_kwargs = {k for k, v in kwargs.items() if isinstance(v, IterTaskFuture)}
+        if iter_kwargs and len(kwargs) > len(iter_kwargs):
+            raise ParameterError(
+                f"`.iter()` must be the only mapped argument for task '{self.name}'. "
+                f"Cannot mix iter source with other mapped arguments."
+            )
 
         if map_mode == "zip":
             len_details = {

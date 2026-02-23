@@ -7,6 +7,16 @@ from collections.abc import Mapping
 from typing import Any
 
 
+def any_not_none(*args: Any) -> bool:
+    """Helper for checking if any value is not None."""
+    return any(arg is not None for arg in args)
+
+
+# def all_not_none(*args: Any) -> bool:
+#     """Helper for filtering out None values in comprehensions."""
+#     return all(arg is not None for arg in args)
+
+
 def build_repr(class_name: str, *leading: str, kwargs: Mapping[str, Any] | None = None) -> str:
     """Build a concise repr string: ``ClassName(leading…, k=v, …)``."""
     parts = list(leading)
