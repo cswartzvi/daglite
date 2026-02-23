@@ -1,4 +1,4 @@
-"""Integration test for task evaluation using .run() with both sync and async tasks."""
+"""Behavior tests for task evaluation using .run() with both sync and async tasks."""
 
 import asyncio
 import os
@@ -21,8 +21,8 @@ def combine_pids(a: tuple[int, int], b: tuple[int, int]) -> dict:
     return {"sum": a[0] + b[0], "pids": [a[1], b[1]]}
 
 
-class TestSinglePathExecution:
-    """Tests engine evaluation of single path tasks."""
+class TestRunSyncSinglePath:
+    """Tests .run() evaluation of single path tasks."""
 
     def test_single_task_evaluation_empty(self) -> None:
         """Evaluation succeeds for tasks without parameters."""
@@ -182,7 +182,7 @@ class TestSinglePathExecution:
 
 
 @pytest.mark.parametrize("mode", ["product", "zip"])
-class TestMappedTaskOperations:
+class TestRunSyncMappedOperations:
     """
     Tests for mapped task operations (product and zip).
 
@@ -350,8 +350,8 @@ class TestMappedTaskOperations:
         assert result == expected
 
 
-class TestProductSpecificBehavior:
-    """Tests for product-specific behavior (Cartesian product semantics)."""
+class TestRunSyncProductBehavior:
+    """Tests .run() with product-specific behavior (Cartesian product semantics)."""
 
     def test_product_multiple_parameters(self) -> None:
         """Product creates Cartesian product of multiple parameter sequences."""
@@ -405,8 +405,8 @@ class TestProductSpecificBehavior:
         assert result == 66
 
 
-class TestZipSpecificBehavior:
-    """Tests for zip-specific behavior (element-wise alignment semantics)."""
+class TestRunSyncZipBehavior:
+    """Tests .run() with zip-specific behavior (element-wise alignment semantics)."""
 
     def test_zip_multiple_parameters(self) -> None:
         """Zip aligns multiple parameter sequences element-wise."""
@@ -460,8 +460,8 @@ class TestZipSpecificBehavior:
         assert result == 81
 
 
-class TestComplexPathEvaluation:
-    """Tests engine evaluation of complex task graphs."""
+class TestRunSyncComplexPaths:
+    """Tests .run() evaluation of complex task graphs."""
 
     def test_product_and_zip_with_join(self) -> None:
         """Evaluation succeeds combining product, zip, and join operations."""
@@ -482,7 +482,7 @@ class TestComplexPathEvaluation:
         assert result == 90  # 10 + 20 + 20 + 40
 
 
-class TestAsyncTasksWithEvaluate:
+class TestRunSyncWithAsyncTasks:
     """Tests that async tasks work through .run() via the async-first engine."""
 
     def test_async_task_works(self) -> None:
@@ -531,7 +531,7 @@ class TestAsyncTasksWithEvaluate:
         assert result == 33  # sync_task(10)=11, async_double(11)=22, combine(11,22)=33
 
 
-class TestGeneratorMaterialization:
+class TestRunSyncGeneratorMaterialization:
     """
     Tests that generators are automatically materialized to lists.
 
@@ -886,7 +886,7 @@ def test_cycle_detection_raises_error() -> None:
         state.check_complete()
 
 
-class TestSiblingParallelism:
+class TestRunSyncSiblingParallelism:
     """Tests for concurrent execution of sibling tasks using .run()."""
 
     def test_sync_siblings_with_threading_backend(self) -> None:
@@ -954,7 +954,7 @@ class TestSiblingParallelism:
         assert all(pid > 0 for pid in result["pids"])
 
 
-class TestEvaluateGuards:
+class TestRunSyncGuards:
     """Tests for .run() entry-point guards (loop detection, nested call prevention)."""
 
     def test_evaluate_rejects_running_loop(self) -> None:

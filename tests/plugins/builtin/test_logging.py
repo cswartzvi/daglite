@@ -1,7 +1,7 @@
 """Unit tests for logging plugin.
 
 This module contains pure unit tests that do not use evaluate().
-Integration tests that use evaluate() are in tests/evaluation/test_logging.py.
+Execution-level logging integration tests are in tests/integration/test_logging.py.
 """
 
 import logging

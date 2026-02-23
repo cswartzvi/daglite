@@ -1,6 +1,7 @@
 """Unit tests for FileDriver.
 
-Tests in this file should NOT use evaluate(). Evaluation tests are in tests/evaluation/.
+Tests in this file should NOT use evaluate(). Evaluation behavior tests are in tests/behavior/ and
+cross-subsystem scenarios are in tests/integration/.
 """
 
 import pickle

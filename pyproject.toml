@@ -81,7 +81,7 @@ source_pkgs = [
     "daglite_serialization",
     "daglite_rich",
 ] # Add new plugins here
-omit = ["tests/typing/assert_type_tests.py"]
+omit = ["tests/contracts/typing/*.py"]
 branch = true
 sigterm = true
 relative_files = true
@@ -116,10 +116,17 @@ executionEnvironments = [ # Add new plugins here
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
 exclude = [
+    "**/.*",
+    "**/node_modules",
+    ".venv",
     "**/__pycache__",
     "**/.pytest_cache",
     "**/.mypy_cache",
     "**/.ruff_cache",
+    "./tests/contracts/typing/assert_type_mypy.py",
+    "./tests/contracts/typing/assert_type_pyrefly.py",
+    "./tests/contracts/typing/assert_type_ty.py",
+
 ]
 typeCheckingMode = "standard"
 reportUnnecessaryTypeIgnoreComments = true
@@ -141,6 +148,11 @@ testpaths = ["tests", "extras/*/tests", "src"]
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "doctest: marks doctest examples in docstrings and documentation",
+    "unit: marks pure unit tests without runtime evaluation orchestration",
+    "behavior: marks behavior-level API execution tests",
+    "integration: marks cross-subsystem integration tests",
+    "contracts: marks contract/compatibility tests",
+    "typing_contract: marks typing contract tests",
 ]
 filterwarnings = [
     # Suppress fork() deprecation from multiprocessing when using pytest-cov

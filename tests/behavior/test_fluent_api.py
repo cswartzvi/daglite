@@ -1,4 +1,4 @@
-"""Integration tests for the fluent API methods on futures."""
+"""Behavior tests for the fluent API methods on futures."""
 
 import pytest
 

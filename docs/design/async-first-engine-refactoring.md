@@ -117,7 +117,7 @@ The `is_async` parameter on graph-level hooks (`before_graph_execute`, `after_gr
 - `OrderTrackingPlugin` (lines 175, 180)
 - `ErrorRaisingPlugin` (lines 229, 235)
 
-**Tests** (`tests/evaluation/test_plugins.py`):
+**Tests** (`tests/integration/test_plugins.py`):
 - Assertions checking `is_async` value (lines 185, 190)
 - Custom hook implementations in tests (line 247)
 
