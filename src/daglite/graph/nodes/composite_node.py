@@ -498,7 +498,7 @@ class CompositeMapTaskNode(BaseGraphNode):
                     relay_tasks.append(asyncio.ensure_future(_relay(future)))
             except Exception as exc:
                 producer_error.append(exc)
-            if relay_tasks:
+            if relay_tasks:  # pragma: no branch
                 await asyncio.gather(*relay_tasks, return_exceptions=True)
             await result_queue.put(_SENTINEL)
 
