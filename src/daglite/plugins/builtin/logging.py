@@ -357,7 +357,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         # This enables format strings like %(daglite_task_name)s to work in log output.
         node_key = metadata.key or metadata.name
         backend_name = metadata.backend_name or "inline"
-        self._logger.info(
+        log = self._logger.debug if metadata.hidden else self._logger.info
+        log(
             f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
@@ -371,7 +372,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
     ) -> None:
         node_key = metadata.key or metadata.name
-        self._logger.info(
+        log = self._logger.debug if metadata.hidden else self._logger.info
+        log(
             f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
             extra=_build_task_context(metadata.id, metadata.name, metadata.key),
         )
@@ -387,6 +389,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             "node_id": metadata.id,
             "node_key": metadata.key,
             "backend_name": metadata.backend_name,
+            "hidden": metadata.hidden,
         }
         if reporter:
             reporter.report("daglite-logging-node-start", data=data)
@@ -402,7 +405,12 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         duration: float,
         reporter: EventReporter | None,
     ) -> None:
-        data = {"node_id": metadata.id, "node_key": metadata.key, "duration": duration}
+        data = {
+            "node_id": metadata.id,
+            "node_key": metadata.key,
+            "duration": duration,
+            "hidden": metadata.hidden,
+        }
         if reporter:
             reporter.report("daglite-logging-node-complete", data=data)
         else:  # pragma: no cover
@@ -537,9 +545,14 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_id = event.data["node_id"]
         node_key = event.data["node_key"]
         backend_name = event.data.get("backend_name") or "inline"
+        hidden = event.data.get("hidden", False)
         if node_id in self._mapped_nodes:
             self._logger.debug(
                 f"Task '{node_key}' - Starting iteration using {backend_name} backend"
+            )
+        elif hidden:
+            self._logger.debug(
+                f"Task '{node_key}' - Starting task using {backend_name} backend"
             )
         else:
             self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
@@ -548,10 +561,15 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         node_id = event.data["node_id"]
         node_key = event.data["node_key"]
         duration = event.data.get("duration", 0)
+        hidden = event.data.get("hidden", False)
         if node_id in self._mapped_nodes:
             self._logger.debug(
                 f"Task '{node_key}' - Completed iteration successfully in "
                 f"{_format_duration(duration)}"
+            )
+        elif hidden:
+            self._logger.debug(
+                f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}"
             )
         else:
             self._logger.info(

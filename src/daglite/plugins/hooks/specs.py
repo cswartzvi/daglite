@@ -361,7 +361,7 @@ class GraphSpec:
         Args:
             graph_id: UUID of the entire graph execution
             root_id: UUID of the root node
-            node_count: Total number of nodes in the graph
+            node_count: Total number of user-visible (non-hidden) nodes in the graph
         """
 
     @hook_spec
