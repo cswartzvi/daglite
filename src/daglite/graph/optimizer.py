@@ -6,6 +6,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import partial
 from uuid import UUID
 from uuid import uuid4
 
@@ -21,6 +22,7 @@ from daglite.graph.nodes.map_node import MapTaskNode
 from daglite.graph.nodes.reduce_node import ReduceConfig
 from daglite.graph.nodes.reduce_node import ReduceNode
 from daglite.graph.nodes.task_node import TaskNode
+from daglite.utils import any_not_none
 
 # region API
 
@@ -32,18 +34,18 @@ def optimize_graph(
     Apply optimization passes to the graph IR.
 
     Currently performs composite node folding — collapsing linear sequences of nodes sharing the
-    same backend into `CompositeTaskNode` or `CompositeMapTaskNode` instances.
+    same backend.
 
     Args:
         nodes: The original graph IR node dictionary.
 
     Returns:
-        A tuple of `(optimized_nodes, id_mapping)` where:
+        A tuple of `(optimized_nodes, id_mapping)` where
         - `optimized_nodes` is the rewritten graph.
-        - `id_mapping` maps original node IDs (that were folded into
-          composites) to their composite node's ID. The **tail** node ID
-          of each chain is stored as a key so that downstream nodes
-          depending on the tail can find the composite's result.
+        - `id_mapping` maps folded node IDs to their composite node's ID.
+
+        Note: the **tail** node ID of each chain is stored as a key in `id_mapping` so that
+        downstream nodes depending on the tail can find the composite's result.
     """
     nodes, id_mapping = _fold_task_paths(nodes)
     nodes, map_mapping = _fold_map_paths(nodes)
@@ -58,57 +60,57 @@ def _fold_task_paths(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, BaseGraphNode], dict[UUID, UUID]]:
     """
-    Fold linear `TaskNode` paths into `CompositeTaskNode` instances.
+    Folds detected linear task node paths into composite task instances.
 
     Returns the rewritten graph and an ID mapping from original tail IDs to composite IDs.
     """
     predecessors, successors = _build_adjacency(nodes)
-    segments = _find_task_paths(nodes, predecessors, successors)
+    paths = _find_task_paths(nodes, predecessors, successors)
 
-    if not segments:
+    if not paths:
         return nodes, {}
 
     result = dict(nodes)
     id_mapping: dict[UUID, UUID] = {}
 
     # Create composite nodes for each segment
-    for segment_id in segments:
+    for path in paths:
         steps: list[CompositeStep] = []
 
-        for i, nid in enumerate(segment_id):
+        for i, nid in enumerate(path):
             node = nodes[nid]
             assert isinstance(node, TaskNode)
 
-            if i == 0:
-                # First step has all params as external
-                step = _build_composite_step(node, flow_param=None, predecessor_id=None)
+            if i == 0:  # First step in path has all params as external
+                step = _build_composite_step(node, flow_param=None)
             else:
-                predecessor_id = segment_id[i - 1]
+                predecessor_id = path[i - 1]
                 flow_param = _identify_flow_param(node.kwargs, predecessor_id)
-                step = _build_composite_step(node, flow_param, predecessor_id)
+                step = _build_composite_step(node, flow_param)
 
             steps.append(step)
 
+        # Create composite node to replace the entire path
         composite_id = uuid4()
-        head = nodes[segment_id[0]]
-        tail_id = segment_id[-1]
+        head_node = nodes[path[0]]
+        tail_id = path[-1]
         composite = CompositeTaskNode(
             id=composite_id,
             name=f"composite({' → '.join(step.name for step in steps)})",
             description=f"Composite of {len(steps)} chained tasks",
-            backend_name=_effective_backend(head),
+            backend_name=head_node.backend_name,
             steps=tuple(steps),
             timeout=_aggregate_timeout([step.timeout for step in steps]),
         )
 
         # Remove path nodes from result, add composite
-        for nid in segment_id:
+        for nid in path:
             result.pop(nid, None)
         result[composite_id] = composite
 
         # Map IDs to composite ID
         id_mapping[tail_id] = composite_id
-        for nid in segment_id[:-1]:  # interior nodes
+        for nid in path[:-1]:  # interior nodes
             id_mapping[nid] = composite_id
 
     result = _remap_dependencies(result, id_mapping)
@@ -120,7 +122,7 @@ def _find_task_paths(
     predecessors: dict[UUID, set[UUID]],
     successors: dict[UUID, set[UUID]],
 ) -> list[list[UUID]]:
-    """Detects maximal linear paths of `TaskNode`s in the graph."""
+    """Detects maximal linear paths of task nodes in the given graph."""
     visited: set[UUID] = set()
     paths: list[list[UUID]] = []
 
@@ -130,40 +132,44 @@ def _find_task_paths(
         if nid in visited:
             continue
 
-        backend = _effective_backend(node)
+        backend = node.backend_name
 
-        def _can_extend(pred_id: UUID, _head: UUID) -> bool:
-            pred_node = nodes.get(pred_id)
-            return isinstance(pred_node, TaskNode) and _effective_backend(pred_node) == backend
+        head = _find_path_head(
+            nid,
+            predecessors,
+            successors,
+            visited,
+            partial(_can_extend_task, nodes, backend),
+        )
 
-        head = _find_path_head(nid, predecessors, successors, visited, _can_extend)
-
-        # Walk forward from the true head through .then() nodes
         path = [head]
         visited.add(head)
-        current = head
+        current_id = head
+
+        # Walk forward while there's a single successor that can be folded into the path
         while True:
-            succs = successors.get(current, set())
-            if len(succs) != 1:
+            successor_ids = successors.get(current_id, set())
+            if len(successor_ids) != 1:
                 break  # Fan-out or terminal — end path
 
-            succ_id = next(iter(succs))
-            succ_node = nodes.get(succ_id)
+            successor_id = next(iter(successor_ids))
+            successor_node = nodes.get(successor_id)
 
-            if succ_id in visited:  # pragma: no cover
+            if successor_id in visited:  # pragma: no cover
                 break
-            if not isinstance(succ_node, TaskNode):
+
+            if not isinstance(successor_node, TaskNode):
                 break  # Non-task node breaks the path
 
-            if len(predecessors.get(succ_id, set())) != 1:
+            if len(predecessors.get(successor_id, set())) != 1:
                 break  # Fan-in — end path
 
-            if _effective_backend(succ_node) != backend:
-                break
+            if successor_node.backend_name != backend:
+                break  # Different backend — can't fold
 
-            path.append(succ_id)
-            visited.add(succ_id)
-            current = succ_id
+            path.append(successor_id)
+            visited.add(successor_id)
+            current_id = successor_id
 
         if len(path) >= 2:
             paths.append(path)
@@ -174,20 +180,9 @@ def _find_task_paths(
 def _build_composite_step(
     node: TaskNode,
     flow_param: str | None,
-    predecessor_id: UUID | None,
 ) -> CompositeStep:
-    """
-    Build a `CompositeStep` from a `TaskNode`.
-
-    External params are those that don't reference the immediate predecessor in the path (the flow
-    param is separated out).
-    """
-    external_params: dict[str, NodeInput] = {}
-
-    for param_name, node_input in node.kwargs.items():
-        if param_name == flow_param:
-            continue  # Handled by the composite flow
-        external_params[param_name] = node_input
+    """Builds a composite step for a task node."""
+    external_params = {k: v for k, v in node.kwargs.items() if k != flow_param}
 
     return CompositeStep(
         id=node.id,
@@ -213,28 +208,34 @@ class _MapPath:
     """Detected map path ready for folding."""
 
     map_id: UUID
-    """Head `MapTaskNode` ID."""
+    """Head mapped node ID where the path starts."""
 
-    then_ids: list[UUID]
-    """IDs of `.then()` nodes (`MapTaskNode` or `TaskNode`) following the head."""
+    step_ids: list[UUID]
+    """Sequence of mapped task node IDs following the head map node."""
 
     join_id: UUID | None = None
-    """If present, ID of the `.join()` `TaskNode` terminal."""
+    """If present, ID of the terminal join task node."""
 
     reduce_id: UUID | None = None
-    """If present, ID of the `.reduce()` `ReduceNode` terminal."""
+    """If present, ID of the terminal reduce node."""
 
     iter_node_id: UUID | None = None
-    """If present, ID of the `IterNode` feeding the head map node."""
+    """If present, ID of the iteration node feeding into the head map node."""
+
+    @property
+    def all_node_ids(self) -> list[UUID]:
+        """All node IDs involved in this path."""
+        ids = [self.map_id, *self.step_ids]
+        for optional in (self.join_id, self.reduce_id, self.iter_node_id):
+            if optional is not None:
+                ids.append(optional)
+        return ids
 
 
 def _fold_map_paths(
     nodes: dict[UUID, BaseGraphNode],
 ) -> tuple[dict[UUID, BaseGraphNode], dict[UUID, UUID]]:
-    """
-    Fold `MapTaskNode → MapTaskNode → ...` paths (with optional join/reduce terminals) into
-    `CompositeMapTaskNode` instances.
-    """
+    """Folds detected map paths into composite map task instances."""
     predecessors, successors = _build_adjacency(nodes)
     map_paths = _find_map_task_paths(nodes, predecessors, successors)
 
@@ -248,10 +249,10 @@ def _fold_map_paths(
         map_node = nodes[map_path.map_id]
         assert isinstance(map_node, MapTaskNode)
 
-        # Build composite steps for the .then() nodes
+        # Build composite steps mapped
         steps: list[CompositeStep] = []
         prev_id = map_path.map_id
-        for nid in map_path.then_ids:
+        for nid in map_path.step_ids:
             node = nodes[nid]
             if isinstance(node, MapTaskNode):
                 flow_param = _identify_flow_param(node.mapped_kwargs, prev_id)
@@ -259,7 +260,7 @@ def _fold_map_paths(
             else:  # pragma: no cover — .then() on MapTaskFuture always creates MapTaskNode
                 assert isinstance(node, TaskNode)
                 flow_param = _identify_flow_param(node.kwargs, prev_id)
-                step = _build_composite_step(node, flow_param, prev_id)
+                step = _build_composite_step(node, flow_param)
             steps.append(step)
             prev_id = nid
 
@@ -268,7 +269,7 @@ def _fold_map_paths(
         join_step: CompositeStep | None = None
         reduce_config: ReduceConfig | None = None
         initial_input: NodeInput | None = None
-        tail_id = map_path.then_ids[-1] if map_path.then_ids else map_path.map_id
+        tail_id = map_path.step_ids[-1] if map_path.step_ids else map_path.map_id
 
         if map_path.join_id is not None:
             terminal = "join"
@@ -276,7 +277,7 @@ def _fold_map_paths(
             assert isinstance(join_node, TaskNode)
             flow_param = _identify_flow_param(join_node.kwargs, tail_id)
             assert flow_param is not None, "join terminal must consume upstream mapped output"
-            join_step = _build_composite_step(join_node, flow_param, tail_id)
+            join_step = _build_composite_step(join_node, flow_param)
             tail_id = map_path.join_id
 
         if map_path.reduce_id is not None:
@@ -306,7 +307,7 @@ def _fold_map_paths(
             id=composite_id,
             name=f"composite_map({' → '.join(all_names)})",
             description=f"Composite map of {len(all_names)} chained steps",
-            backend_name=_effective_backend(map_node),
+            backend_name=map_node.backend_name,
             source_map=map_node,
             steps=tuple(steps),
             terminal=terminal,
@@ -318,24 +319,13 @@ def _fold_map_paths(
         )
 
         # Remove folded nodes, add composite
-        result.pop(map_path.map_id, None)
-        for nid in map_path.then_ids:
+        for nid in map_path.all_node_ids:
             result.pop(nid, None)
-        if map_path.join_id is not None:
-            result.pop(map_path.join_id, None)
-        if map_path.reduce_id is not None:
-            result.pop(map_path.reduce_id, None)
-        if map_path.iter_node_id is not None:
-            result.pop(map_path.iter_node_id, None)
         result[composite_id] = composite
 
         # Map all folded IDs → composite ID
-        id_mapping[tail_id] = composite_id
-        id_mapping[map_path.map_id] = composite_id
-        for nid in map_path.then_ids:
+        for nid in map_path.all_node_ids:
             id_mapping[nid] = composite_id
-        if map_path.iter_node_id is not None:
-            id_mapping[map_path.iter_node_id] = composite_id
 
     result = _remap_dependencies(result, id_mapping)
 
@@ -348,11 +338,10 @@ def _find_map_task_paths(
     successors: dict[UUID, set[UUID]],
 ) -> list[_MapPath]:
     """
-    Detect paths starting with a `MapTaskNode` followed by `MapTaskNode`s.
+    Detects maximal linear paths of mapped task nodes in the graph.
 
-    This is the pattern produced by chaining `.then()` calls on a `MapTaskFuture`, optionally
-    ending with a `TaskNode` that joins the map output (from `.join()`) or a `ReduceNode` (from
-    `.reduce()`).
+    Results are returned as `_MapPath` objects that capture the path as well as the presence of
+    terminal and iter source nodes.
     """
     map_paths: list[_MapPath] = []
     visited: set[UUID] = set()
@@ -363,17 +352,15 @@ def _find_map_task_paths(
         if nid in visited:
             continue
 
-        map_backend = _effective_backend(node)
+        map_backend = node.backend_name
 
-        def _can_extend(pred_id: UUID, current_head: UUID) -> bool:
-            pred_node = nodes.get(pred_id)
-            return (
-                isinstance(pred_node, MapTaskNode)
-                and _effective_backend(pred_node) == map_backend
-                and _is_then_map_node(nodes[current_head], pred_id)
-            )
-
-        head = _find_path_head(nid, predecessors, successors, visited, _can_extend)
+        head = _find_path_head(
+            nid,
+            predecessors,
+            successors,
+            visited,
+            partial(_can_extend_map_task, nodes, map_backend),
+        )
 
         then_path: list[UUID] = []
         current = head
@@ -390,24 +377,22 @@ def _find_map_task_paths(
             if succ_id in visited:  # pragma: no cover
                 break
 
-            # .then() on MapTaskFuture creates another MapTaskNode
+            # Check for mapped node continuation
             if isinstance(succ_node, MapTaskNode):
                 preds = predecessors.get(succ_id, set())
-                if len(preds) != 1:  # pragma: no cover – .then() MapTaskNode always has one pred
-                    break
-                if not _is_then_map_node(succ_node, current):  # pragma: no cover
-                    # Not a .then() continuation — end of the chain
-                    break
+                assert len(preds) == 1, "then node should have exactly one predecessor"
+                if not _is_single_mapped_successor(succ_node, current):
+                    break  # End of the chain
                 then_path.append(succ_id)
                 current = succ_id
                 continue
 
             break  # Encountered a possible terminal node
 
-        # Check for a terminal node (join or reduce)
         join_id: UUID | None = None
         reduce_id: UUID | None = None
 
+        # Check for a terminal node (join or reduce) if available
         terminal_succs = successors.get(current, set())
         if len(terminal_succs) == 1:
             term_id = next(iter(terminal_succs))
@@ -425,56 +410,43 @@ def _find_map_task_paths(
                 and not isinstance(term_node, MapTaskNode)
                 and len(term_preds) == 1
                 and term_id not in visited
-                and _effective_backend(term_node) == map_backend
+                and term_node.backend_name == map_backend
             ):
                 flow_param = _identify_flow_param(term_node.kwargs, current)
                 if flow_param is not None:
-                    # Potential .join() — the task takes the map's list output
-                    join_id = term_id
+                    join_id = term_id  # Join terminal
 
-        # A path is valid if there's at least one .then() node, a terminal, or an iter source
-        # Check if the head's sole predecessor is an IterNode
         iter_node_id: UUID | None = None
         head_preds = predecessors.get(head, set())
+
+        # Check for an IterNode feeding into the head MapTaskNode (indicates a .iter() source)
         if len(head_preds) == 1:
             pred_id = next(iter(head_preds))
             pred_node = nodes.get(pred_id)
             if (
                 isinstance(pred_node, IterNode)
                 and pred_id not in visited
-                and _is_iter_source(nodes[head], pred_id)
+                and _is_single_mapped_successor(nodes[head], pred_id)
             ):
                 iter_node_id = pred_id
 
-        if then_path or reduce_id is not None or join_id is not None or iter_node_id is not None:
-            visited.add(head)
-            visited.update(then_path)
-            if join_id is not None:
-                visited.add(join_id)
-            if reduce_id is not None:
-                visited.add(reduce_id)
-            if iter_node_id is not None:
-                visited.add(iter_node_id)
-            map_paths.append(
-                _MapPath(
-                    map_id=head,
-                    then_ids=then_path,
-                    join_id=join_id,
-                    reduce_id=reduce_id,
-                    iter_node_id=iter_node_id,
-                )
+        # Update visited and record the path if foldable component found
+        if then_path or any_not_none(join_id, reduce_id, iter_node_id):
+            path = _MapPath(
+                map_id=head,
+                step_ids=then_path,
+                join_id=join_id,
+                reduce_id=reduce_id,
+                iter_node_id=iter_node_id,
             )
+            visited.update(path.all_node_ids)
+            map_paths.append(path)
 
     return map_paths
 
 
 def _build_map_composite_step(node: MapTaskNode, flow_param: str | None) -> CompositeStep:
-    """
-    Build a `CompositeStep` from a `.then()`-style `MapTaskNode`.
-
-    The `fixed_kwargs` become external params; the single `mapped_kwarg`
-    (the flow) is separated out.
-    """
+    """Builds a composite step for a mapped task node."""
     external_params: dict[str, NodeInput] = dict(node.fixed_kwargs)
 
     return CompositeStep(
@@ -521,13 +493,13 @@ def _find_path_head(
     can_extend: Callable[[UUID, UUID], bool],
 ) -> UUID:
     """
-    Walk backward from `start` to find the true head of a maximal path.
+    Walks backward from `start` to find the true head of a maximal path.
 
     Keeps extending backward while all of the following hold for each candidate predecessor:
     - It has exactly one predecessor of its own (not a fan-in node).
     - It is not already part of a discovered path.
-    - ``can_extend(pred_id, current_head)`` returns True.
     - It has exactly one successor (not a fan-out node).
+    - `can_extend(pred_id, current_head)` returns True.
 
     Ensures maximal paths are found regardless of graph iteration order.
     """
@@ -539,21 +511,57 @@ def _find_path_head(
         pred_id = next(iter(preds))
         if pred_id in visited:
             break
-        if not can_extend(pred_id, head):
-            break
         if len(successors.get(pred_id, set())) != 1:
+            break
+        if not can_extend(pred_id, head):
             break
         head = pred_id
     return head
 
 
-def _identify_flow_param(params: Mapping[str, NodeInput], predecessor_id: UUID) -> str | None:
+def _can_extend_task(
+    nodes: dict[UUID, BaseGraphNode],
+    backend: str | None,
+    pred_id: UUID,
+    head_id: UUID,
+) -> bool:
     """
-    Identify the parameter that receives the result of `predecessor_id`.
+    Checks if `pred_id` and `head_id` are connected in a linear task node path.
 
-    Works on any `NodeInput` mapping — pass `node.kwargs` for `TaskNode` or `node.mapped_kwargs`
-    for `MapTaskNode`.
+    This is a strategy function for `_find_path_head`.
     """
+    pred_node = nodes.get(pred_id)
+    return isinstance(pred_node, TaskNode) and pred_node.backend_name == backend
+
+
+def _can_extend_map_task(
+    nodes: dict[UUID, BaseGraphNode], backend: str | None, pred_id: UUID, head_id: UUID
+) -> bool:
+    """
+    Checks if `pred_id` and `head_id` are connected in a linear mapped task node path.
+
+    This is a strategy function for `_find_path_head`.
+    """
+    pred_node = nodes.get(pred_id)
+    return (
+        isinstance(pred_node, MapTaskNode)
+        and pred_node.backend_name == backend
+        and _is_single_mapped_successor(nodes[head_id], pred_id)
+    )
+
+
+def _is_single_mapped_successor(node: BaseGraphNode, predecessor_id: UUID) -> bool:
+    """Check whether a node is a single mapped successor of a given predecessor."""
+    if not isinstance(node, MapTaskNode):  # pragma: no cover
+        return False
+    if len(node.mapped_kwargs) != 1:
+        return False
+    ((_name, node_input),) = node.mapped_kwargs.items()
+    return node_input.reference == predecessor_id
+
+
+def _identify_flow_param(params: Mapping[str, NodeInput], predecessor_id: UUID) -> str | None:
+    """Identify the parameter that receives the result of predecessor node."""
     for param_name, node_input in params.items():
         if node_input.reference == predecessor_id:
             return param_name
@@ -565,14 +573,10 @@ def _remap_dependencies(
     id_mapping: dict[UUID, UUID],
 ) -> dict[UUID, BaseGraphNode]:
     """
-    Remap `NodeInput` references in remaining nodes so that references to folded node IDs point to
-    the composite node that replaced them.
+    Remap node references to folded node references according to a given mapping.
 
     This handles downstream nodes that depend on a node that was folded into a composite — their
-    `NodeInput.reference` must be updated to point to the composite's ID.
-
-    Delegates to each node's `remap_references` method so that every node type is responsible for
-    knowing which of its own fields contain references.
+    reference must be updated to point to the composite's ID.
     """
     if not id_mapping:  # pragma: no cover
         return nodes
@@ -580,40 +584,10 @@ def _remap_dependencies(
     return {nid: node.remap_references(id_mapping) for nid, node in nodes.items()}
 
 
-def _is_then_map_node(node: BaseGraphNode, predecessor_id: UUID) -> bool:
-    """
-    Check whether a `MapTaskNode` is a `.then()` continuation of `predecessor_id`.
-
-    A `.then()` pattern produces a `MapTaskNode` with exactly one `mapped_kwarg` whose `NodeInput`
-    is a `sequence_ref` to the predecessor.
-    """
-    if not isinstance(node, MapTaskNode):  # pragma: no cover – callers always pass MapTaskNodes
-        return False
-    if len(node.mapped_kwargs) != 1:
-        return False
-    ((_name, node_input),) = node.mapped_kwargs.items()
-    return node_input.reference == predecessor_id
-
-
-def _is_iter_source(map_node: BaseGraphNode, pred_id: UUID) -> bool:
-    """
-    Checks whether `pred_id` is the iter source feeding a `MapTaskNode`.
-
-    Returns ``True`` when the map node has exactly one ``mapped_kwarg`` whose ``NodeInput``
-    references ``pred_id`` (i.e. the iter output feeds the sole mapped parameter).
-    """
-    if not isinstance(map_node, MapTaskNode):  # pragma: no cover
-        return False
-    if len(map_node.mapped_kwargs) != 1:
-        return False
-    ((_name, node_input),) = map_node.mapped_kwargs.items()
-    return node_input.reference == pred_id
-
-
 def _build_iter_source(
     nodes: dict[UUID, BaseGraphNode], iter_node_id: UUID | None
 ) -> IterSourceConfig | None:
-    """Build an ``IterSourceConfig`` from an ``IterNode`` if present."""
+    """Builds and iteration source config object from the given iter node ID, if present."""
     if iter_node_id is None:
         return None
     iter_node = nodes[iter_node_id]
@@ -633,8 +607,7 @@ def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
     """
     Compute an aggregate timeout from a list of individual timeouts.
 
-    Returns the sum of all values. If any value is `None` (unbounded), the result is also `None`
-    — since the total cannot be bounded.
+    Returns the sum of all values. If any value is `None` (unbounded), the result is also `None`.
     """
     total: float = 0.0
     for t in timeouts:
@@ -642,8 +615,3 @@ def _aggregate_timeout(timeouts: list[float | None]) -> float | None:
             return None
         total += t
     return total if total > 0.0 else None
-
-
-def _effective_backend(node: BaseGraphNode) -> str | None:
-    """Return the effective backend name for a node."""
-    return node.backend_name
