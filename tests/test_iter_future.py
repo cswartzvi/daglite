@@ -244,6 +244,25 @@ class TestIterTaskFutureFluentAPI:
         assert isinstance(result, ReduceFuture)
         assert result.initial == 0
 
+    def test_reduce_identity_node_is_hidden(self) -> None:
+        """IterTaskFuture.reduce() marks the internal identity MapTaskFuture as hidden."""
+        from daglite.futures.map_future import MapTaskFuture
+        from daglite.graph.builder import build_graph
+
+        @task
+        def generate(n: int) -> Iterator[int]:
+            yield from range(n)
+
+        @task
+        def add_acc(acc: int, item: int) -> int:
+            return acc + item
+
+        result = generate.iter(n=5).reduce(add_acc, initial=0)
+        graph = build_graph(result)
+        hidden_nodes = [n for n in graph.values() if n.hidden]
+        assert len(hidden_nodes) == 1
+        assert hidden_nodes[0].name == "_identity"
+
     def test_reduce_with_partial_task(self) -> None:
         """IterTaskFuture.reduce() works with a PartialTask."""
         from daglite.futures.reduce_future import ReduceFuture

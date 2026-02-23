@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import field
 from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, overload
 
 from typing_extensions import override
@@ -74,6 +75,10 @@ class MapTaskFuture(BaseTaskFuture[R]):
 
     backend_name: str | None
     """Engine backend override for this task, if `None`, uses the default engine backend."""
+
+    hidden: bool = field(default=False, kw_only=True)
+    """If True, the built node is an implementation detail and should be elided from
+    user-facing visualizations and trace output."""
 
     def __repr__(self) -> str:
         kwargs = {**self.fixed_kwargs, **self.mapped_kwargs}
@@ -290,4 +295,5 @@ class MapTaskFuture(BaseTaskFuture[R]):
             output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
+            hidden=self.hidden,
         )

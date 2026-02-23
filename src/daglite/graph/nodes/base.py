@@ -52,6 +52,10 @@ class BaseGraphNode(abc.ABC):
     output_configs: tuple[NodeOutputConfig, ...] = field(default=(), kw_only=True)
     """Output save/checkpoint configurations for this node."""
 
+    hidden: bool = field(default=False, kw_only=True)
+    """If True, this node is an implementation detail and should be elided from
+    user-facing visualizations and trace output."""
+
     def __post_init__(self) -> None:
         # This is unlikely to happen given timeout is checked at task level, but just in case
         assert self.timeout is None or self.timeout >= 0, "Timeout must be non-negative"
@@ -72,6 +76,7 @@ class BaseGraphNode(abc.ABC):
             description=self.description,
             backend_name=self.backend_name,
             key=self.key,
+            hidden=self.hidden,
         )
 
     @abc.abstractmethod
@@ -183,6 +188,10 @@ class NodeMetadata:
 
     key: str | None = field(default=None, kw_only=True)
     """Optional key identifying this specific node in the IR graph."""
+
+    hidden: bool = field(default=False, kw_only=True)
+    """If True, this node is an implementation detail and should be elided from
+    user-facing visualizations and trace output."""
 
 
 @dataclass(frozen=True)

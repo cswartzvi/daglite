@@ -161,7 +161,8 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
 
     hook_ids = {"graph_id": graph_id, "root_id": future.id}
-    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
+    visible_count = sum(1 for n in state.nodes.values() if not n.hidden)
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=visible_count)
 
     start_time = time.perf_counter()
     try:
@@ -220,7 +221,8 @@ async def evaluate_workflow_async(
     backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
 
     hook_ids = {"graph_id": graph_id, "root_id": futures[0].id if futures else graph_id}
-    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=len(state.nodes))
+    visible_count = sum(1 for n in state.nodes.values() if not n.hidden)
+    plugin_manager.hook.before_graph_execute(**hook_ids, node_count=visible_count)
 
     start_time = time.perf_counter()
     try:
