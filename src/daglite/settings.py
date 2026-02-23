@@ -76,6 +76,10 @@ class DagliteSettings:
     Can be a string path or a DatasetStore instance.
     """
 
+    iterator_back_pressure: int = field(
+        default_factory=lambda: int(os.getenv("DAGLITE_ITERATOR_BACK_PRESSURE", "8"))
+    )
+
 
 def get_global_settings() -> DagliteSettings:
     """
