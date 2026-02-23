@@ -164,7 +164,6 @@ class IterTaskFuture(BaseTaskFuture[R]):
         Returns:
             A `ReduceFuture` representing the final accumulated value.
         """
-        from daglite._validation import get_unbound_params
         from daglite.futures.map_future import MapTaskFuture
 
         unbound_param = get_unbound_params(_IDENTITY_TASK.signature, {}, _IDENTITY_TASK.name)
