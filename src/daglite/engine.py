@@ -33,7 +33,9 @@ from daglite.graph.nodes.base import BaseGraphNode
 # region API
 
 
-def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
+def evaluate(
+    future: Any, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+) -> Any:
     """
     Evaluate the results of a task future synchronously.
 
@@ -42,6 +44,9 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
     Args:
         future: Task future that will be evaluated.
         plugins: Additional plugins to included with globally registered plugins.
+        cache_store: Optional cache store for built-in caching. Can be a
+            :class:`~daglite.cache.store.CacheStore` instance or a string path.
+            Overrides the global ``DagliteSettings.cache_store``.
 
     Returns:
         The result of evaluating the root task
@@ -84,10 +89,15 @@ def evaluate(future: Any, *, plugins: list[Any] | None = None) -> Any:
         raise RuntimeError(
             "Cannot call evaluate() from an async context. Use evaluate_async() instead."
         )
-    return asyncio.run(evaluate_async(future, plugins=plugins))
+    return asyncio.run(evaluate_async(future, plugins=plugins, cache_store=cache_store))
 
 
-def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -> Any:
+def evaluate_workflow(
+    futures: list[Any],
+    *,
+    plugins: list[Any] | None = None,
+    cache_store: Any | None = None,
+) -> Any:
     """
     Evaluate multiple task futures as a single workflow synchronously.
 
@@ -96,6 +106,7 @@ def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -
     Args:
         futures: List of task futures representing the workflow's sink nodes.
         plugins: Additional plugins to include with globally registered plugins.
+        cache_store: Optional cache store for built-in caching.
 
     Returns:
         A WorkflowResult containing the evaluated outputs of all sink nodes.
@@ -112,10 +123,14 @@ def evaluate_workflow(futures: list[Any], *, plugins: list[Any] | None = None) -
             "Cannot call evaluate_workflow() from an async context. "
             "Use evaluate_workflow_async() instead."
         )
-    return asyncio.run(evaluate_workflow_async(futures, plugins=plugins))
+    return asyncio.run(
+        evaluate_workflow_async(futures, plugins=plugins, cache_store=cache_store)
+    )
 
 
-async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> Any:
+async def evaluate_async(
+    future: Any, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+) -> Any:
     """
     Evaluate the results of a task future via asynchronous execution.
 
@@ -126,6 +141,9 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     Args:
         future: Task future that will be evaluated.
         plugins: Additional plugins to included with globally registered plugins.
+        cache_store: Optional cache store for built-in caching. Can be a
+            :class:`~daglite.cache.store.CacheStore` instance or a string path.
+            Overrides the global ``DagliteSettings.cache_store``.
 
     Returns:
         The result of evaluating the root task
@@ -153,12 +171,16 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
     if get_current_task():
         raise RuntimeError("Cannot call evaluate()/evaluate_async() from within another task.")
 
+    resolved_cache_store = _resolve_cache_store(cache_store)
+
     graph_id = uuid4()
     state = _setup_graph_execution_state(future)
 
     plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
     dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
-    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
+    backend_manager = BackendManager(
+        plugin_manager, event_processor, dataset_processor, resolved_cache_store
+    )
 
     hook_ids = {"graph_id": graph_id, "root_id": future.id}
     visible_count = sum(1 for n in state.nodes.values() if not n.hidden)
@@ -190,7 +212,10 @@ async def evaluate_async(future: Any, *, plugins: list[Any] | None = None) -> An
 
 
 async def evaluate_workflow_async(
-    futures: list[Any], *, plugins: list[Any] | None = None
+    futures: list[Any],
+    *,
+    plugins: list[Any] | None = None,
+    cache_store: Any | None = None,
 ) -> WorkflowResult:
     """
     Evaluate multiple task futures as a single workflow asynchronously.
@@ -203,6 +228,9 @@ async def evaluate_workflow_async(
     Args:
         futures: List of task futures representing the workflow's sink nodes.
         plugins: Additional plugins to include with globally registered plugins.
+        cache_store: Optional cache store for built-in caching. Can be a
+            :class:`~daglite.cache.store.CacheStore` instance or a string path.
+            Overrides the global ``DagliteSettings.cache_store``.
 
     Returns:
         A WorkflowResult containing the evaluated outputs of all sink nodes.
@@ -213,12 +241,16 @@ async def evaluate_workflow_async(
     if get_current_task():
         raise RuntimeError("Cannot call evaluate_workflow_async() from within another task.")
 
+    resolved_cache_store = _resolve_cache_store(cache_store)
+
     graph_id = uuid4()
     state, name_for = _setup_workflow_execution_state(futures)
 
     plugin_manager, event_processor = _setup_plugin_system(plugins=plugins or [])
     dataset_processor = _setup_dataset_processor(hook=plugin_manager.hook)
-    backend_manager = BackendManager(plugin_manager, event_processor, dataset_processor)
+    backend_manager = BackendManager(
+        plugin_manager, event_processor, dataset_processor, resolved_cache_store
+    )
 
     hook_ids = {"graph_id": graph_id, "root_id": futures[0].id if futures else graph_id}
     visible_count = sum(1 for n in state.nodes.values() if not n.hidden)
@@ -291,6 +323,27 @@ async def _execute_graph(
 
 
 # region Setup Helpers
+
+
+def _resolve_cache_store(cache_store: Any | None) -> Any | None:
+    """
+    Resolve cache store from explicit parameter or global settings.
+
+    Resolution order: explicit parameter > DagliteSettings.cache_store > None.
+    String values are converted to CacheStore instances.
+    """
+    from daglite.settings import get_global_settings
+
+    resolved = cache_store
+    if resolved is None:
+        resolved = get_global_settings().cache_store
+
+    if isinstance(resolved, str):
+        from daglite.cache.store import CacheStore
+
+        resolved = CacheStore(resolved)
+
+    return resolved
 
 
 def _setup_graph_execution_state(future: NodeBuilder) -> _ExecutionState:

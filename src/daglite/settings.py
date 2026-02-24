@@ -5,7 +5,9 @@ import threading
 from dataclasses import dataclass
 from dataclasses import field
 
+from daglite.cache.store import CacheStore
 from daglite.datasets.store import DatasetStore
+
 
 _GLOBAL_DAGLITE_SETTINGS: DagliteSettings | None = None
 _SETTINGS_LOCK = threading.RLock()
@@ -74,6 +76,19 @@ class DagliteSettings:
     Default dataset store for saving and loading datasets.
 
     Can be a string path or a DatasetStore instance.
+    """
+
+    cache_store: CacheStore | str | None = field(
+        default_factory=lambda: os.getenv("DAGLITE_CACHE_STORE") or None
+    )
+    """
+    Default cache store for ``@task(cache=True)``.
+
+    Can be a :class:`~daglite.cache.store.CacheStore` instance or a string path
+    (which will be used to create a ``CacheStore`` with a ``FileDriver``).
+    If ``None``, caching is disabled even when ``cache=True`` is set on tasks.
+
+    Can be set via ``DAGLITE_CACHE_STORE`` environment variable.
     """
 
     iterator_back_pressure: int = field(

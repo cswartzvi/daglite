@@ -1,4 +1,4 @@
-"""Default cache hashing strategy."""
+"""Default cache hashing strategy using cloudpickle."""
 
 from __future__ import annotations
 
@@ -6,22 +6,22 @@ import hashlib
 import inspect
 from typing import Any, Callable
 
-from daglite.serialization import default_registry
+import cloudpickle
 
 
-def default_cache_hash(func: Callable, bound_args: dict[str, Any]) -> str:
+def default_cache_hash(func: Callable[..., Any], bound_args: dict[str, Any]) -> str:
     """
-    Generate cache key from function source and parameter values.
+    Generate cache key from function source and cloudpickle'd parameter values.
 
-    Uses smart hashing strategies from SerializationRegistry to avoid
-    performance issues with large objects (e.g., numpy arrays, dataframes).
+    Uses cloudpickle to serialize parameter values for hashing, which handles
+    lambdas, closures, and most Python types automatically.
 
     Args:
-        func: The function being cached
-        bound_args: Bound parameter values
+        func: The function being cached.
+        bound_args: Bound parameter values as a dictionary.
 
     Returns:
-        SHA256 hex digest string
+        SHA256 hex digest string.
 
     Examples:
         >>> def add(x: int, y: int) -> int:
@@ -43,12 +43,10 @@ def default_cache_hash(func: Callable, bound_args: dict[str, Any]) -> str:
     except (OSError, TypeError):  # pragma: no cover
         h.update(func.__qualname__.encode())
 
-    # Hash each parameter using registry's strategies; bound_args can be either a dict or
-    # BoundArguments object
-    items = bound_args.arguments.items() if hasattr(bound_args, "arguments") else bound_args.items()  # type: ignore
-    for name, value in sorted(items):
-        param_hash = default_registry.hash_value(value)
-        h.update(f"{name}={param_hash}".encode())
+    # Hash each parameter via cloudpickle
+    for name, value in sorted(bound_args.items()):
+        h.update(name.encode())
+        h.update(cloudpickle.dumps(value))
 
     return h.hexdigest()
 

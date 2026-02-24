@@ -9,11 +9,13 @@ from typing_extensions import final
 from daglite._typing import Submission
 
 if TYPE_CHECKING:
+    from daglite.cache.store import CacheStore
     from daglite.datasets.processor import DatasetProcessor
     from daglite.datasets.reporters import DatasetReporter
     from daglite.plugins.processor import EventProcessor
     from daglite.plugins.reporters import EventReporter
 else:
+    CacheStore = object
     DatasetProcessor = object
     DatasetReporter = object
     EventProcessor = object
@@ -28,6 +30,7 @@ class Backend(abc.ABC):
     event_reporter: EventReporter
     dataset_processor: DatasetProcessor
     dataset_reporter: DatasetReporter | None
+    cache_store: CacheStore | None
     _started: bool = False
 
     @abc.abstractmethod
@@ -46,6 +49,7 @@ class Backend(abc.ABC):
         plugin_manager: PluginManager,
         event_processor: EventProcessor,
         dataset_processor: DatasetProcessor,
+        cache_store: CacheStore | None = None,
     ) -> None:
         """
         Start any global backend resources.
@@ -56,6 +60,7 @@ class Backend(abc.ABC):
             plugin_manager: Plugin manager for hook execution
             event_processor: Event processor for event handling
             dataset_processor: Dataset processor for persisting outputs
+            cache_store: Optional cache store for built-in task result caching
         """
         if self._started:  # pragma: no cover
             raise RuntimeError("Backend is already started.")
@@ -63,6 +68,7 @@ class Backend(abc.ABC):
         self.plugin_manager = plugin_manager
         self.event_processor = event_processor
         self.dataset_processor = dataset_processor
+        self.cache_store = cache_store
         self.event_reporter = self._get_event_reporter()
         self.dataset_reporter = self._get_dataset_reporter()
         self._start()

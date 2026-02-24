@@ -17,6 +17,7 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from typing import Any, Callable
 
+from daglite.backends.context import get_cache_store
 from daglite.backends.context import get_dataset_reporter
 from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
@@ -209,29 +210,32 @@ async def _run_task_func(
     hook = get_plugin_manager().hook
     reporter = get_event_reporter()
 
-    # Check cache before execution and return cached result if available
-    cached_result = hook.check_cache(
-        func=func,
-        metadata=metadata,
-        inputs=inputs,
-        cache_enabled=cache_enabled,
-        cache_ttl=cache_ttl,
-    )
-    if cached_result is not None:
-        result = (
-            cached_result["value"]
-            if isinstance(cached_result, dict) and "value" in cached_result
-            else cached_result
-        )
-        hook.on_cache_hit(
-            func=func,
-            metadata=metadata,
-            inputs=inputs,
-            result=result,
-            reporter=reporter,
-        )
-        reset_current_task(token)
-        return result
+    # Built-in cache check before execution
+    cache_store = get_cache_store() if cache_enabled else None
+    cache_key: str | None = None
+    if cache_enabled and cache_store is not None:
+        from daglite.cache.core import default_cache_hash
+
+        cache_key = default_cache_hash(func, inputs)
+        try:
+            cached_wrapper = cache_store.get(cache_key)
+            if (
+                cached_wrapper is not None
+                and isinstance(cached_wrapper, dict)
+                and "value" in cached_wrapper
+            ):
+                result = cached_wrapper["value"]
+                hook.on_cache_hit(
+                    func=func,
+                    metadata=metadata,
+                    inputs=inputs,
+                    result=result,
+                    reporter=reporter,
+                )
+                reset_current_task(token)
+                return result
+        except (KeyError, FileNotFoundError, TypeError):
+            pass  # Cache miss or error — proceed with execution
 
     hook.before_node_execute(metadata=metadata, inputs=inputs, reporter=reporter)
 
@@ -289,14 +293,13 @@ async def _run_task_func(
                     duration=duration,
                     reporter=reporter,
                 )
-                hook.update_cache(
-                    func=func,
-                    metadata=metadata,
-                    inputs=inputs,
-                    result=result,
-                    cache_enabled=cache_enabled,
-                    cache_ttl=cache_ttl,
-                )
+
+                # Built-in cache update after successful execution
+                if cache_enabled and cache_store is not None and cache_key is not None:
+                    try:
+                        cache_store.put(cache_key, {"value": result}, ttl=cache_ttl)
+                    except Exception:
+                        pass  # Cache write failure should not fail the task
 
                 return result
 
