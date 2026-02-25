@@ -123,9 +123,7 @@ def evaluate_workflow(
             "Cannot call evaluate_workflow() from an async context. "
             "Use evaluate_workflow_async() instead."
         )
-    return asyncio.run(
-        evaluate_workflow_async(futures, plugins=plugins, cache_store=cache_store)
-    )
+    return asyncio.run(evaluate_workflow_async(futures, plugins=plugins, cache_store=cache_store))
 
 
 async def evaluate_async(
@@ -332,16 +330,19 @@ def _resolve_cache_store(cache_store: Any | None) -> Any | None:
     Resolution order: explicit parameter > DagliteSettings.cache_store > None.
     String values are converted to CacheStore instances.
     """
+    from daglite.cache.store import CacheStore
     from daglite.settings import get_global_settings
 
     resolved = cache_store
     if resolved is None:
         resolved = get_global_settings().cache_store
-
-    if isinstance(resolved, str):
-        from daglite.cache.store import CacheStore
-
+    elif isinstance(resolved, str):
         resolved = CacheStore(resolved)
+    elif not isinstance(resolved, CacheStore):
+        raise ValueError(
+            f"Invalid cache_store {cache_store!r}. Must be a CacheStore instance, string path, "
+            f"or None."
+        )
 
     return resolved
 
