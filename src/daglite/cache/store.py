@@ -15,12 +15,11 @@ class CacheStore:
     """
     Hash-based cache store using Driver for byte storage and cloudpickle for serialization.
 
-    Mimics the DatasetStore pattern (uses a Driver under the hood) but handles
-    cache-specific concerns: git-style sharded keys, TTL metadata, and cloudpickle
-    serialization.
+    Mimics the DatasetStore pattern (uses a Driver under the hood) but handles cache-specific
+    concerns: git-style sharded keys, TTL metadata, and cloudpickle serialization.
 
-    Uses a two-level directory structure (XX/YYYYYY...) to avoid filesystem
-    performance issues with many files in one directory.
+    Uses a two-level directory structure (XX/YYYYYY...) to avoid filesystem performance issues with
+    many files in one directory.
 
     Layout::
 
