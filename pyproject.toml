@@ -28,7 +28,6 @@ rich = ["daglite-rich"]
 
 [dependency-groups]
 dev = [
-    "daglite-serialization[all]",
     "daglite-rich",
     "nox",
     "pandas-stubs",
@@ -98,7 +97,7 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "src:extras/serialization/src:extras/rich/src" # Add new plugins here
+mypy_path = "/src:extras/rich/src" # Add new plugins here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
@@ -110,7 +109,6 @@ invalid-param-spec = false
 [tool.pyright]
 executionEnvironments = [ # Add new plugins here
     { root = "src" },
-    { root = "extras/serialization/src" },
     { root = "extras/rich/src" },
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
@@ -234,7 +232,6 @@ default-groups = ["dev", "test"]
 
 [tool.uv.sources] # Add new plugins here
 daglite = { workspace = true }
-daglite-serialization = { workspace = true }
 daglite-rich = { workspace = true }
 
 [tool.uv.workspace]
