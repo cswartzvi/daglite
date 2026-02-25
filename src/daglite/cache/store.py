@@ -157,7 +157,23 @@ class CacheStore:
 
         Returns:
             Sharded key path (e.g., "ab/cdef1234...").
+
+        Raises:
+            ValueError: If ``hash_key`` is too short to shard safely or
+                contains non-hex characters.
         """
+        # Validate that hash_key is long enough so that the suffix is non-empty.
+        if len(hash_key) < 3:
+            raise ValueError(
+                f"hash_key must be at least 3 characters long to form a sharded "
+                f"path, got {len(hash_key)!r}: {hash_key!r}"
+            )
+
+        # Validate that the key looks like a hex digest.
+        lowered = hash_key.lower()
+        if any(c not in "0123456789abcdef" for c in lowered):
+            raise ValueError(f"hash_key must be a hexadecimal digest string, got: {hash_key!r}")
+
         prefix = hash_key[:2]
         suffix = hash_key[2:]
         return f"{prefix}/{suffix}"
