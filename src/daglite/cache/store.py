@@ -4,13 +4,11 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, TypeVar
+from typing import Any
 
 import cloudpickle
 
 from daglite.drivers.base import Driver
-
-T = TypeVar("T")
 
 
 class CacheStore:
