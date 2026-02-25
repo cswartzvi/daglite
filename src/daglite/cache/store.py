@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 import time
 from typing import Any
 
@@ -102,7 +103,7 @@ class CacheStore:
         try:
             data = self._driver.load(data_key)
             return cloudpickle.loads(data)
-        except (OSError, Exception):
+        except (OSError, pickle.UnpicklingError):
             return None
 
     def put(self, hash_key: str, value: Any, ttl: int | None = None) -> None:
