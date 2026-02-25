@@ -211,9 +211,8 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
 
         Args:
             plugins: Additional plugins to include with globally registered plugins.
-            cache_store: Optional cache store for built-in caching. Can be a
-                :class:`~daglite.cache.store.CacheStore` instance or a string path.
-                Overrides the global ``DagliteSettings.cache_store``.
+            cache_store: Optional cache store for built-in caching. Can be a instance or a string
+                path. Overrides the global `DagliteSettings.cache_store`.
 
         Returns:
             The evaluated result of this future.
@@ -236,9 +235,8 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
 
         Args:
             plugins: Additional plugins to include with globally registered plugins.
-            cache_store: Optional cache store for built-in caching. Can be a
-                :class:`~daglite.cache.store.CacheStore` instance or a string path.
-                Overrides the global ``DagliteSettings.cache_store``.
+            cache_store: Optional cache store for built-in caching. Can be a instance or a string
+                path. Overrides the global `DagliteSettings.cache_store`.
 
         Returns:
             The evaluated result of this future.
