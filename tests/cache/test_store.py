@@ -34,57 +34,57 @@ class TestCacheStore:
             store = CacheStore(tmpdir)
 
             # Put various types
-            store.put("key1", 42)
-            store.put("key2", "hello")
-            store.put("key3", 3.14)
-            store.put("key4", [1, 2, 3])
+            store.put("aabb001122", 42)
+            store.put("aabb334455", "hello")
+            store.put("aabb667788", 3.14)
+            store.put("aabb99aabb", [1, 2, 3])
 
             # Get and verify
-            assert store.get("key1") == 42
-            assert store.get("key2") == "hello"
-            assert store.get("key3") == 3.14
-            assert store.get("key4") == [1, 2, 3]
+            assert store.get("aabb001122") == 42
+            assert store.get("aabb334455") == "hello"
+            assert store.get("aabb667788") == 3.14
+            assert store.get("aabb99aabb") == [1, 2, 3]
 
     def test_put_with_none_value(self):
         """Test that None values can be cached."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
 
-            store.put("none_key", None)
-            assert store.get("none_key") is None
+            store.put("ffee000000", None)
+            assert store.get("ffee000000") is None
 
     def test_get_nonexistent_returns_none(self):
         """Test that getting nonexistent key returns None."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
-            assert store.get("nonexistent") is None
+            assert store.get("deadbeef01") is None
 
     def test_put_with_ttl_not_expired(self):
         """Test that cached value is returned when TTL has not expired."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
 
-            store.put("key", "value", ttl=10)  # 10 second TTL
+            store.put("cafebabe01", "value", ttl=10)  # 10 second TTL
             time.sleep(0.1)  # Small delay
-            assert store.get("key") == "value"
+            assert store.get("cafebabe01") == "value"
 
     def test_put_with_ttl_expired(self):
         """Test that None is returned when TTL has expired."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
 
-            store.put("key", "value", ttl=1)  # 1 second TTL
+            store.put("cafebabe01", "value", ttl=1)  # 1 second TTL
             time.sleep(1.1)  # Wait for expiration
-            assert store.get("key") is None
+            assert store.get("cafebabe01") is None
 
     def test_put_without_ttl_never_expires(self):
         """Test that cached values without TTL don't expire."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
 
-            store.put("key", "value")  # No TTL
+            store.put("cafebabe01", "value")  # No TTL
             time.sleep(0.1)
-            assert store.get("key") == "value"
+            assert store.get("cafebabe01") == "value"
 
     def test_git_style_sharding(self):
         """Test that cache files are sharded git-style (XX/YYYYYY...)."""
@@ -161,7 +161,7 @@ class TestCacheStore:
             store = CacheStore(tmpdir)
 
             # Should not raise
-            store.invalidate("nonexistent")
+            store.invalidate("deadbeef01")
 
     def test_clear_removes_all_cache_entries(self):
         """Test that clear removes all cached entries."""
@@ -169,22 +169,22 @@ class TestCacheStore:
             store = CacheStore(tmpdir)
 
             # Add multiple entries
-            store.put("key1", "value1")
-            store.put("key2", "value2", ttl=60)
-            store.put("key3", "value3")
+            store.put("aabb001122", "value1")
+            store.put("aabb334455", "value2", ttl=60)
+            store.put("aabb667788", "value3")
 
             # Verify they exist
-            assert store.get("key1") == "value1"
-            assert store.get("key2") == "value2"
-            assert store.get("key3") == "value3"
+            assert store.get("aabb001122") == "value1"
+            assert store.get("aabb334455") == "value2"
+            assert store.get("aabb667788") == "value3"
 
             # Clear all
             store.clear()
 
             # Verify all are gone
-            assert store.get("key1") is None
-            assert store.get("key2") is None
-            assert store.get("key3") is None
+            assert store.get("aabb001122") is None
+            assert store.get("aabb334455") is None
+            assert store.get("aabb667788") is None
 
     def test_serialization_for_distributed_backends(self):
         """Test that CacheStore can be pickled (for Ray, Dask, etc.)."""
@@ -196,8 +196,8 @@ class TestCacheStore:
             restored = pickle.loads(pickled)
 
             # Verify it still works
-            restored.put("test_key", "test_value")
-            assert restored.get("test_key") == "test_value"
+            restored.put("abcdef0011", "test_value")
+            assert restored.get("abcdef0011") == "test_value"
 
     def test_complex_objects(self):
         """Test caching complex Python objects."""
@@ -210,8 +210,8 @@ class TestCacheStore:
                 "set": {7, 8, 9},
             }
 
-            store.put("complex", data)
-            retrieved = store.get("complex")
+            store.put("c0ffee1234", data)
+            retrieved = store.get("c0ffee1234")
 
             assert retrieved == data
             assert isinstance(retrieved["nested"]["tuple"], tuple)  # type: ignore
