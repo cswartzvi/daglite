@@ -75,7 +75,6 @@ class FileDriver(Driver):
         and UNC) bypass `base_path`. URI keys are only accepted when they use the same protocol as
         `base_path` (or`file://` for local stores); mixed protocols raise `ValueError``.
         """
-        # key = re.sub(r"\\", "/", key)  # replace backward slashes with forward slashes
 
         key_protocol = self._get_uri_protocol(key)
 
