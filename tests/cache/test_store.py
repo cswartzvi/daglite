@@ -9,6 +9,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from daglite.cache.core import CACHE_MISS
 from daglite.cache.store import CacheStore
 
 
@@ -57,7 +58,7 @@ class TestCacheStore:
         """Test that getting nonexistent key returns None."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
-            assert store.get("deadbeef01") is None
+            assert store.get("deadbeef01") is CACHE_MISS
 
     def test_put_with_ttl_not_expired(self):
         """Test that cached value is returned when TTL has not expired."""
@@ -75,7 +76,7 @@ class TestCacheStore:
 
             store.put("cafebabe01", "value", ttl=1)  # 1 second TTL
             time.sleep(1.1)  # Wait for expiration
-            assert store.get("cafebabe01") is None
+            assert store.get("cafebabe01") is CACHE_MISS
 
     def test_put_without_ttl_never_expires(self):
         """Test that cached values without TTL don't expire."""
@@ -182,9 +183,9 @@ class TestCacheStore:
             store.clear()
 
             # Verify all are gone
-            assert store.get("aabb001122") is None
-            assert store.get("aabb334455") is None
-            assert store.get("aabb667788") is None
+            assert store.get("aabb001122") is CACHE_MISS
+            assert store.get("aabb334455") is CACHE_MISS
+            assert store.get("aabb667788") is CACHE_MISS
 
     def test_serialization_for_distributed_backends(self):
         """Test that CacheStore can be pickled (for Ray, Dask, etc.)."""

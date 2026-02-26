@@ -9,6 +9,33 @@ from typing import Any, Callable
 import cloudpickle
 
 
+class CacheMiss:
+    """
+    Sentinel type returned by ``CacheStore.get()`` on a cache miss.
+
+    Using a dedicated sentinel avoids the None-ambiguity where a cached ``None``
+    result and a genuine miss would both return ``None``.
+
+    Examples:
+        >>> bool(CACHE_MISS)
+        False
+        >>> repr(CACHE_MISS)
+        'CACHE_MISS'
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "CACHE_MISS"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+CACHE_MISS = CacheMiss()
+"""Singleton sentinel for a cache miss."""
+
+
 def default_cache_hash(func: Callable[..., Any], bound_args: dict[str, Any]) -> str:
     """
     Generate cache key from function source and cloudpickle'd parameter values.
@@ -71,4 +98,4 @@ def _canonical(value: Any) -> Any:
     return value
 
 
-__all__ = ["default_cache_hash"]
+__all__ = ["CacheMiss", "CACHE_MISS", "default_cache_hash"]

@@ -9,6 +9,8 @@ from typing import Any
 
 import cloudpickle
 
+from daglite.cache.core import CACHE_MISS
+from daglite.cache.core import CacheMiss
 from daglite.drivers.base import Driver
 
 
@@ -32,11 +34,12 @@ class CacheStore:
     Examples:
         >>> import tempfile
         >>> store = CacheStore(tempfile.mkdtemp())
-        >>> store.put("abc123", {"value": 42}, ttl=3600)
+        >>> store.put("abc123", 42, ttl=3600)
         >>> store.get("abc123")
-        {'value': 42}
+        42
         >>> store.invalidate("abc123")
-        >>> store.get("abc123") is None
+        >>> from daglite.cache.core import CACHE_MISS
+        >>> store.get("abc123") is CACHE_MISS
         True
     """
 
@@ -63,24 +66,24 @@ class CacheStore:
         """Whether the underlying driver accesses local storage."""
         return getattr(self._driver, "is_local", True)
 
-    def get(self, hash_key: str) -> Any | None:
+    def get(self, hash_key: str) -> Any | CacheMiss:
         """
         Retrieve cached value by hash key.
 
-        Returns None on cache miss or TTL expiry. Expired entries are automatically
-        cleaned up.
+        Returns ``CACHE_MISS`` on a cache miss or TTL expiry. Expired entries are
+        automatically cleaned up.
 
         Args:
             hash_key: SHA256 hash digest string.
 
         Returns:
-            Cached value if found and not expired, None otherwise.
+            Cached value if found and not expired, ``CACHE_MISS`` otherwise.
         """
         data_key = self._hash_to_key(hash_key)
         meta_key = f"{data_key}.meta.json"
 
         if not self._driver.exists(data_key):
-            return None
+            return CACHE_MISS
 
         # Check TTL from metadata sidecar
         if self._driver.exists(meta_key):
@@ -94,17 +97,17 @@ class CacheStore:
                     if time.time() - timestamp > ttl:
                         # Expired — clean up and return miss
                         self.invalidate(hash_key)
-                        return None
+                        return CACHE_MISS
             except (json.JSONDecodeError, KeyError, OSError):
                 # Corrupted metadata — treat as miss
-                return None
+                return CACHE_MISS
 
         # Load and deserialize cached data
         try:
             data = self._driver.load(data_key)
             return cloudpickle.loads(data)
         except (OSError, pickle.UnpicklingError):
-            return None
+            return CACHE_MISS
 
     def put(self, hash_key: str, value: Any, ttl: int | None = None) -> None:
         """

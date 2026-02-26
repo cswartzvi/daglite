@@ -6,6 +6,8 @@ cross-subsystem scenarios are in tests/integration/.
 
 import tempfile
 
+from daglite.cache.core import CACHE_MISS
+from daglite.cache.core import CacheMiss
 from daglite.cache.core import default_cache_hash
 from daglite.cache.store import CacheStore
 
@@ -13,8 +15,8 @@ from daglite.cache.store import CacheStore
 class TestCacheStoreGetPut:
     """Tests for CacheStore get/put operations."""
 
-    def test_cache_miss_returns_none(self):
-        """Test that get returns None on cache miss."""
+    def test_cache_miss_returns_cache_miss(self):
+        """Test that get returns CACHE_MISS on a cache miss."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = CacheStore(tmpdir)
 
@@ -23,7 +25,8 @@ class TestCacheStoreGetPut:
 
             cache_key = default_cache_hash(test_func, {"x": 1})
             result = store.get(cache_key)
-            assert result is None
+            assert isinstance(result, CacheMiss)
+            assert result is CACHE_MISS
 
     def test_cache_hit_returns_value(self):
         """Test that get returns value on cache hit."""
@@ -35,11 +38,10 @@ class TestCacheStoreGetPut:
 
             cache_key = default_cache_hash(test_func, {"x": 1})
 
-            # Store a wrapped value (matches engine convention)
-            store.put(cache_key, {"value": 42})
+            store.put(cache_key, 42)
 
             result = store.get(cache_key)
-            assert result == {"value": 42}
+            assert result == 42
 
     def test_cache_hit_with_none_value(self):
         """Test that cached None values are properly returned."""
@@ -51,11 +53,10 @@ class TestCacheStoreGetPut:
 
             cache_key = default_cache_hash(test_func, {"x": 1})
 
-            # Store wrapped None
-            store.put(cache_key, {"value": None})
+            store.put(cache_key, None)
 
             result = store.get(cache_key)
-            assert result == {"value": None}
+            assert result is None
 
     def test_different_inputs_produce_different_cache_keys(self):
         """Test that different inputs produce different cache entries."""
@@ -69,12 +70,12 @@ class TestCacheStoreGetPut:
             key1 = default_cache_hash(test_func, {"x": 1})
             key2 = default_cache_hash(test_func, {"x": 2})
 
-            store.put(key1, {"value": 2})
-            store.put(key2, {"value": 4})
+            store.put(key1, 2)
+            store.put(key2, 4)
 
             # Verify both are cached separately
-            assert store.get(key1) == {"value": 2}
-            assert store.get(key2) == {"value": 4}
+            assert store.get(key1) == 2
+            assert store.get(key2) == 4
 
 
 class TestDefaultCacheHash:
