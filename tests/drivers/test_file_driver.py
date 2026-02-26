@@ -202,6 +202,110 @@ class TestFileDriverOperations:
             assert driver.get_format_hint("path\\to\\data.parquet") == "parquet"
 
 
+class TestFileDriverPathResolution:
+    """Tests for absolute vs relative key path resolution."""
+
+    def test_relative_key_uses_base_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            driver = FileDriver(tmpdir)
+
+            saved_path = driver.save("relative/data.bin", b"value")
+
+            assert saved_path == f"{tmpdir}/relative/data.bin"
+            assert driver.exists("relative/data.bin")
+            assert driver.load("relative/data.bin") == b"value"
+
+            driver.delete("relative/data.bin")
+            assert not driver.exists("relative/data.bin")
+
+    def test_absolute_posix_key_bypasses_base_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with tempfile.TemporaryDirectory() as other:
+                driver = FileDriver(tmpdir)
+                absolute_path = f"{other}/absolute.bin"
+
+                saved_path = driver.save(absolute_path, b"value")
+
+                assert saved_path == absolute_path
+                assert Path(absolute_path).exists()
+                assert Path(absolute_path).read_bytes() == b"value"
+
+                assert driver.exists(absolute_path)
+                assert driver.load(absolute_path) == b"value"
+
+                driver.delete(absolute_path)
+                assert not driver.exists(absolute_path)
+                assert not Path(absolute_path).exists()
+
+    def test_windows_absolute_key_bypasses_base_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            driver = FileDriver(tmpdir)
+
+            windows_key = "C:/tmp/windows-absolute.bin"
+            assert driver._full_path(windows_key) == windows_key
+
+    def test_local_uri_key_bypasses_base_path(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with tempfile.TemporaryDirectory() as other:
+                driver = FileDriver(tmpdir)
+                uri_key = f"file://{other}/uri.bin"
+
+                saved_path = driver.save(uri_key, b"value")
+
+                assert saved_path == uri_key
+                assert Path(other, "uri.bin").read_bytes() == b"value"
+                assert driver.exists(uri_key)
+                assert driver.load(uri_key) == b"value"
+
+                driver.delete(uri_key)
+                assert not driver.exists(uri_key)
+
+    def test_remote_uri_protocol_mismatch_raises(self):
+        from unittest.mock import MagicMock
+
+        mock_fs = MagicMock()
+        mock_fs.exists.return_value = False
+
+        driver = FileDriver("/tmp/base", fs=mock_fs)
+
+        with pytest.raises(ValueError, match="does not match"):
+            driver.save("s3://bucket/key.bin", b"value")
+
+    def test_remote_driver_accepts_matching_uri_keys(self):
+        from unittest.mock import MagicMock
+
+        mock_file = MagicMock()
+        mock_file.__enter__.return_value = mock_file
+        mock_file.__exit__.return_value = None
+
+        mock_fs = MagicMock()
+        mock_fs.open.return_value = mock_file
+        mock_fs.exists.return_value = True
+
+        driver = FileDriver("s3://bucket/base", fs=mock_fs)
+
+        key = "s3://bucket/explicit-target.bin"
+        driver.save(key, b"value")
+        driver.load(key)
+        assert driver.exists(key)
+        driver.delete(key)
+
+        mock_fs.open.assert_any_call(key, "wb")
+        mock_fs.open.assert_any_call(key, "rb")
+        mock_fs.rm.assert_called_once_with(key)
+
+    def test_remote_driver_rejects_local_uri_keys(self):
+        from unittest.mock import MagicMock
+
+        mock_fs = MagicMock()
+        mock_fs.exists.return_value = False
+
+        driver = FileDriver("s3://bucket/base", fs=mock_fs)
+
+        with pytest.raises(ValueError, match="does not match"):
+            driver.save("file:///tmp/data.bin", b"value")
+
+
 class TestFileDriverFsspecSupport:
     """Tests for fsspec protocol support."""
 
