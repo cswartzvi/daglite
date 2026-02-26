@@ -40,6 +40,7 @@ async def run_task_worker(
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
+    cache_hash_fn: Callable[..., str] | None = None,
     key_extras: dict[str, Any] | None = None,
     iteration_index: int | None = None,
 ) -> Any:
@@ -55,6 +56,8 @@ async def run_task_worker(
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        cache_hash_fn: Custom hash function ``(func, inputs) -> str``. If None,
+            the built-in ``default_cache_hash`` is used.
         key_extras: Additional variables for key formatting.
         iteration_index: Optional index for map iterations, used for metadata key formatting.
 
@@ -74,6 +77,7 @@ async def run_task_worker(
         retries=retries,
         cache_enabled=cache_enabled,
         cache_ttl=cache_ttl,
+        cache_hash_fn=cache_hash_fn,
         key_extras=effective_extras,
         iteration_index=iteration_index,
     )
@@ -178,6 +182,7 @@ async def _run_task_func(
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
+    cache_hash_fn: Callable[..., str] | None = None,
     key_extras: dict[str, Any] | None = None,
     iteration_index: int | None = None,
 ) -> Any:
@@ -191,6 +196,8 @@ async def _run_task_func(
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        cache_hash_fn: Custom hash function ``(func, inputs) -> str``. If None,
+            the built-in ``default_cache_hash`` is used.
         key_extras: Additional variables for key formatting.
         iteration_index: Optional index for map iterations, used for metadata key formatting.
 
@@ -218,7 +225,8 @@ async def _run_task_func(
     if cache_enabled and cache_store is not None:
         from daglite.cache.core import default_cache_hash
 
-        cache_key = default_cache_hash(func, inputs)
+        _hash_fn = cache_hash_fn if cache_hash_fn is not None else default_cache_hash
+        cache_key = _hash_fn(func, inputs)
         try:
             cached_wrapper = cache_store.get(cache_key)
             if (

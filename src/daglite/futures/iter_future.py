@@ -66,6 +66,7 @@ class IterTaskFuture(BaseTaskFuture[R]):
             output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
+            cache_hash_fn=self.task.cache_hash,
         )
 
     def then(

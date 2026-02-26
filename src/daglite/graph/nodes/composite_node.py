@@ -342,6 +342,7 @@ class CompositeMapTaskNode(BaseGraphNode):
                 retries=self.source_map.retries,
                 cache_enabled=self.source_map.cache,
                 cache_ttl=self.source_map.cache_ttl,
+                cache_hash_fn=self.source_map.cache_hash_fn,
                 iteration_index=idx,
             )
 
@@ -390,6 +391,7 @@ class CompositeMapTaskNode(BaseGraphNode):
             retries=step.retries,
             cache_enabled=step.cache,
             cache_ttl=step.cache_ttl,
+            cache_hash_fn=step.cache_hash_fn,
         )
         return await backend.submit(join_runner, timeout=self.timeout)
 
@@ -595,6 +597,9 @@ class CompositeStep:
     cache_ttl: int | None = None
     """Time-to-live for cached results in seconds."""
 
+    cache_hash_fn: Callable[..., str] | None = None
+    """Custom hash function ``(func, inputs) -> str`` for the cache key."""
+
     timeout: float | None = None
     """Per-step timeout in seconds (preserved from the original node for aggregation)."""
 
@@ -628,6 +633,7 @@ class CompositeStep:
             retries=node.retries,
             cache=node.cache,
             cache_ttl=node.cache_ttl,
+            cache_hash_fn=node.cache_hash_fn,
             timeout=node.timeout,
             step_kind=node.kind,
         )
@@ -803,5 +809,6 @@ async def _run_step(
         retries=step.retries,
         cache_enabled=step.cache,
         cache_ttl=step.cache_ttl,
+        cache_hash_fn=step.cache_hash_fn,
         iteration_index=iteration_index,
     )
