@@ -5,6 +5,8 @@ across different backends, including the multiprocessing backend which requires
 pickle support.
 """
 
+import pickle
+
 import pytest
 
 from daglite import task
@@ -213,3 +215,40 @@ class TestBackendPickleRequirements:
         # Should work with threading backend (pickle not strictly required)
         result = mult_task.with_options(backend_name="threading")(x=6).run()
         assert result == 30
+
+
+@pytest.mark.integration
+class TestProcessBackendCacheStore:
+    """Tests for ProcessBackend cache_store pickle validation."""
+
+    def test_non_picklable_cache_store_raises_type_error(self) -> None:
+        """ProcessBackend raises TypeError at startup when cache_store is not picklable."""
+        from daglite.drivers.base import Driver
+
+        class _NonPicklableDriver(Driver):
+            """A Driver whose instances cannot be pickled."""
+
+            def __reduce__(self) -> tuple:
+                raise pickle.PicklingError("Intentionally not picklable")
+
+            def save(self, key: str, data: bytes) -> str:
+                return key  # pragma: no cover
+
+            def load(self, key: str) -> bytes:
+                return b""  # pragma: no cover
+
+            def exists(self, key: str) -> bool:
+                return False  # pragma: no cover
+
+            def delete(self, key: str) -> None:
+                pass  # pragma: no cover
+
+            def list_keys(self) -> list[str]:
+                return []  # pragma: no cover
+
+        from daglite.cache.store import CacheStore
+
+        non_picklable_store = CacheStore(_NonPicklableDriver())
+        proc_task = square.with_options(backend_name="processes")
+        with pytest.raises(TypeError, match="cache_store must be picklable"):
+            proc_task(x=5).run(cache_store=non_picklable_store)  # pragma: cover

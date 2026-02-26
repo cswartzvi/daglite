@@ -223,6 +223,20 @@ class ProcessBackend(Backend):
             self._dataset_reporter_id = self.dataset_processor.add_source(dataset_queue)
 
         serialized_pm = serialize_plugin_manager(self.plugin_manager)
+
+        # Validate that cache_store is picklable before sending to worker processes
+        if self.cache_store is not None:
+            import pickle as _pickle
+
+            try:
+                _pickle.dumps(self.cache_store)
+            except Exception as exc:
+                raise TypeError(
+                    "cache_store must be picklable for use with ProcessBackend. "
+                    "Ensure the underlying Driver supports pickling, or use a "
+                    "threading / inline backend instead."
+                ) from exc
+
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
             mp_context=self._mp_context,
