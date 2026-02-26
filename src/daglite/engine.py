@@ -338,7 +338,7 @@ def _resolve_cache_store(cache_store: Any | None) -> Any | None:
         resolved = get_global_settings().cache_store
     elif isinstance(resolved, str):
         resolved = CacheStore(resolved)
-    elif not isinstance(resolved, CacheStore):
+    elif not isinstance(resolved, CacheStore):  # pragma: no cover
         raise ValueError(
             f"Invalid cache_store {cache_store!r}. Must be a CacheStore instance, string path, "
             f"or None."
