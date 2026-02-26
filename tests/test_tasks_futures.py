@@ -995,3 +995,22 @@ class TestSplitMethod:
 
         assert len(futures) == 5
         assert all(isinstance(f, TaskFuture) for f in futures)
+
+    def test_split_accessors_are_hidden(self) -> None:
+        """TaskFuture.split() marks internal index accessor nodes as hidden."""
+        from daglite.graph.builder import build_graph
+
+        @task
+        def make_pair() -> tuple[int, str]:
+            return (1, "a")
+
+        @task
+        def combine(a: int, b: str) -> str:
+            return f"{a}:{b}"
+
+        first, second = make_pair().split()
+        graph = build_graph(combine(a=first, b=second))
+
+        hidden_nodes = [node for node in graph.values() if node.hidden]
+        assert len(hidden_nodes) == 2
+        assert all(node.name == "_get_index" for node in hidden_nodes)
