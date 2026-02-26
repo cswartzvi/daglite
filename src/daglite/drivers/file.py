@@ -73,7 +73,7 @@ class FileDriver(Driver):
 
         Relative keys are resolved under `base_path`. Absolute local paths (POSIX, Windows drive,
         and UNC) bypass `base_path`. URI keys are only accepted when they use the same protocol as
-        `base_path` (or`file://` for local stores); mixed protocols raise `ValueError``.
+        `base_path` (or `file://` for local stores); mixed protocols raise `ValueError`.
         """
 
         key_protocol = self._get_uri_protocol(key)
