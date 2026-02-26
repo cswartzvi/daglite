@@ -27,10 +27,8 @@ from daglite.datasets.reporters import DirectDatasetReporter
 from daglite.datasets.store import DatasetStore
 from daglite.graph.nodes.base import NodeMetadata
 from daglite.graph.nodes.base import NodeOutputConfig
-from daglite.plugins.builtin.logging import get_logger
 
 _DIRECT_REPORTER = DirectDatasetReporter()
-logger = get_logger()
 
 
 async def run_task_worker(
@@ -201,6 +199,8 @@ async def _run_task_func(
     """
     from dataclasses import replace
 
+    from daglite.plugins.builtin.logging import get_logger
+
     # Set metadata key: "name[idx]" for map iterations, "name" for regular tasks
     if iteration_index is not None:
         metadata = replace(metadata, key=f"{metadata.name}[{iteration_index}]")
@@ -301,7 +301,7 @@ async def _run_task_func(
                     try:
                         cache_store.put(cache_key, {"value": result}, ttl=cache_ttl)
                     except Exception:
-                        logger.warning(
+                        get_logger().warning(
                             f"Failed to write cache for key {cache_key} on node {metadata.key}. "
                             "This will not affect task success.",
                             exc_info=True,
