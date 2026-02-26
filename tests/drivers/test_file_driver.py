@@ -281,6 +281,7 @@ class TestFileDriverPathResolution:
         mock_fs = MagicMock()
         mock_fs.open.return_value = mock_file
         mock_fs.exists.return_value = True
+        mock_fs.protocol = "s3"
 
         driver = FileDriver("s3://bucket/base", fs=mock_fs)
 
