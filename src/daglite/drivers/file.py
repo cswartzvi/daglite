@@ -46,12 +46,13 @@ class FileDriver(Driver):
         from fsspec.utils import get_protocol
 
         self.base_path = base_path.rstrip("/")
-        self._protocol = get_protocol(base_path)
 
         if fs is None:
+            self._protocol = get_protocol(base_path)
             self.fs = filesystem(self._protocol)
         else:
             self.fs = fs
+            self._protocol = fs.protocol
 
         self.fs.mkdirs(self.base_path, exist_ok=True)
 
@@ -186,4 +187,6 @@ class FileDriver(Driver):
         from fsspec.utils import get_protocol
 
         self.base_path = state["base_path"]
-        self.fs = filesystem(get_protocol(self.base_path))
+        self._protocol = get_protocol(self.base_path)
+        self.fs = filesystem(self._protocol)
+        self.fs.mkdirs(self.base_path, exist_ok=True)
