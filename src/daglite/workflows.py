@@ -42,13 +42,12 @@ def workflow(
     """
     Decorator to convert a Python function into a daglite `Workflow`.
 
-    Workflows are **multi-sink entry points** for DAG execution. They wrap a function that builds a
-    task graph returning one or more `BaseTaskFuture` objects (as a single future, tuple, or list)
-    and provide convenient methods to evaluate the entire graph in one pass:
+    Workflows are **named entry points** that wrap a function calling `@task`-decorated functions.
+    Tasks execute eagerly inside the workflow — they run immediately and return real values.
 
-    - Call the workflow to invoke the underlying function (returns the raw futures).
-    - Use `.run()` / `.run_async()` to build and evaluate in one step, returning a `WorkflowResult`
-      indexable by task name or UUID.
+    - Call the workflow to invoke the underlying function directly (no session).
+    - Use `.run()` / `.run_async()` to wrap the call in a managed `session` that provides backend,
+      cache, plugin, and event infrastructure.
 
     Args:
         func: The function to wrap. When used without parentheses (`@workflow`), this is
@@ -69,21 +68,20 @@ def workflow(
         ... def mul(x: int, y: int) -> int:
         ...     return x * y
 
-        Single-sink workflow
+        Single-value workflow
         >>> @workflow
         ... def my_workflow(x: int, y: int):
         ...     return add(x=x, y=y)
-        >>> result = my_workflow.run(2, 3)
-        >>> result["add"]
+        >>> my_workflow.run(2, 3)
         5
 
-        Multi-sink workflow
+        Multi-step workflow
         >>> @workflow
-        ... def dual_workflow(x: int, y: int):
-        ...     return add(x=x, y=y), mul(x=x, y=y)
-        >>> result = dual_workflow.run(2, 3)
-        >>> result["add"], result["mul"]
-        (5, 6)
+        ... def chain_workflow(x: int, y: int):
+        ...     a = add(x=x, y=y)
+        ...     return mul(x=a, y=10)
+        >>> chain_workflow.run(2, 3)
+        50
     """
 
     def decorator(fn: Callable[P, Any]) -> Workflow[P]:
@@ -150,16 +148,17 @@ def load_workflow(workflow_path: str) -> Workflow[Any]:
 @dataclass(frozen=True)
 class Workflow(Generic[P]):
     """
-    Entry point for building and running a multi-sink task graph.
+    Workflows are **named entry points** for running a multi-task function
+    with full session infrastructure (backend, cache, plugins, events).
 
     Users should **not** directly instantiate this class — use the `@workflow` decorator instead.
 
-    A workflow wraps a function that accepts parameters and returns one or more `BaseTaskFuture`
-    objects (single future, tuple, or list).  Workflows can be invoked two ways:
+    A workflow wraps a function that calls `@task`-decorated functions. Tasks execute eagerly
+    (returning real values, not futures). Workflows can be invoked two ways:
 
-    1. **Call** — `workflow(...)` returns the raw future(s) for manual handling.
-    2. **Run** — `workflow.run(...)` / `workflow.run_async(...)` builds and evaluates the DAG in a
-       single step, returning a `WorkflowResult`.
+    1. **Call** — `workflow(...)` runs the function directly, no session setup.
+    2. **Run** — `workflow.run(...)` / `workflow.run_async(...)` wraps the function
+       in a `session`, providing backend, cache, plugin, and event infrastructure.
     """
 
     func: Callable[P, Any]
@@ -199,39 +198,49 @@ class Workflow(Generic[P]):
             f"tuple/list of them, got {type(raw).__name__!r}."
         )
 
-    def run(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:
+    def run(self, *args: P.args, **kwargs: P.kwargs) -> Any:
         """
-        Build and evaluate the workflow synchronously.
+        Run the workflow inside a managed session.
 
-        Cannot be called from within an async context. Use `.run_async()` instead.
+        Sets up backend, cache, plugin, and event infrastructure, calls the
+        workflow function, tears everything down, and returns whatever the
+        function returns.
 
         Args:
             *args: Positional arguments forwarded to the workflow function.
             **kwargs: Keyword arguments forwarded to the workflow function.
 
         Returns:
-            A `WorkflowResult` containing the evaluated outputs of all sink nodes.
+            The return value of the workflow function.
         """
-        from daglite.engine import evaluate_workflow
+        from daglite.session import session
 
-        futures = self._collect_futures(self.func(*args, **kwargs))
-        return evaluate_workflow(futures)
+        with session():
+            return self.func(*args, **kwargs)
 
-    async def run_async(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:
+    async def run_async(self, *args: P.args, **kwargs: P.kwargs) -> Any:
         """
-        Build and evaluate the workflow asynchronously.
+        Run the workflow inside a managed async session.
+
+        Async equivalent of `run()`. Sets up the same infrastructure and
+        calls the workflow function with ``await`` if it is a coroutine.
 
         Args:
             *args: Positional arguments forwarded to the workflow function.
             **kwargs: Keyword arguments forwarded to the workflow function.
 
         Returns:
-            A `WorkflowResult` containing the evaluated outputs of all sink nodes.
+            The return value of the workflow function.
         """
-        from daglite.engine import evaluate_workflow_async
+        import inspect as _inspect
 
-        futures = self._collect_futures(self.func(*args, **kwargs))
-        return await evaluate_workflow_async(futures)
+        from daglite.session import async_session
+
+        async with async_session():
+            result = self.func(*args, **kwargs)
+            if _inspect.isawaitable(result):
+                return await result
+            return result
 
     @property
     def signature(self) -> inspect.Signature:
