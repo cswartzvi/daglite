@@ -61,6 +61,7 @@ def task(
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
+    cache_hash: Callable[..., str] | None = None,
     store: DatasetStore | str | None = None,
 ) -> Callable[[Callable[P, R]], Task[P, R]]: ...
 
@@ -75,6 +76,7 @@ def task(  # noqa: D417
     timeout: float | None = None,
     cache: bool = False,
     cache_ttl: int | None = None,
+    cache_hash: Callable[..., str] | None = None,
     store: DatasetStore | str | None = None,
 ) -> Any:
     """
@@ -100,6 +102,9 @@ def task(  # noqa: D417
             Defaults to False.
         cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
             Only used when cache=True.
+        cache_hash: Custom hash function with signature ``(func, inputs) -> str`` used to
+            compute the cache key. If None, the built-in ``default_cache_hash`` is used.
+            Only relevant when cache=True.
         store: Default output store for all `.save()` calls on this task. Can be a DatasetStore
             instance or a string path (e.g., directory) to be used for to create a dataset store.
             If None, the default store will be used.
@@ -157,6 +162,7 @@ def task(  # noqa: D417
             timeout=timeout,
             cache=cache,
             cache_ttl=cache_ttl,
+            cache_hash=cache_hash,
             store=actual_store,
         )
 
@@ -194,6 +200,9 @@ class BaseTask(abc.ABC, Generic[P, R]):
 
     cache_ttl: int | None = field(default=None, kw_only=True)
     """Time-to-live for cached results in seconds. If None, cached results never expire."""
+
+    cache_hash: Callable[..., str] | None = field(default=None, kw_only=True)
+    """Custom hash function ``(func, inputs) -> str`` for computing the cache key."""
 
     store: DatasetStore | None = field(default=None, kw_only=True)
     """Default dataset store for `.save()` calls on this task."""
@@ -457,6 +466,7 @@ class Task(BaseTask[P, R]):
             store=self.store,
             cache=self.cache,
             cache_ttl=self.cache_ttl,
+            cache_hash=self.cache_hash,
         )
 
     @override

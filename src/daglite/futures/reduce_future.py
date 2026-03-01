@@ -68,12 +68,14 @@ class ReduceFuture(BaseTaskFuture[R]):
         )
 
     @override
-    def run(self, *, plugins: list[Any] | None = None) -> R:
-        return super().run(plugins=plugins)
+    def run(self, *, plugins: list[Any] | None = None, cache_store: Any | None = None) -> R:
+        return super().run(plugins=plugins, cache_store=cache_store)
 
     @override
-    async def run_async(self, *, plugins: list[Any] | None = None) -> R:
-        return await super().run_async(plugins=plugins)
+    async def run_async(
+        self, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+    ) -> R:
+        return await super().run_async(plugins=plugins, cache_store=cache_store)
 
     @override
     def get_upstream_builders(self) -> list[NodeBuilder]:

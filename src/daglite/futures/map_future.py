@@ -80,12 +80,14 @@ class MapTaskFuture(BaseTaskFuture[R]):
         return build_repr("MapTaskFuture", self.task.name, f"mode={self.mode}", kwargs=kwargs)
 
     @override
-    def run(self, *, plugins: list[Any] | None = None) -> list[R]:
-        return super().run(plugins=plugins)
+    def run(self, *, plugins: list[Any] | None = None, cache_store: Any | None = None) -> list[R]:
+        return super().run(plugins=plugins, cache_store=cache_store)
 
     @override
-    async def run_async(self, *, plugins: list[Any] | None = None) -> list[R]:
-        return await super().run_async(plugins=plugins)
+    async def run_async(
+        self, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+    ) -> list[R]:
+        return await super().run_async(plugins=plugins, cache_store=cache_store)
 
     def then(
         self, mapped_task: Task[Any, T] | PartialTask[Any, T], **kwargs: Any
@@ -290,5 +292,6 @@ class MapTaskFuture(BaseTaskFuture[R]):
             output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
+            cache_hash_fn=self.task.cache_hash,
             hidden=self.hidden,
         )

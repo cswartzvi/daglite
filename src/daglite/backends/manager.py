@@ -8,6 +8,7 @@ from daglite.backends.base import Backend
 from daglite.plugins.processor import EventProcessor
 
 if TYPE_CHECKING:
+    from daglite.cache.store import CacheStore
     from daglite.datasets.processor import DatasetProcessor
 
 
@@ -19,6 +20,7 @@ class BackendManager:
         plugin_manager: PluginManager,
         event_processor: EventProcessor,
         dataset_processor: DatasetProcessor,
+        cache_store: CacheStore | None = None,
     ) -> None:
         from daglite.backends.impl.local import InlineBackend
         from daglite.backends.impl.local import ProcessBackend
@@ -28,6 +30,7 @@ class BackendManager:
         self._plugin_manager = plugin_manager
         self._event_processor = event_processor
         self._dataset_processor = dataset_processor
+        self._cache_store = cache_store
 
         self._cached_backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
@@ -80,7 +83,10 @@ class BackendManager:
 
             backend_instance = backend_class()
             backend_instance.start(
-                self._plugin_manager, self._event_processor, self._dataset_processor
+                self._plugin_manager,
+                self._event_processor,
+                self._dataset_processor,
+                self._cache_store,
             )
             self._cached_backends[backend_name] = backend_instance
 

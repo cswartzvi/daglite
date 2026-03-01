@@ -1,4 +1,4 @@
-"""Default cache hashing strategy."""
+"""Default cache hashing strategy using cloudpickle."""
 
 from __future__ import annotations
 
@@ -6,22 +6,49 @@ import hashlib
 import inspect
 from typing import Any, Callable
 
-from daglite.serialization import default_registry
+import cloudpickle
 
 
-def default_cache_hash(func: Callable, bound_args: dict[str, Any]) -> str:
+class CacheMiss:
     """
-    Generate cache key from function source and parameter values.
+    Sentinel type returned by ``CacheStore.get()`` on a cache miss.
 
-    Uses smart hashing strategies from SerializationRegistry to avoid
-    performance issues with large objects (e.g., numpy arrays, dataframes).
+    Using a dedicated sentinel avoids the None-ambiguity where a cached ``None``
+    result and a genuine miss would both return ``None``.
+
+    Examples:
+        >>> bool(CACHE_MISS)
+        False
+        >>> repr(CACHE_MISS)
+        'CACHE_MISS'
+    """
+
+    __slots__ = ()
+
+    def __repr__(self) -> str:
+        return "CACHE_MISS"
+
+    def __bool__(self) -> bool:
+        return False
+
+
+CACHE_MISS = CacheMiss()
+"""Singleton sentinel for a cache miss."""
+
+
+def default_cache_hash(func: Callable[..., Any], bound_args: dict[str, Any]) -> str:
+    """
+    Generate cache key from function source and cloudpickle'd parameter values.
+
+    Uses cloudpickle to serialize parameter values for hashing, which handles
+    lambdas, closures, and most Python types automatically.
 
     Args:
-        func: The function being cached
-        bound_args: Bound parameter values
+        func: The function being cached.
+        bound_args: Bound parameter values as a dictionary.
 
     Returns:
-        SHA256 hex digest string
+        SHA256 hex digest string.
 
     Examples:
         >>> def add(x: int, y: int) -> int:
@@ -43,14 +70,32 @@ def default_cache_hash(func: Callable, bound_args: dict[str, Any]) -> str:
     except (OSError, TypeError):  # pragma: no cover
         h.update(func.__qualname__.encode())
 
-    # Hash each parameter using registry's strategies; bound_args can be either a dict or
-    # BoundArguments object
-    items = bound_args.arguments.items() if hasattr(bound_args, "arguments") else bound_args.items()  # type: ignore
-    for name, value in sorted(items):
-        param_hash = default_registry.hash_value(value)
-        h.update(f"{name}={param_hash}".encode())
+    # Hash each parameter via cloudpickle, normalizing order-sensitive containers first
+    for name, value in sorted(bound_args.items()):
+        h.update(name.encode())
+        h.update(cloudpickle.dumps(_canonical(value)))
 
     return h.hexdigest()
 
 
-__all__ = ["default_cache_hash"]
+def _canonical(value: Any) -> Any:
+    """
+    Recursively normalize order-sensitive containers for stable hashing.
+
+    Dicts and sets have no guaranteed iteration order (dict insertion order aside,
+    equal dicts built in different orders compare equal but may serialize differently
+    with cloudpickle). This converts them to sorted structures so that logically
+    equal values always produce the same bytes.
+    """
+    if isinstance(value, dict):
+        return sorted((_canonical(k), _canonical(v)) for k, v in value.items())
+    if isinstance(value, (set, frozenset)):
+        return sorted(_canonical(v) for v in value)
+    if isinstance(value, list):
+        return [_canonical(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_canonical(v) for v in value)
+    return value
+
+
+__all__ = ["CacheMiss", "CACHE_MISS", "default_cache_hash"]

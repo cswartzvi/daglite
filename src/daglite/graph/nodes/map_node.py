@@ -55,6 +55,9 @@ class MapTaskNode(PrepareCollectNode):
     cache_ttl: int | None = None
     """Time-to-live for cached results in seconds. None means no expiration."""
 
+    cache_hash_fn: Callable[..., str] | None = None
+    """Custom hash function ``(func, inputs) -> str`` for the cache key."""
+
     def __post_init__(self) -> None:
         super().__post_init__()
 
@@ -98,6 +101,7 @@ class MapTaskNode(PrepareCollectNode):
                 retries=self.retries,
                 cache_enabled=self.cache,
                 cache_ttl=self.cache_ttl,
+                cache_hash_fn=self.cache_hash_fn,
                 iteration_index=idx,
             )
             submissions.append(submission)

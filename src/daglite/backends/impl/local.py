@@ -56,7 +56,12 @@ class InlineBackend(Backend):
             max_workers=max_timeout_workers,
             thread_name_prefix="seq-timeout-",
             initializer=_thread_initializer,
-            initargs=(self.plugin_manager, self.event_reporter, self.dataset_reporter),
+            initargs=(
+                self.plugin_manager,
+                self.event_reporter,
+                self.dataset_reporter,
+                self.cache_store,
+            ),
         )
 
     @override
@@ -67,7 +72,9 @@ class InlineBackend(Backend):
     def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
         # Set execution context for immediate execution (runs in main thread)
         # Context cleanup happens when backend stops, not per-task
-        set_execution_context(self.plugin_manager, self.event_reporter, self.dataset_reporter)
+        set_execution_context(
+            self.plugin_manager, self.event_reporter, self.dataset_reporter, self.cache_store
+        )
 
         # Use thread pool for timeout enforcement. Note that if the timeout is hit, an exception
         # will be raise in the main thread, but the task will continue running in a worker thread
@@ -121,7 +128,12 @@ class ThreadBackend(Backend):
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             initializer=_thread_initializer,
-            initargs=(self.plugin_manager, self.event_reporter, self.dataset_reporter),
+            initargs=(
+                self.plugin_manager,
+                self.event_reporter,
+                self.dataset_reporter,
+                self.cache_store,
+            ),
         )
         self._timeout_executor = ThreadPoolExecutor(
             max_workers=max_timeout_workers,
@@ -211,17 +223,41 @@ class ProcessBackend(Backend):
             self._dataset_reporter_id = self.dataset_processor.add_source(dataset_queue)
 
         serialized_pm = serialize_plugin_manager(self.plugin_manager)
+
+        # Validate that cache_store is picklable before sending to worker processes
+        if self.cache_store is not None:
+            import pickle as _pickle
+
+            try:
+                _pickle.dumps(self.cache_store)
+            except Exception as exc:
+                raise TypeError(
+                    "cache_store must be picklable for use with ProcessBackend. "
+                    "Ensure the underlying Driver supports pickling, or use a "
+                    "threading / inline backend instead."
+                ) from exc
+
         self._executor = ProcessPoolExecutor(
             max_workers=max_workers,
             mp_context=self._mp_context,
             initializer=_process_initializer,
-            initargs=(serialized_pm, self.event_reporter.queue, dataset_queue),
+            initargs=(
+                serialized_pm,
+                self.event_reporter.queue,
+                dataset_queue,
+                self.cache_store,
+            ),
         )
         self._timeout_executor = ThreadPoolExecutor(
             max_workers=max_timeout_workers,
             thread_name_prefix="proc-timeout-",
             initializer=_thread_initializer,
-            initargs=(self.plugin_manager, self.event_reporter, self.dataset_reporter),
+            initargs=(
+                self.plugin_manager,
+                self.event_reporter,
+                self.dataset_reporter,
+                self.cache_store,
+            ),
         )
 
     @override
@@ -296,15 +332,17 @@ def _thread_initializer(
     plugin_manager: PluginManager,
     event_reporter: EventReporter,
     dataset_reporter: DatasetReporter | None = None,
+    cache_store: Any = None,
 ) -> None:
     """Initializer for thread pool workers to set execution context."""
-    set_execution_context(plugin_manager, event_reporter, dataset_reporter)
+    set_execution_context(plugin_manager, event_reporter, dataset_reporter, cache_store)
 
 
 def _process_initializer(
     serialized_plugin_manager: dict,
     event_queue: Any,
     dataset_queue: Any = None,
+    cache_store: Any = None,
 ) -> None:  # pragma: no cover
     """Initializer for process pool workers to set execution context."""
     plugin_manager = deserialize_plugin_manager(serialized_plugin_manager)
@@ -312,4 +350,4 @@ def _process_initializer(
     ds_reporter: DatasetReporter | None = None
     if dataset_queue is not None:
         ds_reporter = ProcessDatasetReporter(dataset_queue)
-    set_execution_context(plugin_manager, event_reporter, ds_reporter)
+    set_execution_context(plugin_manager, event_reporter, ds_reporter, cache_store)

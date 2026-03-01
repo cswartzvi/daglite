@@ -17,6 +17,7 @@ from collections.abc import Generator
 from collections.abc import Iterator
 from typing import Any, Callable
 
+from daglite.backends.context import get_cache_store
 from daglite.backends.context import get_dataset_reporter
 from daglite.backends.context import get_event_reporter
 from daglite.backends.context import get_plugin_manager
@@ -39,6 +40,7 @@ async def run_task_worker(
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
+    cache_hash_fn: Callable[..., str] | None = None,
     key_extras: dict[str, Any] | None = None,
     iteration_index: int | None = None,
 ) -> Any:
@@ -54,6 +56,8 @@ async def run_task_worker(
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        cache_hash_fn: Custom hash function ``(func, inputs) -> str``. If None,
+            the built-in ``default_cache_hash`` is used.
         key_extras: Additional variables for key formatting.
         iteration_index: Optional index for map iterations, used for metadata key formatting.
 
@@ -73,6 +77,7 @@ async def run_task_worker(
         retries=retries,
         cache_enabled=cache_enabled,
         cache_ttl=cache_ttl,
+        cache_hash_fn=cache_hash_fn,
         key_extras=effective_extras,
         iteration_index=iteration_index,
     )
@@ -177,6 +182,7 @@ async def _run_task_func(
     retries: int = 0,
     cache_enabled: bool = False,
     cache_ttl: int | None = None,
+    cache_hash_fn: Callable[..., str] | None = None,
     key_extras: dict[str, Any] | None = None,
     iteration_index: int | None = None,
 ) -> Any:
@@ -190,6 +196,8 @@ async def _run_task_func(
         retries: Number of times to retry on failure.
         cache_enabled: Whether caching is enabled for this node.
         cache_ttl: Time-to-live for cache in seconds, if None no expiration.
+        cache_hash_fn: Custom hash function ``(func, inputs) -> str``. If None,
+            the built-in ``default_cache_hash`` is used.
         key_extras: Additional variables for key formatting.
         iteration_index: Optional index for map iterations, used for metadata key formatting.
 
@@ -204,34 +212,25 @@ async def _run_task_func(
         key_extras = {**(key_extras or {}), "iteration_index": iteration_index}
     else:
         metadata = replace(metadata, key=metadata.name)
+    node_key = metadata.key or metadata.name
 
     token = set_current_task(metadata)
     hook = get_plugin_manager().hook
     reporter = get_event_reporter()
 
-    # Check cache before execution and return cached result if available
-    cached_result = hook.check_cache(
-        func=func,
-        metadata=metadata,
-        inputs=inputs,
-        cache_enabled=cache_enabled,
-        cache_ttl=cache_ttl,
-    )
-    if cached_result is not None:
-        result = (
-            cached_result["value"]
-            if isinstance(cached_result, dict) and "value" in cached_result
-            else cached_result
-        )
-        hook.on_cache_hit(
-            func=func,
-            metadata=metadata,
-            inputs=inputs,
-            result=result,
-            reporter=reporter,
-        )
-        reset_current_task(token)
-        return result
+    # Built-in cache check before execution
+    cache_store = get_cache_store() if cache_enabled else None
+    cache_key: str | None = None
+    if cache_enabled and cache_store is not None:
+        from daglite.cache.core import CACHE_MISS
+
+        cache_key, cached = _cache_get(cache_store, cache_hash_fn, func, inputs, node_key)
+        if cached is not CACHE_MISS:
+            hook.on_cache_hit(
+                func=func, metadata=metadata, inputs=inputs, result=cached, reporter=reporter
+            )
+            reset_current_task(token)
+            return cached
 
     hook.before_node_execute(metadata=metadata, inputs=inputs, reporter=reporter)
 
@@ -289,14 +288,10 @@ async def _run_task_func(
                     duration=duration,
                     reporter=reporter,
                 )
-                hook.update_cache(
-                    func=func,
-                    metadata=metadata,
-                    inputs=inputs,
-                    result=result,
-                    cache_enabled=cache_enabled,
-                    cache_ttl=cache_ttl,
-                )
+
+                # Built-in cache update after successful execution
+                if cache_enabled and cache_store is not None and cache_key is not None:
+                    _cache_put(cache_store, cache_key, result, cache_ttl, node_key)
 
                 return result
 
@@ -400,3 +395,71 @@ def _save_outputs(
         # Replace the reporter if the store is remote since the worker can write directly
         reporter = dataset_reporter if dataset_reporter and store.is_local else _DIRECT_REPORTER
         reporter.save(key, result, store, format=config.format, options=config.options)
+
+
+def _cache_get(
+    cache_store: Any,
+    cache_hash_fn: Callable[..., str] | None,
+    func: Callable[..., Any],
+    inputs: dict[str, Any],
+    node_key: str,
+) -> tuple[str, Any]:
+    """
+    Compute the cache key and attempt a cache read.
+
+    Args:
+        cache_store: The active cache store
+        cache_hash_fn: Custom hash function or ``None` to use `default_cache_hash`.
+        func: The task function being executed.
+        inputs: Resolved input values.
+        node_key: Metadata key used in warning messages.
+
+    Returns:
+        `(cache_key, cached_value)` — `cached_value` is `CACHE_MISS` on a miss or when the read
+        raises an unexpected exception.
+    """
+    from daglite.cache.core import CACHE_MISS
+    from daglite.cache.core import default_cache_hash
+
+    _hash_fn = cache_hash_fn if cache_hash_fn is not None else default_cache_hash
+    cache_key = _hash_fn(func, inputs)
+    try:
+        return cache_key, cache_store.get(cache_key)
+    except (KeyError, FileNotFoundError, TypeError):  # pragma: no cover
+        from daglite.plugins.builtin.logging import get_logger
+
+        get_logger().warning(
+            f"Failed to read cache for key {cache_key} on node {node_key}. "
+            "This will not affect task execution.",
+            exc_info=True,
+        )
+        return cache_key, CACHE_MISS
+
+
+def _cache_put(
+    cache_store: Any,
+    cache_key: str,
+    result: Any,
+    cache_ttl: int | None,
+    node_key: str,
+) -> None:
+    """
+    Attempt to write a result to the cache, logging a warning on failure.
+
+    Args:
+        cache_store: The active cache store.
+        cache_key: The cache key to write to.
+        result: The task result to cache.
+        cache_ttl: Time-to-live in seconds, or `None` for no expiration.
+        node_key: Metadata key used in warning messages.
+    """
+    try:
+        cache_store.put(cache_key, result, ttl=cache_ttl)
+    except Exception:  # pragma: no cover
+        from daglite.plugins.builtin.logging import get_logger
+
+        get_logger().warning(
+            f"Failed to write cache for key {cache_key} on node {node_key}. "
+            "This will not affect task success.",
+            exc_info=True,
+        )

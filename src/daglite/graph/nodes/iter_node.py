@@ -45,6 +45,9 @@ class IterNode(BaseGraphNode):
     cache_ttl: int | None = None
     """Time-to-live for cached results in seconds."""
 
+    cache_hash_fn: Callable[..., str] | None = None
+    """Custom hash function ``(func, inputs) -> str`` for the cache key."""
+
     @property
     @override
     def kind(self) -> NodeKind:
@@ -80,6 +83,7 @@ class IterNode(BaseGraphNode):
                 retries=self.retries,
                 cache_enabled=self.cache,
                 cache_ttl=self.cache_ttl,
+                cache_hash_fn=self.cache_hash_fn,
             )
             result = await backend.submit(runner, timeout=self.timeout)
 
@@ -109,5 +113,6 @@ class IterNode(BaseGraphNode):
             retries=self.retries,
             cache_enabled=self.cache,
             cache_ttl=self.cache_ttl,
+            cache_hash_fn=self.cache_hash_fn,
         )
         return await backend.submit(runner, timeout=self.timeout)

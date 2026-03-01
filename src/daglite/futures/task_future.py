@@ -74,6 +74,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[CoroutineType[Any, Any, T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> T: ...
 
     @overload
@@ -81,6 +82,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Coroutine[Any, Any, T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> T: ...
 
     @overload
@@ -88,6 +90,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[AsyncIterator[T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -95,6 +98,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[AsyncGenerator[T, Any]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -102,6 +106,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Generator[T, Any, Any]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -109,20 +114,22 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Iterator[T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
-    def run(self, *, plugins: list[Any] | None = None) -> R: ...
+    def run(self, *, plugins: list[Any] | None = None, cache_store: Any | None = None) -> R: ...
 
     @override
-    def run(self, *, plugins: list[Any] | None = None) -> Any:
-        return super().run(plugins=plugins)
+    def run(self, *, plugins: list[Any] | None = None, cache_store: Any | None = None) -> Any:
+        return super().run(plugins=plugins, cache_store=cache_store)
 
     @overload
     async def run_async(
         self: TaskFuture[CoroutineType[Any, Any, T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> T: ...
 
     @overload
@@ -130,6 +137,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Coroutine[Any, Any, T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> T: ...
 
     @overload
@@ -137,6 +145,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[AsyncGenerator[T, Any]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -144,6 +153,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[AsyncIterator[T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -151,6 +161,7 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Generator[T, Any, Any]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
@@ -158,14 +169,19 @@ class TaskFuture(BaseTaskFuture[R]):
         self: TaskFuture[Iterator[T]],
         *,
         plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
     ) -> list[T]: ...
 
     @overload
-    async def run_async(self, *, plugins: list[Any] | None = None) -> R: ...
+    async def run_async(
+        self, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+    ) -> R: ...
 
     @override
-    async def run_async(self, *, plugins: list[Any] | None = None) -> Any:
-        return await super().run_async(plugins=plugins)
+    async def run_async(
+        self, *, plugins: list[Any] | None = None, cache_store: Any | None = None
+    ) -> Any:
+        return await super().run_async(plugins=plugins, cache_store=cache_store)
 
     def then(
         self,
@@ -437,6 +453,7 @@ class TaskFuture(BaseTaskFuture[R]):
             output_configs=output_configs,
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
+            cache_hash_fn=self.task.cache_hash,
             hidden=self.hidden,
         )
 

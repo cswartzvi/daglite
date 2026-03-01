@@ -196,7 +196,12 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
         object.__setattr__(new_future, "_alias", name)
         return new_future
 
-    def run(self, *, plugins: list[Any] | None = None) -> Any:
+    def run(
+        self,
+        *,
+        plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
+    ) -> Any:
         """
         Evaluates this future synchronously and return the result.
 
@@ -206,6 +211,8 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
 
         Args:
             plugins: Additional plugins to include with globally registered plugins.
+            cache_store: Optional cache store for built-in caching. Can be a instance or a string
+                path. Overrides the global `DagliteSettings.cache_store`.
 
         Returns:
             The evaluated result of this future.
@@ -215,21 +222,28 @@ class BaseTaskFuture(abc.ABC, NodeBuilder, Generic[R]):
         """
         from daglite.engine import evaluate
 
-        return evaluate(self, plugins=plugins)
+        return evaluate(self, plugins=plugins, cache_store=cache_store)
 
-    async def run_async(self, *, plugins: list[Any] | None = None) -> Any:
+    async def run_async(
+        self,
+        *,
+        plugins: list[Any] | None = None,
+        cache_store: Any | None = None,
+    ) -> Any:
         """
         Evaluates this future asynchronously and return the result.
 
         Args:
             plugins: Additional plugins to include with globally registered plugins.
+            cache_store: Optional cache store for built-in caching. Can be a instance or a string
+                path. Overrides the global `DagliteSettings.cache_store`.
 
         Returns:
             The evaluated result of this future.
         """
         from daglite.engine import evaluate_async
 
-        return await evaluate_async(self, plugins=plugins)
+        return await evaluate_async(self, plugins=plugins, cache_store=cache_store)
 
     # NOTE: The following methods are to prevent accidental usage of unevaluated nodes.
 

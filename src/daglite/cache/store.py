@@ -1,188 +1,191 @@
-"""Cache storage protocols and implementations."""
+"""Hash-based cache store using Driver for byte storage and cloudpickle for serialization."""
 
 from __future__ import annotations
 
 import json
 import pickle
 import time
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import Any
 
-from daglite.cache.base import CacheStore
+import cloudpickle
 
-if TYPE_CHECKING:
-    from fsspec import AbstractFileSystem
-else:
-    AbstractFileSystem = object
-
-T = TypeVar("T")
+from daglite.cache.core import CACHE_MISS
+from daglite.cache.core import CacheMiss
+from daglite.drivers.base import Driver
 
 
-class FileCacheStore(CacheStore):
+class CacheStore:
     """
-    File-based cache store with fsspec support and git-style sharded layout.
+    Hash-based cache store using Driver for byte storage and cloudpickle for serialization.
 
-    Supports both local and remote filesystems (s3://, gcs://, etc.) via fsspec.
+    Mimics the DatasetStore pattern (uses a Driver under the hood) but handles cache-specific
+    concerns: git-style sharded keys, TTL metadata, and cloudpickle serialization.
 
-    Uses a two-level directory structure (XX/YYYYYY...) to avoid
-    filesystem performance issues with many files in one directory.
+    Uses a two-level directory structure (XX/YYYYYY...) to avoid filesystem performance issues with
+    many files in one directory.
 
-    Layout:
+    Layout::
+
         cache_dir/
             ab/
-                cdef1234...  # Data file (serialized)
-                cdef1234.meta.json  # Metadata (timestamp, ttl)
-            12/
-                3456789a...
-                3456789a.meta.json
-
-    Metadata format:
-        {
-            "timestamp": <unix_time>,
-            "ttl": <seconds_or_null>
-        }
+                cdef1234...           # Data file (cloudpickle serialized)
+                cdef1234....meta.json # Metadata (timestamp, ttl)
 
     Examples:
-        >>> # Local filesystem
-        >>> store = FileCacheStore("/tmp/cache")
-        >>> store = FileCacheStore("file:///tmp/cache")  # Equivalent
-        >>>
-        >>> # S3
-        >>> store = FileCacheStore("s3://my-bucket/cache")  # doctest: +SKIP
-        >>>
-        >>> # Google Cloud Storage
-        >>> store = FileCacheStore("gcs://my-bucket/cache")  # doctest: +SKIP
+        >>> import tempfile
+        >>> store = CacheStore(tempfile.mkdtemp())
+        >>> store.put("abc123", 42, ttl=3600)
+        >>> store.get("abc123")
+        42
+        >>> store.invalidate("abc123")
+        >>> from daglite.cache.core import CACHE_MISS
+        >>> store.get("abc123") is CACHE_MISS
+        True
     """
 
-    def __init__(
-        self,
-        base_path: str,
-        fs: AbstractFileSystem | None = None,
-    ) -> None:
+    def __init__(self, driver: Driver | str) -> None:
         """
-        Initialize file cache store.
+        Initialize cache store.
 
         Args:
-            base_path: Root directory/prefix for cache storage (can be fsspec URL)
-            fs: fsspec filesystem instance (auto-detected from base_path if None)
-        """
-        from fsspec import filesystem
-        from fsspec.utils import get_protocol
+            driver: A Driver instance or string path (creates FileDriver).
 
-        self.base_path = base_path.rstrip("/")
-        self.fs = fs if fs is not None else filesystem(get_protocol(base_path))
-        self.fs.mkdirs(self.base_path, exist_ok=True)
-
-    def _get_paths(self, hash_key: str) -> tuple[str, str]:
+        Examples:
+            >>> import tempfile
+            >>> store = CacheStore(tempfile.mkdtemp())
         """
-        Get data and metadata paths for a cache key.
+        if isinstance(driver, str):
+            from daglite.drivers import FileDriver
+
+            self._driver = FileDriver(driver)
+        else:
+            self._driver = driver
+
+    @property
+    def is_local(self) -> bool:
+        """Whether the underlying driver accesses local storage."""
+        return getattr(self._driver, "is_local", True)
+
+    def get(self, hash_key: str) -> Any | CacheMiss:
+        """
+        Retrieve cached value by hash key.
+
+        Returns ``CACHE_MISS`` on a cache miss or TTL expiry. Expired entries are
+        automatically cleaned up.
 
         Args:
-            hash_key: Hash digest (e.g., "abcdef1234...")
+            hash_key: SHA256 hash digest string.
 
         Returns:
-            Tuple of (data_path, metadata_path)
+            Cached value if found and not expired, ``CACHE_MISS`` otherwise.
         """
-        # Use first 2 chars as directory, rest as filename (git-style)
-        prefix = hash_key[:2]
-        suffix = hash_key[2:]
+        data_key = self._hash_to_key(hash_key)
+        meta_key = f"{data_key}.meta.json"
 
-        data_path = f"{self.base_path}/{prefix}/{suffix}"
-        meta_path = f"{self.base_path}/{prefix}/{suffix}.meta.json"
+        if not self._driver.exists(data_key):
+            return CACHE_MISS
 
-        return data_path, meta_path
-
-    def get(self, hash_key: str, return_type: type[T]) -> T | None:
-        """Retrieve cached value by hash key."""
-        data_path, meta_path = self._get_paths(hash_key)
-
-        if not self.fs.exists(data_path):
-            return None
-
-        # Check TTL if metadata exists
-        if self.fs.exists(meta_path):  # pragma: no branch
+        # Check TTL from metadata sidecar
+        if self._driver.exists(meta_key):
             try:
-                with self.fs.open(meta_path, "r") as f:
-                    metadata = json.load(f)
+                meta_bytes = self._driver.load(meta_key)
+                metadata = json.loads(meta_bytes.decode("utf-8"))
 
                 ttl = metadata.get("ttl")
                 if ttl is not None:
                     timestamp = metadata["timestamp"]
                     if time.time() - timestamp > ttl:
-                        # Expired - clean up
+                        # Expired — clean up and return miss
                         self.invalidate(hash_key)
-                        return None
-            except (json.JSONDecodeError, KeyError, OSError):  # pragma: no cover
-                # Corrupted metadata - treat as miss
-                return None
+                        return CACHE_MISS
+            except (json.JSONDecodeError, KeyError, OSError):
+                # Corrupted metadata — treat as miss
+                return CACHE_MISS
 
-        # Load cached data using pickle
+        # Load and deserialize cached data
         try:
-            with self.fs.open(data_path, "rb") as f:
-                return pickle.load(f)  # type: ignore[arg-type]
-        except (OSError, pickle.PickleError):  # pragma: no cover
-            return None
+            data = self._driver.load(data_key)
+            return cloudpickle.loads(data)
+        except (OSError, pickle.UnpicklingError):
+            return CACHE_MISS
 
     def put(self, hash_key: str, value: Any, ttl: int | None = None) -> None:
-        """Store value in cache with optional expiration."""
-        data_path, meta_path = self._get_paths(hash_key)
-        shard_dir = "/".join(data_path.split("/")[:-1])
-        self.fs.mkdirs(shard_dir, exist_ok=True)
+        """
+        Store value in cache with optional TTL expiration.
 
-        # Serialize data using pickle
-        with self.fs.open(data_path, "wb") as f:
-            pickle.dump(value, f)  # type: ignore[arg-type]
+        Args:
+            hash_key: SHA256 hash digest string.
+            value: The value to cache (must be cloudpickle-serializable).
+            ttl: Time-to-live in seconds. None means no expiration.
+        """
+        data_key = self._hash_to_key(hash_key)
+        meta_key = f"{data_key}.meta.json"
 
-        # Write metadata
+        # Serialize and store data
+        data = cloudpickle.dumps(value)
+        self._driver.save(data_key, data)
+
+        # Write metadata sidecar
         metadata = {"timestamp": time.time(), "ttl": ttl}
-        with self.fs.open(meta_path, "w") as f:
-            json.dump(metadata, f)
+        meta_bytes = json.dumps(metadata).encode("utf-8")
+        self._driver.save(meta_key, meta_bytes)
 
     def invalidate(self, hash_key: str) -> None:
-        """Remove specific cache entry."""
-        data_path, meta_path = self._get_paths(hash_key)
+        """
+        Remove a cached entry (data + metadata).
 
-        try:
-            self.fs.rm(data_path)
-        except FileNotFoundError:  # pragma: no cover
-            pass
+        Safe to call on non-existent entries.
 
-        try:
-            self.fs.rm(meta_path)
-        except FileNotFoundError:  # pragma: no cover
-            pass
+        Args:
+            hash_key: SHA256 hash digest string.
+        """
+        data_key = self._hash_to_key(hash_key)
+        meta_key = f"{data_key}.meta.json"
 
-        # Try to remove empty shard directory
-        shard_dir = "/".join(data_path.split("/")[:-1])
-        try:
-            if self.fs.exists(shard_dir):
-                files = self.fs.ls(shard_dir, detail=False)
-                if not files:  # pragma: no cover
-                    self.fs.rmdir(shard_dir)
-        except (FileNotFoundError, OSError):  # pragma: no cover
-            pass
+        self._driver.delete(data_key)
+        self._driver.delete(meta_key)
 
     def clear(self) -> None:
         """Remove all cached entries."""
-        if self.fs.exists(self.base_path):  # pragma: no branch
-            self.fs.rm(self.base_path, recursive=True)
-            self.fs.mkdirs(self.base_path, exist_ok=True)
+        for key in self._driver.list_keys():
+            self._driver.delete(key)
+
+    def _hash_to_key(self, hash_key: str) -> str:
+        """
+        Convert hash digest to git-style sharded storage key.
+
+        Uses first 2 characters as shard directory prefix.
+
+        Args:
+            hash_key: SHA256 hash digest string (e.g., "abcdef1234...").
+
+        Returns:
+            Sharded key path (e.g., "ab/cdef1234...").
+
+        Raises:
+            ValueError: If ``hash_key`` is too short to shard safely or
+                contains non-hex characters.
+        """
+        # Validate that hash_key is long enough so that the suffix is non-empty.
+        if len(hash_key) < 3:
+            raise ValueError(
+                f"hash_key must be at least 3 characters long to form a sharded "
+                f"path, got {len(hash_key)!r}: {hash_key!r}"
+            )
+
+        # Validate that the key looks like a hex digest.
+        lowered = hash_key.lower()
+        if any(c not in "0123456789abcdef" for c in lowered):
+            raise ValueError(f"hash_key must be a hexadecimal digest string, got: {hash_key!r}")
+
+        prefix = hash_key[:2]
+        suffix = hash_key[2:]
+        return f"{prefix}/{suffix}"
 
     def __getstate__(self) -> dict[str, Any]:
-        """
-        Serialize FileCacheStore for pickling (needed for distributed backends).
-
-        Returns only the base_path - filesystem will be reconstructed on unpickling.
-        """
-        return {"base_path": self.base_path}
+        """Serialize for pickling (needed for process backends)."""
+        return {"driver": self._driver}
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """
-        Reconstruct FileCacheStore from pickled state.
-
-        Recreates the filesystem instance from the base_path.
-        """
-        from fsspec import filesystem
-        from fsspec.utils import get_protocol
-
-        self.base_path = state["base_path"]
-        self.fs = filesystem(get_protocol(self.base_path))
+        """Reconstruct from pickled state."""
+        self._driver = state["driver"]

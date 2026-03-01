@@ -1,4 +1,4 @@
-"""Tests for the caching system."""
+"""Tests for the built-in caching system."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from daglite import task
-from daglite.cache.store import FileCacheStore
-from daglite.plugins.builtin.cache import CachePlugin
+from daglite.cache.store import CacheStore
 
 
 @pytest.fixture
@@ -20,13 +19,12 @@ def temp_cache_dir():
 
 
 @pytest.fixture
-def cache_plugin(temp_cache_dir):
-    """Create a CachePlugin with a temporary FileCacheStore."""
-    store = FileCacheStore(temp_cache_dir)
-    return CachePlugin(store=store)
+def cache_store(temp_cache_dir):
+    """Create a CacheStore with a temporary directory."""
+    return CacheStore(temp_cache_dir)
 
 
-def test_cache_hit(cache_plugin):
+def test_cache_hit(cache_store):
     """Test that cached results are returned without re-execution."""
     call_count = 0
 
@@ -37,16 +35,16 @@ def test_cache_hit(cache_plugin):
         return x * 2
 
     # First call - cache miss, should execute
-    result1 = expensive_task(x=5).run(plugins=[cache_plugin])
+    result1 = expensive_task(x=5).run(cache_store=cache_store)
     assert result1 == 10
 
     # Second call - cache hit, should NOT execute
-    result2 = expensive_task(x=5).run(plugins=[cache_plugin])
+    result2 = expensive_task(x=5).run(cache_store=cache_store)
     assert result2 == 10
     assert call_count == 1  # Should still be 1 (cache hit, not executed again)
 
 
-def test_cache_miss_different_inputs(cache_plugin):
+def test_cache_miss_different_inputs(cache_store):
     """Test that different inputs result in cache misses."""
     call_count = 0
 
@@ -57,17 +55,17 @@ def test_cache_miss_different_inputs(cache_plugin):
         return a + b
 
     # First call
-    result1 = add_task(a=1, b=2).run(plugins=[cache_plugin])
+    result1 = add_task(a=1, b=2).run(cache_store=cache_store)
     assert result1 == 3
     assert call_count == 1
 
     # Different inputs - should be cache miss
-    result2 = add_task(a=2, b=3).run(plugins=[cache_plugin])
+    result2 = add_task(a=2, b=3).run(cache_store=cache_store)
     assert result2 == 5
     assert call_count == 2
 
 
-def test_cache_disabled(cache_plugin):
+def test_cache_disabled(cache_store):
     """Test that tasks without cache=True are not cached."""
     call_count = 0
 
@@ -78,17 +76,17 @@ def test_cache_disabled(cache_plugin):
         return x * 3
 
     # First call
-    result1 = regular_task(x=5).run(plugins=[cache_plugin])
+    result1 = regular_task(x=5).run(cache_store=cache_store)
     assert result1 == 15
     assert call_count == 1
 
     # Second call - should execute again (no caching)
-    result2 = regular_task(x=5).run(plugins=[cache_plugin])
+    result2 = regular_task(x=5).run(cache_store=cache_store)
     assert result2 == 15
     assert call_count == 2  # Count should increase
 
 
-def test_cache_different_functions(cache_plugin):
+def test_cache_different_functions(cache_store):
     """Test that different functions don't share cache entries."""
     call_count_1 = 0
     call_count_2 = 0
@@ -106,8 +104,8 @@ def test_cache_different_functions(cache_plugin):
         return x * 2
 
     # Call both with same input
-    result1 = task_a(x=5).run(plugins=[cache_plugin])
-    result2 = task_b(x=5).run(plugins=[cache_plugin])
+    result1 = task_a(x=5).run(cache_store=cache_store)
+    result2 = task_b(x=5).run(cache_store=cache_store)
 
     assert result1 == 10
     assert result2 == 10
@@ -116,7 +114,7 @@ def test_cache_different_functions(cache_plugin):
     assert call_count_2 == 1
 
 
-def test_cache_ttl_not_expired(cache_plugin):
+def test_cache_ttl_not_expired(cache_store):
     """Test that cache entries within TTL are used."""
     call_count = 0
 
@@ -127,17 +125,17 @@ def test_cache_ttl_not_expired(cache_plugin):
         return x * 4
 
     # First call
-    result1 = ttl_task(x=5).run(plugins=[cache_plugin])
+    result1 = ttl_task(x=5).run(cache_store=cache_store)
     assert result1 == 20
     assert call_count == 1
 
     # Second call immediately - should hit cache
-    result2 = ttl_task(x=5).run(plugins=[cache_plugin])
+    result2 = ttl_task(x=5).run(cache_store=cache_store)
     assert result2 == 20
     assert call_count == 1
 
 
-def test_cache_with_complex_types(cache_plugin):
+def test_cache_with_complex_types(cache_store):
     """Test caching with complex data types."""
 
     @task(cache=True)
@@ -147,15 +145,15 @@ def test_cache_with_complex_types(cache_plugin):
     input_data = {"a": 1, "b": 2, "c": 3}
 
     # First call
-    result1 = dict_task(data=input_data).run(plugins=[cache_plugin])
+    result1 = dict_task(data=input_data).run(cache_store=cache_store)
     assert result1 == {"a": 2, "b": 4, "c": 6}
 
     # Second call - should hit cache
-    result2 = dict_task(data=input_data).run(plugins=[cache_plugin])
+    result2 = dict_task(data=input_data).run(cache_store=cache_store)
     assert result2 == {"a": 2, "b": 4, "c": 6}
 
 
-def test_cache_file_structure(cache_plugin, temp_cache_dir):
+def test_cache_file_structure(cache_store, temp_cache_dir):
     """Test that cache files are created with proper structure."""
 
     @task(cache=True)
@@ -163,7 +161,7 @@ def test_cache_file_structure(cache_plugin, temp_cache_dir):
         return x + 1
 
     # Execute task
-    simple_task(x=10).run(plugins=[cache_plugin])
+    simple_task(x=10).run(cache_store=cache_store)
 
     # Check that cache directory contains files
     cache_path = Path(temp_cache_dir)
@@ -180,28 +178,28 @@ def test_cache_file_structure(cache_plugin, temp_cache_dir):
     assert len(cache_files) > 0, "Cache files should be created"
 
 
-def test_cache_no_plugin():
-    """Test that tasks work normally without cache plugin."""
+def test_cache_no_store():
+    """Test that tasks work normally without cache store."""
     call_count = 0
 
     @task(cache=True)
-    def task_without_plugin(x: int) -> int:
+    def task_without_store(x: int) -> int:
         nonlocal call_count
         call_count += 1
         return x * 5
 
     # First call
-    result1 = task_without_plugin(x=5).run()
+    result1 = task_without_store(x=5).run()
     assert result1 == 25
     assert call_count == 1
 
-    # Second call - should execute again (no cache plugin)
-    result2 = task_without_plugin(x=5).run()
+    # Second call - should execute again (no cache store)
+    result2 = task_without_store(x=5).run()
     assert result2 == 25
     assert call_count == 2
 
 
-def test_cache_with_none_result(cache_plugin):
+def test_cache_with_none_result(cache_store):
     """Test that None results can be cached."""
     call_count = 0
 
@@ -212,18 +210,16 @@ def test_cache_with_none_result(cache_plugin):
         # Intentionally returns None
 
     # First call
-    result1 = returns_none(x=5).run(plugins=[cache_plugin])
+    result1 = returns_none(x=5).run(cache_store=cache_store)
     assert result1 is None
 
     # Second call - should hit cache
-    # Note: This is tricky because check_cache returns None on miss too
-    # We need to verify by checking call_count
-    result2 = returns_none(x=5).run(plugins=[cache_plugin])
+    result2 = returns_none(x=5).run(cache_store=cache_store)
     assert result2 is None
     assert call_count == 1  # Verify cache hit - function not called again
 
 
-def test_cache_with_async_task(cache_plugin):
+def test_cache_with_async_task(cache_store):
     """Test that async tasks work with caching."""
     import asyncio
 
@@ -237,12 +233,33 @@ def test_cache_with_async_task(cache_plugin):
 
     async def run():
         # First call - cache miss, should execute
-        result1 = await async_expensive_task(x=7).run_async(plugins=[cache_plugin])
+        result1 = await async_expensive_task(x=7).run_async(cache_store=cache_store)
         assert result1 == 21
 
         # Second call - cache hit, should NOT execute
-        result2 = await async_expensive_task(x=7).run_async(plugins=[cache_plugin])
+        result2 = await async_expensive_task(x=7).run_async(cache_store=cache_store)
         assert result2 == 21
         assert call_count == 1  # Verify cache hit - function not called again
 
     asyncio.run(run())
+
+
+def test_cache_with_string_path(temp_cache_dir):
+    """Test that cache_store accepts a string path."""
+    call_count = 0
+
+    @task(cache=True)
+    def counting_task(x: int) -> int:
+        nonlocal call_count
+        call_count += 1
+        return x + 1
+
+    # First call with string path
+    result1 = counting_task(x=10).run(cache_store=temp_cache_dir)
+    assert result1 == 11
+    assert call_count == 1
+
+    # Second call with same string path - should hit cache
+    result2 = counting_task(x=10).run(cache_store=temp_cache_dir)
+    assert result2 == 11
+    assert call_count == 1

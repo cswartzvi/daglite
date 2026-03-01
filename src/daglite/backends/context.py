@@ -12,15 +12,18 @@ from daglite.datasets.reporters import DatasetReporter
 from daglite.plugins.reporters import EventReporter
 
 if TYPE_CHECKING:
+    from daglite.cache.store import CacheStore
     from daglite.graph.nodes.base import NodeMetadata
 else:
     NodeMetadata = object
+    CacheStore = object
 
 
 # Context variables for worker execution environment
 _plugin_manager: ContextVar[PluginManager | None] = ContextVar("plugin_manager", default=None)
 _event_reporter: ContextVar[EventReporter | None] = ContextVar("event_reporter", default=None)
 _dataset_reporter: ContextVar[DatasetReporter | None] = ContextVar("dataset_reporter", default=None)
+_cache_store: ContextVar["CacheStore | None"] = ContextVar("cache_store", default=None)
 _current_task: ContextVar["NodeMetadata | None"] = ContextVar("current_task", default=None)
 
 
@@ -28,10 +31,12 @@ def set_execution_context(
     plugin_manager: PluginManager,
     event_reporter: EventReporter,
     dataset_reporter: DatasetReporter | None = None,
+    cache_store: CacheStore | None = None,
 ) -> tuple[
     Token[PluginManager | None],
     Token[EventReporter | None],
     Token[DatasetReporter | None],
+    Token[CacheStore | None],
 ]:
     """
     Set execution context for current worker (thread/process/machine).
@@ -43,11 +48,13 @@ def set_execution_context(
         plugin_manager: Plugin manager instance for hook execution.
         event_reporter: Event reporter for worker → coordinator communication.
         dataset_reporter: Optional dataset reporter for persisting task outputs.
+        cache_store: Optional cache store for built-in task result caching.
     """
     return (
         _plugin_manager.set(plugin_manager),
         _event_reporter.set(event_reporter),
         _dataset_reporter.set(dataset_reporter),
+        _cache_store.set(cache_store),
     )
 
 
@@ -90,6 +97,16 @@ def get_dataset_reporter() -> DatasetReporter | None:
     return _dataset_reporter.get()
 
 
+def get_cache_store() -> CacheStore | None:
+    """
+    Get cache store for current execution context.
+
+    Returns:
+        CacheStore instance if set, None otherwise.
+    """
+    return _cache_store.get()
+
+
 def reset_execution_context() -> None:  # pragma: no cover
     """
     Resets the execution context by clearing all context variables.
@@ -100,6 +117,7 @@ def reset_execution_context() -> None:  # pragma: no cover
     _plugin_manager.set(None)
     _event_reporter.set(None)
     _dataset_reporter.set(None)
+    _cache_store.set(None)
     _current_task.set(None)
 
 
