@@ -485,13 +485,8 @@ def _on_retry(
 
 
 def _make_metadata(task: _BaseEagerTask[Any, Any], task_id: UUID) -> Any:
-    """
-    Builds a node metadata object for hook compatibility.
-
-    Imports lazily so this module loads without the graph package. This shim will be removed when
-    hooks are updated to accept typed events.
-    """
-    from daglite.graph.nodes.base import NodeMetadata
+    """Builds a `NodeMetadata` instance for hook compatibility."""
+    from daglite._metadata import NodeMetadata
 
     return NodeMetadata(
         id=task_id,

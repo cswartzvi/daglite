@@ -150,7 +150,6 @@ markers = [
     "integration: marks cross-subsystem integration tests",
     "contracts: marks contract/compatibility tests",
     "typing_contract: marks typing contract tests",
-    "legacy: marks tests that use the futures/graph/engine execution model (pre-eager)",
 ]
 filterwarnings = [
     # Suppress fork() deprecation from multiprocessing when using pytest-cov

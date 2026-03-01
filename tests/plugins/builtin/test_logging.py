@@ -155,7 +155,7 @@ class TestTaskLoggerAdapter:
         """Test process method when task is executing."""
         from uuid import uuid4
 
-        from daglite.graph.nodes.base import NodeMetadata
+        from daglite._metadata import NodeMetadata
 
         base_logger = logging.getLogger("test.adapter")
         adapter = _TaskLoggerAdapter(base_logger, {})
@@ -167,7 +167,6 @@ class TestTaskLoggerAdapter:
             kind="task",
             description="Test",
             backend_name="processes",
-            key="test_task[0]",
         )
 
         with patch("daglite.backends.context.get_current_task", return_value=task_metadata):
@@ -176,7 +175,7 @@ class TestTaskLoggerAdapter:
             assert msg == "test message"
             assert "extra" in kwargs
             assert kwargs["extra"]["daglite_task_name"] == "test_task"
-            assert kwargs["extra"]["daglite_task_key"] == "test_task[0]"
+            assert kwargs["extra"]["daglite_task_key"] == "test_task"
             assert "daglite_task_id" in kwargs["extra"]
 
 
@@ -611,14 +610,14 @@ class TestLifecycleLoggingPlugin:
         """Test that plugin tracks mapped node IDs."""
         from uuid import uuid4
 
-        from daglite.graph.nodes.base import NodeMetadata
+        from daglite._metadata import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         # Simulate before_mapped_node_execute hook
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="map", key="test_key")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="map")
 
         plugin.before_mapped_node_execute(metadata, iteration_count=2)
 
@@ -658,13 +657,13 @@ class TestLifecycleLoggingPluginOnCacheHit:
         from unittest.mock import Mock
         from uuid import uuid4
 
-        from daglite.graph.nodes.base import NodeMetadata
+        from daglite._metadata import NodeMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+        metadata = NodeMetadata(id=node_id, name="test_task", kind="task")
 
         # Call hook - it should log without raising
         plugin.on_cache_hit(

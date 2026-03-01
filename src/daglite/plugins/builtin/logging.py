@@ -17,9 +17,9 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite._metadata import NodeMetadata
 from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
-from daglite.graph.nodes.base import NodeMetadata
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import Event
@@ -355,13 +355,13 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         self._mapped_nodes.add(metadata.id)
         # Coordinator-side hooks need manual task context since get_current_task() returns None.
         # This enables format strings like %(daglite_task_name)s to work in log output.
-        node_key = metadata.key or metadata.name
+        node_key = metadata.name
         backend_name = metadata.backend_name or "inline"
         log = self._logger.debug if metadata.hidden else self._logger.info
         log(
             f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
@@ -371,11 +371,11 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         iteration_count: int,
         duration: float,
     ) -> None:
-        node_key = metadata.key or metadata.name
+        node_key = metadata.name
         log = self._logger.debug if metadata.hidden else self._logger.info
         log(
             f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
@@ -387,7 +387,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "backend_name": metadata.backend_name,
             "hidden": metadata.hidden,
         }
@@ -407,7 +407,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "duration": duration,
             "hidden": metadata.hidden,
         }
@@ -427,7 +427,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "error": str(error),
             "error_type": type(error).__name__,
             "duration": duration,
@@ -448,7 +448,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "attempt": attempt,
             "error": str(last_error),
             "error_type": type(last_error).__name__,
@@ -469,7 +469,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "attempt": attempt,
             "succeeded": succeeded,
         }
@@ -489,10 +489,10 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         result: Any,
         reporter: EventReporter | None,
     ) -> None:
-        node_key = metadata.key or metadata.name
+        node_key = metadata.name
         self._logger.info(
             f"Task '{node_key}' - Using cached result",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
@@ -704,7 +704,7 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         extra = kwargs.get("extra", {})
         task = get_current_task()
         if task:
-            extra.update(_build_task_context(task.id, task.name, task.key))
+            extra.update(_build_task_context(task.id, task.name, task.name))
 
         kwargs["extra"] = extra
         return msg, dict(kwargs)

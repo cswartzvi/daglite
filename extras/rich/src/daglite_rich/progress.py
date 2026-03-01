@@ -8,7 +8,7 @@ from rich.progress import Progress
 from rich.progress import TaskID
 from typing_extensions import override
 
-from daglite.graph.nodes.base import NodeMetadata
+from daglite._metadata import NodeMetadata
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import Event
@@ -135,7 +135,7 @@ class RichProgressPlugin(EventHandlerPlugin, SerializablePlugin):
         metadata: NodeMetadata,
         iteration_count: int,
     ) -> None:
-        description = f"Mapping '{metadata.key or metadata.name}'"
+        description = f"Mapping '{metadata.name}'"
         map_task_id = self._progress.add_task(
             description, total=iteration_count, bar_style=self.secondary_style
         )

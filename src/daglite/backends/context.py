@@ -12,8 +12,8 @@ from daglite.datasets.reporters import DatasetReporter
 from daglite.plugins.reporters import EventReporter
 
 if TYPE_CHECKING:
+    from daglite._metadata import NodeMetadata
     from daglite.cache.store import CacheStore
-    from daglite.graph.nodes.base import NodeMetadata
 else:
     NodeMetadata = object
     CacheStore = object
