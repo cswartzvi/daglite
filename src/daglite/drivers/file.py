@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import posixpath
+import re
+from pathlib import PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
@@ -44,12 +46,13 @@ class FileDriver(Driver):
         from fsspec.utils import get_protocol
 
         self.base_path = base_path.rstrip("/")
-        self._protocol = get_protocol(base_path)
 
         if fs is None:
+            self._protocol = get_protocol(base_path)
             self.fs = filesystem(self._protocol)
         else:
             self.fs = fs
+            self._protocol = fs.protocol
 
         self.fs.mkdirs(self.base_path, exist_ok=True)
 
@@ -65,8 +68,47 @@ class FileDriver(Driver):
         return self._protocol in ("", "file")
 
     def _full_path(self, key: str) -> str:
-        """Get the full path for a key."""
+        """
+        Gets the full path for the specified key.
+
+        Relative keys are resolved under `base_path`. Absolute local paths (POSIX, Windows drive,
+        and UNC) bypass `base_path`. URI keys are only accepted when they use the same protocol as
+        `base_path` (or `file://` for local stores); mixed protocols raise `ValueError`.
+        """
+
+        key_protocol = self._get_uri_protocol(key)
+
+        if key_protocol is not None:
+            if self._is_local_protocol(key_protocol) and self.is_local:
+                return key
+
+            if key_protocol == self._protocol:
+                return key
+
+            raise ValueError(
+                f"Key protocol '{key_protocol}' does not match driver protocol "
+                f"'{self._protocol or 'file'}'"
+            )
+
+        if self._is_absolute_local_path(key):
+            return key
+
         return f"{self.base_path}/{key}"
+
+    @staticmethod
+    def _is_local_protocol(protocol: str) -> bool:
+        return protocol in ("", "file")
+
+    @staticmethod
+    def _get_uri_protocol(key: str) -> str | None:
+        match = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://", key)
+        if match:
+            return match.group(1)
+        return None
+
+    @staticmethod
+    def _is_absolute_local_path(key: str) -> bool:
+        return key.startswith("/") or PureWindowsPath(key).is_absolute()
 
     @override
     def save(self, key: str, data: bytes) -> str:
@@ -144,4 +186,6 @@ class FileDriver(Driver):
         from fsspec.utils import get_protocol
 
         self.base_path = state["base_path"]
-        self.fs = filesystem(get_protocol(self.base_path))
+        self._protocol = get_protocol(self.base_path)
+        self.fs = filesystem(self._protocol)
+        self.fs.mkdirs(self.base_path, exist_ok=True)

@@ -18,6 +18,7 @@ from daglite.graph.builder import NodeBuilder
 from daglite.graph.nodes.iter_node import IterNode
 from daglite.tasks import PartialTask
 from daglite.tasks import Task
+from daglite.tasks import task
 from daglite.utils import build_repr
 
 if TYPE_CHECKING:
@@ -167,9 +168,9 @@ class IterTaskFuture(BaseTaskFuture[R]):
         """
         from daglite.futures.map_future import MapTaskFuture
 
-        unbound_param = get_unbound_params(_IDENTITY_TASK.signature, {}, _IDENTITY_TASK.name)
+        unbound_param = get_unbound_params(_identity.signature, {}, _identity.name)
         identity_map: MapTaskFuture[Any] = MapTaskFuture(
-            task=_IDENTITY_TASK,
+            task=_identity,
             mode="product",
             fixed_kwargs={},
             mapped_kwargs={unbound_param: self},
@@ -180,14 +181,7 @@ class IterTaskFuture(BaseTaskFuture[R]):
         return identity_map.reduce(reduce_task, initial=initial, ordered=ordered)
 
 
+@task
 def _identity(x: Any) -> Any:
-    """Pass-through identity — used internally to bridge iter → reduce for streaming."""
+    """Internal identity task for iter-to-reduce streaming."""
     return x
-
-
-_IDENTITY_TASK: Task[Any, Any] = Task(
-    func=_identity,
-    name="_identity",
-    description="Internal identity task for iter→reduce streaming",
-    backend_name=None,
-)

@@ -418,13 +418,19 @@ class TaskFuture(BaseTaskFuture[R]):
                 f"Please provide an explicit size parameter to split()."
             )
 
-        # Create index accessor task for each position
-        @task
-        def _get_index(tup: tuple[Any, ...], index: int) -> Any:
-            return tup[index]
+        # Bind an indexer task for each index
+        futures = []
+        for i in range(final_size):
+            future = TaskFuture(
+                task=_get_index,
+                kwargs={"items": self, "index": i},
+                backend_name=self.backend_name,
+                task_store=self.task_store,
+                hidden=True,
+            )
+            futures.append(future)
 
-        # Bind the accessor task for each index
-        return tuple(_get_index(tup=self, index=i) for i in range(final_size))
+        return tuple(futures)
 
     @override
     def get_upstream_builders(self) -> list[NodeBuilder]:
@@ -448,4 +454,11 @@ class TaskFuture(BaseTaskFuture[R]):
             cache=self.task.cache,
             cache_ttl=self.task.cache_ttl,
             cache_hash_fn=self.task.cache_hash,
+            hidden=self.hidden,
         )
+
+
+@task
+def _get_index(items: tuple[Any, ...], index: int) -> Any:
+    """Internal indexer task for task splitting."""
+    return items[index]
