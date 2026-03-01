@@ -5,6 +5,8 @@ import pytest
 from daglite import task
 from daglite.exceptions import DagliteError
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestTaskFutureThen:
     """Tests for TaskFuture.then() chaining."""

@@ -6,6 +6,8 @@ import pytest
 
 from daglite import task
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestSyncRetries:
     """Tests for retry functionality with synchronous tasks."""

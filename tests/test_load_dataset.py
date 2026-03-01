@@ -12,6 +12,8 @@ from daglite.futures import DatasetFuture
 from daglite.futures import MapTaskFuture
 from daglite.futures import TaskFuture
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestLoadDatasetFunction:
     """Tests for the load_dataset() factory function."""

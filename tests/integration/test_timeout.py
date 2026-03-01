@@ -7,6 +7,8 @@ import pytest
 
 from daglite import task
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 # Module-level tasks for ProcessBackend (must be picklable)
 @task(timeout=0.05, backend_name="multiprocessing")

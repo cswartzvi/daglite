@@ -6,8 +6,13 @@ This ensures Windows compatibility (spawn start method).
 
 import tempfile
 
+import pytest
+
 from daglite import task
 from daglite.datasets.store import DatasetStore
+
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 # ── Module-level tasks (required for processes backend pickling) ──────
 

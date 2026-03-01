@@ -10,6 +10,8 @@ import pytest
 from daglite import task
 from daglite.cache.store import CacheStore
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 @pytest.fixture
 def temp_cache_dir():

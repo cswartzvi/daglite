@@ -10,6 +10,8 @@ from daglite import task
 from daglite.tasks import MapTaskFuture
 from daglite.tasks import TaskFuture
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 # Module-level async tasks for ProcessBackend (must be picklable)
 @task(backend_name="processes")

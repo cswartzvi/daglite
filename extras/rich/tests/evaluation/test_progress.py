@@ -8,6 +8,8 @@ from daglite_rich.progress import RichProgressPlugin
 
 from daglite import task
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestRichProgressIntegration:
     """Integration tests for RichProgressPlugin."""

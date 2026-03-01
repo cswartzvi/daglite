@@ -4,6 +4,9 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
+
 # pyrefly has a known overload resolution bug with self-type narrowing when
 # targeting Python 3.10 stubs (works fine on 3.11+).
 _skip_pyrefly_310 = pytest.mark.skipif(

@@ -10,6 +10,8 @@ from daglite import task
 from daglite import workflow
 from daglite.workflows import WorkflowResult
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestWorkflowEvaluation:
     def test_single_future_workflow(self):

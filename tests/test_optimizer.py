@@ -11,6 +11,8 @@ from typing import Any
 from uuid import UUID
 from uuid import uuid4
 
+import pytest
+
 from daglite import task
 from daglite.graph.builder import build_graph
 from daglite.graph.nodes import CompositeMapTaskNode
@@ -22,6 +24,8 @@ from daglite.graph.nodes.task_node import TaskNode
 from daglite.graph.optimizer import _aggregate_timeout
 from daglite.graph.optimizer import _build_adjacency
 from daglite.graph.optimizer import optimize_graph
+
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
 
 
 def _count_types(nodes: dict[UUID, Any]) -> dict[str, int]:

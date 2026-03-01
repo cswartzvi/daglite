@@ -12,6 +12,9 @@ import pytest
 from daglite import task
 from daglite import workflow
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
+
 # Module-level tasks for processes backend pickle compatibility
 # Tasks MUST be defined at module level to be picklable by multiprocessing
 

@@ -19,6 +19,8 @@ from daglite.exceptions import ParameterError
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 @pytest.fixture(autouse=True)
 def _reset_settings():

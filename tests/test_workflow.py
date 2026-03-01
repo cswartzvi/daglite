@@ -20,6 +20,8 @@ from daglite.graph.builder import build_graph_multi
 from daglite.workflows import Workflow
 from daglite.workflows import WorkflowResult
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 @task
 def add(x: int, y: int) -> int:

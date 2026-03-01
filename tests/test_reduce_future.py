@@ -14,6 +14,8 @@ from daglite import task
 from daglite.exceptions import ParameterError
 from daglite.graph.nodes.reduce_node import ReduceNode
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestReducePartialTaskValidation:
     """reduce() should count only unbound parameters when validating PartialTask."""

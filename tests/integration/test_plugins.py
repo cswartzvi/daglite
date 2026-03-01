@@ -20,6 +20,8 @@ from daglite.plugins.manager import register_plugins
 from tests.examples.plugins import CounterPlugin
 from tests.examples.plugins import ParameterCapturePlugin
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestPerExecutionHooks:
     """

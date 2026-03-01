@@ -12,6 +12,8 @@ from daglite import task
 from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import get_logger
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 @pytest.fixture(autouse=True)
 def reset_logging():

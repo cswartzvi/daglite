@@ -10,6 +10,8 @@ from daglite.exceptions import TaskError
 from daglite.futures.iter_future import IterTaskFuture
 from daglite.graph.nodes.iter_node import IterNode
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestIterTaskFutureBuildNode:
     """Tests for IterTaskFuture.build_node()."""

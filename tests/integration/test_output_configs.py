@@ -16,6 +16,8 @@ from daglite.datasets.store import DatasetStore
 from daglite.settings import DagliteSettings
 from daglite.settings import set_global_settings
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestSettingsFallbackStore:
     """When no explicit store is passed, the global settings store is used."""

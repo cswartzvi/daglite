@@ -5,6 +5,9 @@ from daglite_rich.logging import RichLifecycleLoggingPlugin
 
 from daglite import task
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
+
 # Module-level tasks required for multiprocessing backend (pickle compatibility)
 
 

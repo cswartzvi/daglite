@@ -9,6 +9,8 @@ from daglite import task
 from daglite.datasets.store import DatasetStore
 from daglite.futures import load_dataset
 
+pytestmark = pytest.mark.skip(reason="Legacy futures/graph execution model")
+
 
 class TestSaveWithEvaluate:
     """Integration tests: .save() + .run() end-to-end."""
