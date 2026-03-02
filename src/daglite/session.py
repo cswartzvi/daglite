@@ -3,7 +3,7 @@ Managed execution contexts for eager tasks.
 
 The `session` context manager sets up backend, cache, plugin, and event
 infrastructure so that eager tasks automatically participate in caching,
-hook dispatch, and event reporting. `Workflow.run()` uses `session`
+hook dispatch, and event reporting. Workflows use `session`
 internally; notebooks and scripts can use it directly.
 
 Three tiers of usage::
@@ -219,7 +219,7 @@ def _build_context(
         event_reporter=event_reporter,
         event_processor=event_processor,
         plugin_manager=plugin_manager,
-        backend_manager=None,  # created lazily in Phase 3 (parallel_map)
+        backend_manager=None,
         settings=resolved_settings,
     )
 
