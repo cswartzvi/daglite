@@ -139,44 +139,15 @@ class TestGetLoggerUnit:
 class TestTaskLoggerAdapter:
     """Unit tests for _TaskLoggerAdapter."""
 
-    def test_process_without_task_context(self):
-        """Test process method when no task is executing."""
+    def test_process_injects_extra(self):
+        """Test process always returns an extra dict."""
         base_logger = logging.getLogger("test.adapter")
         adapter = _TaskLoggerAdapter(base_logger, {})
 
-        with patch("daglite.backends.context.get_current_task", return_value=None):
-            msg, kwargs = adapter.process("test message", {})
+        msg, kwargs = adapter.process("test message", {})
 
-            assert msg == "test message"
-            assert "extra" in kwargs
-            assert "daglite_task_id" not in kwargs["extra"]
-
-    def test_process_with_task_context(self):
-        """Test process method when task is executing."""
-        from uuid import uuid4
-
-        from daglite._metadata import NodeMetadata
-
-        base_logger = logging.getLogger("test.adapter")
-        adapter = _TaskLoggerAdapter(base_logger, {})
-
-        # Mock task metadata
-        task_metadata = NodeMetadata(
-            id=uuid4(),
-            name="test_task",
-            kind="task",
-            description="Test",
-            backend_name="processes",
-        )
-
-        with patch("daglite.backends.context.get_current_task", return_value=task_metadata):
-            msg, kwargs = adapter.process("test message", {})
-
-            assert msg == "test message"
-            assert "extra" in kwargs
-            assert kwargs["extra"]["daglite_task_name"] == "test_task"
-            assert kwargs["extra"]["daglite_task_key"] == "test_task"
-            assert "daglite_task_id" in kwargs["extra"]
+        assert msg == "test message"
+        assert "extra" in kwargs
 
 
 class TestReporterHandler:

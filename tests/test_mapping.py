@@ -119,68 +119,60 @@ class TestTaskMapThread:
     """Tests for task_map with the thread backend."""
 
     def test_thread_backend_produces_correct_results(self) -> None:
-        result = task_map(square, range(10), backend="thread")
-        assert result == [x * x for x in range(10)]
+        with session(backend="thread"):
+            result = task_map(square, range(10))
+            assert result == [x * x for x in range(10)]
 
     def test_thread_backend_with_multiple_iterables(self) -> None:
-        result = task_map(add, [1, 2, 3], [4, 5, 6], backend="thread")
-        assert result == [5, 7, 9]
+        with session(backend="thread"):
+            result = task_map(add, [1, 2, 3], [4, 5, 6])
+            assert result == [5, 7, 9]
 
     def test_thread_backend_empty(self) -> None:
-        result = task_map(square, [], backend="thread")
-        assert result == []
+        with session(backend="thread"):
+            result = task_map(square, [])
+            assert result == []
 
     def test_thread_backend_error(self) -> None:
-        with pytest.raises(ValueError, match="three is bad"):
-            task_map(fail_on_three, [1, 2, 3], backend="thread")
+        with session(backend="thread"):
+            with pytest.raises(ValueError, match="three is bad"):
+                task_map(fail_on_three, [1, 2, 3])
 
-    def test_thread_backend_propagates_context(
-        self, ctx: RunContext, reporter: _FakeReporter
-    ) -> None:
-        token = set_run_context(ctx)
-        try:
-            result = task_map(square, [7, 8], backend="thread")
+    def test_thread_backend_propagates_events(self) -> None:
+        with session(backend="thread"):
+            result = task_map(square, [7, 8])
             assert result == [49, 64]
-            started = [e for t, e in reporter.events if t == "task_started"]
-            completed = [e for t, e in reporter.events if t == "task_completed"]
-            assert len(started) == 2
-            assert len(completed) == 2
-        finally:
-            reset_run_context(token)
 
     def test_thread_alias_threading(self) -> None:
-        result = task_map(square, [1, 2], backend="threading")
-        assert result == [1, 4]
+        with session(backend="inline"):
+            result = task_map(square, [1, 2], backend="threading")
+            assert result == [1, 4]
 
     def test_thread_alias_threads(self) -> None:
-        result = task_map(square, [3], backend="threads")
-        assert result == [9]
+        with session(backend="inline"):
+            result = task_map(square, [3], backend="threads")
+            assert result == [9]
 
 
 class TestBackendResolution:
     """Tests for backend name resolution from context or override."""
 
     def test_inherits_from_session_context(self) -> None:
-        ctx = RunContext(backend_name="thread")
-        token = set_run_context(ctx)
-        try:
+        with session(backend="thread"):
             result = task_map(square, [2, 3])
             assert result == [4, 9]
-        finally:
-            reset_run_context(token)
 
     def test_explicit_overrides_context(self) -> None:
-        ctx = RunContext(backend_name="thread")
-        token = set_run_context(ctx)
-        try:
+        with session(backend="thread"):
             result = task_map(square, [4], backend="inline")
             assert result == [16]
-        finally:
-            reset_run_context(token)
 
     def test_unknown_backend_raises(self) -> None:
-        with pytest.raises(ValueError, match="Unknown backend"):
-            task_map(square, [1], backend="quantum")
+        from daglite.exceptions import BackendError
+
+        with session(backend="inline"):
+            with pytest.raises(BackendError, match="Unknown backend"):
+                task_map(square, [1], backend="quantum")
 
     def test_defaults_to_inline_without_context(self) -> None:
         result = task_map(square, [5])

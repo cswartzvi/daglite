@@ -1,94 +1,56 @@
+"""Abstract base class for task execution backends."""
+
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Any, Awaitable
-
-from pluggy import PluginManager
-from typing_extensions import final
-
-from daglite._typing import Submission
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from daglite.cache.store import CacheStore
-    from daglite.datasets.processor import DatasetProcessor
-    from daglite.datasets.reporters import DatasetReporter
-    from daglite.plugins.processor import EventProcessor
-    from daglite.plugins.reporters import EventReporter
-else:
-    CacheStore = object
-    DatasetProcessor = object
-    DatasetReporter = object
-    EventProcessor = object
-    EventReporter = object
+    from daglite.session import RunContext
+    from daglite.settings import DagliteSettings
 
 
 class Backend(abc.ABC):
-    """Abstract base class for task execution backends."""
+    """
+    Abstract base class for task execution backends.
 
-    plugin_manager: PluginManager
-    event_processor: EventProcessor
-    event_reporter: EventReporter
-    dataset_processor: DatasetProcessor
-    dataset_reporter: DatasetReporter | None
-    cache_store: CacheStore | None
+    A backend defines *how* a batch of task calls is executed — sequentially, across threads, across
+    processes, or on a remote cluster. Custom backends can be registered with the `BackendManager`
+    to extend daglite.
+
+    Lifecycle:
+
+    1. `start(ctx, settings)` — called once when the backend is first requested inside a session.
+    2. `map(task, items)` — called zero or more times to fan out work.
+    3. `stop()` — called when the session exits.
+    """
+
     _started: bool = False
 
-    @abc.abstractmethod
-    def _get_event_reporter(self) -> EventReporter:
-        """Gets the event reporter for this backend."""
-        raise NotImplementedError()
+    # region Lifecycle
 
-    @abc.abstractmethod
-    def _get_dataset_reporter(self) -> DatasetReporter | None:
-        """Gets the dataset reporter for this backend."""
-        return None
-
-    @final
-    def start(
-        self,
-        plugin_manager: PluginManager,
-        event_processor: EventProcessor,
-        dataset_processor: DatasetProcessor,
-        cache_store: CacheStore | None = None,
-    ) -> None:
+    def start(self, ctx: RunContext, settings: DagliteSettings) -> None:
         """
-        Start any global backend resources.
-
-        Subclasses should NOT override this method. Instead, override ``_start()``.
+        Initialise backend resources (thread pools, process pools, queues, etc.).
 
         Args:
-            plugin_manager: Plugin manager for hook execution
-            event_processor: Event processor for event handling
-            dataset_processor: Dataset processor for persisting outputs
-            cache_store: Optional cache store for built-in task result caching
+            ctx: The active `RunContext` carrying event/plugin infrastructure.
+            settings: Global `DagliteSettings` snapshot.
         """
         if self._started:  # pragma: no cover
             raise RuntimeError("Backend is already started.")
 
-        self.plugin_manager = plugin_manager
-        self.event_processor = event_processor
-        self.dataset_processor = dataset_processor
-        self.cache_store = cache_store
-        self.event_reporter = self._get_event_reporter()
-        self.dataset_reporter = self._get_dataset_reporter()
+        self._ctx = ctx
+        self._settings = settings
         self._start()
         self._started = True
 
     def _start(self) -> None:
-        """
-        Set up any per-execution-context resources.
+        """Subclass hook for creating per-backend resources."""
 
-        Subclasses may override this to set up context-specific resources.
-        """
-        pass  # pragma: no cover
-
-    @final
     def stop(self) -> None:
-        """
-        Clean up any global backend resources.
-
-        Subclasses should NOT override this method. Instead, override ``_stop()``.
-        """
+        """Releases backend resources."""
         if not self._started:  # pragma: no cover
             return
 
@@ -96,23 +58,27 @@ class Backend(abc.ABC):
         self._started = False
 
     def _stop(self) -> None:
-        """
-        Clean up any per-execution-context resources.
+        """Subclass hook for cleaning up per-backend resources."""
 
-        Subclasses may override this to clean up context-specific resources.
-        """
-        pass  # pragma: no cover
+    # region Execution
 
     @abc.abstractmethod
-    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
+    def map(
+        self,
+        task: Callable[..., Any],
+        items: list[tuple[Any, ...]],
+    ) -> list[Any]:
         """
-        Submit a callable for execution in the backend.
+        Execute *task* once per entry in *items* and return an ordered list of results.
+
+        Each element of *items* is a tuple of positional arguments unpacked into the
+        task call: `task(*args)`.
 
         Args:
-            func: A parameterless async coroutine to execute.
-            timeout: Maximum execution time in seconds. If None, no timeout is enforced.
+            task: A `@task`-decorated callable.
+            items: Zipped argument tuples.
 
         Returns:
-            An awaitable that resolves to the result of the callable.
+            Ordered list of results, one per item.
         """
-        raise NotImplementedError()
+        ...

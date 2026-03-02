@@ -18,7 +18,6 @@ from uuid import UUID
 from typing_extensions import override
 
 from daglite._metadata import NodeMetadata
-from daglite.backends.context import get_current_task
 from daglite.backends.context import get_event_reporter
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
@@ -81,9 +80,6 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
-    if get_current_task() is not None:
-        name = DEFAULT_LOGGER_NAME_TASKS  # Called within a worker task context
-
     if name is None:
         name = DEFAULT_LOGGER_NAME_COORD
 
@@ -353,8 +349,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         iteration_count: int,
     ) -> None:
         self._mapped_nodes.add(metadata.id)
-        # Coordinator-side hooks need manual task context since get_current_task() returns None.
-        # This enables format strings like %(daglite_task_name)s to work in log output.
+        # Coordinator-side hooks inject task context manually so that format strings
+        # like %(daglite_task_name)s work in log output.
         node_key = metadata.name
         backend_name = metadata.backend_name or "inline"
         log = self._logger.debug if metadata.hidden else self._logger.info
@@ -699,13 +695,7 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         Returns:
             Tuple of (message, modified kwargs with task context)
         """
-        from daglite.backends.context import get_current_task
-
         extra = kwargs.get("extra", {})
-        task = get_current_task()
-        if task:
-            extra.update(_build_task_context(task.id, task.name, task.name))
-
         kwargs["extra"] = extra
         return msg, dict(kwargs)
 

@@ -198,6 +198,7 @@ def _build_context(
     Mirrors the setup sequence in the existing engine but without the graph
     and dataset machinery.
     """
+    from daglite.backends.manager import BackendManager
     from daglite.plugins.reporters import DirectEventReporter
     from daglite.settings import get_global_settings
 
@@ -213,7 +214,7 @@ def _build_context(
     # Event reporter (direct / in-process)
     event_reporter = DirectEventReporter(callback=event_processor.dispatch)
 
-    return RunContext(
+    ctx = RunContext(
         backend_name=backend_name,
         cache_store=cache_store,
         event_reporter=event_reporter,
@@ -222,6 +223,11 @@ def _build_context(
         backend_manager=None,
         settings=resolved_settings,
     )
+
+    # Backend manager — created after RunContext so backends can read ctx
+    ctx.backend_manager = BackendManager(ctx, resolved_settings)
+
+    return ctx
 
 
 def _resolve_cache(cache: bool | str | Any | None, settings: Any) -> Any | None:
@@ -277,20 +283,18 @@ def _start_processors(ctx: RunContext) -> None:
     if ctx.event_processor is not None:
         ctx.event_processor.start()
 
-    if ctx.backend_manager is not None:
-        ctx.backend_manager.start()
-
 
 def _stop_processors(ctx: RunContext) -> None:
-    """Stops background processors, flushing pending work."""
-    if ctx.event_processor is not None:
-        try:
-            ctx.event_processor.stop()
-        except Exception:
-            logger.exception("Failed to stop event processor")
-
+    """Stops background processors and backends, flushing pending work."""
+    # Stop backends first — they may have queues that feed the event processor.
     if ctx.backend_manager is not None:
         try:
             ctx.backend_manager.stop()
         except Exception:
             logger.exception("Failed to stop backend manager")
+
+    if ctx.event_processor is not None:
+        try:
+            ctx.event_processor.stop()
+        except Exception:
+            logger.exception("Failed to stop event processor")
