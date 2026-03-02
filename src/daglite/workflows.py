@@ -7,15 +7,40 @@ import inspect
 import sys
 import typing
 from collections.abc import Callable
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic, ParamSpec, overload
+from typing import Any, Generic, ParamSpec, Protocol, TypeVar, overload
 
 P = ParamSpec("P")
+R = TypeVar("R")
+
+
+# region Decorator
+
+
+class _WorkflowDecorator(Protocol):
+    """Return type for keyword-args form of ``workflow()``."""
+
+    @overload
+    def __call__(  # type: ignore[overload-overlap]
+        self, func: Callable[P, Coroutine[Any, Any, R]], /
+    ) -> AsyncWorkflow[P, R]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, R], /) -> SyncWorkflow[P, R]: ...
+
+    def __call__(self, func: Any, /) -> Any: ...
 
 
 @overload
-def workflow(func: Callable[P, Any]) -> Workflow[P]: ...
+def workflow(  # type: ignore[overload-overlap]
+    func: Callable[P, Coroutine[Any, Any, R]], /
+) -> AsyncWorkflow[P, R]: ...
+
+
+@overload
+def workflow(func: Callable[P, R], /) -> SyncWorkflow[P, R]: ...
 
 
 @overload
@@ -23,24 +48,24 @@ def workflow(
     *,
     name: str | None = None,
     description: str | None = None,
-) -> Callable[[Callable[P, Any]], Workflow[P]]: ...
+) -> _WorkflowDecorator: ...
 
 
 def workflow(
-    func: Callable[P, Any] | None = None,
+    func: Any = None,
     *,
     name: str | None = None,
     description: str | None = None,
-) -> Workflow[P] | Callable[[Callable[P, Any]], Workflow[P]]:
+) -> Any:
     """
-    Decorator to convert a Python function into a daglite `Workflow`.
+    Decorator to convert a Python function into a daglite workflow.
 
     Workflows are **named entry points** that wrap a function calling `@task`-decorated functions.
     Tasks execute eagerly inside the workflow — they run immediately and return real values.
 
-    - Call the workflow to invoke the underlying function directly (no session).
-    - Use `.run()` / `.run_async()` to wrap the call in a managed `session` that provides backend,
-      cache, plugin, and event infrastructure.
+    Calling a workflow sets up a managed session that provides backend, cache, plugin, and event
+    infrastructure. Sync workflows return the result directly; async workflows return a coroutine
+    that the caller must ``await``.
 
     Args:
         func: The function to wrap. When used without parentheses (`@workflow`), this is
@@ -49,8 +74,8 @@ def workflow(
         description: Workflow description.  Defaults to the function's docstring.
 
     Returns:
-        Either a `Workflow` (when used as `@workflow`) or a decorator function (when used as
-        `@workflow()`).
+        A `SyncWorkflow` or `AsyncWorkflow` (when used as `@workflow`) or a decorator function
+        (when used as `@workflow()`).
 
     Examples:
         >>> from daglite import task, workflow
@@ -65,7 +90,7 @@ def workflow(
         >>> @workflow
         ... def my_workflow(x: int, y: int):
         ...     return add(x=x, y=y)
-        >>> my_workflow.run(2, 3)
+        >>> my_workflow(2, 3)
         5
 
         Multi-step workflow
@@ -73,21 +98,20 @@ def workflow(
         ... def chain_workflow(x: int, y: int):
         ...     a = add(x=x, y=y)
         ...     return mul(x=a, y=10)
-        >>> chain_workflow.run(2, 3)
+        >>> chain_workflow(2, 3)
         50
     """
 
-    def decorator(fn: Callable[P, Any]) -> Workflow[P]:
+    def decorator(fn: Callable[..., Any]) -> SyncWorkflow[Any, Any] | AsyncWorkflow[Any, Any]:
         if inspect.isclass(fn) or not callable(fn):
             raise TypeError("`@workflow` can only be applied to callable functions.")
 
-        return Workflow(
-            func=fn,
-            name=name if name is not None else getattr(fn, "__name__", "unnamed_workflow"),
-            description=description
-            if description is not None
-            else getattr(fn, "__doc__", "") or "",
-        )
+        _name = name if name is not None else getattr(fn, "__name__", "unnamed_workflow")
+        _description = description if description is not None else getattr(fn, "__doc__", "") or ""
+
+        if inspect.iscoroutinefunction(fn):
+            return AsyncWorkflow(func=fn, name=_name, description=_description)
+        return SyncWorkflow(func=fn, name=_name, description=_description)
 
     if func is not None:
         return decorator(func)
@@ -95,7 +119,10 @@ def workflow(
     return decorator
 
 
-def load_workflow(workflow_path: str) -> Workflow[Any]:
+# region Load
+
+
+def load_workflow(workflow_path: str) -> Workflow:
     """
     Load a workflow from a module path.
 
@@ -130,7 +157,7 @@ def load_workflow(workflow_path: str) -> Workflow[Any]:
 
     workflow_obj = getattr(module, attr_name)
 
-    if not isinstance(workflow_obj, Workflow):
+    if not isinstance(workflow_obj, (SyncWorkflow, AsyncWorkflow)):
         raise TypeError(
             f"'{workflow_path}' is not a Workflow. Did you forget to use the @workflow decorator?"
         )
@@ -138,20 +165,18 @@ def load_workflow(workflow_path: str) -> Workflow[Any]:
     return workflow_obj
 
 
+# region Workflow types
+
+
 @dataclass(frozen=True)
-class Workflow(Generic[P]):
+class _BaseWorkflow(Generic[P, R]):
     """
+    Shared base for sync and async workflow types.
+
     Workflows are **named entry points** for running a multi-task function
     with full session infrastructure (backend, cache, plugins, events).
 
-    Users should **not** directly instantiate this class — use the `@workflow` decorator instead.
-
-    A workflow wraps a function that calls `@task`-decorated functions. Tasks execute eagerly
-    (returning real values, not futures). Workflows can be invoked two ways:
-
-    1. **Call** — `workflow(...)` runs the function directly, no session setup.
-    2. **Run** — `workflow.run(...)` / `workflow.run_async(...)` wraps the function
-       in a `session`, providing backend, cache, plugin, and event infrastructure.
+    Users should **not** directly instantiate workflow classes — use the `@workflow` decorator.
     """
 
     func: Callable[P, Any]
@@ -162,54 +187,6 @@ class Workflow(Generic[P]):
 
     description: str
     """Description of the workflow."""
-
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
-        """Call the underlying workflow function directly — no session setup."""
-        return self.func(*args, **kwargs)
-
-    def run(self, *args: P.args, **kwargs: P.kwargs) -> Any:
-        """
-        Run the workflow inside a managed session.
-
-        Sets up backend, cache, plugin, and event infrastructure, calls the
-        workflow function, tears everything down, and returns whatever the
-        function returns.
-
-        Args:
-            *args: Positional arguments forwarded to the workflow function.
-            **kwargs: Keyword arguments forwarded to the workflow function.
-
-        Returns:
-            The return value of the workflow function.
-        """
-        from daglite.session import session
-
-        with session():
-            return self.func(*args, **kwargs)
-
-    async def run_async(self, *args: P.args, **kwargs: P.kwargs) -> Any:
-        """
-        Run the workflow inside a managed async session.
-
-        Async equivalent of `run()`. Sets up the same infrastructure and
-        calls the workflow function with ``await`` if it is a coroutine.
-
-        Args:
-            *args: Positional arguments forwarded to the workflow function.
-            **kwargs: Keyword arguments forwarded to the workflow function.
-
-        Returns:
-            The return value of the workflow function.
-        """
-        import inspect as _inspect
-
-        from daglite.session import async_session
-
-        async with async_session():
-            result = self.func(*args, **kwargs)
-            if _inspect.isawaitable(result):
-                return await result
-            return result
 
     @property
     def signature(self) -> inspect.Signature:
@@ -247,3 +224,44 @@ class Workflow(Generic[P]):
             True if all parameters are typed, False otherwise.
         """
         return all(t is not None for t in self.get_typed_params().values())
+
+
+@dataclass(frozen=True)
+class SyncWorkflow(_BaseWorkflow[P, R]):
+    """
+    Workflow wrapping a synchronous function.
+
+    Calling an instance sets up a `session`, executes the function, and returns its result.
+    """
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:  # noqa: D102
+        from daglite.session import session
+
+        with session():
+            return self.func(*args, **kwargs)
+
+
+@dataclass(frozen=True)
+class AsyncWorkflow(_BaseWorkflow[P, R]):
+    """
+    Workflow wrapping an async coroutine function.
+
+    Calling an instance returns a coroutine that sets up an `async_session`, executes the function,
+    and returns its result.
+    """
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, R]:  # noqa: D102
+        return self._run(*args, **kwargs)
+
+    async def _run(self, *args: Any, **kwargs: Any) -> R:
+        from daglite.session import async_session
+
+        async with async_session():
+            result = self.func(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result
+
+
+Workflow = SyncWorkflow[..., Any] | AsyncWorkflow[..., Any]
+"""Union of sync and async workflow types."""
