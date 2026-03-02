@@ -12,7 +12,7 @@ from daglite.plugins.manager import has_plugin
 from daglite.plugins.manager import register_plugins
 
 if TYPE_CHECKING:
-    from daglite.workflows import Workflow
+    from daglite.workflows import _BaseWorkflow as Workflow
 
 
 def setup_cli_plugins() -> None:
@@ -78,7 +78,9 @@ def parse_param_value(value: str, param_type: type | None) -> Any:
             return value
 
 
-def parse_workflow_params(workflow_obj: "Workflow[Any]", param: tuple[str, ...]) -> dict[str, Any]:
+def parse_workflow_params(
+    workflow_obj: "Workflow[Any, Any]", param: tuple[str, ...]
+) -> dict[str, Any]:
     """
     Parse and validate `--param` strings against a workflow's signature.
 
