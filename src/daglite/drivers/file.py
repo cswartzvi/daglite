@@ -121,7 +121,7 @@ class FileDriver(Driver):
 
         # Write data
         with self.fs.open(path, "wb") as f:
-            f.write(data)  # type: ignore
+            f.write(data)  # pyright: ignore
 
         return path
 
