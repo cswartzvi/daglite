@@ -27,7 +27,7 @@ from collections.abc import Callable
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Generic, ParamSpec, TypeVar, overload
+from typing import Any, Generic, ParamSpec, Protocol, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
 
@@ -122,7 +122,7 @@ class SyncEagerTask(_BaseEagerTask[P, R]):
             cached = ctx.cache_store.get(cache_key)
             if cached is not CACHE_MISS:
                 _on_cache_hit(self, task_id, bound, cached, ctx)
-                return cached  # type: ignore[return-value]
+                return cached
 
         _pre_call(self, task_id, args, kwargs, ctx)
         t0 = time.perf_counter()
@@ -148,7 +148,8 @@ class SyncEagerTask(_BaseEagerTask[P, R]):
                 _on_error(self, task_id, exc, elapsed, ctx)
                 raise
 
-        raise last_error  # type: ignore[misc]
+        assert last_error is not None  # retries >= 0 guarantees at least one iteration
+        raise last_error
 
 
 @dataclass(frozen=True)
@@ -175,7 +176,7 @@ class AsyncEagerTask(_BaseEagerTask[P, R]):
             cached = ctx.cache_store.get(cache_key)
             if cached is not CACHE_MISS:
                 _on_cache_hit(self, task_id, bound, cached, ctx)
-                return cached  # type: ignore[return-value]
+                return cached
 
         _pre_call(self, task_id, args, kwargs, ctx)
         t0 = time.perf_counter()
@@ -183,7 +184,7 @@ class AsyncEagerTask(_BaseEagerTask[P, R]):
         last_error: BaseException | None = None
         for attempt in range(1 + self.retries):
             try:
-                result = await self.func(*args, **kwargs)  # type: ignore[misc]
+                result = await self.func(*args, **kwargs)
                 elapsed = time.perf_counter() - t0
 
                 if cache_key is not None and ctx and ctx.cache_store is not None:
@@ -201,7 +202,8 @@ class AsyncEagerTask(_BaseEagerTask[P, R]):
                 _on_error(self, task_id, exc, elapsed, ctx)
                 raise
 
-        raise last_error  # type: ignore[misc]
+        assert last_error is not None  # retries >= 0 guarantees at least one iteration
+        raise last_error
 
 
 EagerTask = SyncEagerTask | AsyncEagerTask
@@ -209,6 +211,20 @@ EagerTask = SyncEagerTask | AsyncEagerTask
 
 
 # region Task decorator
+
+
+class _EagerTaskDecorator(Protocol):
+    """Return type for keyword-args form of ``eager_task()``."""
+
+    @overload
+    def __call__(  # type: ignore[overload-overlap]
+        self, func: Callable[P, Coroutine[Any, Any, R]], /
+    ) -> AsyncEagerTask[P, R]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, R], /) -> SyncEagerTask[P, R]: ...
+
+    def __call__(self, func: Any, /) -> Any: ...
 
 
 @overload
@@ -232,7 +248,7 @@ def eager_task(
     cache: bool = False,
     cache_ttl: int | None = None,
     cache_hash: Callable[..., str] | None = None,
-) -> Callable[[Callable[P, R]], SyncEagerTask[P, R] | AsyncEagerTask[P, R]]: ...
+) -> _EagerTaskDecorator: ...
 
 
 def eager_task(  # noqa: D417
