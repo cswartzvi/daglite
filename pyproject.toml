@@ -120,9 +120,6 @@ exclude = [
     "**/.pytest_cache",
     "**/.mypy_cache",
     "**/.ruff_cache",
-    "./tests/contracts/typing/assert_type_mypy.py",
-    "./tests/contracts/typing/assert_type_pyrefly.py",
-    "./tests/contracts/typing/assert_type_ty.py",
 
 ]
 typeCheckingMode = "standard"
