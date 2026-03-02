@@ -1,7 +1,7 @@
 """
 Integration tests for the eager execution model.
 
-Exercises the full stack — `@task`, `@workflow`, `session`, `parallel_map`,
+Exercises the full stack — `@task`, `@workflow`, `session`, `task_map`,
 caching, retries, and async equivalents — using the public API only.
 """
 
@@ -12,11 +12,11 @@ import tempfile
 
 import pytest
 
-from daglite import async_map
 from daglite import async_session
-from daglite import parallel_map
+from daglite import async_task_map
 from daglite import session
 from daglite import task
+from daglite import task_map
 from daglite import workflow
 from daglite.cache.store import CacheStore
 
@@ -61,15 +61,15 @@ def cache_store(temp_cache_dir: str) -> CacheStore:
 # region Workflow integration
 
 
-class TestWorkflowRun:
-    """``@workflow`` + ``.run()`` exercise the full eager path."""
+class TestWorkflowCall:
+    """``@workflow`` + direct ``__call__`` exercise the full eager path."""
 
     def test_single_task_workflow(self) -> None:
         @workflow
         def wf(x: int, y: int) -> int:
             return add(x=x, y=y)
 
-        assert wf.run(2, 3) == 5
+        assert wf(2, 3) == 5
 
     def test_chained_tasks_workflow(self) -> None:
         @workflow
@@ -77,7 +77,7 @@ class TestWorkflowRun:
             s = add(x=x, y=y)
             return double(x=s)
 
-        assert wf.run(2, 3) == 10
+        assert wf(2, 3) == 10
 
     def test_multi_step_workflow(self) -> None:
         @workflow
@@ -86,7 +86,7 @@ class TestWorkflowRun:
             d = double(x=s)
             return add(x=d, y=c)
 
-        assert wf.run(1, 2, 10) == 16
+        assert wf(1, 2, 10) == 16
 
     def test_workflow_returns_non_task_value(self) -> None:
         """Workflows may contain plain Python alongside @task calls."""
@@ -97,7 +97,7 @@ class TestWorkflowRun:
             b = double(x=a)
             return [a, b]
 
-        assert wf.run(4) == [5, 10]
+        assert wf(4) == [5, 10]
 
     def test_workflow_with_custom_name(self) -> None:
         @workflow(name="custom_name", description="A test workflow")
@@ -106,27 +106,18 @@ class TestWorkflowRun:
 
         assert wf.name == "custom_name"
         assert wf.description == "A test workflow"
-        assert wf.run(7) == 14
-
-    def test_workflow_call_bypasses_session(self) -> None:
-        """Direct ``wf(...)`` works without a session — bare eager execution."""
-
-        @workflow
-        def wf(x: int) -> int:
-            return add(x=x, y=1)
-
-        assert wf(10) == 11
+        assert wf(7) == 14
 
 
-class TestWorkflowRunAsync:
-    """``run_async`` wraps async tasks in an ``async_session``."""
+class TestAsyncWorkflowCall:
+    """Async ``@workflow`` + ``asyncio.run`` exercise the async eager path."""
 
     def test_single_async_task(self) -> None:
         @workflow
         async def wf(x: int, y: int) -> int:
             return await async_add(x=x, y=y)
 
-        assert asyncio.run(wf.run_async(3, 4)) == 7
+        assert asyncio.run(wf(3, 4)) == 7
 
     def test_chained_async_tasks(self) -> None:
         @workflow
@@ -134,16 +125,7 @@ class TestWorkflowRunAsync:
             s = await async_add(x=x, y=y)
             return await async_double(x=s)
 
-        assert asyncio.run(wf.run_async(2, 3)) == 10
-
-    def test_sync_workflow_via_run_async(self) -> None:
-        """``run_async`` also accepts synchronous workflow functions."""
-
-        @workflow
-        def wf(x: int) -> int:
-            return add(x=x, y=1)
-
-        assert asyncio.run(wf.run_async(9)) == 10
+        assert asyncio.run(wf(2, 3)) == 10
 
 
 # region Cache integration
@@ -387,45 +369,45 @@ class TestRetriesWithSession:
         assert len(attempts) == 3
 
 
-# region Session + parallel_map integration
+# region Session + task_map integration
 
 
 class TestParallelMapInSession:
-    """``parallel_map`` inside a ``session`` exercises the full stack."""
+    """``task_map`` inside a ``session`` exercises the full stack."""
 
     def test_inline_backend(self) -> None:
         with session(backend="inline"):
-            results = parallel_map(double, [1, 2, 3])
+            results = task_map(double, [1, 2, 3])
 
         assert results == [2, 4, 6]
 
     def test_thread_backend(self) -> None:
         with session(backend="thread"):
-            results = parallel_map(double, [10, 20, 30])
+            results = task_map(double, [10, 20, 30])
 
         assert results == [20, 40, 60]
 
     def test_override_backend(self) -> None:
-        """Explicit ``backend`` on ``parallel_map`` overrides the session."""
+        """Explicit ``backend`` on ``task_map`` overrides the session."""
         with session(backend="inline"):
-            results = parallel_map(double, [5, 6], backend="thread")
+            results = task_map(double, [5, 6], backend="thread")
 
         assert results == [10, 12]
 
-    def test_parallel_map_with_multiple_iterables(self) -> None:
+    def test_task_map_with_multiple_iterables(self) -> None:
         with session(backend="inline"):
-            results = parallel_map(add, [1, 2, 3], [10, 20, 30])
+            results = task_map(add, [1, 2, 3], [10, 20, 30])
 
         assert results == [11, 22, 33]
 
 
 class TestAsyncMapInSession:
-    """``async_map`` inside an ``async_session``."""
+    """``async_task_map`` inside an ``async_session``."""
 
-    def test_async_map_inline(self) -> None:
+    def test_async_task_map_inline(self) -> None:
         async def _run() -> list[int]:
             async with async_session(backend="inline"):
-                return await async_map(async_double, [1, 2, 3])
+                return await async_task_map(async_double, [1, 2, 3])
 
         assert asyncio.run(_run()) == [2, 4, 6]
 
@@ -455,7 +437,7 @@ class TestErrorPropagation:
             return explode(x=x)
 
         with pytest.raises(ValueError, match="bad value 42"):
-            wf.run(42)
+            wf(42)
 
     def test_async_error_propagates(self) -> None:
         @task
@@ -502,14 +484,14 @@ class TestMixedComposition:
             b = branch_b(x=r)
             return merge(a=a, b=b)
 
-        assert diamond.run(5) == 65  # (5+10) + (5*10) = 15 + 50
+        assert diamond(5) == 65  # (5+10) + (5*10) = 15 + 50
 
-    def test_parallel_map_inside_workflow(self) -> None:
+    def test_task_map_inside_workflow(self) -> None:
         @workflow
         def wf(values: list[int]) -> list[int]:
-            return parallel_map(double, values, backend="inline")
+            return task_map(double, values, backend="inline")
 
-        assert wf.run([1, 2, 3]) == [2, 4, 6]
+        assert wf([1, 2, 3]) == [2, 4, 6]
 
     def test_workflow_with_cache_and_retries(self, cache_store: CacheStore) -> None:
         """Cache and retries work together through a session."""
