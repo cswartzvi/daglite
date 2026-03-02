@@ -40,6 +40,7 @@ class DatasetStore:
         Args:
             driver: A Driver instance or string path (creates FileDriver).
         """
+        self._driver: Driver
         if isinstance(driver, str):
             from daglite.drivers import FileDriver
 
