@@ -36,9 +36,9 @@ def _check_task(task: Any, func_name: str) -> None:
 
     Raises ``TypeError`` with a helpful message when a plain function is passed instead.
     """
-    from daglite.eager import _BaseEagerTask
+    from daglite.tasks import _BaseTask
 
-    if not isinstance(task, _BaseEagerTask):
+    if not isinstance(task, _BaseTask):
         raise TypeError(
             f"`{func_name}` expects a `@task`-decorated callable, "
             f"got {type(task).__name__!r}. Wrap your function with `@task` first."

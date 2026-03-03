@@ -1,7 +1,7 @@
 """
 Eager `@task` decorator — runs the function immediately, returns the real value.
 
-A function decorated with `eager_task` behaves like a normal function cal except it also:
+A function decorated with `task` behaves like a normal function cal except it also:
 
 * Emits typed events (`TaskStarted`, `TaskCompleted`, `TaskFailed`).
 * Fires pluggy hooks (`before_node_execute`, `after_node_execute`, etc.).
@@ -11,7 +11,7 @@ All of this is gated on the execution context — a `ContextVar` populated by th
 manager or the workflow runner. When there is no active context the decorated function runs inline
 with no overhead.
 
-Sync and async tasks produce distinct types (`SyncEagerTask` / `AsyncEagerTask`) so that type
+Sync and async tasks produce distinct types (`SyncTask` / `AsyncTask`) so that type
 checkers see the correct return type at every call site. Generators will be handled in a later
 phase once iteration indexing is designed.
 """
@@ -31,19 +31,19 @@ from typing import Any, Generic, ParamSpec, Protocol, TypeVar, overload
 from uuid import UUID
 from uuid import uuid4
 
+from daglite._context import RunContext
+from daglite._context import _task_call_args
+from daglite._context import get_run_context
+from daglite._context import set_task_call_args
 from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
 from daglite._validation import has_placeholders
 from daglite._validation import resolve_template
 from daglite.cache.core import CACHE_MISS
 from daglite.cache.core import default_cache_hash
-from daglite.plugins.task_events import TaskCompleted
-from daglite.plugins.task_events import TaskFailed
-from daglite.plugins.task_events import TaskStarted
-from daglite.session import RunContext
-from daglite.session import _task_call_args
-from daglite.session import get_run_context
-from daglite.session import set_task_call_args
+from daglite.plugins.events import TaskCompleted
+from daglite.plugins.events import TaskFailed
+from daglite.plugins.events import TaskStarted
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ R = TypeVar("R")
 
 
 @dataclass(frozen=True)
-class _BaseEagerTask(Generic[P, R]):
+class _BaseTask(Generic[P, R]):
     """Shared fields and helpers for sync and async eager tasks."""
 
     func: Callable[..., Any]
@@ -119,7 +119,7 @@ class _BaseEagerTask(Generic[P, R]):
 
 
 @dataclass(frozen=True)
-class SyncEagerTask(_BaseEagerTask[P, R]):
+class SyncTask(_BaseTask[P, R]):
     """
     Eager task wrapping a synchronous function.
 
@@ -183,7 +183,7 @@ class SyncEagerTask(_BaseEagerTask[P, R]):
 
 
 @dataclass(frozen=True)
-class AsyncEagerTask(_BaseEagerTask[P, R]):
+class AsyncTask(_BaseTask[P, R]):
     """
     Eager task wrapping an async coroutine function.
 
@@ -249,39 +249,39 @@ class AsyncEagerTask(_BaseEagerTask[P, R]):
         raise last_error
 
 
-EagerTask = SyncEagerTask | AsyncEagerTask
+Task = SyncTask | AsyncTask
 """Union of sync and async eager task types."""
 
 
 # region Task decorator
 
 
-class _EagerTaskDecorator(Protocol):
-    """Return type for keyword-args form of ``eager_task()``."""
+class _TaskDecorator(Protocol):
+    """Return type for keyword-args form of ``task()``."""
 
     @overload
     def __call__(  # type: ignore[overload-overlap]
         self, func: Callable[P, Coroutine[Any, Any, R]], /
-    ) -> AsyncEagerTask[P, R]: ...
+    ) -> AsyncTask[P, R]: ...
 
     @overload
-    def __call__(self, func: Callable[P, R], /) -> SyncEagerTask[P, R]: ...
+    def __call__(self, func: Callable[P, R], /) -> SyncTask[P, R]: ...
 
     def __call__(self, func: Any, /) -> Any: ...
 
 
 @overload
-def eager_task(  # type: ignore[overload-overlap]
+def task(  # type: ignore[overload-overlap]
     func: Callable[P, Coroutine[Any, Any, R]], /
-) -> AsyncEagerTask[P, R]: ...
+) -> AsyncTask[P, R]: ...
 
 
 @overload
-def eager_task(func: Callable[P, R], /) -> SyncEagerTask[P, R]: ...
+def task(func: Callable[P, R], /) -> SyncTask[P, R]: ...
 
 
 @overload
-def eager_task(
+def task(
     *,
     name: str | None = None,
     description: str | None = None,
@@ -291,10 +291,10 @@ def eager_task(
     cache: bool = False,
     cache_ttl: int | None = None,
     cache_hash: Callable[..., str] | None = None,
-) -> _EagerTaskDecorator: ...
+) -> _TaskDecorator: ...
 
 
-def eager_task(  # noqa: D417
+def task(  # noqa: D417
     func: Any = None,
     *,
     name: str | None = None,
@@ -312,7 +312,7 @@ def eager_task(  # noqa: D417
     The decorated function executes immediately on call (no futures, no graph). When called inside
     an active execution context it emits events, fires hooks, and participates in caching.
 
-    Can be used bare (`@eager_task`) or with options (`@eager_task(cache=True)`).
+    Can be used bare (`@task`) or with options (`@task(cache=True)`).
 
     Args:
         name: Custom name. Defaults to `func.__name__`.
@@ -328,9 +328,9 @@ def eager_task(  # noqa: D417
         A sync or async eager task callable with the original signature.
     """
 
-    def decorator(fn: Callable[..., Any]) -> SyncEagerTask[Any, Any] | AsyncEagerTask[Any, Any]:
+    def decorator(fn: Callable[..., Any]) -> SyncTask[Any, Any] | AsyncTask[Any, Any]:
         if inspect.isclass(fn) or not callable(fn):
-            raise TypeError("`@eager_task` can only be applied to callable functions.")
+            raise TypeError("`@task` can only be applied to callable functions.")
 
         _name = name if name is not None else getattr(fn, "__name__", "unnamed_task")
         _description = description if description is not None else getattr(fn, "__doc__", "") or ""
@@ -351,7 +351,7 @@ def eager_task(  # noqa: D417
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
-        cls = AsyncEagerTask if is_async else SyncEagerTask
+        cls = AsyncTask if is_async else SyncTask
         return cls(
             func=fn,
             name=_name,
@@ -374,7 +374,7 @@ def eager_task(  # noqa: D417
 
 
 def _pre_call(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
@@ -415,7 +415,7 @@ def _pre_call(
 
 
 def _post_call(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     result: Any,
     elapsed: float,
@@ -458,7 +458,7 @@ def _post_call(
 
 
 def _on_error(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     error: BaseException,
     elapsed: float,
@@ -500,7 +500,7 @@ def _on_error(
 
 
 def _on_cache_hit(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     bound: dict[str, Any],
     result: Any,
@@ -543,7 +543,7 @@ def _on_cache_hit(
 
 
 def _on_retry(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     bound: dict[str, Any],
     attempt: int,
@@ -570,19 +570,18 @@ def _on_retry(
 
 
 def _make_metadata(
-    task: _BaseEagerTask[Any, Any],
+    task: _BaseTask[Any, Any],
     task_id: UUID,
     *,
     resolved_name: str | None = None,
 ) -> Any:
-    """Builds a `NodeMetadata` instance for hook compatibility."""
-    from daglite._metadata import NodeMetadata
+    """Builds a `TaskMetadata` instance for hook compatibility."""
+    from daglite._metadata import TaskMetadata
 
     name = resolved_name or task.name
-    return NodeMetadata(
+    return TaskMetadata(
         id=task_id,
         name=name,
-        kind="task",
         description=task.description or None,
         backend_name=task.backend_name,
     )
