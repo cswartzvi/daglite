@@ -17,8 +17,8 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite._context import get_event_reporter
 from daglite._metadata import TaskMetadata
-from daglite.context import get_event_reporter
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import EventRegistry
