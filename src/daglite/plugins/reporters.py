@@ -1,4 +1,4 @@
-"""Event reporter implementations for different backend types."""
+"""PluginEvent reporter implementations for different backend types."""
 
 import abc
 import logging
@@ -8,7 +8,7 @@ from typing import Any, Callable
 
 from typing_extensions import override
 
-from daglite.plugins.events import Event
+from daglite.plugins.events import PluginEvent
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class EventReporter(abc.ABC):
 
         Args:
             event_type: Type of event (e.g., "cache_hit", "progress")
-            data: Event payload data
+            data: PluginEvent payload data
         """
         ...
 
@@ -50,10 +50,10 @@ class DirectEventReporter(EventReporter):
     immediately via callback. Thread-safe for use in ThreadPoolExecutor.
 
     Args:
-        callback: Function to call with :class:`Event` when reporting an event.
+        callback: Function to call with :class:`PluginEvent` when reporting an event.
     """
 
-    def __init__(self, callback: Callable[[Event], None]):
+    def __init__(self, callback: Callable[[PluginEvent], None]):
         self._callback = callback
         self._lock = threading.Lock()
 
@@ -64,7 +64,7 @@ class DirectEventReporter(EventReporter):
 
     @override
     def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = Event(type=event_type, data=data)
+        event = PluginEvent(type=event_type, data=data)
         try:
             with self._lock:
                 self._callback(event)
@@ -99,7 +99,7 @@ class ProcessEventReporter(EventReporter):
 
     @override
     def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = Event(type=event_type, data=data)
+        event = PluginEvent(type=event_type, data=data)
         try:
             self._queue.put(event)
         except Exception as e:

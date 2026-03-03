@@ -1,8 +1,8 @@
 from typing import Any
 
-from daglite.plugins._processor import BackgroundQueueProcessor
-from daglite.plugins.events import Event
-from daglite.plugins.registry import EventRegistry
+from daglite._processor import BackgroundQueueProcessor
+from daglite.plugins.events import EventRegistry
+from daglite.plugins.events import PluginEvent
 
 
 class EventProcessor(BackgroundQueueProcessor):
@@ -18,14 +18,14 @@ class EventProcessor(BackgroundQueueProcessor):
         super().__init__(name="EventProcessor")
         self._registry = registry
 
-    def dispatch(self, event: Event) -> None:
+    def dispatch(self, event: PluginEvent) -> None:
         """
         Dispatch event immediately (bypass background processing).
 
         Can be used for direct event dispatching from same process.
 
         Args:
-            event: `Event` to dispatch
+            event: `PluginEvent` to dispatch
         """
         self._registry.dispatch(event)
 

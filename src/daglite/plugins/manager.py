@@ -10,7 +10,7 @@ from pluggy import PluginManager
 from daglite.plugins.base import isinstance_event_handler_plugin
 from daglite.plugins.base import isinstance_serializable_plugin
 from daglite.plugins.base import issubclass_serializable_plugin
-from daglite.plugins.registry import EventRegistry
+from daglite.plugins.events import EventRegistry
 
 from .hooks.markers import HOOK_NAMESPACE
 

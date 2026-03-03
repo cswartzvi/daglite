@@ -3,7 +3,7 @@
 from typing import Any
 from uuid import UUID
 
-from daglite._metadata import NodeMetadata
+from daglite._metadata import TaskMetadata
 from daglite.plugins.hooks.markers import hook_spec
 from daglite.plugins.reporters import EventReporter
 
@@ -14,7 +14,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def before_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         reporter: EventReporter | None,
     ) -> None:
@@ -30,7 +30,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def after_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -50,7 +50,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def on_node_error(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -70,7 +70,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def before_node_retry(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         attempt: int,
         last_error: Exception,
@@ -90,7 +90,7 @@ class WorkerSideNodeSpecs:
     @hook_spec
     def after_node_retry(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         attempt: int,
         succeeded: bool,
@@ -111,7 +111,7 @@ class WorkerSideNodeSpecs:
     def on_cache_hit(
         self,
         func: Any,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
@@ -220,7 +220,7 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def before_mapped_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         iteration_count: int,
     ) -> None:
         """
@@ -234,7 +234,7 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def after_mapped_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         iteration_count: int,
         duration: float,
     ) -> None:
@@ -250,7 +250,7 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def before_composite_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         num_steps: int,
     ) -> None:
         """
@@ -264,7 +264,7 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def after_composite_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         num_steps: int,
         duration: float,
     ) -> None:
@@ -280,7 +280,7 @@ class CoordinatorSideNodeSpecs:
     @hook_spec
     def on_composite_error(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         num_steps: int,
         error: Exception,
         duration: float,
