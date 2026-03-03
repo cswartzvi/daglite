@@ -5,12 +5,25 @@ from __future__ import annotations
 import pickle
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+from daglite._validation import has_placeholders
+from daglite._validation import resolve_template
 from daglite.datasets.base import AbstractDataset
+from daglite.session import get_task_call_args
 
 if TYPE_CHECKING:
     from daglite.drivers.base import Driver
 
 T = TypeVar("T")
+
+
+def _resolve_key(key: str) -> str:
+    """Resolve ``{param}`` placeholders in *key* from the current task's bound arguments."""
+    if not has_placeholders(key):
+        return key
+    args = get_task_call_args()
+    if args is None:
+        return key
+    return resolve_template(key, args)
 
 
 class DatasetStore:
@@ -77,6 +90,7 @@ class DatasetStore:
         Returns:
             The actual path where data was stored.
         """
+        key = _resolve_key(key)
         value_type = type(value)
 
         if format is None:
@@ -111,6 +125,7 @@ class DatasetStore:
         Raises:
             KeyError: If key not found.
         """
+        key = _resolve_key(key)
         data = self._driver.load(key)
 
         if return_type is None and format is None:
@@ -131,11 +146,11 @@ class DatasetStore:
 
     def exists(self, key: str) -> bool:
         """Check if a key exists."""
-        return self._driver.exists(key)
+        return self._driver.exists(_resolve_key(key))
 
     def delete(self, key: str) -> None:
         """Delete stored data."""
-        self._driver.delete(key)
+        self._driver.delete(_resolve_key(key))
 
     def list_keys(self) -> list[str]:
         """List all stored keys."""
