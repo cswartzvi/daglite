@@ -16,10 +16,10 @@ from typing_extensions import assert_type
 
 from daglite import task
 from daglite import workflow
-from daglite.eager import AsyncEagerTask
-from daglite.eager import SyncEagerTask
 from daglite.mapping import async_task_map
 from daglite.mapping import task_map
+from daglite.tasks import AsyncTask
+from daglite.tasks import SyncTask
 from daglite.workflows import AsyncWorkflow
 from daglite.workflows import SyncWorkflow
 
@@ -66,20 +66,20 @@ async def async_double(x: int) -> int:
 
 
 def test_sync_task_bare_decorator_type() -> None:
-    """``@task`` on a sync function produces a ``SyncEagerTask``."""
-    assert isinstance(add, SyncEagerTask)
+    """``@task`` on a sync function produces a ``SyncTask``."""
+    assert isinstance(add, SyncTask)
 
 
 def test_async_task_bare_decorator_type() -> None:
-    """``@task`` on an async function produces an ``AsyncEagerTask``."""
-    assert isinstance(async_add, AsyncEagerTask)
+    """``@task`` on an async function produces an ``AsyncTask``."""
+    assert isinstance(async_add, AsyncTask)
 
 
 # region Bare @task — call return type
 
 
 def test_sync_task_call_returns_value() -> None:
-    """Calling a ``SyncEagerTask`` returns the raw value type ``R``."""
+    """Calling a ``SyncTask`` returns the raw value type ``R``."""
     result = add(x=1, y=2)
     assert_type(result, int)
 
@@ -97,13 +97,13 @@ def test_sync_task_str_return() -> None:
 
 
 def test_async_task_call_returns_coroutine() -> None:
-    """Calling an ``AsyncEagerTask`` returns ``Coroutine[Any, Any, R]``."""
+    """Calling an ``AsyncTask`` returns ``Coroutine[Any, Any, R]``."""
     result = async_add(x=1, y=2)
     assert_type(result, Coroutine[Any, Any, int])
 
 
 async def test_async_task_awaited_returns_value() -> None:
-    """Awaiting an ``AsyncEagerTask`` call returns the raw value type ``R``."""
+    """Awaiting an ``AsyncTask`` call returns the raw value type ``R``."""
     result = await async_add(x=1, y=2)
     assert_type(result, int)
 
@@ -112,23 +112,23 @@ async def test_async_task_awaited_returns_value() -> None:
 
 
 def test_sync_task_keyword_decorator_type() -> None:
-    """``@task(cache=True)`` on a sync function produces a ``SyncEagerTask``."""
+    """``@task(cache=True)`` on a sync function produces a ``SyncTask``."""
 
     @task(cache=True)
     def cached_add(x: int, y: int) -> int:
         return x + y
 
-    assert isinstance(cached_add, SyncEagerTask)
+    assert isinstance(cached_add, SyncTask)
 
 
 def test_async_task_keyword_decorator_type() -> None:
-    """``@task(cache=True)`` on an async function produces an ``AsyncEagerTask``."""
+    """``@task(cache=True)`` on an async function produces an ``AsyncTask``."""
 
     @task(cache=True)
     async def cached_async(x: int, y: int) -> int:
         return x + y
 
-    assert isinstance(cached_async, AsyncEagerTask)
+    assert isinstance(cached_async, AsyncTask)
 
 
 # region @task(keyword) — call return type

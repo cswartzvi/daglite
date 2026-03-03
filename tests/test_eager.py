@@ -17,14 +17,14 @@ from typing import Any
 import pytest
 
 from daglite.cache.core import CACHE_MISS
-from daglite.eager import EagerTask
-from daglite.eager import eager_task
-from daglite.plugins.task_events import TaskCompleted
-from daglite.plugins.task_events import TaskFailed
-from daglite.plugins.task_events import TaskStarted
+from daglite.plugins.events import TaskCompleted
+from daglite.plugins.events import TaskFailed
+from daglite.plugins.events import TaskStarted
 from daglite.session import RunContext
 from daglite.session import reset_run_context
 from daglite.session import set_run_context
+from daglite.tasks import Task
+from daglite.tasks import task as eager_task
 
 
 class _FakeReporter:
@@ -121,7 +121,7 @@ class TestBareExecution:
         assert mul(x=3, y=4) == 12
 
     def test_is_eager_task(self) -> None:
-        assert isinstance(add, EagerTask)
+        assert isinstance(add, Task)
         assert add.name == "add"
         assert add.is_async is False
 

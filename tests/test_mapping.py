@@ -19,13 +19,13 @@ from typing import Any
 
 import pytest
 
-from daglite.eager import eager_task
 from daglite.mapping import async_task_map
 from daglite.mapping import task_map
 from daglite.session import RunContext
 from daglite.session import reset_run_context
 from daglite.session import session
 from daglite.session import set_run_context
+from daglite.tasks import task as eager_task
 
 
 class _FakeReporter:

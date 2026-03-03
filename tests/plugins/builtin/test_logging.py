@@ -18,7 +18,7 @@ from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import _ReporterHandler
 from daglite.plugins.builtin.logging import _TaskLoggerAdapter
 from daglite.plugins.builtin.logging import get_logger
-from daglite.plugins.events import Event
+from daglite.plugins.events import PluginEvent
 from daglite.plugins.reporters import DirectEventReporter
 from daglite.plugins.reporters import ProcessEventReporter
 
@@ -251,7 +251,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling a basic log event."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -271,7 +271,7 @@ class TestCentralizedLoggingPluginUnit:
         plugin = CentralizedLoggingPlugin(level=logging.WARNING)
 
         # INFO event should be filtered
-        info_event = Event(
+        info_event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -287,7 +287,7 @@ class TestCentralizedLoggingPluginUnit:
         assert "Info message" not in caplog.text
 
         # WARNING event should pass
-        warning_event = Event(
+        warning_event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -306,7 +306,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with exception info."""
         plugin = CentralizedLoggingPlugin(level=logging.ERROR)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -327,7 +327,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with extra fields."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -581,14 +581,14 @@ class TestLifecycleLoggingPlugin:
         """Test that plugin tracks mapped node IDs."""
         from uuid import uuid4
 
-        from daglite._metadata import NodeMetadata
+        from daglite._metadata import TaskMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         # Simulate before_mapped_node_execute hook
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="map")
+        metadata = TaskMetadata(id=node_id, name="test_task")
 
         plugin.before_mapped_node_execute(metadata, iteration_count=2)
 
@@ -628,13 +628,13 @@ class TestLifecycleLoggingPluginOnCacheHit:
         from unittest.mock import Mock
         from uuid import uuid4
 
-        from daglite._metadata import NodeMetadata
+        from daglite._metadata import TaskMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="task")
+        metadata = TaskMetadata(id=node_id, name="test_task")
 
         # Call hook - it should log without raising
         plugin.on_cache_hit(
