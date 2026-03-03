@@ -2,7 +2,8 @@
 Task mapping utilities for eager tasks.
 
 `task_map` fans out a sync task across iterables using the active session's backend (or an explicit
-override). `async_task_map` does the same for async tasks, using `asyncio.gather` for concurrency.
+override). `async_task_map` does the same for async tasks, delegating to the backend's `async_map`
+method for concurrency.
 
 Both functions emit per-item `TaskStarted` / `TaskCompleted` / `TaskFailed` events automatically —
 the decorated task handles its own event lifecycle, so no extra wiring is needed here.
@@ -107,12 +108,10 @@ async def async_task_map(
     """
     Async map of a task across iterables.
 
-    For async tasks the returned coroutines are gathered concurrently via `asyncio.gather`. For sync
-    tasks each call is dispatched to the default executor via `run_in_executor` so the event loop is
-    not blocked.
-
-    When the resolved backend is `"inline"` items are processed sequentially (one `await` at a time)
-    to match inline semantics.
+    When an active session provides a `BackendManager`, the resolved backend's `async_map` method
+    handles dispatch — async tasks are gathered concurrently and sync tasks are offloaded to the
+    executor so the event loop stays responsive. Without a session, items are processed sequentially
+    as a simple inline fallback.
 
     Args:
         task: An async or sync eager task (decorated with ``@task``).
@@ -129,35 +128,25 @@ async def async_task_map(
     """
     _check_task(task, "async_task_map")
     ctx = get_run_context()
-    backend_name = _resolve_backend(backend, ctx)
     items = list(zip(*iterables))
 
     if not items:
         return []
 
+    # With a session — delegate to the backend.
+    if ctx is not None and ctx.backend_manager is not None:
+        backend_name = _resolve_backend(backend, ctx)
+        return await ctx.backend_manager.get(backend_name).async_map(task, items)
+
+    # No session — concurrent fallback via gather.
     is_async = getattr(task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task)))
-
-    # Inline backend: sequential execution to match inline semantics.
-    if backend_name in _INLINE_NAMES:
-        if is_async:
-            return [await task(*args) for args in items]
-        return [task(*args) for args in items]
-
-    # Concurrent path — async tasks use gather directly.
     if is_async:
         coros = [task(*args) for args in items]
         return list(await asyncio.gather(*coros))
-
-    # Sync task in an async context — dispatch to the default thread executor
-    # so the event loop stays responsive.
-    loop = asyncio.get_running_loop()
-    futs = [loop.run_in_executor(None, task, *args) for args in items]
-    return list(await asyncio.gather(*futs))
+    return [task(*args) for args in items]
 
 
 # region Internals
-
-_INLINE_NAMES = frozenset({"inline", "sequential", "synchronous"})
 
 
 def _resolve_backend(backend: str | None, ctx: RunContext | None) -> str:
