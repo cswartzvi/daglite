@@ -8,6 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
 
@@ -135,16 +136,17 @@ class ProcessBackend(Backend):
                 ) from exc
 
         # Executor initializer will deserialize the plugin manager and create a ProcessEventReporter
+        payload = _WorkerPayload(
+            serialized_plugin_manager=serialized_pm,
+            event_queue=self._event_queue,
+            cache_store=self._ctx.cache_store,
+            backend_name=self._ctx.backend_name,
+        )
         self._executor = ProcessPoolExecutor(
             max_workers=self._settings.max_parallel_processes,
             mp_context=self._mp_context,
             initializer=_process_initializer,
-            initargs=(
-                serialized_pm,
-                self._event_queue,
-                self._ctx.cache_store,
-                self._ctx.backend_name,
-            ),
+            initargs=(payload,),
         )
 
     @override
@@ -164,29 +166,42 @@ class ProcessBackend(Backend):
         return self._executor.submit(task, *args)
 
 
-def _process_initializer(
-    serialized_plugin_manager: dict[str, Any] | None,
-    event_queue: Any,
-    cache_store: Any,
-    backend_name: str,
-) -> None:  # pragma: no cover
+@dataclass
+class _WorkerPayload:
+    """
+    Serializable bundle of everything a `ProcessPoolExecutor` worker needs to reconstruct
+    a `RunContext`.
+
+    Any new per-worker state (e.g. dataset stores, metrics sinks) should be added here rather
+    than threaded through positional ``initargs``.
+    """
+
+    serialized_plugin_manager: dict[str, Any] | None
+    event_queue: Any
+    cache_store: Any
+    backend_name: str
+
+
+def _process_initializer(payload: _WorkerPayload) -> None:  # pragma: no cover
     """
     Initializer for `ProcessPoolExecutor` workers.
 
     Deserializes the plugin manager, creates a `ProcessEventReporter`, and pushes a `RunContext`
-    into the worker's context variable so that eager tasks emit events back to the coordinator.
+    into the worker's context variable so that tasks emit events back to the coordinator.
     """
-    from daglite.session import RunContext
-    from daglite.session import set_run_context
+    from daglite._context import RunContext
+    from daglite._context import set_run_context
 
     pm = (
-        deserialize_plugin_manager(serialized_plugin_manager) if serialized_plugin_manager else None
+        deserialize_plugin_manager(payload.serialized_plugin_manager)
+        if payload.serialized_plugin_manager
+        else None
     )
-    reporter = ProcessEventReporter(event_queue)
+    reporter = ProcessEventReporter(payload.event_queue)
 
     ctx = RunContext(
-        backend_name=backend_name,
-        cache_store=cache_store,
+        backend_name=payload.backend_name,
+        cache_store=payload.cache_store,
         event_reporter=reporter,
         plugin_manager=pm,
     )
