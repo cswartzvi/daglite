@@ -6,15 +6,13 @@ from dataclasses import dataclass
 from dataclasses import field
 from uuid import UUID
 
-from daglite._typing import NodeKind
-
 
 @dataclass(frozen=True)
-class NodeMetadata:
+class TaskMetadata:
     """
     Lightweight metadata describing the currently executing task.
 
-    Used by hook specs, the logging plugin, and the eager task runner
+    Used by hook specs, the logging plugin, and the task runner
     to communicate identity and context without coupling to the old
     graph IR.
     """
@@ -24,9 +22,6 @@ class NodeMetadata:
 
     name: str
     """Human-readable task name."""
-
-    kind: NodeKind
-    """Task kind (e.g. ``"task"``, ``"map"``)."""
 
     description: str | None = field(default=None, kw_only=True)
     """Optional human-readable description."""
