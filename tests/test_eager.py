@@ -19,9 +19,9 @@ import pytest
 from daglite.cache.core import CACHE_MISS
 from daglite.eager import EagerTask
 from daglite.eager import eager_task
-from daglite.events import TaskCompleted
-from daglite.events import TaskFailed
-from daglite.events import TaskStarted
+from daglite.plugins.task_events import TaskCompleted
+from daglite.plugins.task_events import TaskFailed
+from daglite.plugins.task_events import TaskStarted
 from daglite.session import RunContext
 from daglite.session import reset_run_context
 from daglite.session import set_run_context
@@ -314,3 +314,99 @@ class TestTaskIDs:
             assert len(unique_ids) == 2
         finally:
             reset_run_context(token)
+
+
+class TestNameTemplates:
+    """Task name ``{param}`` substitution at call time."""
+
+    def test_resolved_name_in_events(self, ctx: RunContext, reporter: _FakeReporter) -> None:
+        """Events use the resolved name when the decorator specifies a template."""
+
+        @eager_task(name="process_{split}")
+        def process(split: str) -> str:
+            return split.upper()
+
+        token = set_run_context(ctx)
+        try:
+            result = process(split="train")
+            assert result == "TRAIN"
+
+            started = reporter.events[0][1]["event"]
+            assert isinstance(started, TaskStarted)
+            assert started.task_name == "process_train"
+
+            completed = reporter.events[1][1]["event"]
+            assert isinstance(completed, TaskCompleted)
+            assert completed.task_name == "process_train"
+        finally:
+            reset_run_context(token)
+
+    def test_no_template_uses_function_name(self, ctx: RunContext, reporter: _FakeReporter) -> None:
+        """Without placeholders the original name is used."""
+
+        @eager_task(name="static_name")
+        def my_fn() -> int:
+            return 1
+
+        token = set_run_context(ctx)
+        try:
+            my_fn()
+            started = reporter.events[0][1]["event"]
+            assert started.task_name == "static_name"
+        finally:
+            reset_run_context(token)
+
+    def test_async_resolved_name(self, ctx: RunContext, reporter: _FakeReporter) -> None:
+        """Async tasks also get resolved names."""
+
+        @eager_task(name="async_{x}")
+        async def async_fn(x: int) -> int:
+            return x
+
+        token = set_run_context(ctx)
+        try:
+            asyncio.run(async_fn(x=42))
+            started = reporter.events[0][1]["event"]
+            assert started.task_name == "async_42"
+        finally:
+            reset_run_context(token)
+
+    def test_multiple_placeholders(self, ctx: RunContext, reporter: _FakeReporter) -> None:
+        """Multiple placeholders are all resolved."""
+
+        @eager_task(name="{model}_{split}")
+        def train(model: str, split: str) -> str:
+            return f"{model}/{split}"
+
+        token = set_run_context(ctx)
+        try:
+            train(model="bert", split="val")
+            started = reporter.events[0][1]["event"]
+            assert started.task_name == "bert_val"
+        finally:
+            reset_run_context(token)
+
+
+class TestNameTemplateValidation:
+    """Decoration-time validation of name templates."""
+
+    def test_bad_syntax_rejected(self) -> None:
+        with pytest.raises(ValueError, match="Invalid key template"):
+
+            @eager_task(name="bad_{unclosed")
+            def fn(x: int) -> int:
+                return x
+
+    def test_unknown_placeholder_rejected(self) -> None:
+        with pytest.raises(ValueError, match="won't be available"):
+
+            @eager_task(name="process_{missing}")
+            def fn(x: int) -> int:
+                return x
+
+    def test_valid_placeholder_accepted(self) -> None:
+        @eager_task(name="process_{x}")
+        def fn(x: int) -> int:
+            return x
+
+        assert fn.name == "process_{x}"

@@ -4,6 +4,8 @@ import pytest
 
 from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
+from daglite._validation import has_placeholders
+from daglite._validation import resolve_template
 
 
 class TestValidateKeyTemplate:
@@ -74,3 +76,51 @@ class TestValidateKeyPlaceholders:
         """Error message includes the sorted available variables."""
         with pytest.raises(ValueError, match="Available placeholders: \\['alpha', 'beta'\\]"):
             check_key_placeholders("{gamma}", {"alpha", "beta"})
+
+
+class TestHasPlaceholders:
+    """Tests for has_placeholders()."""
+
+    def test_plain_string(self):
+        assert has_placeholders("hello") is False
+
+    def test_single_placeholder(self):
+        assert has_placeholders("{x}") is True
+
+    def test_multiple_placeholders(self):
+        assert has_placeholders("{a}_{b}") is True
+
+    def test_escaped_braces(self):
+        assert has_placeholders("{{literal}}") is False
+
+    def test_empty_string(self):
+        assert has_placeholders("") is False
+
+
+class TestResolveTemplate:
+    """Tests for resolve_template()."""
+
+    def test_basic_substitution(self):
+        assert resolve_template("output_{split}.csv", {"split": "train"}) == "output_train.csv"
+
+    def test_multiple_placeholders(self):
+        result = resolve_template(
+            "{model}_{split}_{epoch}", {"model": "bert", "split": "val", "epoch": 3}
+        )
+        assert result == "bert_val_3"
+
+    def test_no_placeholders_passthrough(self):
+        assert resolve_template("plain.txt", {"x": 1}) == "plain.txt"
+
+    def test_missing_placeholder_survives(self):
+        """Unresolvable placeholders are left as ``{name}``."""
+        assert resolve_template("{a}_{b}", {"a": "ok"}) == "ok_{b}"
+
+    def test_all_missing(self):
+        assert resolve_template("{x}_{y}", {}) == "{x}_{y}"
+
+    def test_empty_args(self):
+        assert resolve_template("no_args.txt", {}) == "no_args.txt"
+
+    def test_numeric_value(self):
+        assert resolve_template("epoch_{n}", {"n": 42}) == "epoch_42"

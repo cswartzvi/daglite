@@ -22,9 +22,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from daglite.eager import eager_task
-from daglite.events import TaskCompleted
-from daglite.events import TaskFailed
-from daglite.events import TaskStarted
+from daglite.plugins.task_events import TaskCompleted
+from daglite.plugins.task_events import TaskFailed
+from daglite.plugins.task_events import TaskStarted
 from daglite.session import RunContext
 from daglite.session import async_session
 from daglite.session import get_run_context
