@@ -28,116 +28,40 @@ Three tiers of usage::
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import AsyncIterator
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
-from contextvars import ContextVar
-from dataclasses import dataclass
-from dataclasses import field
 from typing import Any
+
+from daglite._context import RunContext
+from daglite._context import _run_context
+from daglite._context import _task_call_args
+from daglite._context import get_event_reporter
+from daglite._context import get_plugin_manager
+from daglite._context import get_run_context
+from daglite._context import get_task_call_args
+from daglite._context import reset_run_context
+from daglite._context import set_run_context
+from daglite._context import set_task_call_args
 
 logger = logging.getLogger(__name__)
 
-
-# region Context
-
-
-@dataclass
-class RunContext:
-    """
-    Execution context carrying all infrastructure references for a session.
-
-    Eager tasks read this from a `ContextVar` to access caching, event
-    reporting, and plugin hooks. When no context is active the task runs
-    inline with no overhead.
-
-    Fields with a default of `None` are optional — a minimal context only
-    needs `backend_name` and an `event_reporter` to be useful.
-    """
-
-    backend_name: str = "inline"
-    """Name of the active backend (recorded in events)."""
-
-    cache_store: Any | None = None
-    """A `CacheStore` instance, or `None` if caching is disabled."""
-
-    event_reporter: Any | None = None
-    """An `EventReporter` for sending events to the event processor."""
-
-    event_processor: Any | None = None
-    """The `EventProcessor` background thread, or `None`."""
-
-    plugin_manager: Any | None = None
-    """A pluggy `PluginManager` instance, or `None`."""
-
-    backend_manager: Any | None = None
-    """A `BackendManager` instance, or `None`."""
-
-    settings: Any | None = None
-    """The `DagliteSettings` snapshot active for this session."""
-
-    started_at: float = field(default_factory=time.time)
-    """Unix timestamp when the context was created."""
-
-
-_run_context: ContextVar[RunContext | None] = ContextVar("run_context", default=None)
-
-_task_call_args: ContextVar[dict[str, Any] | None] = ContextVar("task_call_args", default=None)
-"""Bound arguments of the currently executing task, used for ``{param}`` template resolution."""
-
-
-def get_run_context() -> RunContext | None:
-    """Returns the active run context, or `None` if outside a session."""
-    return _run_context.get()
-
-
-def set_run_context(ctx: RunContext) -> Any:
-    """Pushes a run context. Returns a token for `reset_run_context`."""
-    return _run_context.set(ctx)
-
-
-def reset_run_context(token: Any) -> None:
-    """Restores the previous run context using a token from `set_run_context`."""
-    _run_context.reset(token)
-
-
-def get_task_call_args() -> dict[str, Any] | None:
-    """Returns the bound arguments of the currently executing task, or `None`."""
-    return _task_call_args.get()
-
-
-def set_task_call_args(args: dict[str, Any] | None) -> Any:
-    """Sets the current task's bound arguments. Returns a token for reset."""
-    return _task_call_args.set(args)
-
-
-# region Context helpers
-
-
-def get_event_reporter() -> Any | None:
-    """
-    Get the event reporter for the current execution context.
-
-    Reads the active `RunContext` from the session `ContextVar`.
-
-    Returns:
-        The `EventReporter` if a session/workflow is active, *None* otherwise.
-    """
-    ctx = get_run_context()
-    return ctx.event_reporter if ctx is not None else None
-
-
-def get_plugin_manager() -> Any | None:
-    """
-    Get the plugin manager for the current execution context.
-
-    Returns:
-        The `PluginManager` if a session/workflow is active, *None* otherwise.
-    """
-    ctx = get_run_context()
-    return ctx.plugin_manager if ctx is not None else None
+# Re-exports for backward compatibility.
+__all__ = [
+    "RunContext",
+    "_run_context",
+    "_task_call_args",
+    "get_run_context",
+    "set_run_context",
+    "reset_run_context",
+    "get_task_call_args",
+    "set_task_call_args",
+    "get_event_reporter",
+    "get_plugin_manager",
+    "session",
+    "async_session",
+]
 
 
 # region session
@@ -154,7 +78,7 @@ def session(
     """
     Synchronous context manager that sets up an eager execution context.
 
-    Within the block every `@eager_task` call automatically uses the configured backend, cache, and
+    Within the block every `@task` call automatically uses the configured backend, cache, and
     plugins. On exit all processors are stopped and resources are cleaned up.
 
     Args:
@@ -308,9 +232,9 @@ def _setup_plugins(plugins: list[Any]) -> tuple[Any, Any]:
 
     Follows the same pattern as `engine._setup_plugin_system`.
     """
+    from daglite.plugins.events import EventRegistry
     from daglite.plugins.manager import build_plugin_manager
     from daglite.plugins.processor import EventProcessor
-    from daglite.plugins.registry import EventRegistry
 
     registry = EventRegistry()
     plugin_manager = build_plugin_manager(plugins, registry)
