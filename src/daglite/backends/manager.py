@@ -24,9 +24,9 @@ class BackendManager:
     """
 
     def __init__(self, ctx: RunContext, settings: DagliteSettings) -> None:
-        from daglite.backends.impl.local import InlineBackend
-        from daglite.backends.impl.local import ProcessBackend
-        from daglite.backends.impl.local import ThreadBackend
+        from daglite.backends.local import InlineBackend
+        from daglite.backends.local import ProcessBackend
+        from daglite.backends.local import ThreadBackend
 
         self._ctx = ctx
         self._settings = settings

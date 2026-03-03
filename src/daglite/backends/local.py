@@ -1,9 +1,11 @@
 """Backend implementations for local execution (inline, threading, multiprocessing)."""
 
 import contextvars
+import inspect
 import os
 import sys
 from collections.abc import Callable
+from concurrent.futures import Future
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
@@ -26,7 +28,21 @@ class InlineBackend(Backend):
     """
 
     @override
-    def map(self, task: Callable[..., Any], items: list[tuple[Any, ...]]) -> list[Any]:
+    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
+        fut: Future[Any] = Future()
+        try:
+            fut.set_result(task(*args))
+        except BaseException as exc:
+            fut.set_exception(exc)
+        return fut
+
+    @override
+    async def async_map(self, task: Callable[..., Any], items: list[tuple[Any, ...]]) -> list[Any]:
+        is_async = getattr(
+            task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task))
+        )
+        if is_async:
+            return [await task(*args) for args in items]
         return [task(*args) for args in items]
 
 
@@ -34,9 +50,8 @@ class ThreadBackend(Backend):
     """
     Executes tasks across a thread pool.
 
-    Each ``map`` call dispatches one future per item. The calling thread's
-    context variables are copied into each worker so that the active
-    `RunContext` is visible inside every thread.
+    Each `submit` call dispatches one future to the pool. The calling thread's context variables
+    are copied into each worker so that the active `RunContext` is visible inside every thread.
     """
 
     _executor: ThreadPoolExecutor
@@ -52,22 +67,18 @@ class ThreadBackend(Backend):
         self._executor.shutdown(wait=True)
 
     @override
-    def map(self, task: Callable[..., Any], items: list[tuple[Any, ...]]) -> list[Any]:
+    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
         # ThreadPoolExecutor.submit() does NOT propagate context variables;
         # wrap each call so the active RunContext is visible in every worker.
-        futures = [
-            self._executor.submit(contextvars.copy_context().run, task, *args) for args in items
-        ]
-        return [f.result() for f in futures]
+        return self._executor.submit(contextvars.copy_context().run, task, *args)
 
 
 class ProcessBackend(Backend):
     """
     Executes tasks across a process pool.
 
-    Worker processes receive a serialised plugin manager and a
-    `ProcessEventReporter` backed by a shared multiprocessing queue so
-    that events flow back to the coordinator.
+    Worker processes receive a serialized plugin manager and a `ProcessEventReporter` backed by a
+    shared multiprocessing queue so that events flow back to the coordinator.
     """
 
     _executor: ProcessPoolExecutor
@@ -100,8 +111,8 @@ class ProcessBackend(Backend):
         self._mp_context = self._determine_mp_context()
         self._event_queue = self._mp_context.Queue()
 
-        # Register queue with the session's event processor so events from
-        # worker processes are dispatched on the coordinator side.
+        # Register queue with the session's event processor so events from worker processes are
+        # dispatched on the coordinator side.
         self._source_id = None
         if self._ctx.event_processor is not None:
             self._source_id = self._ctx.event_processor.add_source(self._event_queue)
@@ -123,6 +134,7 @@ class ProcessBackend(Backend):
                     "Use the thread or inline backend instead."
                 ) from exc
 
+        # Executor initializer will deserialize the plugin manager and create a ProcessEventReporter
         self._executor = ProcessPoolExecutor(
             max_workers=self._settings.max_parallel_processes,
             mp_context=self._mp_context,
@@ -148,12 +160,8 @@ class ProcessBackend(Backend):
         self._event_queue.close()
 
     @override
-    def map(self, task: Callable[..., Any], items: list[tuple[Any, ...]]) -> list[Any]:
-        futures = [self._executor.submit(task, *args) for args in items]
-        return [f.result() for f in futures]
-
-
-# region Worker initializers
+    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
+        return self._executor.submit(task, *args)
 
 
 def _process_initializer(
@@ -165,9 +173,8 @@ def _process_initializer(
     """
     Initializer for `ProcessPoolExecutor` workers.
 
-    Deserialises the plugin manager, creates a `ProcessEventReporter`, and
-    pushes a `RunContext` into the worker's context variable so that eager
-    tasks emit events back to the coordinator.
+    Deserializes the plugin manager, creates a `ProcessEventReporter`, and pushes a `RunContext`
+    into the worker's context variable so that eager tasks emit events back to the coordinator.
     """
     from daglite.session import RunContext
     from daglite.session import set_run_context
