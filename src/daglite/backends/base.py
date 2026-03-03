@@ -10,7 +10,7 @@ from concurrent.futures import Future
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from daglite.session import RunContext
+    from daglite._context import RunContext
     from daglite.settings import DagliteSettings
 
 

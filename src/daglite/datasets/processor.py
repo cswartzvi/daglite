@@ -17,8 +17,8 @@ from typing import Any
 
 from pluggy import HookRelay
 
+from daglite._processor import BackgroundQueueProcessor
 from daglite.datasets.events import DatasetSaveRequest
-from daglite.plugins._processor import BackgroundQueueProcessor
 
 logger = logging.getLogger(__name__)
 

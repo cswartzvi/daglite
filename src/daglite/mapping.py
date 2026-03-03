@@ -19,8 +19,8 @@ from collections.abc import Coroutine
 from collections.abc import Iterable
 from typing import Any, TypeVar, overload
 
-from daglite.session import RunContext
-from daglite.session import get_run_context
+from daglite._context import RunContext
+from daglite._context import get_run_context
 
 logger = logging.getLogger(__name__)
 

@@ -5,10 +5,10 @@ from __future__ import annotations
 import pickle
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
+from daglite._context import get_task_call_args
 from daglite._validation import has_placeholders
 from daglite._validation import resolve_template
 from daglite.datasets.base import AbstractDataset
-from daglite.session import get_task_call_args
 
 if TYPE_CHECKING:
     from daglite.drivers.base import Driver

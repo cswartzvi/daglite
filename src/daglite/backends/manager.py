@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from daglite.backends.base import Backend
 
 if TYPE_CHECKING:
-    from daglite.session import RunContext
+    from daglite._context import RunContext
     from daglite.settings import DagliteSettings
 
 
