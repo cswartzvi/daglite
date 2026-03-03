@@ -41,7 +41,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-# region RunContext
+# region Context
 
 
 @dataclass
@@ -84,6 +84,9 @@ class RunContext:
 
 _run_context: ContextVar[RunContext | None] = ContextVar("run_context", default=None)
 
+_task_call_args: ContextVar[dict[str, Any] | None] = ContextVar("task_call_args", default=None)
+"""Bound arguments of the currently executing task, used for ``{param}`` template resolution."""
+
 
 def get_run_context() -> RunContext | None:
     """Returns the active run context, or `None` if outside a session."""
@@ -98,6 +101,43 @@ def set_run_context(ctx: RunContext) -> Any:
 def reset_run_context(token: Any) -> None:
     """Restores the previous run context using a token from `set_run_context`."""
     _run_context.reset(token)
+
+
+def get_task_call_args() -> dict[str, Any] | None:
+    """Returns the bound arguments of the currently executing task, or `None`."""
+    return _task_call_args.get()
+
+
+def set_task_call_args(args: dict[str, Any] | None) -> Any:
+    """Sets the current task's bound arguments. Returns a token for reset."""
+    return _task_call_args.set(args)
+
+
+# region Context helpers
+
+
+def get_event_reporter() -> Any | None:
+    """
+    Get the event reporter for the current execution context.
+
+    Reads the active `RunContext` from the session `ContextVar`.
+
+    Returns:
+        The `EventReporter` if a session/workflow is active, *None* otherwise.
+    """
+    ctx = get_run_context()
+    return ctx.event_reporter if ctx is not None else None
+
+
+def get_plugin_manager() -> Any | None:
+    """
+    Get the plugin manager for the current execution context.
+
+    Returns:
+        The `PluginManager` if a session/workflow is active, *None* otherwise.
+    """
+    ctx = get_run_context()
+    return ctx.plugin_manager if ctx is not None else None
 
 
 # region session

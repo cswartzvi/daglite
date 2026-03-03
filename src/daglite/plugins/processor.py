@@ -1,6 +1,6 @@
 from typing import Any
 
-from daglite._processor import BackgroundQueueProcessor
+from daglite.plugins._processor import BackgroundQueueProcessor
 from daglite.plugins.events import Event
 from daglite.plugins.registry import EventRegistry
 

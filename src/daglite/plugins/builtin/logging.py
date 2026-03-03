@@ -18,13 +18,13 @@ from uuid import UUID
 from typing_extensions import override
 
 from daglite._metadata import NodeMetadata
-from daglite.backends.context import get_event_reporter
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
 from daglite.plugins.events import Event
 from daglite.plugins.hooks.markers import hook_impl
 from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
+from daglite.session import get_event_reporter
 
 LOGGER_EVENT = "daglite-log"
 DEFAULT_LOGGER_NAME_COORD = "daglite.lifecycle"  # Coordinator-side default logger
