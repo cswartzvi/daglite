@@ -114,12 +114,10 @@ class DirectDatasetReporter(DatasetReporter):
     @staticmethod
     def _get_hook() -> HookRelay | None:
         """Attempt to retrieve the plugin hook from the execution context."""
-        try:
-            from daglite.backends.context import get_plugin_manager
+        from daglite._context import get_plugin_manager
 
-            return get_plugin_manager().hook
-        except RuntimeError:
-            return None
+        pm = get_plugin_manager()
+        return pm.hook if pm is not None else None
 
 
 class ProcessDatasetReporter(DatasetReporter):

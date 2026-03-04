@@ -4,7 +4,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from typing_extensions import TypeIs
 
-from daglite.plugins.registry import EventRegistry
+from daglite.plugins.events import EventRegistry
 
 
 @runtime_checkable
@@ -17,13 +17,13 @@ class EventHandlerPlugin(Protocol):
     2. Use reporter in worker-side hooks to send events back to coordinator
 
     Examples:
-    >>> from daglite.plugins.events import Event
+    >>> from daglite.plugins.events import PluginEvent
     >>> from daglite.plugins.hooks.markers import hook_impl
     >>> class ProgressPlugin:
     ...     def register_event_handlers(self, registry):
     ...         registry.on("progress", self._update_progress)
     ...
-    ...     def _update_progress(self, event: Event):
+    ...     def _update_progress(self, event: PluginEvent):
     ...         # Coordinator-side handler
     ...         print(f"Progress: {event.data['percent']}%")
     ...
@@ -41,7 +41,7 @@ class EventHandlerPlugin(Protocol):
         Called during engine initialization to set up event processing.
 
         Args:
-            registry: Event registry for registering handlers
+            registry: PluginEvent registry for registering handlers
         """
         ...
 

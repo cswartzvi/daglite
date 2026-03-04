@@ -42,13 +42,9 @@ class DatasetProcessor(BackgroundQueueProcessor):
         super().__init__(name="DatasetProcessor")
         self._hook = hook
 
-    # -- abstract implementation -------------------------------------------
-
     def _handle_item(self, item: Any) -> None:
         """Process a single save request received from a worker."""
         self._handle_request(item)
-
-    # -- internal helpers --------------------------------------------------
 
     def _handle_request(self, request: DatasetSaveRequest) -> None:
         """

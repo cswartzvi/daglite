@@ -17,14 +17,13 @@ from uuid import UUID
 
 from typing_extensions import override
 
-from daglite.backends.context import get_current_task
-from daglite.backends.context import get_event_reporter
-from daglite.graph.nodes.base import NodeMetadata
+from daglite._context import get_event_reporter
+from daglite._metadata import TaskMetadata
 from daglite.plugins.base import EventHandlerPlugin
 from daglite.plugins.base import SerializablePlugin
-from daglite.plugins.events import Event
+from daglite.plugins.events import EventRegistry
+from daglite.plugins.events import PluginEvent
 from daglite.plugins.hooks.markers import hook_impl
-from daglite.plugins.registry import EventRegistry
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite-log"
@@ -81,9 +80,6 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
-    if get_current_task() is not None:
-        name = DEFAULT_LOGGER_NAME_TASKS  # Called within a worker task context
-
     if name is None:
         name = DEFAULT_LOGGER_NAME_COORD
 
@@ -135,11 +131,11 @@ class CentralizedLoggingPlugin(EventHandlerPlugin):
         Register coordinator-side handler for log events.
 
         Args:
-            registry: Event registry for registering handlers
+            registry: PluginEvent registry for registering handlers
         """
         registry.register(LOGGER_EVENT, self._handle_log_event)
 
-    def _handle_log_event(self, event: Event) -> None:
+    def _handle_log_event(self, event: PluginEvent) -> None:
         """
         Handle log event from worker.
 
@@ -147,7 +143,7 @@ class CentralizedLoggingPlugin(EventHandlerPlugin):
         on the coordinator side.
 
         Args:
-            event: :class:`Event` containing name, level, message, and optional extras
+            event: :class:`PluginEvent` containing name, level, message, and optional extras
         """
         logger_name = event.data.get("name", "daglite")
         level = event.data.get("level", "INFO")
@@ -302,7 +298,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         Register event handlers for task lifecycle events.
 
         Args:
-            registry: Event registry for registering handlers
+            registry: PluginEvent registry for registering handlers
         """
         super().register_event_handlers(registry)
         registry.register("daglite-logging-node-start", self._handle_node_start)
@@ -349,57 +345,57 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     @hook_impl
     def before_mapped_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         iteration_count: int,
     ) -> None:
         self._mapped_nodes.add(metadata.id)
-        # Coordinator-side hooks need manual task context since get_current_task() returns None.
-        # This enables format strings like %(daglite_task_name)s to work in log output.
-        node_key = metadata.key or metadata.name
+        # Coordinator-side hooks inject task context manually so that format strings
+        # like %(daglite_task_name)s work in log output.
+        node_key = metadata.name
         backend_name = metadata.backend_name or "inline"
         log = self._logger.debug if metadata.hidden else self._logger.info
         log(
             f"Task '{node_key}' - Starting task with {iteration_count} iterations using "
             f"{backend_name} backend",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
     def after_mapped_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         iteration_count: int,
         duration: float,
     ) -> None:
-        node_key = metadata.key or metadata.name
+        node_key = metadata.name
         log = self._logger.debug if metadata.hidden else self._logger.info
         log(
             f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
     def before_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         reporter: EventReporter | None,
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "backend_name": metadata.backend_name,
             "hidden": metadata.hidden,
         }
         if reporter:
             reporter.report("daglite-logging-node-start", data=data)
         else:  # pragma: no cover
-            self._handle_node_start(Event(type="daglite-logging-node-start", data=data))
+            self._handle_node_start(PluginEvent(type="daglite-logging-node-start", data=data))
 
     @hook_impl
     def after_node_execute(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         result: Any,
         duration: float,
@@ -407,19 +403,19 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "duration": duration,
             "hidden": metadata.hidden,
         }
         if reporter:
             reporter.report("daglite-logging-node-complete", data=data)
         else:  # pragma: no cover
-            self._handle_node_complete(Event(type="daglite-logging-node-complete", data=data))
+            self._handle_node_complete(PluginEvent(type="daglite-logging-node-complete", data=data))
 
     @hook_impl
     def on_node_error(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         error: Exception,
         duration: float,
@@ -427,7 +423,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "error": str(error),
             "error_type": type(error).__name__,
             "duration": duration,
@@ -435,12 +431,12 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-fail", data=data)
         else:  # pragma: no cover
-            self._handle_task_fail(Event(type="daglite-logging-node-fail", data=data))
+            self._handle_task_fail(PluginEvent(type="daglite-logging-node-fail", data=data))
 
     @hook_impl
     def before_node_retry(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         attempt: int,
         last_error: Exception,
@@ -448,7 +444,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "attempt": attempt,
             "error": str(last_error),
             "error_type": type(last_error).__name__,
@@ -456,12 +452,12 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         if reporter:
             reporter.report("daglite-logging-node-retry", data=data)
         else:  # pragma: no cover
-            self._handle_node_retry(Event(type="daglite-logging-node-retry", data=data))
+            self._handle_node_retry(PluginEvent(type="daglite-logging-node-retry", data=data))
 
     @hook_impl
     def after_node_retry(
         self,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         attempt: int,
         succeeded: bool,
@@ -469,7 +465,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     ) -> None:
         data = {
             "node_id": metadata.id,
-            "node_key": metadata.key,
+            "node_key": metadata.name,
             "attempt": attempt,
             "succeeded": succeeded,
         }
@@ -477,22 +473,22 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             reporter.report("daglite-logging-node-retry-result", data=data)
         else:  # pragma: no cover
             self._handle_node_retry_result(
-                Event(type="daglite-logging-node-retry-result", data=data)
+                PluginEvent(type="daglite-logging-node-retry-result", data=data)
             )
 
     @hook_impl
     def on_cache_hit(
         self,
         func: Any,
-        metadata: NodeMetadata,
+        metadata: TaskMetadata,
         inputs: dict[str, Any],
         result: Any,
         reporter: EventReporter | None,
     ) -> None:
-        node_key = metadata.key or metadata.name
+        node_key = metadata.name
         self._logger.info(
             f"Task '{node_key}' - Using cached result",
-            extra=_build_task_context(metadata.id, metadata.name, metadata.key),
+            extra=_build_task_context(metadata.id, metadata.name, metadata.name),
         )
 
     @hook_impl
@@ -541,7 +537,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         suffix = f" (format={format})" if format else ""
         self._logger.info(f"Loaded dataset from '{key}'{suffix} in {_format_duration(duration)}")
 
-    def _handle_node_start(self, event: Event) -> None:
+    def _handle_node_start(self, event: PluginEvent) -> None:
         node_id = event.data["node_id"]
         node_key = event.data["node_key"]
         backend_name = event.data.get("backend_name") or "inline"
@@ -555,7 +551,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         else:
             self._logger.info(f"Task '{node_key}' - Starting task using {backend_name} backend")
 
-    def _handle_node_complete(self, event: Event) -> None:
+    def _handle_node_complete(self, event: PluginEvent) -> None:
         node_id = event.data["node_id"]
         node_key = event.data["node_key"]
         duration = event.data.get("duration", 0)
@@ -574,7 +570,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"Task '{node_key}' - Completed task successfully in {_format_duration(duration)}"
             )
 
-    def _handle_task_fail(self, event: Event) -> None:
+    def _handle_task_fail(self, event: PluginEvent) -> None:
         node_id = event.data["node_id"]
         node_key = event.data["node_key"]
         error = event.data.get("error", "unknown error")
@@ -591,7 +587,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
                 f"{error_type}: {error}"
             )
 
-    def _handle_node_retry(self, event: Event) -> None:
+    def _handle_node_retry(self, event: PluginEvent) -> None:
         node_key = event.data["node_key"]
         attempt = event.data["attempt"]
         error_type = event.data.get("error_type", "Exception")
@@ -600,7 +596,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
             f"Task '{node_key}' - Retrying after failure (attempt {attempt}): {error_type}: {error}"
         )
 
-    def _handle_node_retry_result(self, event: Event) -> None:
+    def _handle_node_retry_result(self, event: PluginEvent) -> None:
         node_key = event.data["node_key"]
         attempt = event.data["attempt"]
         succeeded = event.data["succeeded"]
@@ -626,7 +622,7 @@ class _ReporterHandler(logging.Handler):
         Initialize handler with event reporter.
 
         Args:
-            reporter: Event reporter for sending logs to coordinator
+            reporter: PluginEvent reporter for sending logs to coordinator
         """
         super().__init__()
         self._reporter = reporter
@@ -699,13 +695,7 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         Returns:
             Tuple of (message, modified kwargs with task context)
         """
-        from daglite.backends.context import get_current_task
-
         extra = kwargs.get("extra", {})
-        task = get_current_task()
-        if task:
-            extra.update(_build_task_context(task.id, task.name, task.key))
-
         kwargs["extra"] = extra
         return msg, dict(kwargs)
 

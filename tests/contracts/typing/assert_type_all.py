@@ -1,19 +1,29 @@
-"""Tests for type assertions using `assert_type` from `typing_extensions`."""
+"""
+Type assertions for the daglite eager execution API.
 
-# NOTE: These tests do not run any actual computations; they only verify that the types of task
-# bindings and compositions are as expected.
+These tests do not run any actual computations; they only verify that type
+checkers infer correct types for task bindings, workflow decorators, and
+composition primitives.
+"""
 
+# pyright: reportUnusedCoroutine=false
+# mypy: disable-error-code="unused-coroutine"
+
+from collections.abc import Coroutine
 from typing import Any
 
 from typing_extensions import assert_type
 
 from daglite import task
 from daglite import workflow
-from daglite.futures import MapTaskFuture
-from daglite.futures import TaskFuture
-from daglite.workflows import WorkflowResult
+from daglite.mapping import async_task_map
+from daglite.mapping import task_map
+from daglite.tasks import AsyncTask
+from daglite.tasks import SyncTask
+from daglite.workflows import AsyncWorkflow
+from daglite.workflows import SyncWorkflow
 
-# -- Helper tasks for type tests --
+# region Helper tasks
 
 
 @task
@@ -35,24 +45,6 @@ def to_string(x: int) -> str:
 
 
 @task
-def sum_list(xs: list[int]) -> int:
-    """Aggregation for join tests."""
-    return sum(xs)
-
-
-@task
-def join_strings(xs: list[str]) -> str:
-    """Aggregation for string join tests."""
-    return ",".join(xs)
-
-
-@task
-def get_dict() -> dict[str, Any]:
-    """Task returning dict type."""
-    return {"key": "value"}
-
-
-@task
 def maybe_none(x: int) -> int | None:
     """Task returning optional type."""
     return x if x > 0 else None
@@ -64,254 +56,209 @@ async def async_add(x: int, y: int) -> int:
     return x + y
 
 
-# -- Core API: __call__() --
+@task
+async def async_double(x: int) -> int:
+    """Async unary operation."""
+    return x * 2
 
 
-def test_bind_basic() -> None:
-    """Test basic task binding with scalar parameters."""
+# region Bare @task — decorator type
+
+
+def test_sync_task_bare_decorator_type() -> None:
+    """``@task`` on a sync function produces a ``SyncTask``."""
+    assert isinstance(add, SyncTask)
+
+
+def test_async_task_bare_decorator_type() -> None:
+    """``@task`` on an async function produces an ``AsyncTask``."""
+    assert isinstance(async_add, AsyncTask)
+
+
+# region Bare @task — call return type
+
+
+def test_sync_task_call_returns_value() -> None:
+    """Calling a ``SyncTask`` returns the raw value type ``R``."""
     result = add(x=1, y=2)
-    assert_type(result, TaskFuture[int])
-    assert_type(result.run(), int)
+    assert_type(result, int)
 
 
-def test_bind_with_dependencies() -> None:
-    """Test binding with TaskFuture dependencies."""
-    dep = double(x=5)
-    result = add(x=dep, y=10)
-    assert_type(result, TaskFuture[int])
-    assert_type(result.run(), int)
+def test_sync_task_preserves_optional() -> None:
+    """Optional return types are preserved."""
+    result = maybe_none(x=5)
+    assert_type(result, int | None)
 
 
-def test_bind_return_types() -> None:
-    """Test that bind() preserves various return types."""
-    int_result = add(x=1, y=2)
-    assert_type(int_result, TaskFuture[int])
-    assert_type(int_result.run(), int)
-
-    str_result = to_string(x=5)
-    assert_type(str_result, TaskFuture[str])
-    assert_type(str_result.run(), str)
-
-    dict_result = get_dict()
-    assert_type(dict_result, TaskFuture[dict[str, Any]])
-    assert_type(dict_result.run(), dict[str, Any])
-
-    optional_result = maybe_none(x=5)
-    assert_type(optional_result, TaskFuture[int | None])
-    assert_type(optional_result.run(), int | None)
+def test_sync_task_str_return() -> None:
+    """Type transformation is preserved."""
+    result = to_string(x=5)
+    assert_type(result, str)
 
 
-# -- Core API: partial() --
+def test_async_task_call_returns_coroutine() -> None:
+    """Calling an ``AsyncTask`` returns ``Coroutine[Any, Any, R]``."""
+    result = async_add(x=1, y=2)
+    assert_type(result, Coroutine[Any, Any, int])
 
 
-def test_partial_binding() -> None:
-    """Test partial() for partial parameter binding."""
-    partial_add = add.partial(y=10)
-    result = partial_add(x=5)
-    assert_type(result, TaskFuture[int])
-    assert_type(result.run(), int)
+async def test_async_task_awaited_returns_value() -> None:
+    """Awaiting an ``AsyncTask`` call returns the raw value type ``R``."""
+    result = await async_add(x=1, y=2)
+    assert_type(result, int)
 
 
-def test_partial_with_options() -> None:
-    """Test that partial() and with_options() work together."""
-    partial_with_opts = add.partial(y=10).with_options(backend_name="threading")(x=5)
-    assert_type(partial_with_opts, TaskFuture[int])
-    assert_type(partial_with_opts.run(), int)
+# region @task(keyword) — decorator type
 
 
-# -- Fan-out API: product() and zip() --
+def test_sync_task_keyword_decorator_type() -> None:
+    """``@task(cache=True)`` on a sync function produces a ``SyncTask``."""
+
+    @task(cache=True)
+    def cached_add(x: int, y: int) -> int:
+        return x + y
+
+    assert isinstance(cached_add, SyncTask)
 
 
-def test_product_basic() -> None:
-    """Test product() creates MapTaskFuture."""
-    result = double.map(x=[1, 2, 3])
-    assert_type(result, MapTaskFuture[int])
-    assert_type(result.run(), list[int])
+def test_async_task_keyword_decorator_type() -> None:
+    """``@task(cache=True)`` on an async function produces an ``AsyncTask``."""
+
+    @task(cache=True)
+    async def cached_async(x: int, y: int) -> int:
+        return x + y
+
+    assert isinstance(cached_async, AsyncTask)
 
 
-def test_zip_basic() -> None:
-    """Test zip() creates MapTaskFuture."""
-    result = add.map(x=[1, 2, 3], y=[10, 20, 30])
-    assert_type(result, MapTaskFuture[int])
-    assert_type(result.run(), list[int])
+# region @task(keyword) — call return type
 
 
-def test_product_vs_zip_semantics() -> None:
-    """Test Cartesian product vs pairwise zip."""
-    cartesian = add.map(x=[1, 2], y=[10, 20], map_mode="product")
-    assert_type(cartesian, MapTaskFuture[int])
-    assert_type(cartesian.run(), list[int])
+def test_sync_task_keyword_call_returns_value() -> None:
+    """Keyword-decorated sync task call returns ``R``."""
 
-    pairwise = add.map(x=[1, 2], y=[10, 20])
-    assert_type(pairwise, MapTaskFuture[int])
-    assert_type(pairwise.run(), list[int])
+    @task(cache=True)
+    def cached_add(x: int, y: int) -> int:
+        return x + y
 
-
-def test_product_with_partial() -> None:
-    """Test product() with partially fixed parameters."""
-    result = add.partial(y=10).map(x=[1, 2, 3])
-    assert_type(result, MapTaskFuture[int])
-    assert_type(result.run(), list[int])
+    result = cached_add(x=1, y=2)
+    assert_type(result, int)
 
 
-def test_product_nested() -> None:
-    """Test nested product operations."""
-    level1 = double.map(x=[1, 2, 3])
-    level2 = add.map(x=level1, y=[100, 200])
-    assert_type(level2, MapTaskFuture[int])
-    assert_type(level2.run(), list[int])
+def test_async_task_keyword_call_returns_coroutine() -> None:
+    """Keyword-decorated async task call returns ``Coroutine[Any, Any, R]``."""
+
+    @task(cache=True)
+    async def cached_async(x: int, y: int) -> int:
+        return x + y
+
+    result = cached_async(x=1, y=2)
+    assert_type(result, Coroutine[Any, Any, int])
 
 
-# -- Map API: then() --
+async def test_async_task_keyword_awaited_returns_value() -> None:
+    """Awaiting a keyword-decorated async task returns ``R``."""
+
+    @task(cache=True)
+    async def cached_async(x: int, y: int) -> int:
+        return x + y
+
+    result = await cached_async(x=1, y=2)
+    assert_type(result, int)
 
 
-def test_then_basic() -> None:
-    """Test then() for mapping over MapTaskFuture."""
-    mapped = double.map(x=[1, 2, 3]).then(double)
-    assert_type(mapped, MapTaskFuture[int])
-    assert_type(mapped.run(), list[int])
+# region Bare @workflow — decorator type
 
 
-def test_then_type_transformation() -> None:
-    """Test then() with type transformation."""
-    result = double.map(x=[1, 2, 3]).then(to_string)
-    assert_type(result, MapTaskFuture[str])
-    assert_type(result.run(), list[str])
-
-
-def test_then_chaining() -> None:
-    """Test chaining multiple then() calls."""
-    result = double.map(x=[1, 2, 3]).then(double).then(to_string)
-    assert_type(result, MapTaskFuture[str])
-    assert_type(result.run(), list[str])
-
-
-# -- Join API: join() --
-
-
-def test_join_from_product() -> None:
-    """Test join() aggregates MapTaskFuture to TaskFuture."""
-    result = double.map(x=[1, 2, 3]).join(sum_list)
-    assert_type(result, TaskFuture[int])
-    assert_type(result.run(), int)
-
-
-def test_join_with_type_change() -> None:
-    """Test join() with type transformation."""
-    result = double.map(x=[1, 2, 3]).then(to_string).join(join_strings)
-    assert_type(result, TaskFuture[str])
-    assert_type(result.run(), str)
-
-
-def test_join_after_then_chain() -> None:
-    """Test join() after chained then() operations."""
-    result = double.map(x=[1, 2, 3]).then(double).then(add.partial(y=10)).join(sum_list)
-    assert_type(result, TaskFuture[int])
-    assert_type(result.run(), int)
-
-
-# -- Fluent API: then_map() --
-
-
-def test_then_map_product_basic() -> None:
-    """Test then_map() in product mode on TaskFuture."""
-    prep = double(x=5)
-    result = prep.then_map(add, y=[10, 20, 30], map_mode="product")
-    assert_type(result, MapTaskFuture[int])
-    assert_type(result.run(), list[int])
-
-
-def test_then_map_product_chaining() -> None:
-    """Test then_map() in product mode  with then() and join()."""
-    prep = double(x=5)
-    chained = prep.then_map(add, y=[10, 20], map_mode="product").then(double).join(sum_list)
-    assert_type(chained, TaskFuture[int])
-    assert_type(chained.run(), int)
-
-
-def test_then_map_zip_basic() -> None:
-    """Test then_map() in zip mode on TaskFuture."""
-    prep = double(x=5)
-    result = prep.then_map(add, y=[10, 20, 30])
-    assert_type(result, MapTaskFuture[int])
-    assert_type(result.run(), list[int])
-
-
-def test_then_map_zip_chaining() -> None:
-    """Test then_map() in zip mode with then() and join()."""
-    prep = double(x=5)
-    chained = prep.then_map(add, y=[10, 20]).then(to_string).join(join_strings)
-    assert_type(chained, TaskFuture[str])
-    assert_type(chained.run(), str)
-
-
-# -- Workflow decorator --
-
-
-def test_workflow_run() -> None:
-    """Test Workflow.run() returns WorkflowResult (workflows are entry points)."""
+def test_sync_workflow_bare_decorator_type() -> None:
+    """``@workflow`` on a sync function produces a ``SyncWorkflow``."""
 
     @workflow
-    def compute(x: int, y: int) -> TaskFuture[int]:
+    def wf(x: int, y: int) -> int:
         return add(x=x, y=y)
 
-    result = compute.run(5, 10)
-    assert_type(result, WorkflowResult)
+    assert isinstance(wf, SyncWorkflow)
 
 
-def test_workflow_run_map() -> None:
-    """Test Workflow.run() returns WorkflowResult for MapTaskFuture workflows."""
+def test_async_workflow_bare_decorator_type() -> None:
+    """``@workflow`` on an async function produces an ``AsyncWorkflow``."""
 
     @workflow
-    def sweep(values: list[int]) -> MapTaskFuture[int]:
-        return double.map(x=values)
+    async def wf(x: int, y: int) -> int:
+        return await async_add(x=x, y=y)
 
-    result = sweep.run([1, 2, 3])
-    assert_type(result, WorkflowResult)
-
-
-# -- Async tasks --
+    assert isinstance(wf, AsyncWorkflow)
 
 
-def test_async_task_basic() -> None:
-    """Async tasks return TaskFuture[Coroutine[...]].."""
-    # See type checker specific assertions in separate files
+# region @workflow(keyword) — decorator type
 
 
-def test_async_task_with_product() -> None:
-    """Async tasks work with product()."""
-    # See type checker specific assertions in separate files
+def test_sync_workflow_keyword_decorator_type() -> None:
+    """``@workflow(name=...)`` on a sync function produces a ``SyncWorkflow``."""
+
+    @workflow(name="custom")
+    def wf(x: int) -> int:
+        return double(x=x)
+
+    assert isinstance(wf, SyncWorkflow)
 
 
-async def test_async_task_evaluation() -> None:
-    """evaluate_async() unwraps coroutines."""
-    # See assert_type_tests_mypy.py and assert_type_tests_pyright.py for type assertions
+def test_async_workflow_keyword_decorator_type() -> None:
+    """``@workflow(name=...)`` on an async function produces an ``AsyncWorkflow``."""
+
+    @workflow(name="custom")
+    async def wf(x: int) -> int:
+        return await async_double(x=x)
+
+    assert isinstance(wf, AsyncWorkflow)
 
 
-def test_mixed_sync_async() -> None:
-    """Sync tasks can depend on async task results."""
-    async_result = async_add(x=5, y=10)
-    sync_result = double(x=async_result)
-    assert_type(sync_result, TaskFuture[int])
+# region Workflow call return types
 
 
-# -- Generators --
+def test_sync_workflow_call_returns_value() -> None:
+    """Calling a ``SyncWorkflow`` returns the raw value type ``R``."""
+
+    @workflow
+    def wf(x: int, y: int) -> int:
+        return add(x=x, y=y)
+
+    result = wf(1, 2)
+    assert_type(result, int)
 
 
-def test_sync_generator_types() -> None:
-    """Sync generators preserve static type, run() returns list."""
-    from collections.abc import Generator
+def test_async_workflow_call_returns_coroutine() -> None:
+    """Calling an ``AsyncWorkflow`` returns ``Coroutine[Any, Any, R]``."""
 
-    @task
-    def generate(n: int) -> Generator[int, None, None]:
-        for i in range(n):
-            yield i
+    @workflow
+    async def wf(x: int, y: int) -> int:
+        return await async_add(x=x, y=y)
 
-    future = generate(n=5)
-    assert_type(future, TaskFuture[Generator[int, None, None]])
-    assert_type(future.run(), list[int])
+    result = wf(1, 2)
+    assert_type(result, Coroutine[Any, Any, int])
 
 
-def test_async_generator_types() -> None:
-    """Async generators wrapped in Coroutine."""
-    # See assert_type_tests_mypy.py and assert_type_tests_pyright.py for type assertions
+async def test_async_workflow_awaited_returns_value() -> None:
+    """Awaiting an ``AsyncWorkflow`` call returns ``R``."""
+
+    @workflow
+    async def wf(x: int, y: int) -> int:
+        return await async_add(x=x, y=y)
+
+    result = await wf(1, 2)
+    assert_type(result, int)
+
+
+# region task_map / async_task_map
+
+
+def test_task_map_returns_list() -> None:
+    """``task_map`` returns ``list[R]``."""
+    result = task_map(double, [1, 2, 3])
+    assert_type(result, list[int])  # ty: ignore[type-assertion-failure]  # ty infers list[Unknown]
+
+
+async def test_async_task_map_returns_list() -> None:
+    """``async_task_map`` returns ``list[R]``."""
+    result = await async_task_map(async_double, [1, 2, 3])
+    assert_type(result, list[int])  # ty: ignore[type-assertion-failure]  # ty infers list[Unknown]

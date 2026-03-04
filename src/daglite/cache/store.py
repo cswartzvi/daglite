@@ -54,6 +54,7 @@ class CacheStore:
             >>> import tempfile
             >>> store = CacheStore(tempfile.mkdtemp())
         """
+        self._driver: Driver
         if isinstance(driver, str):
             from daglite.drivers import FileDriver
 

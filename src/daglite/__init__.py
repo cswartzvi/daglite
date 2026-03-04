@@ -1,26 +1,28 @@
-"""Daglite: Lightweight Python framework for building static DAGs with explicit bindings."""
+"""Daglite: Lightweight Python framework for building eager task pipelines."""
 
 __version__ = "0.8.0"
 
 import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
 from daglite import backends
-from daglite import futures
 from daglite import settings
-from daglite.futures import load_dataset
+from daglite.mapping import async_task_map
+from daglite.mapping import task_map
 from daglite.plugins.manager import _initialize_plugin_system
+from daglite.session import async_session
+from daglite.session import session
 from daglite.tasks import task
-from daglite.workflows import WorkflowResult
 from daglite.workflows import workflow
 
 # Initialize hooks system on module import
 _initialize_plugin_system()
 
 __all__ = [
-    "WorkflowResult",
+    "async_session",
+    "async_task_map",
     "backends",
-    "futures",
-    "load_dataset",
+    "session",
     "settings",
     "task",
+    "task_map",
     "workflow",
 ]

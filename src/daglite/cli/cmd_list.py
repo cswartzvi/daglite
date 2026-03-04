@@ -8,7 +8,7 @@ from pathlib import Path
 
 import click
 
-from daglite.workflows import Workflow
+from daglite.workflows import _BaseWorkflow as Workflow
 
 
 def _find_workflows_in_module(module_path: str) -> list[tuple[str, Workflow]]:

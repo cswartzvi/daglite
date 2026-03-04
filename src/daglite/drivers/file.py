@@ -121,7 +121,7 @@ class FileDriver(Driver):
 
         # Write data
         with self.fs.open(path, "wb") as f:
-            f.write(data)  # type: ignore
+            f.write(data)  # pyright: ignore
 
         return path
 
@@ -133,7 +133,7 @@ class FileDriver(Driver):
             raise KeyError(f"Key '{key}' not found")
 
         with self.fs.open(path, "rb") as f:
-            return f.read()  # type: ignore[return-value]
+            return f.read()  # pyright: ignore
 
     @override
     def exists(self, key: str) -> bool:

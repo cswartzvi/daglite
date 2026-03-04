@@ -1,107 +1,97 @@
+"""Backend manager — resolves backend names to `Backend` instances."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pluggy import PluginManager
-
 from daglite.backends.base import Backend
-from daglite.plugins.processor import EventProcessor
 
 if TYPE_CHECKING:
-    from daglite.cache.store import CacheStore
-    from daglite.datasets.processor import DatasetProcessor
+    from daglite._context import RunContext
+    from daglite.settings import DagliteSettings
 
 
 class BackendManager:
-    """Manages global backend instance."""
+    """
+    Resolves backend names to `Backend` instances and manages their lifecycle.
 
-    def __init__(
-        self,
-        plugin_manager: PluginManager,
-        event_processor: EventProcessor,
-        dataset_processor: DatasetProcessor,
-        cache_store: CacheStore | None = None,
-    ) -> None:
-        from daglite.backends.impl.local import InlineBackend
-        from daglite.backends.impl.local import ProcessBackend
-        from daglite.backends.impl.local import ThreadBackend
+    Backends are created lazily on the first ``get()`` call for a given name and
+    reused for subsequent calls within the same session.
 
-        self._started = False
-        self._plugin_manager = plugin_manager
-        self._event_processor = event_processor
-        self._dataset_processor = dataset_processor
-        self._cache_store = cache_store
+    Args:
+        ctx: The active `RunContext` — passed to each backend on first use.
+        settings: Global `DagliteSettings` snapshot.
+    """
 
-        self._cached_backends: dict[str, Backend] = {}
+    def __init__(self, ctx: RunContext, settings: DagliteSettings) -> None:
+        from daglite.backends.local import InlineBackend
+        from daglite.backends.local import ProcessBackend
+        from daglite.backends.local import ThreadBackend
+
+        self._ctx = ctx
+        self._settings = settings
+        self._backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
             "inline": InlineBackend,
-            "sequential": InlineBackend,  # alias
-            "synchronous": InlineBackend,  # alias
+            "sequential": InlineBackend,
+            "synchronous": InlineBackend,
             "threading": ThreadBackend,
-            "thread": ThreadBackend,  # alias
-            "threads": ThreadBackend,  # alias
+            "thread": ThreadBackend,
+            "threads": ThreadBackend,
             "multiprocessing": ProcessBackend,
-            "processes": ProcessBackend,  # alias
-            "process": ProcessBackend,  # alias
+            "processes": ProcessBackend,
+            "process": ProcessBackend,
         }
-
-        # TODO : dynamic discovery of backends from entry points
 
     def get(self, backend_name: str | None = None) -> Backend:
         """
-        Get or create backend instance by name.
+        Get or create a backend instance by name.
 
         Args:
-            backend_name: Name of the backend to get. If not provided, uses the default settings
-                backend.
+            backend_name: Name of the backend. Falls back to the settings default
+                when *None*.
 
         Returns:
-            An instance of the requested backend class (or the default).
+            A started `Backend` instance.
 
         Raises:
-            BackendError: If the requested backend is unknown.
+            BackendError: If the name is not recognized.
         """
         from daglite.exceptions import BackendError
 
-        if not self._started:  # pragma: no cover
-            raise RuntimeError("BackendManager has not been started yet.")
-
         if not backend_name:
-            from daglite.settings import get_global_settings
+            backend_name = self._settings.default_backend
 
-            settings = get_global_settings()
-            backend_name = settings.default_backend
-
-        if backend_name not in self._cached_backends:
+        if backend_name not in self._backends:
             try:
                 backend_class = self._backend_types[backend_name]
-            except KeyError:  # pragma: no cover
+            except KeyError:
                 raise BackendError(
                     f"Unknown backend '{backend_name}'; "
-                    f"available: {list(self._backend_types.keys())}"
+                    f"available: {sorted(set(self._backend_types.keys()))}"
                 ) from None
 
             backend_instance = backend_class()
-            backend_instance.start(
-                self._plugin_manager,
-                self._event_processor,
-                self._dataset_processor,
-                self._cache_store,
-            )
-            self._cached_backends[backend_name] = backend_instance
+            backend_instance.start(self._ctx, self._settings)
+            self._backends[backend_name] = backend_instance
 
-        return self._cached_backends[backend_name]
+        return self._backends[backend_name]
 
-    def start(self) -> None:
-        """Start all backends as needed."""
-        if self._started:  # pragma: no cover
-            raise RuntimeError("BackendManager is already started.")
+    def register(self, name: str, backend_class: type[Backend]) -> None:
+        """
+        Register a custom backend class under *name*.
 
-        self._started = True
+        This allows third-party backends (Dask, Ray, etc.) to be used via
+        ``task_map(task, items, backend="my_custom_backend")``.
+
+        Args:
+            name: Backend name (used in ``task_map(backend=...)``.
+            backend_class: A ``Backend`` subclass.
+        """
+        self._backend_types[name] = backend_class
 
     def stop(self) -> None:
-        """Stop all backends and clear cached instances."""
-        for backend in self._cached_backends.values():
+        """Stop all started backends and clear the cache."""
+        for backend in self._backends.values():
             backend.stop()
-        self._cached_backends.clear()
-        self._started = False
+        self._backends.clear()

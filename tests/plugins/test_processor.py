@@ -4,9 +4,9 @@ import time
 from queue import Queue
 from typing import Any
 
-from daglite.plugins.events import Event
+from daglite.plugins.events import EventRegistry
+from daglite.plugins.events import PluginEvent
 from daglite.plugins.processor import EventProcessor
-from daglite.plugins.registry import EventRegistry
 
 
 class TestEventProcessor:
@@ -84,14 +84,14 @@ class TestEventProcessor:
         """Events can be dispatched directly without background processing."""
         events_received = []
 
-        def handler(event: Event) -> None:
+        def handler(event: PluginEvent) -> None:
             events_received.append(event)
 
         registry = EventRegistry()
         registry.register("test_event", handler)
 
         processor = EventProcessor(registry)
-        processor.dispatch(Event(type="test_event", data={"data": "direct"}))
+        processor.dispatch(PluginEvent(type="test_event", data={"data": "direct"}))
 
         assert len(events_received) == 1
         assert events_received[0].data["data"] == "direct"
@@ -100,7 +100,7 @@ class TestEventProcessor:
         """Background processor consumes events from queue sources."""
         events_received = []
 
-        def handler(event: Event) -> None:
+        def handler(event: PluginEvent) -> None:
             events_received.append(event)
 
         registry = EventRegistry()
@@ -113,8 +113,8 @@ class TestEventProcessor:
         processor.start()
 
         # Put events in queue
-        queue.put(Event(type="test_event", data={"data": "event1"}))
-        queue.put(Event(type="test_event", data={"data": "event2"}))
+        queue.put(PluginEvent(type="test_event", data={"data": "event1"}))
+        queue.put(PluginEvent(type="test_event", data={"data": "event2"}))
 
         # Wait for processing
         time.sleep(0.1)

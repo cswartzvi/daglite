@@ -83,9 +83,11 @@ def run(
 
     # Execute the workflow
     try:
-        if parallel:
-            asyncio.run(workflow_obj.run_async(**params))  # type: ignore[call-arg]
+        from daglite.workflows import AsyncWorkflow
+
+        if isinstance(workflow_obj, AsyncWorkflow):
+            asyncio.run(workflow_obj(**params))  # type: ignore[call-arg]
         else:
-            workflow_obj.run(**params)  # type: ignore[call-arg]
+            workflow_obj(**params)  # type: ignore[call-arg]
     except Exception as e:
         raise click.ClickException(f"Workflow execution failed: {e}") from e

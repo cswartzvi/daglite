@@ -18,7 +18,7 @@ from daglite.plugins.builtin.logging import CentralizedLoggingPlugin
 from daglite.plugins.builtin.logging import _ReporterHandler
 from daglite.plugins.builtin.logging import _TaskLoggerAdapter
 from daglite.plugins.builtin.logging import get_logger
-from daglite.plugins.events import Event
+from daglite.plugins.events import PluginEvent
 from daglite.plugins.reporters import DirectEventReporter
 from daglite.plugins.reporters import ProcessEventReporter
 
@@ -139,45 +139,15 @@ class TestGetLoggerUnit:
 class TestTaskLoggerAdapter:
     """Unit tests for _TaskLoggerAdapter."""
 
-    def test_process_without_task_context(self):
-        """Test process method when no task is executing."""
+    def test_process_injects_extra(self):
+        """Test process always returns an extra dict."""
         base_logger = logging.getLogger("test.adapter")
         adapter = _TaskLoggerAdapter(base_logger, {})
 
-        with patch("daglite.backends.context.get_current_task", return_value=None):
-            msg, kwargs = adapter.process("test message", {})
+        msg, kwargs = adapter.process("test message", {})
 
-            assert msg == "test message"
-            assert "extra" in kwargs
-            assert "daglite_task_id" not in kwargs["extra"]
-
-    def test_process_with_task_context(self):
-        """Test process method when task is executing."""
-        from uuid import uuid4
-
-        from daglite.graph.nodes.base import NodeMetadata
-
-        base_logger = logging.getLogger("test.adapter")
-        adapter = _TaskLoggerAdapter(base_logger, {})
-
-        # Mock task metadata
-        task_metadata = NodeMetadata(
-            id=uuid4(),
-            name="test_task",
-            kind="task",
-            description="Test",
-            backend_name="processes",
-            key="test_task[0]",
-        )
-
-        with patch("daglite.backends.context.get_current_task", return_value=task_metadata):
-            msg, kwargs = adapter.process("test message", {})
-
-            assert msg == "test message"
-            assert "extra" in kwargs
-            assert kwargs["extra"]["daglite_task_name"] == "test_task"
-            assert kwargs["extra"]["daglite_task_key"] == "test_task[0]"
-            assert "daglite_task_id" in kwargs["extra"]
+        assert msg == "test message"
+        assert "extra" in kwargs
 
 
 class TestReporterHandler:
@@ -281,7 +251,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling a basic log event."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -301,7 +271,7 @@ class TestCentralizedLoggingPluginUnit:
         plugin = CentralizedLoggingPlugin(level=logging.WARNING)
 
         # INFO event should be filtered
-        info_event = Event(
+        info_event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -317,7 +287,7 @@ class TestCentralizedLoggingPluginUnit:
         assert "Info message" not in caplog.text
 
         # WARNING event should pass
-        warning_event = Event(
+        warning_event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -336,7 +306,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with exception info."""
         plugin = CentralizedLoggingPlugin(level=logging.ERROR)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -357,7 +327,7 @@ class TestCentralizedLoggingPluginUnit:
         """Test handling log event with extra fields."""
         plugin = CentralizedLoggingPlugin(level=logging.INFO)
 
-        event = Event(
+        event = PluginEvent(
             type="daglite-log",
             data={
                 "name": "test.logger",
@@ -611,14 +581,14 @@ class TestLifecycleLoggingPlugin:
         """Test that plugin tracks mapped node IDs."""
         from uuid import uuid4
 
-        from daglite.graph.nodes.base import NodeMetadata
+        from daglite._metadata import TaskMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         # Simulate before_mapped_node_execute hook
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="map", key="test_key")
+        metadata = TaskMetadata(id=node_id, name="test_task")
 
         plugin.before_mapped_node_execute(metadata, iteration_count=2)
 
@@ -658,13 +628,13 @@ class TestLifecycleLoggingPluginOnCacheHit:
         from unittest.mock import Mock
         from uuid import uuid4
 
-        from daglite.graph.nodes.base import NodeMetadata
+        from daglite._metadata import TaskMetadata
         from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
 
         plugin = LifecycleLoggingPlugin()
 
         node_id = uuid4()
-        metadata = NodeMetadata(id=node_id, name="test_task", kind="task", key="test_task")
+        metadata = TaskMetadata(id=node_id, name="test_task")
 
         # Call hook - it should log without raising
         plugin.on_cache_hit(
@@ -735,3 +705,333 @@ class TestLifecycleLoggingPluginDatasetSaveHooks:
         out = capsys.readouterr().out
         assert "result.pkl" in out
         assert "format=" not in out
+
+
+# region Coverage gap tests
+
+
+class TestCentralizedLoggingStandardFieldRestoration:
+    """_handle_log_event restores standard LogRecord fields from all_extra."""
+
+    def test_standard_fields_restored(self):
+        plugin = CentralizedLoggingPlugin(level=logging.DEBUG)
+        event = PluginEvent(
+            type=LOGGER_EVENT,
+            data={
+                "name": "test.logger",
+                "level": "DEBUG",
+                "message": "hello",
+                "extra": {
+                    "pathname": "/some/file.py",
+                    "module": "file",
+                    "funcName": "my_func",
+                    "lineno": 42,
+                },
+            },
+        )
+        # Should not raise; the handler will create and dispatch a log record
+        plugin._handle_log_event(event)
+
+
+class TestLifecycleGraphHooks:
+    """Lifecycle hooks for graph-level events."""
+
+    def test_before_graph_execute(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        gid = uuid4()
+        rid = uuid4()
+        plugin.before_graph_execute(graph_id=gid, root_id=rid, node_count=5)
+
+    def test_after_graph_execute(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        gid = uuid4()
+        rid = uuid4()
+        plugin.after_graph_execute(graph_id=gid, root_id=rid, result=42, duration=1.5)
+
+    def test_on_graph_error(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        gid = uuid4()
+        rid = uuid4()
+        plugin.on_graph_error(graph_id=gid, root_id=rid, error=RuntimeError("oops"), duration=0.5)
+
+
+class TestLifecycleMappedNodeHooks:
+    """before_mapped_node_execute and after_mapped_node_execute."""
+
+    def test_before_mapped_node_execute(self):
+        from uuid import uuid4
+
+        from daglite._metadata import TaskMetadata
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        meta = TaskMetadata(id=uuid4(), name="my_map_task")
+        plugin.before_mapped_node_execute(metadata=meta, iteration_count=10)
+        assert meta.id in plugin._mapped_nodes
+
+    def test_after_mapped_node_execute(self):
+        from uuid import uuid4
+
+        from daglite._metadata import TaskMetadata
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        meta = TaskMetadata(id=uuid4(), name="my_map_task")
+        plugin.after_mapped_node_execute(metadata=meta, iteration_count=10, duration=2.0)
+
+
+class TestLifecycleRetryHooksWithReporter:
+    """before_node_retry and after_node_retry hook methods (reporter path)."""
+
+    def test_before_node_retry_with_reporter(self):
+        from uuid import uuid4
+
+        from daglite._metadata import TaskMetadata
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        reporter = Mock()
+        meta = TaskMetadata(id=uuid4(), name="retry_task")
+        plugin.before_node_retry(
+            metadata=meta,
+            inputs={"x": 1},
+            attempt=2,
+            last_error=ValueError("fail"),
+            reporter=reporter,
+        )
+        reporter.report.assert_called_once()
+        call_args = reporter.report.call_args
+        assert call_args[0][0] == "daglite-logging-node-retry"
+
+    def test_after_node_retry_with_reporter(self):
+        from uuid import uuid4
+
+        from daglite._metadata import TaskMetadata
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        reporter = Mock()
+        meta = TaskMetadata(id=uuid4(), name="retry_task")
+        plugin.after_node_retry(
+            metadata=meta,
+            inputs={"x": 1},
+            attempt=2,
+            succeeded=True,
+            reporter=reporter,
+        )
+        reporter.report.assert_called_once()
+        call_args = reporter.report.call_args
+        assert call_args[0][0] == "daglite-logging-node-retry-result"
+
+
+class TestLifecycleDatasetLoadHooks:
+    """before_dataset_load and after_dataset_load."""
+
+    def test_before_dataset_load(self):
+        from unittest.mock import patch
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "debug") as mock_debug:
+            plugin.before_dataset_load(
+                key="input.csv", return_type=None, format="pandas/csv", options=None
+            )
+        mock_debug.assert_called_once()
+        msg = mock_debug.call_args[0][0]
+        assert "input.csv" in msg
+        assert "(format=pandas/csv)" in msg
+
+    def test_after_dataset_load(self):
+        from unittest.mock import patch
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        with patch.object(plugin._logger, "info") as mock_info:
+            plugin.after_dataset_load(
+                key="input.csv",
+                return_type=None,
+                format="pandas/csv",
+                options=None,
+                result="data",
+                duration=0.5,
+            )
+        mock_info.assert_called_once()
+        msg = mock_info.call_args[0][0]
+        assert "input.csv" in msg
+
+
+class TestHandleNodeStartBranches:
+    """_handle_node_start: mapped iteration and hidden branches."""
+
+    def test_mapped_iteration(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        node_id = uuid4()
+        plugin._mapped_nodes.add(node_id)
+        event = PluginEvent(
+            type="daglite-logging-node-start",
+            data={"node_id": node_id, "node_key": "my_task", "backend_name": "thread"},
+        )
+        plugin._handle_node_start(event)
+
+    def test_hidden_node(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-start",
+            data={
+                "node_id": uuid4(),
+                "node_key": "hidden_task",
+                "backend_name": "inline",
+                "hidden": True,
+            },
+        )
+        plugin._handle_node_start(event)
+
+
+class TestHandleNodeCompleteBranches:
+    """_handle_node_complete: mapped iteration and hidden branches."""
+
+    def test_mapped_iteration(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        node_id = uuid4()
+        plugin._mapped_nodes.add(node_id)
+        event = PluginEvent(
+            type="daglite-logging-node-complete",
+            data={"node_id": node_id, "node_key": "my_task", "duration": 1.0},
+        )
+        plugin._handle_node_complete(event)
+
+    def test_hidden_node(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-complete",
+            data={
+                "node_id": uuid4(),
+                "node_key": "hidden_task",
+                "duration": 0.5,
+                "hidden": True,
+            },
+        )
+        plugin._handle_node_complete(event)
+
+    def test_normal_node(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-complete",
+            data={"node_id": uuid4(), "node_key": "my_task", "duration": 0.3},
+        )
+        plugin._handle_node_complete(event)
+
+
+class TestHandleTaskFailBranches:
+    """_handle_task_fail: mapped and non-mapped branches."""
+
+    def test_non_mapped_failure(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-fail",
+            data={
+                "node_id": uuid4(),
+                "node_key": "fail_task",
+                "error": "boom",
+                "error_type": "RuntimeError",
+                "duration": 0.1,
+            },
+        )
+        plugin._handle_task_fail(event)
+
+    def test_mapped_failure(self):
+        from uuid import uuid4
+
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        node_id = uuid4()
+        plugin._mapped_nodes.add(node_id)
+        event = PluginEvent(
+            type="daglite-logging-node-fail",
+            data={
+                "node_id": node_id,
+                "node_key": "mapped_fail",
+                "error": "boom",
+                "error_type": "ValueError",
+                "duration": 0.2,
+            },
+        )
+        plugin._handle_task_fail(event)
+
+
+class TestHandleNodeRetry:
+    """_handle_node_retry and _handle_node_retry_result."""
+
+    def test_handle_node_retry(self):
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-retry",
+            data={
+                "node_key": "retry_task",
+                "attempt": 2,
+                "error_type": "ValueError",
+                "error": "bad value",
+            },
+        )
+        plugin._handle_node_retry(event)
+
+    def test_handle_retry_result_succeeded(self):
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-retry-result",
+            data={"node_key": "retry_task", "attempt": 2, "succeeded": True},
+        )
+        plugin._handle_node_retry_result(event)
+
+    def test_handle_retry_result_failed(self):
+        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        event = PluginEvent(
+            type="daglite-logging-node-retry-result",
+            data={"node_key": "retry_task", "attempt": 2, "succeeded": False},
+        )
+        plugin._handle_node_retry_result(event)
