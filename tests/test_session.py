@@ -325,3 +325,56 @@ class TestRunContextDefaults:
         ctx = RunContext(event_reporter=mock_reporter, backend_name="test")
         assert ctx.backend_name == "test"
         assert ctx.event_reporter is mock_reporter
+
+
+class TestResolveCacheEdgeCases:
+    """Tests for _resolve_cache branches not covered by TestSessionCache."""
+
+    def test_cache_true_settings_cache_none(self) -> None:
+        """cache=True with settings.cache_store=None returns None."""
+        from daglite.session import _resolve_cache
+        from daglite.settings import DagliteSettings
+
+        settings = DagliteSettings(cache_store=None)
+        assert _resolve_cache(True, settings) is None
+
+    def test_cache_true_settings_cache_store_instance(self, tmp_path: Path) -> None:
+        """cache=True with settings.cache_store as CacheStore returns the instance."""
+        from daglite.cache.store import CacheStore
+        from daglite.session import _resolve_cache
+        from daglite.settings import DagliteSettings
+
+        store = CacheStore(str(tmp_path / "cache"))
+        settings = DagliteSettings(cache_store=store)
+        assert _resolve_cache(True, settings) is store
+
+    def test_cache_invalid_type_raises(self) -> None:
+        """Non bool/str/CacheStore/None raises ValueError."""
+        from daglite.session import _resolve_cache
+        from daglite.settings import DagliteSettings
+
+        settings = DagliteSettings()
+        with pytest.raises(ValueError, match="Invalid cache argument"):
+            _resolve_cache(12345, settings)
+
+
+class TestStopProcessorsErrorHandling:
+    """Tests for _stop_processors swallowing exceptions."""
+
+    def test_backend_manager_stop_exception_swallowed(self) -> None:
+        from daglite.session import _stop_processors
+
+        ctx = RunContext()
+        ctx.backend_manager = MagicMock()
+        ctx.backend_manager.stop.side_effect = RuntimeError("backend stop failed")
+        # Should not raise
+        _stop_processors(ctx)
+
+    def test_event_processor_stop_exception_swallowed(self) -> None:
+        from daglite.session import _stop_processors
+
+        ctx = RunContext()
+        ctx.event_processor = MagicMock()
+        ctx.event_processor.stop.side_effect = RuntimeError("processor stop failed")
+        # Should not raise
+        _stop_processors(ctx)

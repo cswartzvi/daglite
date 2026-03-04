@@ -133,8 +133,8 @@ class AbstractDataset(ABC):
         resolved_extensions = (extensions,) if isinstance(extensions, str) else extensions
 
         cls.format = resolved_format
-        cls.supported_types = resolved_types  # type: ignore[assignment]
-        cls.file_extensions = resolved_extensions  # type: ignore[assignment]
+        cls.supported_types = resolved_types  # type: ignore
+        cls.file_extensions = resolved_extensions  # type: ignore
 
         # Register for each supported type
         for t in resolved_types:
