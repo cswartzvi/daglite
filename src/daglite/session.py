@@ -35,13 +35,19 @@ from contextlib import contextmanager
 from typing import Any
 
 from daglite._context import RunContext
+from daglite._context import _map_iteration_index
+from daglite._context import _parent_task_id
 from daglite._context import _run_context
 from daglite._context import _task_call_args
 from daglite._context import get_event_reporter
+from daglite._context import get_map_iteration_index
+from daglite._context import get_parent_task_id
 from daglite._context import get_plugin_manager
 from daglite._context import get_run_context
 from daglite._context import get_task_call_args
 from daglite._context import reset_run_context
+from daglite._context import set_map_iteration_index
+from daglite._context import set_parent_task_id
 from daglite._context import set_run_context
 from daglite._context import set_task_call_args
 
@@ -50,9 +56,15 @@ logger = logging.getLogger(__name__)
 # Re-exports for backward compatibility.
 __all__ = [
     "RunContext",
+    "_map_iteration_index",
+    "_parent_task_id",
     "_run_context",
     "_task_call_args",
+    "get_map_iteration_index",
+    "get_parent_task_id",
     "get_run_context",
+    "set_map_iteration_index",
+    "set_parent_task_id",
     "set_run_context",
     "reset_run_context",
     "get_task_call_args",

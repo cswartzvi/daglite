@@ -20,7 +20,9 @@ from collections.abc import Iterable
 from typing import Any, TypeVar, overload
 
 from daglite._context import RunContext
+from daglite._context import _map_iteration_index
 from daglite._context import get_run_context
+from daglite._context import set_map_iteration_index
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +81,30 @@ def task_map(
     if not items:
         return []
 
-    # With a session — delegate to the backend.
+    # With a session — submit each item individually so the map iteration
+    # index context var is captured per-item (ThreadBackend copies context
+    # at submit time; InlineBackend runs synchronously).
     if ctx is not None and ctx.backend_manager is not None:
         backend_name = _resolve_backend(backend, ctx)
-        return ctx.backend_manager.get(backend_name).map(task, items)
+        be = ctx.backend_manager.get(backend_name)
+        futures = []
+        for i, args in enumerate(items):
+            token = set_map_iteration_index(i)
+            try:
+                futures.append(be.submit(task, args))
+            finally:
+                _map_iteration_index.reset(token)
+        return [f.result() for f in futures]
 
     # No session — inline fallback.
-    return [task(*args) for args in items]
+    results: list[R] = []
+    for i, args in enumerate(items):
+        token = set_map_iteration_index(i)
+        try:
+            results.append(task(*args))
+        finally:
+            _map_iteration_index.reset(token)
+    return results
 
 
 @overload
@@ -133,20 +152,65 @@ async def async_task_map(
     if not items:
         return []
 
-    # With a session — delegate to the backend.
+    is_async = getattr(task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task)))
+
+    # With a session — use the backend for sync tasks, asyncio.gather for async tasks.
     if ctx is not None and ctx.backend_manager is not None:
         backend_name = _resolve_backend(backend, ctx)
-        return await ctx.backend_manager.get(backend_name).async_map(task, items)
+        be = ctx.backend_manager.get(backend_name)
+
+        if is_async:
+            # Async tasks run concurrently on the event loop with per-item index.
+            # Each asyncio.Task gets its own context copy so index isolation is automatic.
+            return list(
+                await asyncio.gather(
+                    *[_async_indexed_call(task, i, args) for i, args in enumerate(items)]
+                )
+            )
+
+        # Sync tasks — submit to backend with per-item index.
+        futures = []
+        for i, args in enumerate(items):
+            token = set_map_iteration_index(i)
+            try:
+                futures.append(be.submit(task, args))
+            finally:
+                _map_iteration_index.reset(token)
+        return list(await asyncio.gather(*[asyncio.wrap_future(f) for f in futures]))
 
     # No session — concurrent fallback via gather.
-    is_async = getattr(task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task)))
     if is_async:
-        coros = [task(*args) for args in items]
-        return list(await asyncio.gather(*coros))
-    return [task(*args) for args in items]
+        return list(
+            await asyncio.gather(
+                *[_async_indexed_call(task, i, args) for i, args in enumerate(items)]
+            )
+        )
+
+    results: list[Any] = []
+    for i, args in enumerate(items):
+        token = set_map_iteration_index(i)
+        try:
+            results.append(task(*args))
+        finally:
+            _map_iteration_index.reset(token)
+    return results
 
 
 # region Internals
+
+
+async def _async_indexed_call(task: Callable[..., Any], index: int, args: tuple[Any, ...]) -> Any:
+    """
+    Await *task* with the map iteration index set for this item.
+
+    Each ``asyncio.Task`` created by ``asyncio.gather`` receives its own
+    context copy, so the set/reset here is isolated per-coroutine.
+    """
+    token = set_map_iteration_index(index)
+    try:
+        return await task(*args)
+    finally:
+        _map_iteration_index.reset(token)
 
 
 def _resolve_backend(backend: str | None, ctx: RunContext | None) -> str:

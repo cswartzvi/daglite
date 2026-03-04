@@ -32,8 +32,13 @@ from uuid import UUID
 from uuid import uuid4
 
 from daglite._context import RunContext
+from daglite._context import _map_iteration_index
+from daglite._context import _parent_task_id
 from daglite._context import _task_call_args
+from daglite._context import get_map_iteration_index
+from daglite._context import get_parent_task_id
 from daglite._context import get_run_context
+from daglite._context import set_parent_task_id
 from daglite._context import set_task_call_args
 from daglite._validation import check_key_placeholders
 from daglite._validation import check_key_template
@@ -112,8 +117,19 @@ class _BaseTask(Generic[P, R]):
         return hash_fn(self.func, bound)
 
     def _resolve_name(self, bound: dict[str, Any]) -> str:
-        """Return the task name with ``{param}`` placeholders resolved from *bound*."""
+        """
+        Return the task name with ``{param}`` placeholders resolved from *bound*.
+
+        When called inside a ``task_map`` / ``async_task_map`` iteration and the
+        name is **not** a ``{param}`` template, the map iteration index is
+        appended as ``[i]`` (e.g. ``"my-task[0]"``).  Template names are
+        assumed to already carry enough context to distinguish iterations, so
+        the suffix is skipped.
+        """
         if not self._name_is_template:
+            index = get_map_iteration_index()
+            if index is not None:
+                return f"{self.name}[{index}]"
             return self.name
         return resolve_template(self.name, bound)
 
@@ -133,50 +149,93 @@ class SyncTask(_BaseTask[P, R]):
         bound = self._bind_args(args, kwargs)
         resolved_name = self._resolve_name(bound)
 
-        # Cache check
-        cache_key: str | None = None
-        if self.cache and ctx and ctx.cache_store is not None:
-            cache_key = self._compute_cache_key(bound)
-            cached = ctx.cache_store.get(cache_key)
-            if cached is not CACHE_MISS:
-                _on_cache_hit(self, task_id, bound, cached, ctx, resolved_name=resolved_name)
-                return cached
+        # Clear the map iteration index so nested task calls don't inherit it.
+        map_token = _map_iteration_index.set(None)
 
-        _pre_call(self, task_id, args, kwargs, ctx, resolved_name=resolved_name)
-        t0 = time.perf_counter()
-        token = set_task_call_args(bound)
+        # Track parent-child relationships for nested tasks.
+        parent_id = get_parent_task_id()
+        parent_token = set_parent_task_id(task_id)
 
-        last_error: BaseException | None = None
         try:
-            for attempt in range(1 + self.retries):
-                try:
-                    result = self.func(*args, **kwargs)
-                    elapsed = time.perf_counter() - t0
+            # Cache check
+            cache_key: str | None = None
+            if self.cache and ctx and ctx.cache_store is not None:
+                cache_key = self._compute_cache_key(bound)
+                cached = ctx.cache_store.get(cache_key)
+                if cached is not CACHE_MISS:
+                    _on_cache_hit(
+                        self,
+                        task_id,
+                        bound,
+                        cached,
+                        ctx,
+                        resolved_name=resolved_name,
+                        parent_task_id=parent_id,
+                    )
+                    return cached
 
-                    if cache_key is not None and ctx and ctx.cache_store is not None:
-                        ctx.cache_store.put(cache_key, result, ttl=self.cache_ttl)
+            _pre_call(
+                self,
+                task_id,
+                args,
+                kwargs,
+                ctx,
+                resolved_name=resolved_name,
+                parent_task_id=parent_id,
+            )
+            t0 = time.perf_counter()
+            token = set_task_call_args(bound)
 
-                    _post_call(self, task_id, result, elapsed, ctx, resolved_name=resolved_name)
-                    return result
+            last_error: BaseException | None = None
+            try:
+                for attempt in range(1 + self.retries):
+                    try:
+                        result = self.func(*args, **kwargs)
+                        elapsed = time.perf_counter() - t0
 
-                except Exception as exc:
-                    last_error = exc
-                    if attempt < self.retries:
-                        _on_retry(
+                        if cache_key is not None and ctx and ctx.cache_store is not None:
+                            ctx.cache_store.put(cache_key, result, ttl=self.cache_ttl)
+
+                        _post_call(
                             self,
                             task_id,
-                            bound,
-                            attempt + 1,
-                            exc,
+                            result,
+                            elapsed,
                             ctx,
                             resolved_name=resolved_name,
+                            parent_task_id=parent_id,
                         )
-                        continue
-                    elapsed = time.perf_counter() - t0
-                    _on_error(self, task_id, exc, elapsed, ctx, resolved_name=resolved_name)
-                    raise
+                        return result
+
+                    except Exception as exc:
+                        last_error = exc
+                        if attempt < self.retries:
+                            _on_retry(
+                                self,
+                                task_id,
+                                bound,
+                                attempt + 1,
+                                exc,
+                                ctx,
+                                resolved_name=resolved_name,
+                            )
+                            continue
+                        elapsed = time.perf_counter() - t0
+                        _on_error(
+                            self,
+                            task_id,
+                            exc,
+                            elapsed,
+                            ctx,
+                            resolved_name=resolved_name,
+                            parent_task_id=parent_id,
+                        )
+                        raise
+            finally:
+                _task_call_args.reset(token)
         finally:
-            _task_call_args.reset(token)
+            _parent_task_id.reset(parent_token)
+            _map_iteration_index.reset(map_token)
 
         assert last_error is not None  # retries >= 0 guarantees at least one iteration
         raise last_error
@@ -200,50 +259,93 @@ class AsyncTask(_BaseTask[P, R]):
         bound = self._bind_args(args, kwargs)
         resolved_name = self._resolve_name(bound)
 
-        # Cache check
-        cache_key: str | None = None
-        if self.cache and ctx and ctx.cache_store is not None:
-            cache_key = self._compute_cache_key(bound)
-            cached = ctx.cache_store.get(cache_key)
-            if cached is not CACHE_MISS:
-                _on_cache_hit(self, task_id, bound, cached, ctx, resolved_name=resolved_name)
-                return cached
+        # Clear the map iteration index so nested task calls don't inherit it.
+        map_token = _map_iteration_index.set(None)
 
-        _pre_call(self, task_id, args, kwargs, ctx, resolved_name=resolved_name)
-        t0 = time.perf_counter()
-        token = set_task_call_args(bound)
+        # Track parent-child relationships for nested tasks.
+        parent_id = get_parent_task_id()
+        parent_token = set_parent_task_id(task_id)
 
-        last_error: BaseException | None = None
         try:
-            for attempt in range(1 + self.retries):
-                try:
-                    result = await self.func(*args, **kwargs)
-                    elapsed = time.perf_counter() - t0
+            # Cache check
+            cache_key: str | None = None
+            if self.cache and ctx and ctx.cache_store is not None:
+                cache_key = self._compute_cache_key(bound)
+                cached = ctx.cache_store.get(cache_key)
+                if cached is not CACHE_MISS:
+                    _on_cache_hit(
+                        self,
+                        task_id,
+                        bound,
+                        cached,
+                        ctx,
+                        resolved_name=resolved_name,
+                        parent_task_id=parent_id,
+                    )
+                    return cached
 
-                    if cache_key is not None and ctx and ctx.cache_store is not None:
-                        ctx.cache_store.put(cache_key, result, ttl=self.cache_ttl)
+            _pre_call(
+                self,
+                task_id,
+                args,
+                kwargs,
+                ctx,
+                resolved_name=resolved_name,
+                parent_task_id=parent_id,
+            )
+            t0 = time.perf_counter()
+            token = set_task_call_args(bound)
 
-                    _post_call(self, task_id, result, elapsed, ctx, resolved_name=resolved_name)
-                    return result
+            last_error: BaseException | None = None
+            try:
+                for attempt in range(1 + self.retries):
+                    try:
+                        result = await self.func(*args, **kwargs)
+                        elapsed = time.perf_counter() - t0
 
-                except Exception as exc:
-                    last_error = exc
-                    if attempt < self.retries:
-                        _on_retry(
+                        if cache_key is not None and ctx and ctx.cache_store is not None:
+                            ctx.cache_store.put(cache_key, result, ttl=self.cache_ttl)
+
+                        _post_call(
                             self,
                             task_id,
-                            bound,
-                            attempt + 1,
-                            exc,
+                            result,
+                            elapsed,
                             ctx,
                             resolved_name=resolved_name,
+                            parent_task_id=parent_id,
                         )
-                        continue
-                    elapsed = time.perf_counter() - t0
-                    _on_error(self, task_id, exc, elapsed, ctx, resolved_name=resolved_name)
-                    raise
+                        return result
+
+                    except Exception as exc:
+                        last_error = exc
+                        if attempt < self.retries:
+                            _on_retry(
+                                self,
+                                task_id,
+                                bound,
+                                attempt + 1,
+                                exc,
+                                ctx,
+                                resolved_name=resolved_name,
+                            )
+                            continue
+                        elapsed = time.perf_counter() - t0
+                        _on_error(
+                            self,
+                            task_id,
+                            exc,
+                            elapsed,
+                            ctx,
+                            resolved_name=resolved_name,
+                            parent_task_id=parent_id,
+                        )
+                        raise
+            finally:
+                _task_call_args.reset(token)
         finally:
-            _task_call_args.reset(token)
+            _parent_task_id.reset(parent_token)
+            _map_iteration_index.reset(map_token)
 
         assert last_error is not None  # retries >= 0 guarantees at least one iteration
         raise last_error
@@ -381,6 +483,7 @@ def _pre_call(
     ctx: RunContext | None,
     *,
     resolved_name: str | None = None,
+    parent_task_id: UUID | None = None,
 ) -> None:
     """Emits a task-started event and fires the pre-execution hook."""
     if ctx is None:
@@ -394,6 +497,7 @@ def _pre_call(
         args=args,
         kwargs=kwargs,
         backend=ctx.backend_name,
+        parent_task_id=parent_task_id,
     )
 
     if ctx.event_reporter is not None:
@@ -422,6 +526,7 @@ def _post_call(
     ctx: RunContext | None,
     *,
     resolved_name: str | None = None,
+    parent_task_id: UUID | None = None,
 ) -> None:
     """Emits a task-completed event and fires the post-execution hook."""
     if ctx is None:
@@ -435,6 +540,7 @@ def _post_call(
         result=result,
         elapsed=elapsed,
         cached=False,
+        parent_task_id=parent_task_id,
     )
 
     if ctx.event_reporter is not None:
@@ -465,6 +571,7 @@ def _on_error(
     ctx: RunContext | None,
     *,
     resolved_name: str | None = None,
+    parent_task_id: UUID | None = None,
 ) -> None:
     """Emits a task-failed event and fires the error hook."""
     if ctx is None:
@@ -477,6 +584,7 @@ def _on_error(
         task_id=task_id,
         error=error,
         elapsed=elapsed,
+        parent_task_id=parent_task_id,
     )
 
     if ctx.event_reporter is not None:
@@ -507,6 +615,7 @@ def _on_cache_hit(
     ctx: RunContext | None,
     *,
     resolved_name: str | None = None,
+    parent_task_id: UUID | None = None,
 ) -> None:
     """Emits a cached task-completed event and fires the cache-hit hook."""
     if ctx is None:
@@ -520,6 +629,7 @@ def _on_cache_hit(
         result=result,
         elapsed=0.0,
         cached=True,
+        parent_task_id=parent_task_id,
     )
 
     if ctx.event_reporter is not None:

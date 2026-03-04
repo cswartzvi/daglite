@@ -66,6 +66,9 @@ class TaskStarted:
     backend: str
     """Name of the backend executing this task (e.g. `"inline"`, `"thread"`)."""
 
+    parent_task_id: UUID | None = None
+    """Task ID of the parent task, or `None` if this is a top-level call."""
+
     timestamp: float = field(default_factory=time.time)
     """Unix timestamp when the event was created."""
 
@@ -89,6 +92,9 @@ class TaskCompleted:
     cached: bool
     """`True` if the result came from the cache rather than execution."""
 
+    parent_task_id: UUID | None = None
+    """Task ID of the parent task, or `None` if this is a top-level call."""
+
     timestamp: float = field(default_factory=time.time)
     """Unix timestamp when the event was created."""
 
@@ -108,6 +114,9 @@ class TaskFailed:
 
     elapsed: float
     """Wall-clock seconds before the failure occurred."""
+
+    parent_task_id: UUID | None = None
+    """Task ID of the parent task, or `None` if this is a top-level call."""
 
     timestamp: float = field(default_factory=time.time)
     """Unix timestamp when the event was created."""

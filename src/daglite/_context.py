@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from dataclasses import field
 from typing import Any
+from uuid import UUID
 
 # region RunContext
 
@@ -61,6 +62,12 @@ _run_context: ContextVar[RunContext | None] = ContextVar("run_context", default=
 
 _task_call_args: ContextVar[dict[str, Any] | None] = ContextVar("task_call_args", default=None)
 """Bound arguments of the currently executing task, used for ``{param}`` template resolution."""
+
+_map_iteration_index: ContextVar[int | None] = ContextVar("map_iteration_index", default=None)
+"""Index of the current map iteration, set by `task_map` / `async_task_map`."""
+
+_parent_task_id: ContextVar[UUID | None] = ContextVar("parent_task_id", default=None)
+"""Task ID of the currently executing parent task, for nested-task tracking."""
 
 
 # region Accessors
@@ -113,3 +120,23 @@ def get_plugin_manager() -> Any | None:
     """
     ctx = get_run_context()
     return ctx.plugin_manager if ctx is not None else None
+
+
+def get_map_iteration_index() -> int | None:
+    """Returns the current map iteration index, or `None` if not inside a map."""
+    return _map_iteration_index.get()
+
+
+def set_map_iteration_index(index: int) -> Any:
+    """Sets the current map iteration index. Returns a token for reset."""
+    return _map_iteration_index.set(index)
+
+
+def get_parent_task_id() -> UUID | None:
+    """Returns the task ID of the parent task, or `None` if top-level."""
+    return _parent_task_id.get()
+
+
+def set_parent_task_id(task_id: UUID | None) -> Any:
+    """Sets the parent task ID. Returns a token for reset."""
+    return _parent_task_id.set(task_id)
