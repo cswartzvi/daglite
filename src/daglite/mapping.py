@@ -47,14 +47,14 @@ def _check_task(task: Any, func_name: str) -> None:
         )
 
 
-def task_map(
+def map_task(
     task: Callable[..., R], *iterables: Iterable[Any], backend: str | None = None
 ) -> list[R]:
     """
     Map a sync task across iterables using the active backend.
 
-    Each item is executed as a separate task call with full event emission
-    and hook dispatch. The backend determines the concurrency strategy:
+    Each item is executed as a separate task call with full event emission and hook dispatch. The
+    backend determines the concurrency strategy:
 
     * `"inline"` — sequential loop (default outside a session).
     * `"thread"` — `ThreadPoolExecutor` with context propagation.
@@ -62,10 +62,8 @@ def task_map(
 
     Args:
         task: A sync eager task (decorated with ``@task``).
-        *iterables: One or more iterables whose elements are zipped and unpacked as positional
-            arguments to *task*.
-        backend: Backend name override. `None` inherits from the active session, falling back to
-            `"inline"`.
+        *iterables: Iterables whose elements are zipped and unpacked as arguments to `task`.
+        backend: Backend override. `None` inherits from the active session.
 
     Returns:
         Ordered list of results, one per zipped item tuple.
@@ -133,11 +131,9 @@ async def async_task_map(
     as a simple inline fallback.
 
     Args:
-        task: An async or sync eager task (decorated with ``@task``).
-        *iterables: One or more iterables whose elements are zipped and unpacked as positional
-            arguments to *task*.
-        backend: Backend name override. `None` inherits from the active session, falling back to
-            `"inline"`.
+        task: An async or sync eager task (decorated with `@task`).
+        *iterables: Iterables whose elements are zipped and unpacked as arguments to `task`.
+        backend: Backend override. `None` inherits from the active session.
 
     Returns:
         Ordered list of results, one per zipped item tuple.

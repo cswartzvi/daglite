@@ -14,9 +14,9 @@ import pytest
 
 from daglite import async_session
 from daglite import async_task_map
+from daglite import map_task
 from daglite import session
 from daglite import task
-from daglite import task_map
 from daglite import workflow
 from daglite.cache.store import CacheStore
 
@@ -377,26 +377,26 @@ class TestParallelMapInSession:
 
     def test_inline_backend(self) -> None:
         with session(backend="inline"):
-            results = task_map(double, [1, 2, 3])
+            results = map_task(double, [1, 2, 3])
 
         assert results == [2, 4, 6]
 
     def test_thread_backend(self) -> None:
         with session(backend="thread"):
-            results = task_map(double, [10, 20, 30])
+            results = map_task(double, [10, 20, 30])
 
         assert results == [20, 40, 60]
 
     def test_override_backend(self) -> None:
         """Explicit ``backend`` on ``task_map`` overrides the session."""
         with session(backend="inline"):
-            results = task_map(double, [5, 6], backend="thread")
+            results = map_task(double, [5, 6], backend="thread")
 
         assert results == [10, 12]
 
     def test_task_map_with_multiple_iterables(self) -> None:
         with session(backend="inline"):
-            results = task_map(add, [1, 2, 3], [10, 20, 30])
+            results = map_task(add, [1, 2, 3], [10, 20, 30])
 
         assert results == [11, 22, 33]
 
@@ -489,7 +489,7 @@ class TestMixedComposition:
     def test_task_map_inside_workflow(self) -> None:
         @workflow
         def wf(values: list[int]) -> list[int]:
-            return task_map(double, values, backend="inline")
+            return map_task(double, values, backend="inline")
 
         assert wf([1, 2, 3]) == [2, 4, 6]
 

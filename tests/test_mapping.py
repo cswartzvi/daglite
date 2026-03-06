@@ -20,7 +20,7 @@ from typing import Any
 import pytest
 
 from daglite.mapping import async_task_map
-from daglite.mapping import task_map
+from daglite.mapping import map_task
 from daglite.session import RunContext
 from daglite.session import reset_run_context
 from daglite.session import session
@@ -79,33 +79,33 @@ class TestTaskMapInline:
     """Tests for task_map with the inline (sequential) backend."""
 
     def test_single_iterable(self) -> None:
-        result = task_map(square, [1, 2, 3, 4])
+        result = map_task(square, [1, 2, 3, 4])
         assert result == [1, 4, 9, 16]
 
     def test_multiple_iterables(self) -> None:
-        result = task_map(add, [1, 2, 3], [10, 20, 30])
+        result = map_task(add, [1, 2, 3], [10, 20, 30])
         assert result == [11, 22, 33]
 
     def test_empty_iterables(self) -> None:
-        result = task_map(square)
+        result = map_task(square)
         assert result == []
 
     def test_empty_list(self) -> None:
-        result = task_map(square, [])
+        result = map_task(square, [])
         assert result == []
 
     def test_error_propagates(self) -> None:
         with pytest.raises(ValueError, match="three is bad"):
-            task_map(fail_on_three, [1, 2, 3, 4])
+            map_task(fail_on_three, [1, 2, 3, 4])
 
     def test_explicit_inline_backend(self) -> None:
-        result = task_map(square, [5, 6], backend="inline")
+        result = map_task(square, [5, 6], backend="inline")
         assert result == [25, 36]
 
     def test_emits_events_in_context(self, ctx: RunContext, reporter: _FakeReporter) -> None:
         token = set_run_context(ctx)
         try:
-            result = task_map(square, [2, 3])
+            result = map_task(square, [2, 3])
             assert result == [4, 9]
             started = [e for t, e in reporter.events if t == "task_started"]
             completed = [e for t, e in reporter.events if t == "task_completed"]
@@ -120,37 +120,37 @@ class TestTaskMapThread:
 
     def test_thread_backend_produces_correct_results(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, range(10))
+            result = map_task(square, range(10))
             assert result == [x * x for x in range(10)]
 
     def test_thread_backend_with_multiple_iterables(self) -> None:
         with session(backend="thread"):
-            result = task_map(add, [1, 2, 3], [4, 5, 6])
+            result = map_task(add, [1, 2, 3], [4, 5, 6])
             assert result == [5, 7, 9]
 
     def test_thread_backend_empty(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [])
+            result = map_task(square, [])
             assert result == []
 
     def test_thread_backend_error(self) -> None:
         with session(backend="thread"):
             with pytest.raises(ValueError, match="three is bad"):
-                task_map(fail_on_three, [1, 2, 3])
+                map_task(fail_on_three, [1, 2, 3])
 
     def test_thread_backend_propagates_events(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [7, 8])
+            result = map_task(square, [7, 8])
             assert result == [49, 64]
 
     def test_thread_alias_threading(self) -> None:
         with session(backend="inline"):
-            result = task_map(square, [1, 2], backend="threading")
+            result = map_task(square, [1, 2], backend="threading")
             assert result == [1, 4]
 
     def test_thread_alias_threads(self) -> None:
         with session(backend="inline"):
-            result = task_map(square, [3], backend="threads")
+            result = map_task(square, [3], backend="threads")
             assert result == [9]
 
 
@@ -159,12 +159,12 @@ class TestBackendResolution:
 
     def test_inherits_from_session_context(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [2, 3])
+            result = map_task(square, [2, 3])
             assert result == [4, 9]
 
     def test_explicit_overrides_context(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [4], backend="inline")
+            result = map_task(square, [4], backend="inline")
             assert result == [16]
 
     def test_unknown_backend_raises(self) -> None:
@@ -172,10 +172,10 @@ class TestBackendResolution:
 
         with session(backend="inline"):
             with pytest.raises(BackendError, match="Unknown backend"):
-                task_map(square, [1], backend="quantum")
+                map_task(square, [1], backend="quantum")
 
     def test_defaults_to_inline_without_context(self) -> None:
-        result = task_map(square, [5])
+        result = map_task(square, [5])
         assert result == [25]
 
 
@@ -241,22 +241,22 @@ class TestTaskMapWithSession:
 
     def test_inside_session_inline(self) -> None:
         with session(backend="inline"):
-            result = task_map(square, [1, 2, 3])
+            result = map_task(square, [1, 2, 3])
             assert result == [1, 4, 9]
 
     def test_inside_session_thread(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [1, 2, 3])
+            result = map_task(square, [1, 2, 3])
             assert result == [1, 4, 9]
 
     def test_override_backend_inside_session(self) -> None:
         with session(backend="thread"):
-            result = task_map(square, [1, 2], backend="inline")
+            result = map_task(square, [1, 2], backend="inline")
             assert result == [1, 4]
 
     def test_events_flow_through_session(self) -> None:
         with session(backend="inline"):
-            task_map(square, [10, 20])
+            map_task(square, [10, 20])
             # Events dispatched through the session's event processor — just
             # verify no exceptions were raised and results are correct.
 
@@ -269,7 +269,7 @@ class TestTaskTypeCheck:
             return x * 2
 
         with pytest.raises(TypeError, match="expects a `@task`-decorated callable"):
-            task_map(plain, [1, 2])
+            map_task(plain, [1, 2])
 
     def test_async_task_map_rejects_plain_function(self) -> None:
         async def plain(x: int) -> int:

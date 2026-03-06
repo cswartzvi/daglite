@@ -22,7 +22,7 @@ from daglite._context import get_parent_task_id
 from daglite._context import reset_run_context
 from daglite._context import set_run_context
 from daglite.mapping import async_task_map
-from daglite.mapping import task_map
+from daglite.mapping import map_task
 from daglite.plugins.events import TaskCompleted
 from daglite.plugins.events import TaskFailed
 from daglite.plugins.events import TaskStarted
@@ -75,7 +75,7 @@ class TestMapIndexSuffix:
         def capture(x: int) -> int:
             return x
 
-        task_map(capture, [10, 20, 30])
+        map_task(capture, [10, 20, 30])
         # No events without a context, but we verify via a side-channel:
         # the index is set, _resolve_name appends [i].
 
@@ -89,7 +89,7 @@ class TestMapIndexSuffix:
 
         token = set_run_context(ctx)
         try:
-            result = task_map(sq, [2, 3, 4])
+            result = map_task(sq, [2, 3, 4])
             assert result == [4, 9, 16]
 
             started = collector.started_events()
@@ -106,7 +106,7 @@ class TestMapIndexSuffix:
             return x + 1
 
         with session(backend="inline"):
-            result = task_map(add_one, [0, 1, 2])
+            result = map_task(add_one, [0, 1, 2])
             assert result == [1, 2, 3]
 
     def test_no_index_outside_map(self, ctx: RunContext, collector: _EventCollector) -> None:
@@ -133,7 +133,7 @@ class TestMapIndexSuffix:
 
         token = set_run_context(ctx)
         try:
-            task_map(resettable, [1, 2])
+            map_task(resettable, [1, 2])
             collector.events.clear()
 
             resettable(99)
@@ -153,7 +153,7 @@ class TestMapIndexTemplateSkip:
 
         token = set_run_context(ctx)
         try:
-            result = task_map(process, [10, 20, 30])
+            result = map_task(process, [10, 20, 30])
             assert result == [20, 40, 60]
 
             started = collector.started_events()
@@ -230,7 +230,7 @@ class TestMapIndexWithThreadBackend:
 
         try:
             with session(backend="thread"):
-                result = task_map(tsq, [1, 2, 3])
+                result = map_task(tsq, [1, 2, 3])
                 assert result == [1, 4, 9]
         finally:
             reset_run_context(token)
@@ -255,7 +255,7 @@ class TestMapIndexIsolation:
             observed.append(get_map_iteration_index())
             return x
 
-        task_map(observe, [10, 20, 30])
+        map_task(observe, [10, 20, 30])
         # Index is consumed by _resolve_name, so user code sees None.
         assert observed == [None, None, None]
 
@@ -469,7 +469,7 @@ class TestMapIndexAndParentCombined:
 
         token = set_run_context(ctx)
         try:
-            result = task_map(mapped, [1, 2])
+            result = map_task(mapped, [1, 2])
             assert result == [10, 20]
 
             started = collector.started_events()

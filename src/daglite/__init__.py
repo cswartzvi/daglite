@@ -6,7 +6,7 @@ import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
 from daglite import backends
 from daglite import settings
 from daglite.mapping import async_task_map
-from daglite.mapping import task_map
+from daglite.mapping import map_task
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.session import async_session
 from daglite.session import session
@@ -23,6 +23,6 @@ __all__ = [
     "session",
     "settings",
     "task",
-    "task_map",
+    "map_task",
     "workflow",
 ]
