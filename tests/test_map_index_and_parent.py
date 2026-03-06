@@ -21,7 +21,7 @@ from daglite._context import get_map_iteration_index
 from daglite._context import get_parent_task_id
 from daglite._context import reset_run_context
 from daglite._context import set_run_context
-from daglite.mapping import async_task_map
+from daglite.mapping import gather_tasks
 from daglite.mapping import map_task
 from daglite.plugins.events import TaskCompleted
 from daglite.plugins.events import TaskFailed
@@ -174,7 +174,7 @@ class TestAsyncMapIndex:
 
         token = set_run_context(ctx)
         try:
-            result = asyncio.run(async_task_map(asq, [2, 3]))
+            result = asyncio.run(gather_tasks(asq, [2, 3]))
             assert result == [4, 9]
 
             started = collector.started_events()
@@ -191,7 +191,7 @@ class TestAsyncMapIndex:
 
         token = set_run_context(ctx)
         try:
-            result = asyncio.run(async_task_map(sva, [5, 6]))
+            result = asyncio.run(gather_tasks(sva, [5, 6]))
             assert result == [6, 7]
 
             started = collector.started_events()
@@ -206,7 +206,7 @@ class TestAsyncMapIndex:
 
         token = set_run_context(ctx)
         try:
-            result = asyncio.run(async_task_map(atpl, [7, 8]))
+            result = asyncio.run(gather_tasks(atpl, [7, 8]))
             assert result == [7, 8]
 
             started = collector.started_events()

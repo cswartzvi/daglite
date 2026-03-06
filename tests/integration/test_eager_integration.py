@@ -13,7 +13,7 @@ import tempfile
 import pytest
 
 from daglite import async_session
-from daglite import async_task_map
+from daglite import gather_tasks
 from daglite import map_task
 from daglite import session
 from daglite import task
@@ -407,7 +407,7 @@ class TestAsyncMapInSession:
     def test_async_task_map_inline(self) -> None:
         async def _run() -> list[int]:
             async with async_session(backend="inline"):
-                return await async_task_map(async_double, [1, 2, 3])
+                return await gather_tasks(async_double, [1, 2, 3])
 
         assert asyncio.run(_run()) == [2, 4, 6]
 

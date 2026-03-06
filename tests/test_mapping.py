@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from daglite.mapping import async_task_map
+from daglite.mapping import gather_tasks
 from daglite.mapping import map_task
 from daglite.session import RunContext
 from daglite.session import reset_run_context
@@ -183,21 +183,21 @@ class TestAsyncTaskMap:
     """Tests for async_task_map with async tasks."""
 
     def test_async_single_iterable(self) -> None:
-        result = asyncio.run(async_task_map(async_square, [1, 2, 3, 4]))
+        result = asyncio.run(gather_tasks(async_square, [1, 2, 3, 4]))
         assert result == [1, 4, 9, 16]
 
     def test_async_multiple_iterables(self) -> None:
-        result = asyncio.run(async_task_map(async_add, [1, 2], [10, 20]))
+        result = asyncio.run(gather_tasks(async_add, [1, 2], [10, 20]))
         assert result == [11, 22]
 
     def test_async_empty(self) -> None:
-        result = asyncio.run(async_task_map(async_square, []))
+        result = asyncio.run(gather_tasks(async_square, []))
         assert result == []
 
     def test_async_emits_events(self, ctx: RunContext, reporter: _FakeReporter) -> None:
         token = set_run_context(ctx)
         try:
-            result = asyncio.run(async_task_map(async_square, [2, 3]))
+            result = asyncio.run(gather_tasks(async_square, [2, 3]))
             assert result == [4, 9]
             started = [e for t, e in reporter.events if t == "task_started"]
             completed = [e for t, e in reporter.events if t == "task_completed"]
@@ -215,12 +215,12 @@ class TestAsyncTaskMap:
             order.append(x)
             return x
 
-        asyncio.run(async_task_map(track, [1, 2, 3], backend="inline"))
+        asyncio.run(gather_tasks(track, [1, 2, 3], backend="inline"))
         assert order == [1, 2, 3]
 
     def test_concurrent_default(self) -> None:
         """Non-inline backend uses asyncio.gather for concurrency."""
-        result = asyncio.run(async_task_map(async_square, [4, 5], backend="thread"))
+        result = asyncio.run(gather_tasks(async_square, [4, 5], backend="thread"))
         assert result == [16, 25]
 
 
@@ -228,11 +228,11 @@ class TestAsyncTaskMapSyncTasks:
     """Tests for async_task_map dispatching sync tasks to the thread executor."""
 
     def test_sync_task_via_run_in_executor(self) -> None:
-        result = asyncio.run(async_task_map(square, [1, 2, 3], backend="thread"))
+        result = asyncio.run(gather_tasks(square, [1, 2, 3], backend="thread"))
         assert result == [1, 4, 9]
 
     def test_sync_task_inline(self) -> None:
-        result = asyncio.run(async_task_map(square, [4, 5], backend="inline"))
+        result = asyncio.run(gather_tasks(square, [4, 5], backend="inline"))
         assert result == [16, 25]
 
 
@@ -276,4 +276,4 @@ class TestTaskTypeCheck:
             return x * 2
 
         with pytest.raises(TypeError, match="expects a `@task`-decorated callable"):
-            asyncio.run(async_task_map(plain, [1, 2]))
+            asyncio.run(gather_tasks(plain, [1, 2]))

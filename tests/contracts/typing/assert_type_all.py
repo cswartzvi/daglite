@@ -16,7 +16,7 @@ from typing_extensions import assert_type
 
 from daglite import task
 from daglite import workflow
-from daglite.mapping import async_task_map
+from daglite.mapping import gather_tasks
 from daglite.mapping import map_task
 from daglite.tasks import AsyncTask
 from daglite.tasks import SyncTask
@@ -260,5 +260,5 @@ def test_task_map_returns_list() -> None:
 
 async def test_async_task_map_returns_list() -> None:
     """``async_task_map`` returns ``list[R]``."""
-    result = await async_task_map(async_double, [1, 2, 3])
+    result = await gather_tasks(async_double, [1, 2, 3])
     assert_type(result, list[int])  # ty: ignore[type-assertion-failure]  # ty infers list[Unknown]

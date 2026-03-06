@@ -47,9 +47,7 @@ def _check_task(task: Any, func_name: str) -> None:
         )
 
 
-def map_task(
-    task: Callable[..., R], *iterables: Iterable[Any], backend: str | None = None
-) -> list[R]:
+def map_task(task: Callable[..., R], *args: Iterable[Any], backend: str | None = None) -> list[R]:
     """
     Map a sync task across iterables using the active backend.
 
@@ -62,7 +60,7 @@ def map_task(
 
     Args:
         task: A sync eager task (decorated with ``@task``).
-        *iterables: Iterables whose elements are zipped and unpacked as arguments to `task`.
+        *args: Iterables whose elements are zipped and unpacked as arguments to `task`.
         backend: Backend override. `None` inherits from the active session.
 
     Returns:
@@ -74,7 +72,7 @@ def map_task(
     _check_task(task, "task_map")
 
     ctx = get_run_context()
-    items = list(zip(*iterables))
+    items = list(zip(*args))
 
     if not items:
         return []
@@ -106,21 +104,21 @@ def map_task(
 
 
 @overload
-async def async_task_map(
+async def gather_tasks(
     task: Callable[..., Coroutine[Any, Any, R]],
-    *iterables: Iterable[Any],
+    *args: Iterable[Any],
     backend: str | None = None,
 ) -> list[R]: ...
 
 
 @overload
-async def async_task_map(
-    task: Callable[..., R], *iterables: Iterable[Any], backend: str | None = None
+async def gather_tasks(
+    task: Callable[..., R], *args: Iterable[Any], backend: str | None = None
 ) -> list[R]: ...
 
 
-async def async_task_map(
-    task: Callable[..., Any], *iterables: Iterable[Any], backend: str | None = None
+async def gather_tasks(
+    task: Callable[..., Any], *args: Iterable[Any], backend: str | None = None
 ) -> list[Any]:
     """
     Async map of a task across iterables.
@@ -132,7 +130,7 @@ async def async_task_map(
 
     Args:
         task: An async or sync eager task (decorated with `@task`).
-        *iterables: Iterables whose elements are zipped and unpacked as arguments to `task`.
+        *args: Iterables whose elements are zipped and unpacked as arguments to `task`.
         backend: Backend override. `None` inherits from the active session.
 
     Returns:
@@ -143,7 +141,7 @@ async def async_task_map(
     """
     _check_task(task, "async_task_map")
     ctx = get_run_context()
-    items = list(zip(*iterables))
+    items = list(zip(*args))
 
     if not items:
         return []
