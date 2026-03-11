@@ -20,7 +20,7 @@ R = TypeVar("R")
 
 
 class _WorkflowDecorator(Protocol):
-    """Return type for keyword-args form of ``workflow()``."""
+    """Return type for keyword-args form of `workflow()`."""
 
     @overload
     def __call__(  # type: ignore[overload-overlap]
@@ -65,7 +65,10 @@ def workflow(
 
     Calling a workflow sets up a managed session that provides backend, cache, plugin, and event
     infrastructure. Sync workflows return the result directly; async workflows return a coroutine
-    that the caller must ``await``.
+    that the caller must `await`.
+
+    Note that workflows cannot wrap generator functions. Use `@task` for generator functions or
+    collect results inside the workflow.
 
     Args:
         func: The function to wrap. When used without parentheses (`@workflow`), this is
@@ -105,6 +108,12 @@ def workflow(
     def decorator(fn: Callable[..., Any]) -> SyncWorkflow[Any, Any] | AsyncWorkflow[Any, Any]:
         if inspect.isclass(fn) or not callable(fn):
             raise TypeError("`@workflow` can only be applied to callable functions.")
+
+        if inspect.isgeneratorfunction(fn) or inspect.isasyncgenfunction(fn):
+            raise TypeError(
+                "`@workflow` cannot wrap generator functions. Use `@task` for generator functions "
+                "or collect results inside the workflow."
+            )
 
         _name = name if name is not None else getattr(fn, "__name__", "unnamed_workflow")
         _description = description if description is not None else getattr(fn, "__doc__", "") or ""
@@ -197,9 +206,9 @@ class _BaseWorkflow(Generic[P, R]):
         """
         Extract parameter names and their type annotations from the workflow function.
 
-        Uses ``typing.get_type_hints`` rather than the raw ``inspect.Signature``
-        so that stringified annotations (produced by ``from __future__ import
-        annotations``) are resolved to their actual types.
+        Uses `typing.get_type_hints` rather than the raw `inspect.Signature`
+        so that stringified annotations (produced by `from __future__ import
+        annotations`) are resolved to their actual types.
 
         Returns:
             Dictionary mapping parameter names to their type annotations. If a parameter has no

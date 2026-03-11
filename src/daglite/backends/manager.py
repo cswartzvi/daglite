@@ -2,33 +2,49 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+import atexit
+import logging
+import threading
+from contextvars import ContextVar
+from contextvars import Token
+from typing import TYPE_CHECKING, ClassVar
 
 from daglite.backends.base import Backend
 
 if TYPE_CHECKING:
-    from daglite._context import RunContext
+    from daglite._context import SessionContext
     from daglite.settings import DagliteSettings
+
+logger = logging.getLogger(__name__)
 
 
 class BackendManager:
     """
     Resolves backend names to `Backend` instances and manages their lifecycle.
 
-    Backends are created lazily on the first ``get()`` call for a given name and
-    reused for subsequent calls within the same session.
+    Backends are created lazily on the first `get()` call for a given name and
+    reused for subsequent calls within the same manager.
 
-    Args:
-        ctx: The active `RunContext` — passed to each backend on first use.
-        settings: Global `DagliteSettings` snapshot.
+    Two modes of operation:
+
+    1. **Session-scoped** — created by `session()` and activated via `activate()`.
+       Stopped and deactivated when the session exits.
+    2. **Global singleton** — created on first use outside a session, lives until interpreter
+       shutdown (cleaned up via `atexit`).
     """
 
-    def __init__(self, ctx: RunContext, settings: DagliteSettings) -> None:
+    _global: ClassVar[BackendManager | None] = None
+    _global_lock: ClassVar[threading.Lock] = threading.Lock()
+    _active: ClassVar[ContextVar[BackendManager | None]] = ContextVar(
+        "_active_backend_manager", default=None
+    )
+
+    def __init__(self, session: SessionContext | None, settings: DagliteSettings) -> None:
         from daglite.backends.local import InlineBackend
         from daglite.backends.local import ProcessBackend
         from daglite.backends.local import ThreadBackend
 
-        self._ctx = ctx
+        self._session = session
         self._settings = settings
         self._backends: dict[str, Backend] = {}
         self._backend_types: dict[str, type[Backend]] = {
@@ -42,6 +58,55 @@ class BackendManager:
             "processes": ProcessBackend,
             "process": ProcessBackend,
         }
+
+    # region Singleton
+
+    @classmethod
+    def get_active(cls) -> BackendManager:
+        """
+        Return the session-scoped manager if active, else the global singleton.
+
+        The session-scoped manager is set via `activate()` and cleared via
+        `deactivate()`.  The global singleton is created on first use and
+        cleaned up at interpreter shutdown.
+        """
+        mgr = cls._active.get()
+        if mgr is not None:
+            return mgr
+        return cls._get_global()
+
+    def activate(self) -> Token[BackendManager | None]:
+        """Push this manager as the active one for the current context."""
+        return self._active.set(self)
+
+    def deactivate(self, token: Token[BackendManager | None]) -> None:
+        """Stop backends and restore the previous manager."""
+        self.stop()
+        self._active.reset(token)
+
+    @classmethod
+    def _get_global(cls) -> BackendManager:
+        """Lazily create the global singleton with `atexit` cleanup."""
+        if cls._global is None:
+            with cls._global_lock:
+                if cls._global is None:
+                    from daglite.settings import get_global_settings
+
+                    cls._global = BackendManager(session=None, settings=get_global_settings())
+                    atexit.register(cls._shutdown_global)
+        return cls._global
+
+    @classmethod
+    def _shutdown_global(cls) -> None:
+        """Called at interpreter exit to stop global backends."""
+        if cls._global is not None:
+            try:
+                cls._global.stop()
+            except Exception:
+                logger.exception("Failed to stop global backend manager at shutdown")
+            cls._global = None
+
+    # region Public API
 
     def get(self, backend_name: str | None = None) -> Backend:
         """
@@ -60,7 +125,7 @@ class BackendManager:
         from daglite.exceptions import BackendError
 
         if not backend_name:
-            backend_name = self._settings.default_backend
+            backend_name = self._settings.backend
 
         if backend_name not in self._backends:
             try:
@@ -72,7 +137,7 @@ class BackendManager:
                 ) from None
 
             backend_instance = backend_class()
-            backend_instance.start(self._ctx, self._settings)
+            backend_instance.start(self._session)
             self._backends[backend_name] = backend_instance
 
         return self._backends[backend_name]
@@ -82,11 +147,11 @@ class BackendManager:
         Register a custom backend class under *name*.
 
         This allows third-party backends (Dask, Ray, etc.) to be used via
-        ``task_map(task, items, backend="my_custom_backend")``.
+        `map_tasks(task, items, backend="my_custom_backend")`.
 
         Args:
-            name: Backend name (used in ``task_map(backend=...)``.
-            backend_class: A ``Backend`` subclass.
+            name: Backend name (used in `map_tasks(backend=...)`.
+            backend_class: A `Backend` subclass.
         """
         self._backend_types[name] = backend_class
 

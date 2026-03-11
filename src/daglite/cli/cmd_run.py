@@ -1,4 +1,4 @@
-"""CLI ``run`` command for executing workflows."""
+"""CLI `run` command for executing workflows."""
 
 from __future__ import annotations
 

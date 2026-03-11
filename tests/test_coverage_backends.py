@@ -180,7 +180,7 @@ class TestBackendManagerEdgeCases:
     def test_get_none_uses_default(self) -> None:
         """get(None) falls back to settings.default_backend."""
         ctx = RunContext(backend_name="inline")
-        settings = DagliteSettings(default_backend="inline")
+        settings = DagliteSettings(backend="inline")
         mgr = BackendManager(ctx, settings)
 
         backend = mgr.get(None)

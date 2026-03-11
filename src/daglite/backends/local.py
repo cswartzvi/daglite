@@ -1,7 +1,6 @@
 """Backend implementations for local execution (inline, threading, multiprocessing)."""
 
 import contextvars
-import inspect
 import os
 import sys
 from collections.abc import Callable
@@ -14,10 +13,8 @@ from uuid import UUID
 
 from typing_extensions import override
 
+from daglite._context import BackendContext
 from daglite.backends.base import Backend
-from daglite.plugins.manager import deserialize_plugin_manager
-from daglite.plugins.manager import serialize_plugin_manager
-from daglite.plugins.reporters import ProcessEventReporter
 
 
 class InlineBackend(Backend):
@@ -28,32 +25,30 @@ class InlineBackend(Backend):
     session is active and the simplest backend for debugging.
     """
 
+    name = "inline"
+
     @override
-    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
+    def _submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        context: BackendContext,
+    ) -> Future[Any]:
         fut: Future[Any] = Future()
         try:
-            fut.set_result(task(*args))
+            with context:
+                fut.set_result(func(*args, **kwargs))
         except BaseException as exc:
             fut.set_exception(exc)
         return fut
 
-    @override
-    async def async_map(self, task: Callable[..., Any], items: list[tuple[Any, ...]]) -> list[Any]:
-        is_async = getattr(
-            task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task))
-        )
-        if is_async:
-            return [await task(*args) for args in items]
-        return [task(*args) for args in items]
-
 
 class ThreadBackend(Backend):
-    """
-    Executes tasks across a thread pool.
+    """Executes tasks across a thread pool."""
 
-    Each `submit` call dispatches one future to the pool. The calling thread's context variables
-    are copied into each worker so that the active `RunContext` is visible inside every thread.
-    """
+    name = "thread"
 
     _executor: ThreadPoolExecutor
 
@@ -68,24 +63,32 @@ class ThreadBackend(Backend):
         self._executor.shutdown(wait=True)
 
     @override
-    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
-        # ThreadPoolExecutor.submit() does NOT propagate context variables;
-        # wrap each call so the active RunContext is visible in every worker.
-        return self._executor.submit(contextvars.copy_context().run, task, *args)
+    def _submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        context: BackendContext,
+    ) -> Future[Any]:
+        def _run() -> Any:
+            with context:
+                return func(*args, **kwargs)
+
+        # copy_context() captures the BackendContext so the worker thread sees it.
+        return self._executor.submit(contextvars.copy_context().run, _run)
 
 
 class ProcessBackend(Backend):
-    """
-    Executes tasks across a process pool.
+    """Executes tasks across a process pool."""
 
-    Worker processes receive a serialized plugin manager and a `ProcessEventReporter` backed by a
-    shared multiprocessing queue so that events flow back to the coordinator.
-    """
+    name = "process"
 
     _executor: ProcessPoolExecutor
     _event_queue: Any
     _source_id: UUID | None
     _mp_context: Any
+    _has_session: bool
 
     @staticmethod
     def _determine_mp_context() -> Any:
@@ -110,38 +113,50 @@ class ProcessBackend(Backend):
     @override
     def _start(self) -> None:
         self._mp_context = self._determine_mp_context()
+        self._has_session = self._session is not None
+
+        if self._has_session:
+            self._start_with_session()
+        else:
+            self._start_bare()
+
+    def _start_with_session(self) -> None:
+        """Set up the process pool with full session infrastructure (events, plugins, cache)."""
+        from daglite.plugins.manager import serialize_plugin_manager
+
+        assert self._session is not None
+
         self._event_queue = self._mp_context.Queue()
 
         # Register queue with the session's event processor so events from worker processes are
         # dispatched on the coordinator side.
         self._source_id = None
-        if self._ctx.event_processor is not None:
-            self._source_id = self._ctx.event_processor.add_source(self._event_queue)
+        if self._session.event_processor is not None:
+            self._source_id = self._session.event_processor.add_source(self._event_queue)
 
         # Serialize the plugin manager for cross-process transfer.
         serialized_pm = None
-        if self._ctx.plugin_manager is not None:
-            serialized_pm = serialize_plugin_manager(self._ctx.plugin_manager)
+        if self._session.plugin_manager is not None:
+            serialized_pm = serialize_plugin_manager(self._session.plugin_manager)
 
         # Validate that cache_store is picklable before sending to workers.
-        if self._ctx.cache_store is not None:
+        if self._session.cache_store is not None:
             import pickle
 
             try:
-                pickle.dumps(self._ctx.cache_store)
+                pickle.dumps(self._session.cache_store)
             except Exception as exc:
                 raise TypeError(
                     "cache_store must be picklable for use with the process backend. "
                     "Use the thread or inline backend instead."
                 ) from exc
 
-        # Executor initializer will deserialize the plugin manager and create a ProcessEventReporter
-        payload = _WorkerPayload(
+        payload = _ProcessWorkerPayload(
             serialized_plugin_manager=serialized_pm,
             event_queue=self._event_queue,
-            cache_store=self._ctx.cache_store,
-            backend_name=self._ctx.backend_name,
+            cache_store=self._session.cache_store,
         )
+
         self._executor = ProcessPoolExecutor(
             max_workers=self._settings.max_parallel_processes,
             mp_context=self._mp_context,
@@ -149,60 +164,72 @@ class ProcessBackend(Backend):
             initargs=(payload,),
         )
 
+    def _start_bare(self) -> None:
+        """Set up the process pool without session infrastructure."""
+        self._event_queue = None
+        self._source_id = None
+        self._executor = ProcessPoolExecutor(
+            max_workers=self._settings.max_parallel_processes,
+            mp_context=self._mp_context,
+        )
+
     @override
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
 
-        if self._ctx.event_processor is not None:
-            self._ctx.event_processor.flush()
+        if self._has_session and self._session is not None:
+            if self._session.event_processor is not None:
+                self._session.event_processor.flush()
 
-            if self._source_id is not None:
-                self._ctx.event_processor.remove_source(self._source_id)
+                if self._source_id is not None:
+                    self._session.event_processor.remove_source(self._source_id)
 
-        self._event_queue.close()
+        if self._event_queue is not None:
+            self._event_queue.close()
 
     @override
-    def submit(self, task: Callable[..., Any], args: tuple[Any, ...]) -> Future[Any]:
-        return self._executor.submit(task, *args)
+    def _submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        context: BackendContext,
+    ) -> Future[Any]:
+        return self._executor.submit(func, *args, **kwargs)
 
 
 @dataclass
-class _WorkerPayload:
-    """
-    Serializable bundle of everything a `ProcessPoolExecutor` worker needs to reconstruct
-    a `RunContext`.
-
-    Any new per-worker state (e.g. dataset stores, metrics sinks) should be added here rather
-    than threaded through positional ``initargs``.
-    """
+class _ProcessWorkerPayload:
+    """Serializable bundle sent to `ProcessPoolExecutor` workers via the initializer."""
 
     serialized_plugin_manager: dict[str, Any] | None
     event_queue: Any
     cache_store: Any
-    backend_name: str
 
 
-def _process_initializer(payload: _WorkerPayload) -> None:  # pragma: no cover
+def _process_initializer(payload: _ProcessWorkerPayload) -> None:  # pragma: no cover
     """
-    Initializer for `ProcessPoolExecutor` workers.
+    Initializes the `ProcessPoolExecutor` workers.
 
-    Deserializes the plugin manager, creates a `ProcessEventReporter`, and pushes a `RunContext`
-    into the worker's context variable so that tasks emit events back to the coordinator.
+    Deserializes the plugin manager, creates a `ProcessEventReporter`, and pushes a `BackendContext`
+    into the worker's context variable so that tasks have access to session infrastructure (events,
+    plugins, cache).
     """
-    from daglite._context import RunContext
-    from daglite._context import set_run_context
+    from daglite.plugins.manager import deserialize_plugin_manager
+    from daglite.plugins.reporters import ProcessEventReporter
 
     pm = (
         deserialize_plugin_manager(payload.serialized_plugin_manager)
         if payload.serialized_plugin_manager
         else None
     )
-    reporter = ProcessEventReporter(payload.event_queue)
+    event_reporter = ProcessEventReporter(payload.event_queue)
 
-    ctx = RunContext(
-        backend_name=payload.backend_name,
-        cache_store=payload.cache_store,
-        event_reporter=reporter,
+    ctx = BackendContext(
+        backend="process",
+        event_reporter=event_reporter,
         plugin_manager=pm,
+        cache_store=payload.cache_store,
     )
-    set_run_context(ctx)
+    ctx.__enter__()

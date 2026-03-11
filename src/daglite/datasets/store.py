@@ -5,9 +5,9 @@ from __future__ import annotations
 import pickle
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from daglite._context import get_task_call_args
-from daglite._validation import has_placeholders
-from daglite._validation import resolve_template
+from daglite._context import TaskContext
+from daglite._templates import parse_template
+from daglite._templates import resolve_template
 from daglite.datasets.base import AbstractDataset
 
 if TYPE_CHECKING:
@@ -17,13 +17,15 @@ T = TypeVar("T")
 
 
 def _resolve_key(key: str) -> str:
-    """Resolve ``{param}`` placeholders in *key* from the current task's bound arguments."""
-    if not has_placeholders(key):
+    """Resolve `{param}` placeholders in *key* from the current task's bound arguments."""
+    if not parse_template(key):
         return key
-    args = get_task_call_args()
-    if args is None:
+
+    context = TaskContext.get()
+    inputs = context.metadata.inputs if context else None
+    if inputs is None:
         return key
-    return resolve_template(key, args)
+    return resolve_template(key, inputs)
 
 
 class DatasetStore:

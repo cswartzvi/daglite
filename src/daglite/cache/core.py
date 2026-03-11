@@ -4,17 +4,33 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from typing import Any, Callable
+from typing import Any, Callable, Protocol, runtime_checkable
 
 import cloudpickle
 
 
+@runtime_checkable
+class CacheHashFn(Protocol):
+    def __call__(self, func: Callable[..., Any], bound_args: dict[str, Any]) -> str:
+        """
+        Generate a cache key from the function and its bound arguments.
+
+        Args:
+            func: The function being cached.
+            bound_args: Bound parameter values as a dictionary.
+
+        Returns:
+            A string representing the cache key.
+        """
+        ...
+
+
 class CacheMiss:
     """
-    Sentinel type returned by ``CacheStore.get()`` on a cache miss.
+    Sentinel type returned by `CacheStore.get()` on a cache miss.
 
-    Using a dedicated sentinel avoids the None-ambiguity where a cached ``None``
-    result and a genuine miss would both return ``None``.
+    Using a dedicated sentinel avoids the None-ambiguity where a cached `None`
+    result and a genuine miss would both return `None`.
 
     Examples:
         >>> bool(CACHE_MISS)

@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import abc
-import asyncio
-import inspect
 from collections.abc import Callable
 from concurrent.futures import Future
-from typing import TYPE_CHECKING, Any
+from typing import Any, ClassVar
 
-if TYPE_CHECKING:
-    from daglite._context import RunContext
-    from daglite.settings import DagliteSettings
+from typing_extensions import final
+
+from daglite._context import BackendContext
+from daglite._context import SessionContext
+from daglite.settings import get_global_settings
 
 
 class Backend(abc.ABC):
@@ -22,39 +22,41 @@ class Backend(abc.ABC):
     processes, or on a remote cluster. Custom backends can be registered with the `BackendManager`
     to extend daglite.
 
-    Subclasses **must** implement `submit`. An optional `map` override can replace the default
-    fan-out-and-collect when the backend supports native batch operations.
+    Subclasses **must** implement `_submit`.
 
     Lifecycle:
 
-    1. `start(ctx, settings)` — called once when the backend is first requested inside a session.
-    2. `submit(task, args)` / `map(task, items)` — called to dispatch work.
+    1. `start(session)` — called once when the backend is first requested inside a session.
+    2. `submit(func, args, kwargs)` — called to dispatch work.
     3. `stop()` — called when the session exits.
     """
+
+    name: ClassVar[str]
 
     _started: bool = False
 
     # region Lifecycle
 
-    def start(self, ctx: RunContext, settings: DagliteSettings) -> None:
+    @final
+    def start(self, session: SessionContext | None) -> None:
         """
         Initialise backend resources (thread pools, process pools, queues, etc.).
 
         Args:
-            ctx: The active `RunContext` carrying event/plugin infrastructure.
-            settings: Global `DagliteSettings` snapshot.
+            session: Active session context carrying event/plugin infrastructure and settings.
         """
         if self._started:  # pragma: no cover
             raise RuntimeError("Backend is already started.")
 
-        self._ctx = ctx
-        self._settings = settings
+        self._session = session
+        self._settings = session.settings if session else get_global_settings()
         self._start()
         self._started = True
 
     def _start(self) -> None:
         """Subclass hook for creating per-backend resources."""
 
+    @final
     def stop(self) -> None:
         """Releases backend resources."""
         if not self._started:  # pragma: no cover
@@ -68,11 +70,14 @@ class Backend(abc.ABC):
 
     # region Execution
 
-    @abc.abstractmethod
+    @final
     def submit(
         self,
-        task: Callable[..., Any],
+        func: Callable[..., Any],
         args: tuple[Any, ...],
+        kwargs: dict[str, Any] | None = None,
+        *,
+        map_index: int | None = None,
     ) -> Future[Any]:
         """
         Submit a single task call and return a `Future` for its result.
@@ -81,71 +86,36 @@ class Backend(abc.ABC):
         process pools, or remote clusters implement this to dispatch one unit of work.
 
         Args:
-            task: A `@task`-decorated callable.
-            args: Positional arguments unpacked into the task call: `task(*args)`.
+            func: A callable to be executed on the backend.
+            args: Positional arguments for the callable.
+            kwargs: Optional keyword arguments for the callable.
+            map_index: Optional index of the item in a fan-out map operation.
+
+        Returns:
+            A `concurrent.futures.Future` whose `.result()` yields the task return value.
+        """
+        context = BackendContext.from_session(self.name, map_index=map_index)
+        return self._submit(func, args, kwargs or {}, context=context)
+
+    @abc.abstractmethod
+    def _submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        context: BackendContext,
+    ) -> Future[Any]:
+        """
+        Subclass hook for dispatching a single task call.
+
+        Args:
+            func: A callable to be executed on the backend.
+            args: Positional arguments for the callable.
+            kwargs: Keyword arguments for the callable.
+            context: Context containing session-level and task-level information.
 
         Returns:
             A `concurrent.futures.Future` whose `.result()` yields the task return value.
         """
         ...
-
-    def map(
-        self,
-        task: Callable[..., Any],
-        items: list[tuple[Any, ...]],
-    ) -> list[Any]:
-        """
-        Execute *task* once per entry in *items* and return an ordered list of results.
-
-        The default implementation calls `submit` for each item and collects results.
-        Backends with native batch support (e.g. Dask, Ray) can override this for
-        better performance.
-
-        Args:
-            task: A `@task`-decorated callable.
-            items: Zipped argument tuples.
-
-        Returns:
-            Ordered list of results, one per item.
-        """
-        futures = [self.submit(task, args) for args in items]
-        return [f.result() for f in futures]
-
-    async def async_map(
-        self,
-        task: Callable[..., Any],
-        items: list[tuple[Any, ...]],
-    ) -> list[Any]:
-        """
-        Async counterpart of `map` — execute *task* for each item and return ordered results.
-
-        The default implementation submits every item through `submit` and converts the resulting
-        `concurrent.futures.Future` objects into asyncio futures via `asyncio.wrap_future` so the
-        event loop is not blocked while workers execute. Async tasks are wrapped so each worker
-        runs the coroutine in its own event loop via `asyncio.run`.
-
-        Backends with native async support can override this.
-
-        Args:
-            task: A `@task`-decorated callable (sync or async).
-            items: Zipped argument tuples.
-
-        Returns:
-            Ordered list of results, one per item.
-        """
-        is_async = getattr(
-            task, "is_async", inspect.iscoroutinefunction(getattr(task, "func", task))
-        )
-
-        if is_async:
-            futures = [self.submit(_run_async_task, (task, *args)) for args in items]
-        else:
-            futures = [self.submit(task, args) for args in items]
-
-        async_futures = [asyncio.wrap_future(f) for f in futures]
-        return list(await asyncio.gather(*async_futures))
-
-
-def _run_async_task(task: Callable[..., Any], *args: Any) -> Any:
-    """Run an async task in a new event loop."""
-    return asyncio.run(task(*args))

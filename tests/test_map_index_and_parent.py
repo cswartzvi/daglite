@@ -21,8 +21,8 @@ from daglite._context import get_map_iteration_index
 from daglite._context import get_parent_task_id
 from daglite._context import reset_run_context
 from daglite._context import set_run_context
-from daglite.mapping import gather_tasks
-from daglite.mapping import map_task
+from daglite.composers import gather_tasks
+from daglite.composers import map_task
 from daglite.plugins.events import TaskCompleted
 from daglite.plugins.events import TaskFailed
 from daglite.plugins.events import TaskStarted

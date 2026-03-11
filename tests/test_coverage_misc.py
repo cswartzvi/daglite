@@ -211,7 +211,7 @@ class TestResolveBackendFallback:
     """_resolve_backend returns 'inline' when both backend and ctx are None."""
 
     def test_fallback_to_inline(self) -> None:
-        from daglite.mapping import _resolve_backend
+        from daglite.composers import _resolve_backend
 
         assert _resolve_backend(None, None) == "inline"
 

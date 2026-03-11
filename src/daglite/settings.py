@@ -16,7 +16,7 @@ _SETTINGS_LOCK = threading.RLock()
 class DagliteSettings:
     """Configuration settings for daglite."""
 
-    default_backend: str = "inline"
+    backend: str = "inline"
     """Default backend to use for task execution when none is specified."""
 
     max_backend_threads: int = field(default_factory=lambda: min(32, (os.cpu_count() or 1) + 4))
@@ -54,18 +54,18 @@ class DagliteSettings:
     Can be set via DAGLITE_TRACE_HOOKS environment variable (1/true/yes to enable).
     """
 
-    datastore_store: str | DatasetStore = field(
-        default_factory=lambda: os.getenv("DAGLITE_DATASTORE_STORE") or "."
+    dataset_store: str | DatasetStore = field(
+        default_factory=lambda: os.getenv("DAGLITE_DATASET_STORE") or "."
     )
     """
     Default dataset store for saving and loading datasets (defaults to current directory).
 
     Can be `DatasetStore` instance or a string path (which will be used to create a `DatasetStore`
-    with a `FileDriver`). Can also be set via `DAGLITE_DATASTORE_STORE` environment variable.
+    with a `FileDriver`). Can also be set via `DAGLITE_DATASET_STORE` environment variable.
     """
 
     cache_store: CacheStore | str | None = field(
-        default_factory=lambda: os.getenv("DAGLITE_CACHE_STORE") or None
+        default_factory=lambda: os.getenv("DAGLITE_CACHE_STORE") or ".cache"
     )
     """
     Default cache store for caching tasks (defaults to None, which means caching is disabled).

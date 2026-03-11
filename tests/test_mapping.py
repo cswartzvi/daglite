@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-from daglite.mapping import gather_tasks
-from daglite.mapping import map_task
+from daglite.composers import gather_tasks
+from daglite.composers import map_task
 from daglite.session import RunContext
 from daglite.session import reset_run_context
 from daglite.session import session

@@ -332,30 +332,30 @@ class TestResolveCacheEdgeCases:
 
     def test_cache_true_settings_cache_none(self) -> None:
         """cache=True with settings.cache_store=None returns None."""
-        from daglite.session import _resolve_cache
+        from daglite.session import _resolve_cache_store
         from daglite.settings import DagliteSettings
 
         settings = DagliteSettings(cache_store=None)
-        assert _resolve_cache(True, settings) is None
+        assert _resolve_cache_store(True, settings) is None
 
     def test_cache_true_settings_cache_store_instance(self, tmp_path: Path) -> None:
         """cache=True with settings.cache_store as CacheStore returns the instance."""
         from daglite.cache.store import CacheStore
-        from daglite.session import _resolve_cache
+        from daglite.session import _resolve_cache_store
         from daglite.settings import DagliteSettings
 
         store = CacheStore(str(tmp_path / "cache"))
         settings = DagliteSettings(cache_store=store)
-        assert _resolve_cache(True, settings) is store
+        assert _resolve_cache_store(True, settings) is store
 
     def test_cache_invalid_type_raises(self) -> None:
         """Non bool/str/CacheStore/None raises ValueError."""
-        from daglite.session import _resolve_cache
+        from daglite.session import _resolve_cache_store
         from daglite.settings import DagliteSettings
 
         settings = DagliteSettings()
         with pytest.raises(ValueError, match="Invalid cache argument"):
-            _resolve_cache(12345, settings)
+            _resolve_cache_store(12345, settings)
 
 
 class TestStopProcessorsErrorHandling:

@@ -16,8 +16,8 @@ from typing_extensions import assert_type
 
 from daglite import task
 from daglite import workflow
-from daglite.mapping import gather_tasks
-from daglite.mapping import map_task
+from daglite.composers import gather_tasks
+from daglite.composers import map_task
 from daglite.tasks import AsyncTask
 from daglite.tasks import SyncTask
 from daglite.workflows import AsyncWorkflow

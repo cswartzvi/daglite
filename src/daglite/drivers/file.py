@@ -62,8 +62,8 @@ class FileDriver(Driver):
         """
         Return True only for local file paths.
 
-        Plain paths (no protocol) and the ``file`` protocol are considered
-        local.  All other protocols (e.g. ``s3``, ``gcs``) are remote.
+        Plain paths (no protocol) and the `file` protocol are considered
+        local.  All other protocols (e.g. `s3`, `gcs`) are remote.
         """
         return self._protocol in ("", "file")
 

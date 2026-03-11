@@ -28,52 +28,23 @@ Three tiers of usage::
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
 from typing import Any
 
-from daglite._context import RunContext
-from daglite._context import _map_iteration_index
-from daglite._context import _parent_task_id
-from daglite._context import _run_context
-from daglite._context import _task_call_args
-from daglite._context import get_event_reporter
-from daglite._context import get_map_iteration_index
-from daglite._context import get_parent_task_id
-from daglite._context import get_plugin_manager
-from daglite._context import get_run_context
-from daglite._context import get_task_call_args
-from daglite._context import reset_run_context
-from daglite._context import set_map_iteration_index
-from daglite._context import set_parent_task_id
-from daglite._context import set_run_context
-from daglite._context import set_task_call_args
+from pluggy import PluginManager
+
+from daglite._context import SessionContext
+from daglite.cache.store import CacheStore
+from daglite.datasets.store import DatasetStore
+from daglite.plugins.base import SerializablePlugin
+from daglite.plugins.events import EventProcessor
+from daglite.settings import DagliteSettings
 
 logger = logging.getLogger(__name__)
-
-# Re-exports for backward compatibility.
-__all__ = [
-    "RunContext",
-    "_map_iteration_index",
-    "_parent_task_id",
-    "_run_context",
-    "_task_call_args",
-    "get_map_iteration_index",
-    "get_parent_task_id",
-    "get_run_context",
-    "set_map_iteration_index",
-    "set_parent_task_id",
-    "set_run_context",
-    "reset_run_context",
-    "get_task_call_args",
-    "set_task_call_args",
-    "get_event_reporter",
-    "get_plugin_manager",
-    "session",
-    "async_session",
-]
 
 
 # region session
@@ -83,79 +54,68 @@ __all__ = [
 def session(
     *,
     backend: str | None = None,
-    cache: bool | str | Any | None = None,
-    plugins: list[Any] | None = None,
-    settings: Any | None = None,
-) -> Iterator[RunContext]:
+    cache_store: str | CacheStore | None = None,
+    dataset_store: str | DatasetStore | None = None,
+    plugins: SerializablePlugin | list[SerializablePlugin] | None = None,
+    settings: DagliteSettings | None = None,
+) -> Iterator[SessionContext]:
     """
-    Synchronous context manager that sets up an eager execution context.
-
-    Within the block every `@task` call automatically uses the configured backend, cache, and
-    plugins. On exit all processors are stopped and resources are cleaned up.
+    Synchronous context manager that sets up an execution context.
 
     Args:
-        backend: Backend name (e.g. `"inline"`, `"thread"`, `"process"`). Defaults to
-            `settings.default_backend`.
-        cache: Cache configuration. `True` uses the settings default, a string is treated as a
-            path, a `CacheStore` instance is used directly, `False` / `None` disables caching.
+        backend: Name of the backend to default. If `None` uses `settings.default_backend`.
+        cache_store: Cache store configuration. Can be a `CacheStore` or a string path.
+        dataset_store: Dataset store configuration. Can be a `DatasetStore` or a string path.
         plugins: Extra plugin instances for this session only.
         settings: A `DagliteSettings` override. Falls back to the global settings singleton.
 
     Yields:
-        The active `RunContext` for the duration of the block.
+        The active `SessionContext` for the duration of the block.
     """
-    ctx = _build_context(
+    plugins = plugins if isinstance(plugins, list) else [plugins] if plugins is not None else []
+    with _build_context(
         backend=backend,
-        cache=cache,
+        cache_store=cache_store,
+        dataset_store=dataset_store,
         plugins=plugins,
         settings=settings,
-    )
-
-    token = _run_context.set(ctx)
-    try:
-        _start_processors(ctx)
-        yield ctx
-    finally:
-        _stop_processors(ctx)
-        _run_context.reset(token)
+    ) as ctx:
+        with _processors_context(ctx):
+            yield ctx
 
 
 @asynccontextmanager
 async def async_session(
     *,
     backend: str | None = None,
-    cache: bool | str | Any | None = None,
-    plugins: list[Any] | None = None,
-    settings: Any | None = None,
-) -> AsyncIterator[RunContext]:
+    cache_store: str | CacheStore | None = None,
+    dataset_store: str | DatasetStore | None = None,
+    plugins: SerializablePlugin | list[SerializablePlugin] | None = None,
+    settings: DagliteSettings | None = None,
+) -> AsyncIterator[SessionContext]:
     """
     Async context manager that sets up an eager execution context.
 
-    Identical to `session` but usable in async code via ``async with``.
-
     Args:
-        backend: Backend name. Defaults to `settings.default_backend`.
-        cache: Cache configuration (see `session`).
+        backend: Name of the backend to default. If `None` uses `settings.default_backend`.
+        cache_store: Cache store configuration. Can be a `CacheStore` or a string path.
+        dataset_store: Dataset store configuration. Can be a `DatasetStore` or a string path.
         plugins: Extra plugin instances for this session only.
-        settings: A `DagliteSettings` override.
+        settings: A `DagliteSettings` override. Falls back to the global settings singleton.
 
     Yields:
-        The active `RunContext` for the duration of the block.
+        The active `SessionContext` for the duration of the block.
     """
-    ctx = _build_context(
+    plugins = plugins if isinstance(plugins, list) else [plugins] if plugins is not None else []
+    with _build_context(
         backend=backend,
-        cache=cache,
+        cache_store=cache_store,
+        dataset_store=dataset_store,
         plugins=plugins,
         settings=settings,
-    )
-
-    token = _run_context.set(ctx)
-    try:
-        _start_processors(ctx)
-        yield ctx
-    finally:
-        _stop_processors(ctx)
-        _run_context.reset(token)
+    ) as ctx:
+        with _processors_context(ctx):
+            yield ctx
 
 
 # region Internals
@@ -164,89 +124,57 @@ async def async_session(
 def _build_context(
     *,
     backend: str | None,
-    cache: bool | str | Any | None,
-    plugins: list[Any] | None,
-    settings: Any | None,
-) -> RunContext:
+    cache_store: str | CacheStore | None,
+    dataset_store: str | DatasetStore | None,
+    plugins: list[SerializablePlugin] | None,
+    settings: DagliteSettings | None,
+) -> SessionContext:
     """
-    Assembles a `RunContext` from the provided arguments and global defaults.
+    Assembles a `SessionContext` from the provided arguments and global defaults.
 
     Mirrors the setup sequence in the existing engine but without the graph
     and dataset machinery.
     """
-    from daglite.backends.manager import BackendManager
+    from daglite.datasets.reporters import DirectDatasetReporter
     from daglite.plugins.reporters import DirectEventReporter
     from daglite.settings import get_global_settings
 
-    resolved_settings = settings if settings is not None else get_global_settings()
-    backend_name = backend if backend is not None else resolved_settings.default_backend
+    timestamp = time.perf_counter()
 
-    # Cache
-    cache_store = _resolve_cache(cache, resolved_settings)
+    settings = settings if settings is not None else get_global_settings()
+    backend = backend if backend is not None else settings.backend
 
-    # Plugins + events
+    cache_store = _resolve_cache_store(cache_store, settings)
+    dataset_store = _resolve_dataset_store(dataset_store, settings)
+    dataset_reporter = DirectDatasetReporter() if dataset_store is not None else None
+
     plugin_manager, event_processor = _setup_plugins(plugins or [])
-
-    # Event reporter (direct / in-process)
     event_reporter = DirectEventReporter(callback=event_processor.dispatch)
 
-    ctx = RunContext(
-        backend_name=backend_name,
-        cache_store=cache_store,
-        event_reporter=event_reporter,
-        event_processor=event_processor,
+    context = SessionContext(
         plugin_manager=plugin_manager,
-        backend_manager=None,
-        settings=resolved_settings,
+        event_reporter=event_reporter,
+        backend=backend,
+        cache_store=cache_store,
+        dataset_store=dataset_store,
+        dataset_reporter=dataset_reporter,
+        settings=settings,
+        event_processor=event_processor,
+        timestamp=timestamp,
     )
 
-    # Backend manager — created after RunContext so backends can read ctx
-    ctx.backend_manager = BackendManager(ctx, resolved_settings)
-
-    return ctx
+    return context
 
 
-def _resolve_cache(cache: bool | str | Any | None, settings: Any) -> Any | None:
-    """
-    Resolves the cache argument into a `CacheStore` or `None`.
-
-    Resolution: explicit `CacheStore` > `True` (use settings default) >
-    string path > `False` / `None` (disabled).
-    """
-    from daglite.cache.store import CacheStore
-
-    if cache is None or cache is False:
-        return None
-
-    if isinstance(cache, CacheStore):
-        return cache
-
-    if cache is True:
-        # Delegate to settings — may still be None
-        settings_cache = settings.cache_store
-        if settings_cache is None:
-            return None
-        if isinstance(settings_cache, str):
-            return CacheStore(settings_cache)
-        return settings_cache
-
-    if isinstance(cache, str):
-        return CacheStore(cache)
-
-    raise ValueError(
-        f"Invalid cache argument {cache!r}. Expected bool, str path, CacheStore instance, or None."
-    )
-
-
-def _setup_plugins(plugins: list[Any]) -> tuple[Any, Any]:
+def _setup_plugins(plugins: list[Any]) -> tuple[PluginManager, EventProcessor]:
     """
     Creates a plugin manager and event processor for this session.
 
     Follows the same pattern as `engine._setup_plugin_system`.
     """
+    from daglite.plugins.events import EventProcessor
     from daglite.plugins.events import EventRegistry
     from daglite.plugins.manager import build_plugin_manager
-    from daglite.plugins.processor import EventProcessor
 
     registry = EventRegistry()
     plugin_manager = build_plugin_manager(plugins, registry)
@@ -254,20 +182,68 @@ def _setup_plugins(plugins: list[Any]) -> tuple[Any, Any]:
     return plugin_manager, event_processor
 
 
-def _start_processors(ctx: RunContext) -> None:
+def _resolve_cache_store(cache: str | CacheStore | None, settings: Any) -> CacheStore | None:
+    """Resolves the cache argument into a `CacheStore` or `None`."""
+    from daglite.cache.store import CacheStore
+
+    if cache is None:
+        return None
+
+    if isinstance(cache, CacheStore):
+        return cache
+
+    if isinstance(cache, str):
+        return CacheStore(cache)
+
+
+def _resolve_dataset_store(
+    dataset_store: str | DatasetStore | None, settings: Any
+) -> DatasetStore | None:
+    """Resolves the dataset_store argument into a `DatasetStore` or `None`."""
+    if dataset_store is None:
+        ds_path = getattr(settings, "dataset_store", None)
+        if ds_path is None:
+            return None
+        return DatasetStore(ds_path) if isinstance(ds_path, str) else ds_path
+
+    if isinstance(dataset_store, DatasetStore):
+        return dataset_store
+
+    if isinstance(dataset_store, str):
+        return DatasetStore(dataset_store)
+
+
+@contextmanager
+def _processors_context(ctx: SessionContext) -> Iterator[None]:
+    """Context manager that starts and stops the event processor and backend manager."""
+    from daglite.backends.manager import BackendManager
+
+    mgr = BackendManager(session=ctx, settings=ctx.settings)
+    token = mgr.activate()
+    _start_processors(ctx)
+    t0 = time.perf_counter()
+    ctx.plugin_manager.hook.before_session_start(session_id=ctx.session_id)
+    try:
+        yield
+    finally:
+        duration = time.perf_counter() - t0
+        ctx.plugin_manager.hook.after_session_end(session_id=ctx.session_id, duration=duration)
+        _stop_processors(ctx, mgr, token)
+
+
+def _start_processors(ctx: SessionContext) -> None:
     """Starts background processors attached to the context."""
     if ctx.event_processor is not None:
         ctx.event_processor.start()
 
 
-def _stop_processors(ctx: RunContext) -> None:
+def _stop_processors(ctx: SessionContext, mgr: Any, token: Any) -> None:
     """Stops background processors and backends, flushing pending work."""
     # Stop backends first — they may have queues that feed the event processor.
-    if ctx.backend_manager is not None:
-        try:
-            ctx.backend_manager.stop()
-        except Exception:
-            logger.exception("Failed to stop backend manager")
+    try:
+        mgr.deactivate(token)
+    except Exception:
+        logger.exception("Failed to stop backend manager")
 
     if ctx.event_processor is not None:
         try:

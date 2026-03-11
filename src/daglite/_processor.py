@@ -7,11 +7,20 @@ import time
 from abc import ABC
 from abc import abstractmethod
 from threading import Thread
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
+
+
+@runtime_checkable
+class QueueLike(Protocol):
+    """Protocol for queue-like with a retrieval method."""
+
+    def get(self, timeout: float | None = None) -> Any:
+        """Remove and return an item from the queue with an optional timeout."""
+        ...
 
 
 class BackgroundQueueProcessor(ABC):
@@ -29,23 +38,26 @@ class BackgroundQueueProcessor(ABC):
 
     def __init__(self, *, name: str) -> None:
         self._name = name
-        self._sources: dict[UUID, Any] = {}
+        self._sources: dict[UUID, QueueLike] = {}
         self._running = False
         self._thread: Thread | None = None
 
-    def add_source(self, source: Any) -> UUID:
+    def add_source(self, source: QueueLike) -> UUID:
         """
         Add a queue-like source to process.
 
-        Can be called before or after ``start()``.  Thread-safe for adding
+        Can be called before or after `start()`.  Thread-safe for adding
         sources while the processor is running.
 
         Args:
-            source: A queue-like object with a ``get(timeout=...)`` method.
+            source: A queue-like object with a `get(timeout=...)` method.
 
         Returns:
             Unique ID for the added source.
         """
+        if not isinstance(source, QueueLike):  # pragma: no cover
+            raise TypeError(f"Source must be queue-like (implement `get` method): {type(source)}")
+
         id = uuid4()
         self._sources[id] = source
         logger.debug(f"Added {self._name} source (id: {id}): {type(source).__name__}")
@@ -93,7 +105,7 @@ class BackgroundQueueProcessor(ABC):
             has_items = False
 
             for source in list(self._sources.values()):
-                item = self._get_item(source)
+                item = source.get(timeout=0.001)
                 if item is not None:
                     self._handle_item(item)
                     has_items = True
@@ -136,7 +148,7 @@ class BackgroundQueueProcessor(ABC):
             has_items = False
 
             for source in list(self._sources.values()):
-                item = self._get_item(source)
+                item = source.get(timeout=0.001)
                 if item is not None:
                     self._handle_item(item)
                     has_items = True
@@ -145,23 +157,3 @@ class BackgroundQueueProcessor(ABC):
                 time.sleep(0.001)
 
         logger.debug(f"{self._name} loop exited")
-
-    @staticmethod
-    def _get_item(source: Any) -> Any | None:
-        """
-        Get an item from a source (duck-typed for Queue-like objects).
-
-        Args:
-            source: A queue-like object with a ``get`` method.
-
-        Returns:
-            The dequeued item, or *None* if nothing is available.
-        """
-        if hasattr(source, "get"):
-            try:
-                return source.get(timeout=0.001)
-            except Exception:
-                return None
-
-        logger.warning(f"Unknown source type: {type(source)}")
-        return None

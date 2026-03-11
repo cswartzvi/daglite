@@ -71,14 +71,14 @@ class CacheStore:
         """
         Retrieve cached value by hash key.
 
-        Returns ``CACHE_MISS`` on a cache miss or TTL expiry. Expired entries are
+        Returns `CACHE_MISS` on a cache miss or TTL expiry. Expired entries are
         automatically cleaned up.
 
         Args:
             hash_key: SHA256 hash digest string.
 
         Returns:
-            Cached value if found and not expired, ``CACHE_MISS`` otherwise.
+            Cached value if found and not expired, `CACHE_MISS` otherwise.
         """
         data_key = self._hash_to_key(hash_key)
         meta_key = f"{data_key}.meta.json"
@@ -164,7 +164,7 @@ class CacheStore:
             Sharded key path (e.g., "ab/cdef1234...").
 
         Raises:
-            ValueError: If ``hash_key`` is too short to shard safely or
+            ValueError: If `hash_key` is too short to shard safely or
                 contains non-hex characters.
         """
         # Validate that hash_key is long enough so that the suffix is non-empty.
