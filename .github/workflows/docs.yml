@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -12,8 +15,8 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "pages-${{ github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,14 +34,23 @@ jobs:
         run: uv sync --all-extras --dev --group docs
 
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run zensical build --clean
 
-      - name: Upload artifact
+      - name: Upload Pages artifact (main deploy)
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
+      - name: Upload PR preview artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-preview-site
+          path: ./site
+
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -48,3 +60,38 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  preview:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv and set the python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev --group docs
+
+      - name: Build documentation
+        run: uv run zensical build --clean
+
+      - name: Publish PR preview under gh-pages/pr-preview/<PR_NUMBER>
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          destination_dir: pr-preview/${{ github.event.number }}
+          keep_files: true
+
+      - name: Add preview URL to workflow summary
+        run: |
+          echo "### PR docs preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
