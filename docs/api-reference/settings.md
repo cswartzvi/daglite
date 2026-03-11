@@ -1,22 +1,8 @@
 # Settings
 
-Global configuration for Daglite.
+This page was previously generated through MkDocs plugin infrastructure and is now a placeholder during the Zensical migration.
 
-## Settings Class
-
-::: daglite.settings.DagliteSettings
-    options:
-      show_root_heading: true
-      show_source: false
-
-## Configuration Functions
-
-::: daglite.settings.set_global_settings
-    options:
-      show_root_heading: true
-      show_source: false
-
-::: daglite.settings.get_global_settings
-    options:
-      show_root_heading: true
-      show_source: false
+## TODO
+- Define canonical objects/functions to document.
+- Choose render strategy for signatures and examples.
+- Add review checklist to keep reference synchronized with source.

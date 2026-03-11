@@ -1,15 +1,8 @@
 # Engine
 
-DAG evaluation and execution.
+This page was previously generated through MkDocs plugin infrastructure and is now a placeholder during the Zensical migration.
 
-## Evaluation Functions
-
-::: daglite.evaluate
-    options:
-      show_root_heading: true
-      show_source: false
-
-::: daglite.evaluate_async
-    options:
-      show_root_heading: true
-      show_source: false
+## TODO
+- Define canonical objects/functions to document.
+- Choose render strategy for signatures and examples.
+- Add review checklist to keep reference synchronized with source.
