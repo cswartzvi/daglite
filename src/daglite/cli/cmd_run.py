@@ -77,7 +77,7 @@ def run(
     params = parse_workflow_params(workflow_obj, param)
 
     # Apply settings overrides
-    settings_dict: dict[str, Any] = {"default_backend": backend}
+    settings_dict: dict[str, Any] = {"backend": backend}
     settings_dict.update(parse_settings_overrides(settings))
     set_global_settings(DagliteSettings(**settings_dict))
 

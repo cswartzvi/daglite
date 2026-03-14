@@ -135,6 +135,7 @@ def _build_context(
     Mirrors the setup sequence in the existing engine but without the graph
     and dataset machinery.
     """
+    from daglite.datasets.processor import DatasetProcessor
     from daglite.datasets.reporters import DirectDatasetReporter
     from daglite.plugins.reporters import DirectEventReporter
     from daglite.settings import get_global_settings
@@ -144,12 +145,15 @@ def _build_context(
     settings = settings if settings is not None else get_global_settings()
     backend = backend if backend is not None else settings.backend
 
+    plugin_manager, event_processor = _setup_plugins(plugins or [])
+    hook = plugin_manager.hook
+    event_reporter = DirectEventReporter(callback=event_processor.dispatch)
+
     cache_store = _resolve_cache_store(cache_store, settings)
+
     dataset_store = _resolve_dataset_store(dataset_store, settings)
     dataset_reporter = DirectDatasetReporter() if dataset_store is not None else None
-
-    plugin_manager, event_processor = _setup_plugins(plugins or [])
-    event_reporter = DirectEventReporter(callback=event_processor.dispatch)
+    dataset_processor = DatasetProcessor(hook=hook) if dataset_store is not None else None
 
     context = SessionContext(
         plugin_manager=plugin_manager,
@@ -160,6 +164,7 @@ def _build_context(
         dataset_reporter=dataset_reporter,
         settings=settings,
         event_processor=event_processor,
+        dataset_processor=dataset_processor,
         timestamp=timestamp,
     )
 
@@ -235,18 +240,26 @@ def _start_processors(ctx: SessionContext) -> None:
     """Starts background processors attached to the context."""
     if ctx.event_processor is not None:
         ctx.event_processor.start()
+    if ctx.dataset_processor is not None:
+        ctx.dataset_processor.start()
 
 
 def _stop_processors(ctx: SessionContext, mgr: Any, token: Any) -> None:
     """Stops background processors and backends, flushing pending work."""
-    # Stop backends first — they may have queues that feed the event processor.
+    # Stop backends first — they may have queues that feed the processors.
     try:
         mgr.deactivate(token)
     except Exception:
         logger.exception("Failed to stop backend manager")
 
+    if ctx.dataset_processor is not None:
+        try:
+            ctx.dataset_processor.stop()
+        except Exception:  # pragma: no cover - cleanup guard
+            logger.exception("Failed to stop dataset processor")
+
     if ctx.event_processor is not None:
         try:
             ctx.event_processor.stop()
-        except Exception:
+        except Exception:  # pragma: no cover - cleanup guard
             logger.exception("Failed to stop event processor")

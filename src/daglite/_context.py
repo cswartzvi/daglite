@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
 from contextvars import ContextVar
 from contextvars import Token
 from dataclasses import dataclass
@@ -43,7 +42,7 @@ class BaseContext:
     _token: Token[Self | None] | None = field(default=None, init=False, repr=False)
 
     @classmethod
-    def get(cls) -> Self | None:
+    def _get(cls) -> Self | None:
         """Returns the active context, or `None` if outside a session."""
         return cls.__var__.get()
 
@@ -118,6 +117,9 @@ class SessionContext(BaseContext):
     event_processor: EventProcessor | None = None
     """Processor for handling events; set to `None` on backend workers."""
 
+    dataset_processor: Any | None = None
+    """Processor for handling dataset save requests; set to `None` on backend workers."""
+
     timestamp: float = field(default_factory=time.time)
     """Unix timestamp when the context was created."""
 
@@ -177,7 +179,7 @@ class BackendContext(SerializableContext):
     @classmethod
     def from_session(cls, backend: str | None = None, map_index: int | None = None) -> Self:
         """Creates a `BackendContext` from the active session context."""
-        session = SessionContext.get()
+        session = SessionContext._get()
         return cls(
             backend=backend,
             map_index=map_index,
@@ -194,70 +196,48 @@ class BackendContext(SerializableContext):
 
         data = super().to_dict()
 
-        # Event reporter depends on the context of execution and is not included in the dict.
+        # Reporters depend on execution context and are never serialized.
         data.pop("event_reporter", None)
+        data.pop("dataset_reporter", None)
 
         # Dehydrate the plugin manager to a serialized representation.
         if self.plugin_manager is not None:
             data["plugin_manager"] = serialize_plugin_manager(self.plugin_manager)
 
+        # Dehydrate stores to path strings (JSON-safe, works for local and remote via fsspec).
+        if self.cache_store is not None:
+            data["cache_store"] = self.cache_store.base_path
+        if self.dataset_store is not None:
+            data["dataset_store"] = self.dataset_store.base_path
+
         return data
 
     @override
     @classmethod
-    def from_dict(cls, data: dict[str, Any], *, event_reporter: EventReporter, **kwargs) -> Self:
+    def from_dict(
+        cls,
+        data: dict[str, Any],
+        *,
+        event_reporter: EventReporter | None = None,
+        dataset_reporter: DatasetReporter | None = None,
+        **kwargs: Any,
+    ) -> Self:
+        from daglite.cache.store import CacheStore as _CacheStore
+        from daglite.datasets.store import DatasetStore as _DatasetStore
         from daglite.plugins.manager import deserialize_plugin_manager
 
-        # Event reporter depends on the context of execution and must be provided explicitly.
+        # Reporters depend on execution context and must be provided explicitly.
         data["event_reporter"] = event_reporter
+        data["dataset_reporter"] = dataset_reporter
 
         # Rehydrate the plugin manager from serialized representation.
-        if "plugin_manager" in data:
+        if "plugin_manager" in data and isinstance(data["plugin_manager"], dict):
             data["plugin_manager"] = deserialize_plugin_manager(data["plugin_manager"])
 
+        # Rehydrate stores from path strings.
+        if isinstance(data.get("cache_store"), str):
+            data["cache_store"] = _CacheStore(data["cache_store"])
+        if isinstance(data.get("dataset_store"), str):
+            data["dataset_store"] = _DatasetStore(data["dataset_store"])
+
         return super().from_dict(data)
-
-
-# region Helpers
-
-_MISSING = object()
-
-
-def resolve_from_chain(
-    field_name: str,
-    *sources: Any,
-    default: Any = _MISSING,
-    default_factory: Callable[[], Any] | None = None,
-) -> Any:
-    """
-    Return the first non-None value of *field_name* across an ordered chain of providers.
-
-    Args:
-        field_name: Attribute name to look up on each source.
-        *sources: Objects to inspect in order. ``None`` entries are skipped.
-        default: Value to return when no source has a non-None value for *field_name*.
-            Mutually exclusive with *default_factory*.
-        default_factory: Callable that produces the default value lazily.
-            Mutually exclusive with *default*.
-
-    Returns:
-        The first non-None attribute value, or the computed default.
-    """
-    invalid_state = default is not _MISSING and default_factory is not None
-    assert not invalid_state, "Must provide either a default or default_factory"
-
-    for src in sources:
-        if src is None:
-            continue
-        val = getattr(src, field_name, _MISSING)
-        assert val is not _MISSING, f"{type(src).__name__} has no attribute {field_name!r}"
-        if val is not None:
-            return val
-
-    if default_factory is not None:
-        return default_factory()
-
-    if default is not _MISSING:
-        return default
-
-    return None

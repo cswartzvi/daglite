@@ -29,12 +29,16 @@ from uuid import UUID
 from uuid import uuid4
 
 from pluggy import HookRelay
-from pluggy import PluginManager
 
-from daglite._context import BackendContext
-from daglite._context import SessionContext
 from daglite._context import TaskContext
-from daglite._context import resolve_from_chain
+from daglite._resolvers import resolve_backend
+from daglite._resolvers import resolve_cache_store
+from daglite._resolvers import resolve_dataset_reporter
+from daglite._resolvers import resolve_dataset_store
+from daglite._resolvers import resolve_event_reporter
+from daglite._resolvers import resolve_hook
+from daglite._resolvers import resolve_map_index
+from daglite._resolvers import resolve_parent_id
 from daglite._templates import parse_template
 from daglite._templates import resolve_template
 from daglite.cache.core import CACHE_MISS
@@ -43,9 +47,7 @@ from daglite.cache.core import default_cache_hash
 from daglite.cache.store import CacheStore
 from daglite.datasets.store import DatasetStore
 from daglite.exceptions import TaskError
-from daglite.plugins.manager import create_null_plugin_manager
 from daglite.plugins.reporters import EventReporter
-from daglite.settings import get_global_settings
 
 logger = logging.getLogger(__name__)
 
@@ -300,6 +302,17 @@ class TaskMetadata:
     """Whether the task is a generator function (sync or async)."""
 
 
+@dataclass
+class _TaskExecutionData:
+    """Resolved context for a task call."""
+
+    metadata: TaskMetadata
+    hook: HookRelay
+    event_reporter: EventReporter | None  # Needed for hook calls
+    cache_store: CacheStore | None
+    dataset_store: DatasetStore | None
+
+
 @dataclass(frozen=True)
 class _BaseTask(abc.ABC, Generic[P, R]):
     """Shared fields and helpers for sync and async eager tasks."""
@@ -445,8 +458,7 @@ class _BaseTask(abc.ABC, Generic[P, R]):
         fmt = self.dataset_format
 
         # Prefer the reporter (handles coordinator routing + hooks internally).
-        submit_ctx = BackendContext.get()
-        reporter = submit_ctx.dataset_reporter if submit_ctx else None
+        reporter = resolve_dataset_reporter()
         if reporter is not None:
             reporter.save(key, result, store, format=fmt, metadata=metadata)
         else:
@@ -456,11 +468,7 @@ class _BaseTask(abc.ABC, Generic[P, R]):
             store.save(key, result, format=fmt)
             hook.after_dataset_save(**hook_kw)
 
-    def _setup_call(
-        self, *args, **kwargs
-    ) -> tuple[
-        TaskMetadata, HookRelay, EventReporter | None, CacheStore | None, DatasetStore | None
-    ]:
+    def _prepare_execution_data(self, *args, **kwargs) -> _TaskExecutionData:
         """
         Prepare the task call by resolving metadata, hooks, and stores.
 
@@ -469,71 +477,22 @@ class _BaseTask(abc.ABC, Generic[P, R]):
             **kwargs: Keyword arguments passed to the task.
 
         Returns:
-            A tuple containing:
-                - TaskMetadata: Metadata for the current task.
-                - HookRelay: Pluggy hook relay for the current session.
-                - EventReporter | None: Reporter for sending events (if available).
-                - CacheStore | None: Cache store to use for this task (if available).
-                - DatasetStore | None: Dataset store to use for this task (if available).
+            _CallData DTO containing resolved metadata, hook, event reporter, cache store, and
+            dataset store.
         """
         task_id = uuid4()
+        parent_id = resolve_parent_id()
+        map_index = resolve_map_index()
 
-        submit_ctx = BackendContext.get()
-        session_ctx = SessionContext.get()
-        parent_ctx = TaskContext.get()
-
-        parent_id = parent_ctx.metadata.id if parent_ctx is not None else None
-        map_index = submit_ctx.map_index if submit_ctx is not None else None
         inputs = self._bind_args(args, kwargs)
         name = self._resolve_name(inputs, map_index=map_index)
 
-        backend: str = resolve_from_chain(
-            "backend",
-            submit_ctx,
-            session_ctx,
-            session_ctx.settings if session_ctx else None,
-            get_global_settings(),
-        )
+        backend = resolve_backend()
+        hook = resolve_hook()
+        reporter = resolve_event_reporter()
+        cache_store = resolve_cache_store(self.cache, self.cache_store)
+        ds_store = resolve_dataset_store(self.dataset_store) if self.dataset is not None else None
 
-        pm: PluginManager = resolve_from_chain(
-            "plugin_manager", submit_ctx, session_ctx, default_factory=create_null_plugin_manager
-        )
-
-        reporter: EventReporter | None = resolve_from_chain(
-            "event_reporter", submit_ctx, session_ctx, default=None
-        )
-
-        # Resolve the cache store: task > submit context > session context > settings.
-        cache_store: CacheStore | str | None = None
-        if isinstance(self.cache, (str, CacheStore)):
-            cache_store = self.cache
-        elif self.cache:
-            cache_store = resolve_from_chain(
-                "cache_store",
-                submit_ctx,
-                session_ctx,
-                session_ctx.settings if session_ctx else None,
-                get_global_settings(),
-            )
-        cache_store = CacheStore(cache_store) if isinstance(cache_store, str) else cache_store
-
-        # Resolve the dataset store: task > submit context > session context > settings.
-        ds_store: DatasetStore | str | None = None
-        if self.dataset is not None:
-            if isinstance(self.dataset_store, (str, DatasetStore)):
-                ds_store = self.dataset_store
-            else:
-                ds_store = resolve_from_chain(
-                    "dataset_store",
-                    submit_ctx,
-                    session_ctx,
-                    session_ctx.settings if session_ctx else None,
-                    get_global_settings(),
-                    default=None,
-                )
-        dataset_store = DatasetStore(ds_store) if isinstance(ds_store, str) else ds_store
-
-        # Create the task metadata object with all relevant information.
         metadata = TaskMetadata(
             id=task_id,
             name=name,
@@ -546,7 +505,13 @@ class _BaseTask(abc.ABC, Generic[P, R]):
             is_generator=self.is_generator,
         )
 
-        return metadata, pm.hook, reporter, cache_store, dataset_store
+        return _TaskExecutionData(
+            metadata=metadata,
+            hook=hook,
+            event_reporter=reporter,
+            cache_store=cache_store,
+            dataset_store=ds_store,
+        )
 
 
 @dataclass(frozen=True)
@@ -569,20 +534,21 @@ class SyncTask(_BaseTask[P, R]):
         return False
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:  # noqa: D102
-        metadata, hook, reporter, cache_store, dataset_store = self._setup_call(*args, **kwargs)
-        common = {"metadata": metadata, "reporter": reporter}
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
 
         with ExitStack() as stack:
             t0 = time.perf_counter()
             context = TaskContext(
                 metadata=metadata,
-                cache_store=cache_store,
-                dataset_store=dataset_store,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
                 timestamp=t0,
             )
             stack.enter_context(context)
 
-            cache_key, cached = self._try_cache_hit(metadata.inputs, cache_store)
+            cache_key, cached = self._try_cache_hit(metadata.inputs, data.cache_store)
             if cached is not CACHE_MISS:
                 hook.on_cache_hit(**common, key=cache_key, value=cached)
                 return cached
@@ -596,8 +562,8 @@ class SyncTask(_BaseTask[P, R]):
                 try:
                     result = self.func(*args, **kwargs)
                     elapsed = time.perf_counter() - t0
-                    self._try_write_cache(cache_key, result, cache_store)
-                    self._try_save_dataset(metadata, result, dataset_store, hook)
+                    self._try_write_cache(cache_key, result, data.cache_store)
+                    self._try_save_dataset(metadata, result, data.dataset_store, hook)
 
                     hook.after_node_execute(**common, duration=elapsed, result=result)
                     if attempt > 0:
@@ -655,15 +621,16 @@ class SyncTaskStream(_BaseTask[P, R]):
         return self._stream(*args, **kwargs)
 
     def _stream(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
-        metadata, hook, reporter, cache_store, dataset_store = self._setup_call(*args, **kwargs)
-        common = {"metadata": metadata, "reporter": reporter}
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
 
         with ExitStack() as stack:
             t0 = time.perf_counter()
             context = TaskContext(
                 metadata=metadata,
-                cache_store=cache_store,
-                dataset_store=dataset_store,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
                 timestamp=t0,
             )
             stack.enter_context(context)
@@ -707,20 +674,21 @@ class AsyncTask(_BaseTask[P, R]):
         return self._run(*args, **kwargs)
 
     async def _run(self, *args: Any, **kwargs: Any) -> R:
-        metadata, hook, reporter, cache_store, dataset_store = self._setup_call(*args, **kwargs)
-        common = {"metadata": metadata, "reporter": reporter}
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
 
         async with AsyncExitStack() as stack:
             t0 = time.perf_counter()
             context = TaskContext(
                 metadata=metadata,
-                cache_store=cache_store,
-                dataset_store=dataset_store,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
                 timestamp=t0,
             )
             stack.enter_context(context)
 
-            cache_key, cached = await self._try_cache_hit(metadata.inputs, cache_store)
+            cache_key, cached = await self._try_cache_hit(metadata.inputs, data.cache_store)
             if cached is not CACHE_MISS:
                 hook.on_cache_hit(**common, key=cache_key, value=cached)
                 return cached
@@ -734,8 +702,8 @@ class AsyncTask(_BaseTask[P, R]):
                 try:
                     result = await self.func(*args, **kwargs)
                     elapsed = time.perf_counter() - t0
-                    await self._try_write_cache(cache_key, result, cache_store)
-                    self._try_save_dataset(metadata, result, dataset_store, hook)
+                    await self._try_write_cache(cache_key, result, data.cache_store)
+                    self._try_save_dataset(metadata, result, data.dataset_store, hook)
 
                     hook.after_node_execute(**common, duration=elapsed, result=result)
                     if attempt > 0:
@@ -795,15 +763,16 @@ class AsyncTaskStream(_BaseTask[P, R]):
         return self._stream(*args, **kwargs)
 
     async def _stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
-        metadata, hook, reporter, cache_store, dataset_store = self._setup_call(*args, **kwargs)
-        common = {"metadata": metadata, "reporter": reporter}
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
 
         async with AsyncExitStack() as stack:
             t0 = time.perf_counter()
             context = TaskContext(
                 metadata=metadata,
-                cache_store=cache_store,
-                dataset_store=dataset_store,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
                 timestamp=t0,
             )
             stack.enter_context(context)

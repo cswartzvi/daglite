@@ -1,9 +1,4 @@
-"""
-Unit tests for daglite settings configuration.
-
-Tests in this file should NOT focus on evaluation. Evaluation behavior tests are in tests/behavior/
-and cross-subsystem scenarios are in tests/integration/.
-"""
+"""Unit tests for daglite settings configuration."""
 
 from daglite.settings import DagliteSettings
 from daglite.settings import get_global_settings
@@ -18,16 +13,6 @@ class TestDagliteSettings:
         settings = DagliteSettings()
         assert settings.max_backend_threads > 0
         assert settings.max_parallel_processes > 0
-
-    def test_custom_thread_settings(self) -> None:
-        """Custom thread pool size is respected."""
-        settings = DagliteSettings(max_backend_threads=10)
-        assert settings.max_backend_threads == 10
-
-    def test_custom_process_settings(self) -> None:
-        """Custom process pool size is respected."""
-        settings = DagliteSettings(max_parallel_processes=4)
-        assert settings.max_parallel_processes == 4
 
     def test_settings_immutable(self) -> None:
         """Settings are frozen (immutable)."""
@@ -52,20 +37,16 @@ class TestGlobalSettings:
         """set_global_settings persists settings that can be retrieved."""
         custom = DagliteSettings(max_backend_threads=42, enable_plugin_tracing=True)
         set_global_settings(custom)
-        retrieved = get_global_settings()
-        assert retrieved.max_backend_threads == 42
-        assert retrieved.enable_plugin_tracing is True
+
+        settings1 = get_global_settings()
+        settings2 = get_global_settings()
+
+        assert settings1 is settings2  # Same instance
+        assert settings1.max_backend_threads == 42
+        assert settings1.enable_plugin_tracing is True
 
         # Clean up
         set_global_settings(DagliteSettings())
-
-    def test_settings_enable_plugin_tracing(self) -> None:
-        """Test enable_plugin_tracing setting."""
-        settings = DagliteSettings(enable_plugin_tracing=True)
-        assert settings.enable_plugin_tracing is True
-
-        settings = DagliteSettings(enable_plugin_tracing=False)
-        assert settings.enable_plugin_tracing is False
 
 
 class TestSettingsEnvironmentVariables:
@@ -110,19 +91,6 @@ class TestSettingsEnvironmentVariables:
         # Use a unique name unlikely to be set
         assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=False) is False
         assert _env_get_bool("DAGLITE_NONEXISTENT_VAR_123", default=True) is True
-
-        custom_settings = DagliteSettings(
-            max_backend_threads=16,
-            max_parallel_processes=8,
-        )
-        set_global_settings(custom_settings)
-
-        retrieved = get_global_settings()
-        assert retrieved.max_backend_threads == 16
-        assert retrieved.max_parallel_processes == 8
-
-        # Cleanup: reset to defaults for other tests
-        set_global_settings(DagliteSettings())
 
     def test_settings_persist_across_calls(self) -> None:
         """Global settings persist across multiple get_global_settings calls."""

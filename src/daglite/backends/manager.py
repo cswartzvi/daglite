@@ -97,7 +97,7 @@ class BackendManager:
         return cls._global
 
     @classmethod
-    def _shutdown_global(cls) -> None:
+    def _shutdown_global(cls) -> None:  # pragma: no cover - atexit handler
         """Called at interpreter exit to stop global backends."""
         if cls._global is not None:
             try:

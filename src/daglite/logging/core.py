@@ -13,8 +13,8 @@ from collections.abc import MutableMapping
 from typing import Any
 from uuid import UUID
 
-from daglite._context import BackendContext
-from daglite._context import TaskContext
+from daglite._resolvers import resolve_event_reporter
+from daglite._resolvers import resolve_task_metadata
 from daglite.plugins.reporters import EventReporter
 
 LOGGER_EVENT = "daglite.logging"  # Event name for log records sent via reporter
@@ -55,7 +55,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
 
     Examples:
         >>> from daglite import task
-        >>> from daglite.plugins.builtin.logging import get_logger
+        >>> from daglite.logging import get_logger
 
         Simple usage - automatic task context in logs
         >>> @task
@@ -77,7 +77,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
-    if TaskContext.get() is not None:
+    if resolve_task_metadata() is not None:
         name = DEFAULT_LOGGER_NAME_TASKS
 
     if name is None:
@@ -86,8 +86,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
     base_logger = logging.getLogger(name)
 
     # Add ReporterHandler only for all non-direct reporters to route logs to coordinator.
-    backend_ctx = BackendContext.get()
-    reporter = backend_ctx.event_reporter if backend_ctx else None
+    reporter = resolve_event_reporter()
     if reporter and not reporter.is_direct:
         with _logger_lock:
             if not any(isinstance(hlr, _ReporterHandler) for hlr in base_logger.handlers):
@@ -208,9 +207,8 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
         """
         extra = kwargs.get("extra", {})
 
-        task_ctx = TaskContext.get()
-        if task_ctx is not None:
-            meta = task_ctx.metadata
+        meta = resolve_task_metadata()
+        if meta is not None:
             extra.setdefault(TASK_EXTRA_ID, str(meta.id))
             extra.setdefault(TASK_EXTRA_NAME, meta.name)
             extra.setdefault(TASK_EXTRA_KEY, meta.name)

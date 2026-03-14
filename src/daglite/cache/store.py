@@ -54,13 +54,14 @@ class CacheStore:
             >>> import tempfile
             >>> store = CacheStore(tempfile.mkdtemp())
         """
-        self._driver: Driver
-        if isinstance(driver, str):
-            from daglite.drivers import FileDriver
+        from daglite.drivers import FileDriver
 
-            self._driver = FileDriver(driver)
-        else:
-            self._driver = driver
+        self._driver = FileDriver(driver) if isinstance(driver, str) else driver
+
+    @property
+    def base_path(self) -> str:
+        """Base path of the underlying driver."""
+        return getattr(self._driver, "base_path", "")
 
     @property
     def is_local(self) -> bool:

@@ -6,6 +6,7 @@ import logging
 import time
 from abc import ABC
 from abc import abstractmethod
+from queue import Empty
 from threading import Thread
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 class QueueLike(Protocol):
     """Protocol for queue-like with a retrieval method."""
 
-    def get(self, timeout: float | None = None) -> Any:
+    def get(self, block: bool = False, timeout: float | None = None) -> Any:
         """Remove and return an item from the queue with an optional timeout."""
         ...
 
@@ -105,7 +106,10 @@ class BackgroundQueueProcessor(ABC):
             has_items = False
 
             for source in list(self._sources.values()):
-                item = source.get(timeout=0.001)
+                try:
+                    item = source.get(timeout=0.001)
+                except (Empty, OSError):
+                    continue
                 if item is not None:
                     self._handle_item(item)
                     has_items = True
@@ -148,7 +152,10 @@ class BackgroundQueueProcessor(ABC):
             has_items = False
 
             for source in list(self._sources.values()):
-                item = source.get(timeout=0.001)
+                try:
+                    item = source.get(timeout=0.001)
+                except (Empty, OSError):
+                    continue
                 if item is not None:
                     self._handle_item(item)
                     has_items = True

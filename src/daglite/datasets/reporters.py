@@ -28,8 +28,6 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from pluggy import HookRelay
-
     from daglite.datasets.store import DatasetStore
     from daglite.tasks import TaskMetadata
 
@@ -107,24 +105,14 @@ class DirectDatasetReporter(DatasetReporter):
         options: dict[str, Any] | None = None,
         metadata: TaskMetadata | None = None,
     ) -> None:
-        hook = self._get_hook()
+        from daglite._resolvers import resolve_hook
+
+        hook = resolve_hook()
         with self._lock:
             hook_kw = dict(key=key, value=value, format=format, options=options, metadata=metadata)
-            if hook:
-                hook.before_dataset_save(**hook_kw)
+            hook.before_dataset_save(**hook_kw)
             store.save(key, value, format=format, options=options)
-            if hook:
-                hook.after_dataset_save(**hook_kw)
-
-    @staticmethod
-    def _get_hook() -> HookRelay | None:
-        """Attempt to retrieve the plugin hook from the active session context."""
-        from daglite._context import SessionContext
-
-        session = SessionContext.get()
-        if session is not None:
-            return session.plugin_manager.hook
-        return None
+            hook.after_dataset_save(**hook_kw)
 
 
 class ProcessDatasetReporter(DatasetReporter):

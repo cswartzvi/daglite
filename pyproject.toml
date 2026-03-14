@@ -101,6 +101,9 @@ mypy_path = "/src:extras/rich/src" # Add new plugins here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
+[tool.pyrefly]
+search-path = [".", "src"]
+
 [tool.pyrefly.errors]
 invalid-param-spec = false
 

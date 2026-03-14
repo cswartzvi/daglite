@@ -1,9 +1,4 @@
-"""
-Integration tests for the eager execution model.
-
-Exercises the full stack — `@task`, `@workflow`, `session`, `task_map`,
-caching, retries, and async equivalents — using the public API only.
-"""
+"""Full-stack integration tests of the execution model; exercises the public API end-to-end."""
 
 from __future__ import annotations
 
@@ -14,45 +9,27 @@ import pytest
 
 from daglite import async_session
 from daglite import gather_tasks
-from daglite import map_task
+from daglite import map_tasks
 from daglite import session
 from daglite import task
 from daglite import workflow
 from daglite.cache.store import CacheStore
+from daglite.exceptions import TaskError
 
-# region Helpers
-
-
-@task
-def add(x: int, y: int) -> int:
-    return x + y
-
-
-@task
-def double(x: int) -> int:
-    return x * 2
+from .examples.tasks import add
+from .examples.tasks import async_add
+from .examples.tasks import async_double
+from .examples.tasks import double
 
 
-@task
-async def async_add(x: int, y: int) -> int:
-    await asyncio.sleep(0)
-    return x + y
-
-
-@task
-async def async_double(x: int) -> int:
-    await asyncio.sleep(0)
-    return x * 2
-
-
-@pytest.fixture
+@pytest.fixture()
 def temp_cache_dir():
     """Temporary directory for on-disk caching."""
     with tempfile.TemporaryDirectory() as tmpdir:
         yield tmpdir
 
 
-@pytest.fixture
+@pytest.fixture()
 def cache_store(temp_cache_dir: str) -> CacheStore:
     """Pre-built ``CacheStore`` backed by a temp directory."""
     return CacheStore(temp_cache_dir)
@@ -132,7 +109,7 @@ class TestAsyncWorkflowCall:
 
 
 class TestCacheWithSession:
-    """End-to-end caching through ``session(cache=...)``."""
+    """End-to-end caching through ``session(cache_store=...)``."""
 
     def test_cache_hit_avoids_recomputation(self, cache_store: CacheStore) -> None:
         call_count = 0
@@ -143,7 +120,7 @@ class TestCacheWithSession:
             call_count += 1
             return x * 2
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             assert expensive(x=5) == 10
             assert expensive(x=5) == 10
 
@@ -158,22 +135,23 @@ class TestCacheWithSession:
             call_count += 1
             return x + 1
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             assert inc(x=1) == 2
             assert inc(x=2) == 3
 
         assert call_count == 2
 
     def test_cache_disabled_means_no_caching(self) -> None:
+        """A task without ``cache=True`` always re-executes."""
         call_count = 0
 
-        @task(cache=True)
+        @task
         def inc(x: int) -> int:
             nonlocal call_count
             call_count += 1
             return x + 1
 
-        with session(cache=False):
+        with session():
             inc(x=1)
             inc(x=1)
 
@@ -188,7 +166,7 @@ class TestCacheWithSession:
             call_count += 1
             return x + 1
 
-        with session(cache=temp_cache_dir):
+        with session(cache_store=temp_cache_dir):
             assert inc(x=10) == 11
             assert inc(x=10) == 11
 
@@ -210,10 +188,9 @@ class TestCacheWithSession:
             count_b += 1
             return x * 2
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             assert fn_a(x=5) == 10
             assert fn_b(x=5) == 10
-            # Both should have executed (no cache sharing)
             assert count_a == 1
             assert count_b == 1
 
@@ -231,7 +208,7 @@ class TestCacheWithSession:
             nonlocal call_count
             call_count += 1
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             result1 = returns_none(x=1)
             result2 = returns_none(x=1)
 
@@ -249,7 +226,7 @@ class TestCacheWithSession:
             return x + 1
 
         async def _run() -> tuple[int, int]:
-            async with async_session(cache=cache_store):
+            async with async_session(cache_store=cache_store):
                 r1 = await async_inc(x=5)
                 r2 = await async_inc(x=5)
                 return r1, r2
@@ -269,11 +246,10 @@ class TestCacheWithSession:
             call_count += 1
             return x + 1
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             assert inc(x=7) == 8
 
-        # New session, same cache store
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             assert inc(x=7) == 8
 
         assert call_count == 1
@@ -287,7 +263,7 @@ class TestCacheWithSession:
             call_count += 1
             return x
 
-        with session(cache=cache_store):
+        with session(cache_store=cache_store):
             plain(x=1)
             plain(x=1)
 
@@ -332,7 +308,7 @@ class TestRetriesWithSession:
             raise RuntimeError(f"attempt {len(attempts)}")
 
         with session():
-            with pytest.raises(RuntimeError, match="attempt 3"):
+            with pytest.raises(TaskError, match="attempt 3"):
                 always_fails(x=1)
 
         assert len(attempts) == 3
@@ -346,7 +322,7 @@ class TestRetriesWithSession:
             raise RuntimeError("boom")
 
         with session():
-            with pytest.raises(RuntimeError, match="boom"):
+            with pytest.raises(TaskError, match="boom"):
                 boom(x=1)
 
         assert len(attempts) == 1
@@ -369,42 +345,34 @@ class TestRetriesWithSession:
         assert len(attempts) == 3
 
 
-# region Session + task_map integration
+# region Map integration
 
 
-class TestParallelMapInSession:
-    """``task_map`` inside a ``session`` exercises the full stack."""
+class TestMapInSession:
+    """``map_tasks`` / ``gather_tasks`` inside sessions."""
 
     def test_inline_backend(self) -> None:
         with session(backend="inline"):
-            results = map_task(double, [1, 2, 3])
-
+            results = map_tasks(double, [1, 2, 3])
         assert results == [2, 4, 6]
 
     def test_thread_backend(self) -> None:
         with session(backend="thread"):
-            results = map_task(double, [10, 20, 30])
-
+            results = map_tasks(double, [10, 20, 30])
         assert results == [20, 40, 60]
 
     def test_override_backend(self) -> None:
-        """Explicit ``backend`` on ``task_map`` overrides the session."""
+        """Explicit ``backend`` on ``map_tasks`` overrides the session."""
         with session(backend="inline"):
-            results = map_task(double, [5, 6], backend="thread")
-
+            results = map_tasks(double, [5, 6], backend="thread")
         assert results == [10, 12]
 
-    def test_task_map_with_multiple_iterables(self) -> None:
+    def test_multiple_iterables(self) -> None:
         with session(backend="inline"):
-            results = map_task(add, [1, 2, 3], [10, 20, 30])
-
+            results = map_tasks(add, [1, 2, 3], [10, 20, 30])
         assert results == [11, 22, 33]
 
-
-class TestAsyncMapInSession:
-    """``async_task_map`` inside an ``async_session``."""
-
-    def test_async_task_map_inline(self) -> None:
+    def test_async_gather_inline(self) -> None:
         async def _run() -> list[int]:
             async with async_session(backend="inline"):
                 return await gather_tasks(async_double, [1, 2, 3])
@@ -424,7 +392,7 @@ class TestErrorPropagation:
             raise ValueError(f"bad value {x}")
 
         with session():
-            with pytest.raises(ValueError, match="bad value 99"):
+            with pytest.raises(TaskError, match="bad value 99"):
                 explode(x=99)
 
     def test_error_in_workflow_propagates(self) -> None:
@@ -436,7 +404,7 @@ class TestErrorPropagation:
         def wf(x: int) -> int:
             return explode(x=x)
 
-        with pytest.raises(ValueError, match="bad value 42"):
+        with pytest.raises(TaskError, match="bad value 42"):
             wf(42)
 
     def test_async_error_propagates(self) -> None:
@@ -448,7 +416,7 @@ class TestErrorPropagation:
             async with async_session():
                 await async_explode(x=7)
 
-        with pytest.raises(ValueError, match="async bad 7"):
+        with pytest.raises(TaskError, match="async bad 7"):
             asyncio.run(_run())
 
 
@@ -486,14 +454,14 @@ class TestMixedComposition:
 
         assert diamond(5) == 65  # (5+10) + (5*10) = 15 + 50
 
-    def test_task_map_inside_workflow(self) -> None:
+    def test_map_inside_workflow(self) -> None:
         @workflow
         def wf(values: list[int]) -> list[int]:
-            return map_task(double, values, backend="inline")
+            return map_tasks(double, values, backend="inline")
 
         assert wf([1, 2, 3]) == [2, 4, 6]
 
-    def test_workflow_with_cache_and_retries(self, cache_store: CacheStore) -> None:
+    def test_cache_and_retries_combined(self, cache_store: CacheStore) -> None:
         """Cache and retries work together through a session."""
         attempts: list[int] = []
 
@@ -504,16 +472,15 @@ class TestMixedComposition:
                 raise ValueError("not yet")
             return x * 100
 
-        with session(cache=cache_store):
-            # First call: retries twice then succeeds, result is cached
+        with session(cache_store=cache_store):
             r1 = flaky_cached(x=5)
             assert r1 == 500
             assert len(attempts) == 3
 
-            # Second call: cache hit, no retry needed
+            # Cache hit — no new attempts
             r2 = flaky_cached(x=5)
             assert r2 == 500
-            assert len(attempts) == 3  # No new attempts
+            assert len(attempts) == 3
 
     def test_nested_sessions(self) -> None:
         """Inner session overrides outer session backend."""
@@ -531,3 +498,69 @@ class TestMixedComposition:
         assert r1 == 1
         assert r2 == 2
         assert r3 == 3
+
+
+# region Logging plugin
+
+
+class TestLoggingPlugin:
+    """Exercise ``LifecycleLoggingPlugin`` hook paths through real task execution."""
+
+    def test_task_with_logging_plugin(self) -> None:
+        """All lifecycle hooks fire for a normal task execution."""
+        from daglite.logging.plugin import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        @task
+        def inc(x: int) -> int:
+            return x + 1
+
+        with session(plugins=[plugin]):
+            assert inc(x=5) == 6
+
+    def test_retry_with_logging_plugin(self) -> None:
+        """Retry hooks fire for a flaky task."""
+        from daglite.logging.plugin import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        attempts: list[int] = []
+
+        @task(retries=1)
+        def flaky(x: int) -> int:
+            attempts.append(1)
+            if len(attempts) < 2:
+                raise ValueError("not yet")
+            return x
+
+        with session(plugins=[plugin]):
+            assert flaky(x=10) == 10
+
+    def test_cache_hit_with_logging_plugin(self, temp_cache_dir: str) -> None:
+        """Cache-hit hook fires on the second call."""
+        from daglite.logging.plugin import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+
+        @task(cache=True)
+        def square(x: int) -> int:
+            return x * x
+
+        with session(plugins=[plugin], cache_store=temp_cache_dir):
+            square(x=3)
+            square(x=3)
+
+    def test_dataset_save_with_logging_plugin(self, tmp_path) -> None:
+        """Dataset save hooks fire when saving via a task."""
+        from daglite.datasets.store import DatasetStore
+        from daglite.logging.plugin import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        store = DatasetStore(str(tmp_path))
+
+        @task(dataset="out.pkl", dataset_store=store)
+        def produce(x: int) -> int:
+            return x * 10
+
+        with session(plugins=[plugin], dataset_store=store):
+            assert produce(x=5) == 50

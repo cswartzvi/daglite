@@ -8,13 +8,13 @@ import time
 from collections.abc import Callable
 from collections.abc import Coroutine
 from collections.abc import Iterable
-from functools import wraps
 from typing import Any, TypeVar, overload
 
 from daglite._context import BackendContext
-from daglite._context import SessionContext
-from daglite._context import TaskContext
-from daglite._context import resolve_from_chain
+from daglite._resolvers import resolve_dataset_reporter
+from daglite._resolvers import resolve_dataset_store
+from daglite._resolvers import resolve_hook
+from daglite._resolvers import resolve_task_metadata
 from daglite.datasets.store import DatasetStore
 
 logger = logging.getLogger(__name__)
@@ -48,13 +48,11 @@ def map_tasks(
     """
     from daglite.backends.manager import BackendManager
 
-    task = _ensure_task(task, "map_tasks")
+    callable_task = _make_backend_callable(task, "map_tasks")
 
     # Avoid over-saturation: nested maps default to inline when no explicit backend is given.
-    if backend is None and _inside_task():
+    if backend is None and resolve_task_metadata():
         backend = "inline"
-
-    callable_task: Callable[..., Any] = _resolve_callable(task)
 
     items = list(zip(*iterables))
     if not items:
@@ -62,6 +60,7 @@ def map_tasks(
 
     instance = BackendManager.get_active().get(backend)
     futures = [instance.submit(callable_task, args, map_index=i) for i, args in enumerate(items)]
+
     return [f.result() for f in futures]
 
 
@@ -98,7 +97,7 @@ async def gather_tasks(
     """
     task = _ensure_task(task, "gather_tasks")
 
-    if not _is_async(task):
+    if not getattr(task, "is_async", False):
         raise TypeError(
             "`gather_tasks` requires an async `@task`. Use `map_tasks` for sync tasks, or make "
             "your task async."
@@ -157,9 +156,11 @@ def load_dataset(
     Returns:
         The deserialized Python object.
     """
-    resolved_store = _get_store(store)
-    hook = _get_hook()
-    metadata = _get_metadata()
+    resolved_store = resolve_dataset_store(store)
+
+    hook = resolve_hook()
+    metadata = resolve_task_metadata()
+
     hook_kw = {
         "key": key,
         "return_type": return_type,
@@ -168,15 +169,13 @@ def load_dataset(
         "metadata": metadata,
     }
 
-    if hook is not None:
-        hook.before_dataset_load(**hook_kw)
+    hook.before_dataset_load(**hook_kw)
 
     t0 = time.perf_counter()
     result = resolved_store.load(key, return_type=return_type, format=format, options=options)
     duration = time.perf_counter() - t0
 
-    if hook is not None:
-        hook.after_dataset_load(**hook_kw, result=result, duration=duration)
+    hook.after_dataset_load(**hook_kw, result=result, duration=duration)
 
     return result
 
@@ -210,9 +209,10 @@ def save_dataset(
     Returns:
         The actual path where data was stored.
     """
-    resolved_store = _get_store(store)
-    metadata = _get_metadata()
-    reporter = _get_dataset_reporter()
+    resolved_store = resolve_dataset_store(store)
+
+    metadata = resolve_task_metadata()
+    reporter = resolve_dataset_reporter()
 
     # Route through the reporter when available (handles coordination + hooks).
     if reporter is not None:
@@ -220,7 +220,7 @@ def save_dataset(
         return key
 
     # No reporter (bare call outside session) — save directly with hook dispatch.
-    hook = _get_hook()
+    hook = resolve_hook()
     hook_kw: dict[str, Any] = {
         "key": key,
         "value": value,
@@ -229,13 +229,11 @@ def save_dataset(
         "metadata": metadata,
     }
 
-    if hook is not None:
-        hook.before_dataset_save(**hook_kw)
+    hook.before_dataset_save(**hook_kw)
 
     path = resolved_store.save(key, value, format=format, options=options)
 
-    if hook is not None:
-        hook.after_dataset_save(**hook_kw)
+    hook.after_dataset_save(**hook_kw)
 
     return path
 
@@ -247,7 +245,7 @@ def _ensure_task(func: Callable[..., Any], func_name: str) -> Any:
     """
     Ensure *func* is a daglite `@task`-decorated callable.
 
-    If a plain callable is passed it is automatically wrapped with the default ``@task`` settings.
+    If a plain callable is passed it is automatically wrapped with the default `@task` settings.
     Non-callable objects raise `TypeError`.
     """
     from daglite.tasks import _BaseTask
@@ -266,38 +264,58 @@ def _ensure_task(func: Callable[..., Any], func_name: str) -> Any:
     )
 
 
-def _is_async(task: Any) -> bool:
-    """Return `True` when *task* is an async `@task`-decorated callable."""
-    return getattr(task, "is_async", False)
+class _AsyncWrapper:
+    """Picklable wrapper that runs an async task synchronously via ``asyncio.run``."""
+
+    def __init__(self, task: Any) -> None:
+        self._task = task
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return asyncio.run(self._task(*args, **kwargs))
 
 
-def _is_generator(task: Any) -> bool:
-    """Return `True` when *task* is a generator `@task`-decorated callable."""
-    return getattr(task, "is_generator", False)
+class _GeneratorWrapper:
+    """Picklable wrapper that collects a generator task's yields into a list."""
+
+    def __init__(self, task: Any) -> None:
+        self._task = task
+
+    def __call__(self, *args: Any, **kwargs: Any) -> list[Any]:
+        return list(self._task(*args, **kwargs))
 
 
-def _inside_task() -> bool:
-    """Return `True` when called from inside an active task execution."""
-    return TaskContext.get() is not None
+class _AsyncGeneratorWrapper:
+    """Picklable wrapper that collects async generator yields into a list via ``asyncio.run``."""
+
+    def __init__(self, task: Any) -> None:
+        self._task = task
+
+    def __call__(self, *args: Any, **kwargs: Any) -> list[Any]:
+        async def _collect() -> list[Any]:
+            return [item async for item in self._task(*args, **kwargs)]
+
+        return asyncio.run(_collect())
 
 
-def _resolve_callable(task: Callable[..., Any]) -> Callable[..., Any]:
+def _make_backend_callable(func: Callable[..., Any], func_name: str) -> Callable[..., Any]:
     """
-    Resolve a task to a plain callable suitable for backend submission.
+    Validate *func* as a task and return a sync callable suitable for backend pool submission.
 
-    Generators are wrapped to collect yielded items into a list. Async tasks (including async
-    generators) are wrapped to run via `asyncio.run` so they can be dispatched to backends that
-    execute callables in worker threads or processes.
+    Plain callables are auto-wrapped with ``@task``.  Async tasks are wrapped with
+    ``asyncio.run`` so they can run in worker threads/processes.  Generator tasks are
+    wrapped to collect yields into a list.  Wrappers are picklable for process backends.
     """
-    is_async = _is_async(task)
-    is_gen = _is_generator(task)
+    task = _ensure_task(func, func_name)
+
+    is_async = getattr(task, "is_async", False)
+    is_gen = getattr(task, "is_generator", False)
 
     if is_async and is_gen:
-        return _wrap_async_generator(task)
+        return _AsyncGeneratorWrapper(task)
     if is_async:
-        return _wrap_async(task)
+        return _AsyncWrapper(task)
     if is_gen:
-        return _wrap_generator(task)
+        return _GeneratorWrapper(task)
     return task
 
 
@@ -305,93 +323,6 @@ async def _async_indexed_call(task: Callable[..., Any], index: int, args: tuple[
     """Await *task* with a `BackendContext` carrying the `map_index`."""
     ctx = BackendContext.from_session(map_index=index)
     with ctx:
-        if _is_generator(task):
+        if getattr(task, "is_generator", False):
             return [item async for item in task(*args)]
         return await task(*args)
-
-
-def _wrap_generator(task: Callable[..., Any]) -> Callable[..., Any]:
-    """Wrap a sync generator task to collect yielded items into a list."""
-
-    @wraps(task)
-    def _wrapper(*args: Any, **kwargs: Any) -> list[Any]:
-        return list(task(*args, **kwargs))
-
-    return _wrapper
-
-
-def _wrap_async(task: Callable[..., Any]) -> Callable[..., Any]:
-    """
-    Wrap an async `@task` so it can be called as a sync callable via `asyncio.run`.
-
-    This is used by `map_tasks` so that async tasks can be dispatched to backends that execute
-    callables in worker threads or processes.
-    """
-
-    @wraps(task)
-    def _wrapper(*args: Any, **kwargs: Any) -> Any:
-        return asyncio.run(task(*args, **kwargs))
-
-    return _wrapper
-
-
-def _wrap_async_generator(task: Callable[..., Any]) -> Callable[..., Any]:
-    """Wrap an async generator task to collect yielded items into a list via `asyncio.run`."""
-
-    @wraps(task)
-    def _wrapper(*args: Any, **kwargs: Any) -> list[Any]:
-        async def _collect() -> list[Any]:
-            return [item async for item in task(*args, **kwargs)]
-
-        return asyncio.run(_collect())
-
-    return _wrapper
-
-
-def _get_store(store: DatasetStore | str | None = None) -> DatasetStore:
-    """Resolve *store* from the provided value, the active context chain, or raise."""
-    if isinstance(store, DatasetStore):
-        return store
-    if isinstance(store, str):
-        return DatasetStore(store)
-
-    ds: DatasetStore | None = resolve_from_chain(
-        "dataset_store",
-        TaskContext.get(),
-        SessionContext.get(),
-        default=None,
-    )
-    if ds is not None:
-        return ds
-
-    from daglite.settings import get_global_settings
-
-    settings = get_global_settings()
-    ds_setting = getattr(settings, "dataset_store", None)
-    if ds_setting is not None:
-        return DatasetStore(ds_setting) if isinstance(ds_setting, str) else ds_setting
-
-    raise RuntimeError(
-        "No dataset store available. Pass a store explicitly, configure one on the "
-        "session, or set the DAGLITE_DATASET_STORE environment variable."
-    )
-
-
-def _get_hook() -> Any:
-    """Return the pluggy hook relay from the active session, or ``None``."""
-    session_ctx = SessionContext.get()
-    if session_ctx is not None:
-        return session_ctx.plugin_manager.hook
-    return None
-
-
-def _get_metadata() -> Any:
-    """Return the active ``TaskMetadata``, or ``None`` if outside a task."""
-    task_ctx = TaskContext.get()
-    return task_ctx.metadata if task_ctx is not None else None
-
-
-def _get_dataset_reporter() -> Any:
-    """Return the ``DatasetReporter`` from the active session, or ``None``."""
-    session_ctx = SessionContext.get()
-    return session_ctx.dataset_reporter if session_ctx is not None else None

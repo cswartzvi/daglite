@@ -1,25 +1,42 @@
-"""Example workflows for testing."""
+"""
+Reusable workflow definitions for daglite tests.
 
-from daglite import task
+This module provides canonical ``@workflow``-decorated functions used across
+unit, integration, and type-assertion tests.
+"""
+
+from __future__ import annotations
+
 from daglite import workflow
 
-
-@task
-def add(x: int, y: int) -> int:
-    """Add two numbers."""
-    return x + y
-
-
-@task
-def multiply(x: int, factor: int) -> int:
-    """Multiply a number by a factor."""
-    return x * factor
+from .tasks import add
+from .tasks import async_add
+from .tasks import failing_task
+from .tasks import multiply
 
 
-@task
-def failing_task(x: int) -> int:
-    """A task that always raises an exception."""
-    raise RuntimeError(f"Intentional failure with input: {x}")
+@workflow
+def sync_workflow(x: int, y: int) -> int:
+    """Sync workflow for type assertions."""
+    return add(x=x, y=y)
+
+
+@workflow(name="custom_sync_workflow")
+def named_sync_workflow(x: int, y: int) -> int:
+    """Sync workflow with custom name — exercises decorator-with-kwargs path."""
+    return add(x=x, y=y)
+
+
+@workflow
+async def async_workflow(x: int, y: int) -> int:
+    """Async workflow for type assertions."""
+    return await async_add(x=x, y=y)
+
+
+@workflow(name="custom_async_workflow")
+async def named_async_workflow(x: int, y: int) -> int:
+    """Async workflow with custom name — exercises decorator-with-kwargs path."""
+    return await async_add(x=x, y=y)
 
 
 @workflow

@@ -105,7 +105,7 @@ class TestRichLifecycleLoggingPlugin:
 
     def test_inherits_from_lifecycle_logging_plugin(self):
         """Test that RichLifecycleLoggingPlugin properly inherits from LifecycleLoggingPlugin."""
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+        from daglite.logging import LifecycleLoggingPlugin
 
         plugin = RichLifecycleLoggingPlugin()
 

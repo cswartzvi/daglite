@@ -220,7 +220,7 @@ class AbstractDataset(ABC):
                 try:
                     if issubclass(type_, reg_type):
                         return dataset_cls
-                except TypeError:
+                except TypeError:  # pragma: no cover - defensive
                     continue
 
         # Slow path: try discovering plugins for this type
@@ -333,7 +333,7 @@ class AbstractDataset(ABC):
                 try:
                     if issubclass(type_, reg_type):
                         formats.add(reg_format)
-                except TypeError:
+                except TypeError:  # pragma: no cover - defensive
                     continue
         return formats
 

@@ -86,7 +86,9 @@ class ProcessBackend(Backend):
 
     _executor: ProcessPoolExecutor
     _event_queue: Any
-    _source_id: UUID | None
+    _dataset_queue: Any
+    _event_source_id: UUID | None
+    _dataset_source_id: UUID | None
     _mp_context: Any
     _has_session: bool
 
@@ -122,39 +124,31 @@ class ProcessBackend(Backend):
 
     def _start_with_session(self) -> None:
         """Set up the process pool with full session infrastructure (events, plugins, cache)."""
-        from daglite.plugins.manager import serialize_plugin_manager
 
         assert self._session is not None
 
         self._event_queue = self._mp_context.Queue()
+        self._dataset_queue = self._mp_context.Queue()
 
-        # Register queue with the session's event processor so events from worker processes are
-        # dispatched on the coordinator side.
-        self._source_id = None
+        # Register queues with the session's processors so events/dataset saves from
+        # worker processes are dispatched on the coordinator side.
+        self._event_source_id = None
         if self._session.event_processor is not None:
-            self._source_id = self._session.event_processor.add_source(self._event_queue)
+            self._event_source_id = self._session.event_processor.add_source(self._event_queue)
 
-        # Serialize the plugin manager for cross-process transfer.
-        serialized_pm = None
-        if self._session.plugin_manager is not None:
-            serialized_pm = serialize_plugin_manager(self._session.plugin_manager)
+        self._dataset_source_id = None
+        if self._session.dataset_processor is not None:
+            self._dataset_source_id = self._session.dataset_processor.add_source(
+                self._dataset_queue
+            )
 
-        # Validate that cache_store is picklable before sending to workers.
-        if self._session.cache_store is not None:
-            import pickle
+        # Build a BackendContext from the session and serialize it to a JSON-safe dict.
+        context_data = BackendContext.from_session(backend=self.name).to_dict()
 
-            try:
-                pickle.dumps(self._session.cache_store)
-            except Exception as exc:
-                raise TypeError(
-                    "cache_store must be picklable for use with the process backend. "
-                    "Use the thread or inline backend instead."
-                ) from exc
-
-        payload = _ProcessWorkerPayload(
-            serialized_plugin_manager=serialized_pm,
+        payload = _ProcessPayload(
+            context_data=context_data,
             event_queue=self._event_queue,
-            cache_store=self._session.cache_store,
+            dataset_queue=self._dataset_queue,
         )
 
         self._executor = ProcessPoolExecutor(
@@ -167,7 +161,9 @@ class ProcessBackend(Backend):
     def _start_bare(self) -> None:
         """Set up the process pool without session infrastructure."""
         self._event_queue = None
-        self._source_id = None
+        self._dataset_queue = None
+        self._event_source_id = None
+        self._dataset_source_id = None
         self._executor = ProcessPoolExecutor(
             max_workers=self._settings.max_parallel_processes,
             mp_context=self._mp_context,
@@ -181,11 +177,19 @@ class ProcessBackend(Backend):
             if self._session.event_processor is not None:
                 self._session.event_processor.flush()
 
-                if self._source_id is not None:
-                    self._session.event_processor.remove_source(self._source_id)
+                if self._event_source_id is not None:
+                    self._session.event_processor.remove_source(self._event_source_id)
+
+            if self._session.dataset_processor is not None:
+                self._session.dataset_processor.flush()
+
+                if self._dataset_source_id is not None:
+                    self._session.dataset_processor.remove_source(self._dataset_source_id)
 
         if self._event_queue is not None:
             self._event_queue.close()
+        if self._dataset_queue is not None:
+            self._dataset_queue.close()
 
     @override
     def _submit(
@@ -200,36 +204,31 @@ class ProcessBackend(Backend):
 
 
 @dataclass
-class _ProcessWorkerPayload:
-    """Serializable bundle sent to `ProcessPoolExecutor` workers via the initializer."""
+class _ProcessPayload:
+    """Serializable bundle sent to ``ProcessPoolExecutor`` workers via the initializer."""
 
-    serialized_plugin_manager: dict[str, Any] | None
+    context_data: dict[str, Any]
     event_queue: Any
-    cache_store: Any
+    dataset_queue: Any
 
 
-def _process_initializer(payload: _ProcessWorkerPayload) -> None:  # pragma: no cover
+def _process_initializer(payload: _ProcessPayload) -> None:  # pragma: no cover
     """
-    Initializes the `ProcessPoolExecutor` workers.
+    Initializes the ``ProcessPoolExecutor`` workers.
 
-    Deserializes the plugin manager, creates a `ProcessEventReporter`, and pushes a `BackendContext`
-    into the worker's context variable so that tasks have access to session infrastructure (events,
-    plugins, cache).
+    Rehydrates a ``BackendContext`` from the serialized dict and pushes it into the worker's
+    context variable so that tasks have access to session infrastructure (events, plugins,
+    cache, datasets).
     """
-    from daglite.plugins.manager import deserialize_plugin_manager
+    from daglite.datasets.reporters import ProcessDatasetReporter
     from daglite.plugins.reporters import ProcessEventReporter
 
-    pm = (
-        deserialize_plugin_manager(payload.serialized_plugin_manager)
-        if payload.serialized_plugin_manager
-        else None
-    )
     event_reporter = ProcessEventReporter(payload.event_queue)
+    dataset_reporter = ProcessDatasetReporter(payload.dataset_queue)
 
-    ctx = BackendContext(
-        backend="process",
+    ctx = BackendContext.from_dict(
+        payload.context_data,
         event_reporter=event_reporter,
-        plugin_manager=pm,
-        cache_store=payload.cache_store,
+        dataset_reporter=dataset_reporter,
     )
     ctx.__enter__()

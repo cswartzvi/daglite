@@ -5,7 +5,9 @@ __version__ = "0.8.0"
 import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
 from daglite import backends
 from daglite import settings
+from daglite.composers import gather_tasks
 from daglite.composers import load_dataset
+from daglite.composers import map_tasks
 from daglite.composers import save_dataset
 from daglite.plugins.manager import _initialize_plugin_system
 from daglite.session import async_session
@@ -19,7 +21,9 @@ _initialize_plugin_system()
 __all__ = [
     "async_session",
     "backends",
+    "gather_tasks",
     "load_dataset",
+    "map_tasks",
     "save_dataset",
     "session",
     "settings",

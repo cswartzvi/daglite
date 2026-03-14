@@ -5,7 +5,7 @@ from __future__ import annotations
 import pickle
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
-from daglite._context import TaskContext
+from daglite._resolvers import resolve_task_inputs
 from daglite._templates import parse_template
 from daglite._templates import resolve_template
 from daglite.datasets.base import AbstractDataset
@@ -21,8 +21,7 @@ def _resolve_key(key: str) -> str:
     if not parse_template(key):
         return key
 
-    context = TaskContext.get()
-    inputs = context.metadata.inputs if context else None
+    inputs = resolve_task_inputs()
     if inputs is None:
         return key
     return resolve_template(key, inputs)

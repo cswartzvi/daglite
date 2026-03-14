@@ -2,12 +2,14 @@
 
 import pickle
 import tempfile
+from uuid import uuid4
 
 import pytest
 
+from daglite._context import TaskContext
 from daglite.datasets.store import DatasetStore
 from daglite.drivers import FileDriver
-from daglite.session import _task_call_args
+from daglite.tasks import TaskMetadata
 
 
 class TestDatasetStoreInit:
@@ -230,52 +232,46 @@ class TestDatasetStorePickle:
 class TestDatasetKeyTemplates:
     """Dataset key ``{param}`` substitution from the current task's bound args."""
 
+    @staticmethod
+    def _task_ctx(inputs: dict):
+        """Create a TaskContext with given inputs for template resolution."""
+        meta = TaskMetadata(id=uuid4(), name="test_task", backend="inline", inputs=inputs)
+        return TaskContext(metadata=meta)
+
     def test_save_resolves_placeholders(self):
-        """Placeholders in save keys are resolved from _task_call_args."""
+        """Placeholders in save keys are resolved from TaskContext.metadata.inputs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            token = _task_call_args.set({"split": "train", "epoch": 5})
-            try:
+            with self._task_ctx({"split": "train", "epoch": 5}):
                 store.save("output_{split}_{epoch}.txt", "data")
                 assert store.exists("output_train_5.txt")
                 assert store.load("output_train_5.txt", str) == "data"
-            finally:
-                _task_call_args.reset(token)
 
     def test_load_resolves_placeholders(self):
-        """Placeholders in load keys are resolved from _task_call_args."""
+        """Placeholders in load keys are resolved from TaskContext.metadata.inputs."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             # Save with a literal key first.
             store.save("result_val.txt", "hello")
-            token = _task_call_args.set({"split": "val"})
-            try:
+            with self._task_ctx({"split": "val"}):
                 loaded = store.load("result_{split}.txt", str)
                 assert loaded == "hello"
-            finally:
-                _task_call_args.reset(token)
 
     def test_exists_resolves_placeholders(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             store.save("data_train.pkl", {"x": 1})
-            token = _task_call_args.set({"split": "train"})
-            try:
+            with self._task_ctx({"split": "train"}):
                 assert store.exists("data_{split}.pkl") is True
                 assert store.exists("data_{split}_extra.pkl") is False
-            finally:
-                _task_call_args.reset(token)
 
     def test_delete_resolves_placeholders(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
             store.save("temp_a.txt", "bye")
             assert store.exists("temp_a.txt")
-            token = _task_call_args.set({"x": "a"})
-            try:
+            with self._task_ctx({"x": "a"}):
                 store.delete("temp_{x}.txt")
-            finally:
-                _task_call_args.reset(token)
             assert not store.exists("temp_a.txt")
 
     def test_no_args_no_resolution(self):
@@ -289,9 +285,6 @@ class TestDatasetKeyTemplates:
         """A key without placeholders is unaffected even when args are set."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = DatasetStore(tmpdir)
-            token = _task_call_args.set({"x": "val"})
-            try:
+            with self._task_ctx({"x": "val"}):
                 store.save("literal.txt", "content")
                 assert store.load("literal.txt", str) == "content"
-            finally:
-                _task_call_args.reset(token)
