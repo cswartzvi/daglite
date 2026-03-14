@@ -74,6 +74,12 @@ class TestMapTasks:
             with pytest.raises(TaskError, match="three is bad"):
                 map_tasks(fail_on_three, [1, 2, 3, 4])
 
+    def test_map_async_non_generator(self) -> None:
+        """``map_tasks`` with a plain async task wraps it for backend execution."""
+        with session():
+            result = map_tasks(async_double, [1, 2, 3])
+        assert result == [2, 4, 6]
+
 
 class TestBackendResolution:
     """Backend name resolution from context or override."""
@@ -136,6 +142,17 @@ class TestMapWithNesting:
         assert outer_indices == [0, 1]
         # Each leaf has a parent (the mapped task)
         assert all(p is not None for p in inner_parents)
+
+    def test_nested_map_defaults_to_inline(self) -> None:
+        """Nested ``map_tasks`` inside a task auto-defaults to inline."""
+
+        @task
+        def outer(values: list[int]) -> list[int]:
+            return map_tasks(double, values)
+
+        with session(backend="thread"):
+            result = outer(values=[1, 2, 3])
+        assert result == [2, 4, 6]
 
 
 # region Gather tasks

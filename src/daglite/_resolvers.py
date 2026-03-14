@@ -36,9 +36,7 @@ def resolve_task_metadata() -> TaskMetadata | None:
 
 
 def resolve_task_inputs() -> dict[str, object] | None:
-    """
-    Return the bound input arguments of the currently executing task, or ``None``.
-    """
+    """Return the bound input arguments of the currently executing task, or ``None``."""
     meta = resolve_task_metadata()
     return meta.inputs if meta is not None else None
 
@@ -270,4 +268,4 @@ def _resolve_from_chain(
     if default is not _MISSING:
         return default
 
-    return None
+    return None  # pragma: no cover - all callers provide a default

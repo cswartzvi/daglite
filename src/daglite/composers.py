@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
 from collections.abc import Callable
 from collections.abc import Coroutine
 from collections.abc import Iterable
+from collections.abc import Iterator
 from typing import Any, TypeVar, overload
 
 from daglite._context import BackendContext
@@ -25,9 +27,27 @@ R = TypeVar("R")
 # region Public API
 
 
+@overload
+def map_tasks(  # type: ignore[overload-overlap]
+    task: Callable[..., AsyncIterator[R]], *iterables: Iterable[Any], backend: str | None = None
+) -> list[list[R]]: ...
+
+
+@overload
+def map_tasks(  # type: ignore[overload-overlap]
+    task: Callable[..., Iterator[R]], *iterables: Iterable[Any], backend: str | None = None
+) -> list[list[R]]: ...
+
+
+@overload
 def map_tasks(
     task: Callable[..., R], *iterables: Iterable[Any], backend: str | None = None
-) -> list[R]:
+) -> list[R]: ...
+
+
+def map_tasks(
+    task: Callable[..., Any], *iterables: Iterable[Any], backend: str | None = None
+) -> list[Any]:
     """
     Map a task across iterables using the active backend.
 
@@ -62,6 +82,14 @@ def map_tasks(
     futures = [instance.submit(callable_task, args, map_index=i) for i, args in enumerate(items)]
 
     return [f.result() for f in futures]
+
+
+@overload
+async def gather_tasks(  # type: ignore[overload-overlap]
+    task: Callable[..., AsyncIterator[R]],
+    *iterables: Iterable[Any],
+    backend: str | None = None,
+) -> list[list[R]]: ...
 
 
 @overload

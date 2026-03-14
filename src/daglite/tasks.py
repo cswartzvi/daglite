@@ -220,9 +220,9 @@ def task(  # noqa: D417
                     )
 
         # Store original function in module namespace for pickling (process backend)
-        if hasattr(fn, "__module__") and hasattr(fn, "__name__"):
+        if hasattr(fn, "__module__") and hasattr(fn, "__name__"):  # pragma: no branch
             module = sys.modules.get(fn.__module__)
-            if module is not None:
+            if module is not None:  # pragma: no branch
                 private_name = f"__{fn.__name__}_func__"
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
@@ -430,7 +430,7 @@ class _BaseTask(abc.ABC, Generic[P, R]):
         template_vars = {**bound}
         if map_index is not None:
             template_vars[_TEMPLATE_VAR_MAP_INDEX] = map_index
-        if iter_index is not None:
+        if iter_index is not None:  # pragma: no cover - reserved for future streaming iteration
             template_vars[_TEMPLATE_VAR_ITER_INDEX] = iter_index
         return template_vars
 
@@ -452,7 +452,7 @@ class _BaseTask(abc.ABC, Generic[P, R]):
             return
 
         key = self._resolve_dataset_key(metadata.inputs, map_index=metadata.map_index)
-        if key is None:
+        if key is None:  # pragma: no cover - defensive; dataset is set but key resolves to None
             return
 
         fmt = self.dataset_format

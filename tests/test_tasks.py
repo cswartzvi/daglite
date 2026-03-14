@@ -37,7 +37,7 @@ from .examples.tasks import multiply
 from .examples.tasks import named_add
 from .examples.tasks import to_string
 
-# region Eager Tasks
+# region Tasks
 
 
 class TestTaskInstanceTypes:
@@ -201,6 +201,20 @@ class TestDecoratorEdgeCases:
 
         assert noop() == 42
         assert noop.name == "noop"
+
+    def test_name_template_unknown_placeholder_rejected(self) -> None:
+        with pytest.raises(ValueError, match="references"):
+
+            @task(name="step_{missing}")
+            def fn(x: int) -> int:
+                return x
+
+    def test_dataset_template_unknown_placeholder_rejected(self) -> None:
+        with pytest.raises(ValueError, match="references"):
+
+            @task(dataset="output_{missing}.pkl")
+            def fn(x: int) -> int:
+                return x
 
 
 class TestSyncExecution:

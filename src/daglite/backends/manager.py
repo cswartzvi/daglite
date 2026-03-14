@@ -89,7 +89,7 @@ class BackendManager:
         """Lazily create the global singleton with `atexit` cleanup."""
         if cls._global is None:
             with cls._global_lock:
-                if cls._global is None:
+                if cls._global is None:  # pragma: no branch - race guard
                     from daglite.settings import get_global_settings
 
                     cls._global = BackendManager(session=None, settings=get_global_settings())

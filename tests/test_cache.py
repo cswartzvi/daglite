@@ -222,3 +222,13 @@ class TestDefaultCacheHash:
             return x * 3
 
         assert default_cache_hash(fa, {"x": 1}) != default_cache_hash(fb, {"x": 1})
+
+
+class TestCacheMissSentinel:
+    """CACHE_MISS singleton behaviour."""
+
+    def test_bool_is_false(self) -> None:
+        assert bool(CACHE_MISS) is False
+
+    def test_repr(self) -> None:
+        assert repr(CACHE_MISS) == "CACHE_MISS"

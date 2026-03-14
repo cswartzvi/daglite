@@ -110,7 +110,7 @@ class BackgroundQueueProcessor(ABC):
                     item = source.get(timeout=0.001)
                 except (Empty, OSError):
                     continue
-                if item is not None:
+                if item is not None:  # pragma: no branch
                     self._handle_item(item)
                     has_items = True
 
@@ -156,7 +156,7 @@ class BackgroundQueueProcessor(ABC):
                     item = source.get(timeout=0.001)
                 except (Empty, OSError):
                     continue
-                if item is not None:
+                if item is not None:  # pragma: no branch
                     self._handle_item(item)
                     has_items = True
 

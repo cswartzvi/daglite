@@ -166,6 +166,17 @@ class TestNestedSessions:
             assert outer.backend == "inline"
 
 
+class TestResolveDatasetStore:
+    """Tests for the ``_resolve_dataset_store`` helper."""
+
+    def test_none_without_settings_returns_none(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from daglite.session import _resolve_dataset_store
+
+        monkeypatch.delenv("DAGLITE_DATASET_STORE", raising=False)
+        settings = DagliteSettings(dataset_store=None)  # type: ignore[call-arg]
+        assert _resolve_dataset_store(None, settings) is None
+
+
 class TestStopProcessorsErrorHandling:
     """``_stop_processors`` swallows exceptions to avoid masking user errors."""
 

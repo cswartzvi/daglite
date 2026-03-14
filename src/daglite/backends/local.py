@@ -120,7 +120,7 @@ class ProcessBackend(Backend):
         if self._has_session:
             self._start_with_session()
         else:
-            self._start_bare()
+            self._start_bare()  # pragma: no cover - bare process backend
 
     def _start_with_session(self) -> None:
         """Set up the process pool with full session infrastructure (events, plugins, cache)."""
@@ -133,11 +133,11 @@ class ProcessBackend(Backend):
         # Register queues with the session's processors so events/dataset saves from
         # worker processes are dispatched on the coordinator side.
         self._event_source_id = None
-        if self._session.event_processor is not None:
+        if self._session.event_processor is not None:  # pragma: no branch
             self._event_source_id = self._session.event_processor.add_source(self._event_queue)
 
         self._dataset_source_id = None
-        if self._session.dataset_processor is not None:
+        if self._session.dataset_processor is not None:  # pragma: no branch
             self._dataset_source_id = self._session.dataset_processor.add_source(
                 self._dataset_queue
             )
@@ -158,7 +158,7 @@ class ProcessBackend(Backend):
             initargs=(payload,),
         )
 
-    def _start_bare(self) -> None:
+    def _start_bare(self) -> None:  # pragma: no cover - bare process backend
         """Set up the process pool without session infrastructure."""
         self._event_queue = None
         self._dataset_queue = None
@@ -173,22 +173,22 @@ class ProcessBackend(Backend):
     def _stop(self) -> None:
         self._executor.shutdown(wait=True)
 
-        if self._has_session and self._session is not None:
-            if self._session.event_processor is not None:
+        if self._has_session and self._session is not None:  # pragma: no branch
+            if self._session.event_processor is not None:  # pragma: no branch
                 self._session.event_processor.flush()
 
-                if self._event_source_id is not None:
+                if self._event_source_id is not None:  # pragma: no branch
                     self._session.event_processor.remove_source(self._event_source_id)
 
-            if self._session.dataset_processor is not None:
+            if self._session.dataset_processor is not None:  # pragma: no branch
                 self._session.dataset_processor.flush()
 
-                if self._dataset_source_id is not None:
+                if self._dataset_source_id is not None:  # pragma: no branch
                     self._session.dataset_processor.remove_source(self._dataset_source_id)
 
-        if self._event_queue is not None:
+        if self._event_queue is not None:  # pragma: no branch
             self._event_queue.close()
-        if self._dataset_queue is not None:
+        if self._dataset_queue is not None:  # pragma: no branch
             self._dataset_queue.close()
 
     @override

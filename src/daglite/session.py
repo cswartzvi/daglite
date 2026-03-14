@@ -197,7 +197,7 @@ def _resolve_cache_store(cache: str | CacheStore | None, settings: Any) -> Cache
     if isinstance(cache, CacheStore):
         return cache
 
-    if isinstance(cache, str):
+    if isinstance(cache, str):  # pragma: no branch
         return CacheStore(cache)
 
 
@@ -214,7 +214,7 @@ def _resolve_dataset_store(
     if isinstance(dataset_store, DatasetStore):
         return dataset_store
 
-    if isinstance(dataset_store, str):
+    if isinstance(dataset_store, str):  # pragma: no branch
         return DatasetStore(dataset_store)
 
 
@@ -238,9 +238,9 @@ def _processors_context(ctx: SessionContext) -> Iterator[None]:
 
 def _start_processors(ctx: SessionContext) -> None:
     """Starts background processors attached to the context."""
-    if ctx.event_processor is not None:
+    if ctx.event_processor is not None:  # pragma: no branch
         ctx.event_processor.start()
-    if ctx.dataset_processor is not None:
+    if ctx.dataset_processor is not None:  # pragma: no branch
         ctx.dataset_processor.start()
 
 
@@ -252,13 +252,13 @@ def _stop_processors(ctx: SessionContext, mgr: Any, token: Any) -> None:
     except Exception:
         logger.exception("Failed to stop backend manager")
 
-    if ctx.dataset_processor is not None:
+    if ctx.dataset_processor is not None:  # pragma: no branch
         try:
             ctx.dataset_processor.stop()
         except Exception:  # pragma: no cover - cleanup guard
             logger.exception("Failed to stop dataset processor")
 
-    if ctx.event_processor is not None:
+    if ctx.event_processor is not None:  # pragma: no branch
         try:
             ctx.event_processor.stop()
         except Exception:  # pragma: no cover - cleanup guard

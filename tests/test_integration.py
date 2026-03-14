@@ -564,3 +564,18 @@ class TestLoggingPlugin:
 
         with session(plugins=[plugin], dataset_store=store):
             assert produce(x=5) == 50
+
+    def test_dataset_load_with_logging_plugin(self, tmp_path) -> None:
+        """Dataset load hooks fire when loading via top-level API."""
+        from daglite import load_dataset
+        from daglite import save_dataset
+        from daglite.datasets.store import DatasetStore
+        from daglite.logging.plugin import LifecycleLoggingPlugin
+
+        plugin = LifecycleLoggingPlugin()
+        store = DatasetStore(str(tmp_path))
+        save_dataset("data.pkl", [1, 2, 3], store=store)
+
+        with session(plugins=[plugin], dataset_store=store):
+            result = load_dataset("data.pkl", list)
+        assert result == [1, 2, 3]

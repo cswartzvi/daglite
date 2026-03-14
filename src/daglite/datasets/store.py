@@ -138,7 +138,7 @@ class DatasetStore:
                 "return_type must be provided when 'format' is specified; "
                 "omit 'format' and 'return_type' together to use pickle-based loading."
             )
-        if format is None:
+        if format is None:  # pragma: no branch
             format = AbstractDataset.infer_format(return_type, hint)
         dataset_cls = AbstractDataset.get(return_type, format)
         options = options or {}

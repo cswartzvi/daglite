@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import TYPE_CHECKING
 from unittest.mock import Mock
 from unittest.mock import patch
 from uuid import uuid4
@@ -11,6 +12,7 @@ from uuid import uuid4
 import pytest
 
 from daglite.logging.core import DEFAULT_LOGGER_NAME_COORD
+from daglite.logging.core import DEFAULT_LOGGER_NAME_TASKS
 from daglite.logging.core import LOGGER_EVENT
 from daglite.logging.core import _ReporterHandler
 from daglite.logging.core import _TaskLoggerAdapter
@@ -19,6 +21,11 @@ from daglite.logging.core import format_duration
 from daglite.logging.core import get_logger
 from daglite.logging.plugin import CentralizedLoggingPlugin
 from daglite.logging.plugin import LifecycleLoggingPlugin
+
+if TYPE_CHECKING:
+    from daglite.tasks import TaskMetadata
+else:
+    TaskMetadata = object
 
 
 @pytest.fixture(autouse=True)
@@ -97,6 +104,13 @@ class TestGetLogger:
             base = logging.getLogger("test.dedupe")
             reporter_h = [h for h in base.handlers if isinstance(h, _ReporterHandler)]
             assert len(reporter_h) == 1
+
+    def test_inside_task_context_uses_task_logger(self) -> None:
+        """When a TaskContext is active, ``get_logger`` uses the tasks logger."""
+        mock_meta = Mock()
+        with patch("daglite.logging.core.resolve_task_metadata", return_value=mock_meta):
+            lgr = get_logger()
+        assert lgr.logger.name == DEFAULT_LOGGER_NAME_TASKS
 
 
 class TestTaskLoggerAdapter:
@@ -221,6 +235,26 @@ class TestCentralizedLoggingPlugin:
         assert record.filename == "worker.py"
         assert record.lineno == 123
 
+    def test_standard_fields_restored_on_record(self, caplog) -> None:
+        """Standard LogRecord fields in ``all_extra`` are restored via setattr."""
+        plugin = CentralizedLoggingPlugin(level=logging.INFO)
+        data = {
+            "name": "test.fields",
+            "level": "INFO",
+            "message": "With standard fields",
+            "extra": {
+                "pathname": "/worker/module.py",
+                "module": "module",
+                "funcName": "do_work",
+            },
+        }
+        with caplog.at_level(logging.INFO):
+            plugin._handle_log_event(LOGGER_EVENT, data)
+        record = caplog.records[-1]
+        assert record.pathname == "/worker/module.py"
+        assert record.module == "module"
+        assert record.funcName == "do_work"
+
 
 class TestLifecycleInit:
     def test_custom_level(self) -> None:
@@ -240,3 +274,54 @@ class TestLifecycleInit:
         lifecycle = logging.getLogger("daglite.lifecycle")
         assert len(base.handlers) > 0
         assert base.handlers == lifecycle.handlers
+
+
+class TestLifecycleDirectHookPaths:
+    """Direct hook paths (reporter=None) for ``LifecycleLoggingPlugin``."""
+
+    @pytest.fixture()
+    def plugin(self) -> LifecycleLoggingPlugin:
+        return LifecycleLoggingPlugin()
+
+    @pytest.fixture()
+    def metadata(self) -> "TaskMetadata":
+        from daglite.tasks import TaskMetadata
+
+        return TaskMetadata(id=uuid4(), name="test_task", backend="inline")
+
+    def test_before_node_execute_direct(self, plugin, metadata) -> None:
+        plugin.before_node_execute(metadata=metadata, reporter=None)
+
+    def test_after_node_execute_direct(self, plugin, metadata) -> None:
+        plugin.after_node_execute(metadata=metadata, result=42, duration=0.01, reporter=None)
+
+    def test_on_node_error_direct(self, plugin, metadata) -> None:
+        plugin.on_node_error(
+            metadata=metadata, error=ValueError("boom"), duration=0.01, reporter=None
+        )
+
+    def test_before_node_retry_direct(self, plugin, metadata) -> None:
+        plugin.before_node_retry(
+            metadata=metadata, attempt=1, error=ValueError("retry"), reporter=None
+        )
+
+    def test_after_node_retry_succeeded_direct(self, plugin, metadata) -> None:
+        plugin.after_node_retry(metadata=metadata, attempt=2, succeeded=True, reporter=None)
+
+    def test_after_node_retry_failed_direct(self, plugin, metadata) -> None:
+        plugin.after_node_retry(metadata=metadata, attempt=1, succeeded=False, reporter=None)
+
+
+class TestLifecycleEventHandlers:
+    """Coordinator-side event handlers for ``LifecycleLoggingPlugin``."""
+
+    @pytest.fixture()
+    def plugin(self) -> LifecycleLoggingPlugin:
+        return LifecycleLoggingPlugin()
+
+    def test_handle_node_retry_result_failed(self, plugin) -> None:
+        # Just call the handler; debug output may not appear without extra config.
+        plugin._handle_node_retry_result(
+            "daglite-logging-node-retry-result",
+            {"node_id": uuid4(), "node_key": "flaky_task", "attempt": 2, "succeeded": False},
+        )

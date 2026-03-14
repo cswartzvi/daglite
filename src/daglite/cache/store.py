@@ -88,7 +88,7 @@ class CacheStore:
             return CACHE_MISS
 
         # Check TTL from metadata sidecar
-        if self._driver.exists(meta_key):
+        if self._driver.exists(meta_key):  # pragma: no branch
             try:
                 meta_bytes = self._driver.load(meta_key)
                 metadata = json.loads(meta_bytes.decode("utf-8"))

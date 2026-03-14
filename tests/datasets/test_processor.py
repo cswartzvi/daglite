@@ -14,6 +14,14 @@ from daglite.datasets.processor import DatasetProcessor
 class TestDatasetProcessorRequestHandling:
     """_handle_request delegates to store.save with correct arguments."""
 
+    def test_handle_item_delegates_to_handle_request(self) -> None:
+        proc = DatasetProcessor()
+        store = MagicMock()
+
+        proc._handle_item(DatasetSaveRequest(key="via_item.pkl", value="item_data", store=store))
+
+        store.save.assert_called_once_with("via_item.pkl", "item_data", format=None, options=None)
+
     def test_saves_to_store(self) -> None:
         proc = DatasetProcessor()
         store = MagicMock()
