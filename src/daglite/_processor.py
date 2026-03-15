@@ -153,7 +153,7 @@ class BackgroundQueueProcessor(ABC):
 
             for source in list(self._sources.values()):
                 try:
-                    item = source.get(timeout=0.001)
+                    item = source.get(timeout=0.01)
                 except (Empty, OSError):
                     continue
                 if item is not None:  # pragma: no branch
@@ -161,6 +161,6 @@ class BackgroundQueueProcessor(ABC):
                     has_items = True
 
             if not has_items:
-                time.sleep(0.001)
+                time.sleep(0.05)
 
         logger.debug(f"{self._name} loop exited")
