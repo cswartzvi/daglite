@@ -35,11 +35,11 @@ class InlineBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        submit_context: SubmitContext,
+        context: SubmitContext,
     ) -> Future[Any]:
         fut: Future[Any] = Future()
         try:
-            with SubmitContext(map_index=submit_context.map_index):
+            with SubmitContext(map_index=context.map_index):
                 fut.set_result(func(*args, **kwargs))
         except BaseException as exc:
             fut.set_exception(exc)
@@ -70,10 +70,10 @@ class ThreadBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        submit_context: SubmitContext,
+        context: SubmitContext,
     ) -> Future[Any]:
         def _run() -> Any:
-            with SubmitContext(map_index=submit_context.map_index):
+            with SubmitContext(map_index=context.map_index):
                 return func(*args, **kwargs)
 
         # copy_context() preserves active session/task contextvars for the worker call.
@@ -199,9 +199,9 @@ class ProcessBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        submit_context: SubmitContext,
+        context: SubmitContext,
     ) -> Future[Any]:
-        submit_ctx = _ProcessSubmitContext(map_index=submit_context.map_index)
+        submit_ctx = _ProcessSubmitContext(map_index=context.map_index)
         return self._executor.submit(_process_submit, func, args, kwargs, submit_ctx)
 
 

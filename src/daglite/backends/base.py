@@ -97,7 +97,7 @@ class Backend(abc.ABC):
             A `concurrent.futures.Future` whose `.result()` yields the task return value.
         """
         submit_context = SubmitContext(map_index=map_index)
-        return self._submit(func, args, kwargs or {}, submit_context=submit_context)
+        return self._submit(func, args, kwargs or {}, context=submit_context)
 
     @abc.abstractmethod
     def _submit(
@@ -106,7 +106,7 @@ class Backend(abc.ABC):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        submit_context: SubmitContext,
+        context: SubmitContext,
     ) -> Future[Any]:
         """
         Subclass hook for dispatching a single task call.
@@ -115,7 +115,7 @@ class Backend(abc.ABC):
             func: A callable to be executed on the backend.
             args: Positional arguments for the callable.
             kwargs: Keyword arguments for the callable.
-            submit_context: Per-submission dynamic context (e.g. map index).
+            context: Per-submission dynamic context (e.g. map index).
 
         Returns:
             A `concurrent.futures.Future` whose `.result()` yields the task return value.
