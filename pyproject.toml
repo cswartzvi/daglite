@@ -13,15 +13,15 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 readme = "README.md"
 dependencies = [
-    "click>=8.0",
     "cloudpickle>=3.0",
+    "cyclopts>=4.10.0",
     "fsspec>=2026.1.0",
     "pluggy>=1.6.0",
     "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
 [project.scripts]
-daglite = "daglite.cli.base:cli"
+daglite = "daglite.cli.core:main"
 
 [project.optional-dependencies] # Add new plugins here
 rich = ["daglite-rich"]
