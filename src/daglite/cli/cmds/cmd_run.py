@@ -37,4 +37,4 @@ def run_help(target: str):
       - daglite run module:workflow --param1 value1 --param2 value2
       - daglite run path/to/module.py:workflow --x 3 --y 4
     """  # noqa: D213
-    pass
+    pass  # pragma: no cover
