@@ -477,13 +477,32 @@ class TestDescribeEdgeCases:
         assert "Argument validation failed" in out
 
     def test_describe_suggests_workflows(self, capsys):
-        """Describing a module (not a workflow) suggests workflows in that module."""
+        """Describing a package (not a workflow) suggests workflows in that module."""
         with pytest.raises(SystemExit) as exc_info:
-            main(["describe", "tests.examples.workflows:bogus"])
+            main(["describe", "tests.examples:bogus"])
         assert exc_info.value.code == 2
         out = capsys.readouterr().out
-        # Should list available workflows as suggestions
-        assert "Did you mean" in out or "Error:" in out
+        assert "Did you mean" in out
+
+    def test_describe_bad_dotted_attr_shows_suggestions(self, capsys):
+        """Dotted target with bad attr hits the elif branch of _print_workflow_suggestions."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests.examples.workflows.nonexistent"])
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        assert "Did you mean" in out
+
+    def test_describe_nonexistent_module_no_suggestions(self, capsys):
+        """Nonexistent module triggers ModuleNotFoundError in suggestions."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "no_such_module:func"])
+        assert exc_info.value.code == 2
+
+    def test_describe_module_without_workflows_no_suggestions(self, capsys):
+        """Module that exists but has no workflows hits the empty-list return."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests:conftest"])
+        assert exc_info.value.code == 2
 
 
 class TestCoreRunEdgeCases:
@@ -554,11 +573,11 @@ class TestResolvedSignatureException:
         assert "x" in sig.parameters
 
 
-class TestDescribeDoubleHyphen:
-    """Tests for the ``--`` separator stripping in describe."""
+class TestDescribeArgPreview:
+    """Tests for the argument preview in describe."""
 
-    def test_describe_strips_double_hyphen(self, capsys):
-        """Tokens after ``--`` are validated as workflow args."""
+    def test_describe_with_valid_args(self, capsys):
+        """Workflow args are validated and displayed."""
         with pytest.raises(SystemExit) as exc_info:
             main(
                 [
@@ -575,3 +594,14 @@ class TestDescribeDoubleHyphen:
         out = capsys.readouterr().out
         assert "x = 5" in out
         assert "y = 10" in out
+
+
+class TestIterModulesUnder:
+    """Tests for _iter_modules_under."""
+
+    def test_walks_package(self):
+        from daglite.cli._shared import _iter_modules_under
+
+        modules = list(_iter_modules_under("tests.examples"))
+        assert "tests.examples" in modules
+        assert any("workflows" in m for m in modules)
