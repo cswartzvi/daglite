@@ -12,7 +12,7 @@ Three tiers of usage::
     result = add(x=1, y=2)
 
     # 2. session — managed context for notebooks / scripts
-    with session(backend="thread", cache=True):
+    with session(backend="thread", cache_store=".cache"):
         a = add(x=1, y=2)
 
 
@@ -63,7 +63,7 @@ def session(
     Synchronous context manager that sets up an execution context.
 
     Args:
-        backend: Name of the backend to default. If `None` uses `settings.default_backend`.
+        backend: Name of the backend to default. If `None` uses `settings.backend`.
         cache_store: Cache store configuration. Can be a `CacheStore` or a string path.
         dataset_store: Dataset store configuration. Can be a `DatasetStore` or a string path.
         plugins: Extra plugin instances for this session only.
@@ -73,13 +73,14 @@ def session(
         The active `SessionContext` for the duration of the block.
     """
     plugins = plugins if isinstance(plugins, list) else [plugins] if plugins is not None else []
-    with _build_context(
+    ctx = _build_context(
         backend=backend,
         cache_store=cache_store,
         dataset_store=dataset_store,
         plugins=plugins,
         settings=settings,
-    ) as ctx:
+    )
+    with ctx:
         with _processors_context(ctx):
             yield ctx
 
@@ -97,7 +98,7 @@ async def async_session(
     Async context manager that sets up an eager execution context.
 
     Args:
-        backend: Name of the backend to default. If `None` uses `settings.default_backend`.
+        backend: Name of the backend to default. If `None` uses `settings.backend`.
         cache_store: Cache store configuration. Can be a `CacheStore` or a string path.
         dataset_store: Dataset store configuration. Can be a `DatasetStore` or a string path.
         plugins: Extra plugin instances for this session only.
@@ -107,13 +108,14 @@ async def async_session(
         The active `SessionContext` for the duration of the block.
     """
     plugins = plugins if isinstance(plugins, list) else [plugins] if plugins is not None else []
-    with _build_context(
+    ctx = _build_context(
         backend=backend,
         cache_store=cache_store,
         dataset_store=dataset_store,
         plugins=plugins,
         settings=settings,
-    ) as ctx:
+    )
+    with ctx:
         with _processors_context(ctx):
             yield ctx
 
