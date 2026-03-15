@@ -7,9 +7,8 @@
 [![tests](https://img.shields.io/github/actions/workflow/status/cswartzvi/daglite/testing.yaml?branch=main&label=tests&logo=github)](https://github.com/cswartzvi/daglite/actions/workflows/testing.yaml)
 [![codecov](https://codecov.io/github/cswartzvi/daglite/graph/badge.svg?token=1o01x0xk7i)](https://codecov.io/github/cswartzvi/daglite)
 
-A lightweight, type-safe Python framework for building and executing DAGs (Directed Acyclic Graphs) with explicit data flow and composable operations.
+A lightweight, type-safe Python framework for building and executing task-based workflows with explicit data flow and composable operations.
 
-**[📚 Documentation](https://cswartzvi.github.io/daglite/)** | **[🚀 Getting Started](https://cswartzvi.github.io/daglite/getting-started/)** | **[💡 Examples](https://cswartzvi.github.io/daglite/examples/)**
 
 ---
 
@@ -21,91 +20,92 @@ A lightweight, type-safe Python framework for building and executing DAGs (Direc
 ### Installation
 
 ```bash
-uv pip install daglite
+uv pip install daglite  # or pip install daglite
 ```
 
-### Your First DAG
+### A Simple Workflow
 
 ```python
-from daglite import task, evaluate
+from daglite import task, workflow, save_dataset
 
 @task
-def fetch_data(url: str) -> dict:
-    """Fetch data from an API."""
-    return {"url": url, "data": [...]}
+def load_data(path: str) -> list[int]:
+    with open(path) as f:
+        return [int(line) for line in f]
+
+@task(cache=True)
+def square_all(numbers: list[int]) -> list[int]:
+    return [x ** 2 for x in numbers]
 
 @task
-def process(data: dict) -> list:
-    """Process the fetched data."""
-    return [item.upper() for item in data["data"]]
+def total(numbers: list[int]) -> int:
+    return sum(numbers)
 
-@task
-def save(items: list, path: str) -> None:
-    """Save results to a file."""
-    with open(path, "w") as f:
-        f.write("\n".join(items))
+@workflow
+def sum_of_squares(path: str) -> int:
+    data = load_data(path=path)
+    squared = square_all(numbers=data)
+    save_dataset("squared_values", squared)
+    return total(numbers=squared)
 
-# Build and execute the DAG
-result = evaluate(
-    fetch_data(url="https://api.example.com")
-    .then(process)
-    .then(save, path="output.txt")
-)
+result = sum_of_squares(path="numbers.txt")
 ```
+
+Tasks execute eagerly — they return real values, not futures. The `@workflow` decorator
+manages the execution context automatically. `cache=True` skips recomputation when
+inputs haven't changed, and `save_dataset` persists intermediate results for later
+inspection or downstream use.
 
 ---
 
 ## Why Daglite?
 
-**Daglite is built for computational work in restricted environments.**
+Daglite was originally designed for operations research analysts working on air-gapped,
+Windows-only systems. In these environments, heavyweight orchestration frameworks are
+impractical — yet the need for reproducible, shareable workflows is just as real.
+Daglite fills that gap with a simple core that stays out of your way, backed by a
+plugin system that scales with your needs. The result: workflows that are easy to
+understand, share with colleagues, and re-run — even after returning to a project
+months later no matter what environment you're in.
 
-Originally designed for operations research analysts working on air-gapped, Windows-only systems, Daglite solves a specific problem: building workflows that are easy to analyze, share with colleagues, and re-run—even after returning to a project months later.
+### Design Principles
 
-### The Core Philosophy
+**No infrastructure required.** Daglite runs anywhere Python runs — no databases, containers,
+cloud services, or servers are required. Install it with `uv pip`, define your tasks, and execute
+them. When you need more (distributed execution, advanced serialization), plugins extend
+functionality without adding mandatory dependencies.
 
-**No infrastructure required.** Daglite runs anywhere Python runs—no databases, no containers, no cloud services, no servers. Install it with `uv pip`, define your tasks, and execute them. When you need more (like distributed execution or advanced serialization), plugins extend functionality without adding mandatory dependencies.
+**Explicit over implicit.** Every data dependency is visible in your code. Type checkers
+catch errors before runtime. Workflows are self-documenting and maintainable.
 
-**Explicit over implicit.** Every data dependency is visible in your code. The DAG structure is static and analyzable before execution. Type checkers catch errors before runtime. This makes workflows self-documenting and maintainable.
+**Type-safe.** Full support for `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE provides
+autocomplete, catches type mismatches, and validates task composition at edit time.
 
-**Type-safe and modular.** Full support for `mypy`, `pyright`, and other type checkers means your IDE provides autocomplete and catches type mismatches. Compose simple functions into complex pipelines using familiar Python patterns.
+### Use Cases
 
-### When to Use Daglite
+Daglite is well-suited for data transformation pipelines, machine learning workflows,
+computational science, and reproducible analysis — particularly in environments where
+infrastructure is limited or unavailable.
 
-**Perfect for:**
-- ETL scripts and data transformations
-- Machine learning pipelines (feature engineering, training, evaluation)
-- Computational science workflows
-- Analysts and data scientists who need reproducible workflows
-- Air-gapped or restricted environments
-- CLI tools with workflow orchestration
-- Local development and prototyping
-- Projects where simplicity and type safety matter
-
-**Not ideal for:**
-- Production job scheduling with cron-like triggers → Use [Airflow](https://airflow.apache.org/), [Prefect](https://www.prefect.io/)
-- Real-time streaming data → Use Kafka, Flink
-- Distributed computing at massive scale → Use Spark, Dask
-- Multi-tenant orchestration platforms → Use [Dagster](https://dagster.io/)
-
-Daglite complements these excellent tools. Think of it like Flask vs Django—we give you ownership of the toolchain for local, explicit workflows, while respecting the power and sophistication of infrastructure-heavy frameworks for production orchestration.
+For production job scheduling, real-time streaming, or distributed computing at scale,
+consider purpose-built tools like [Airflow](https://airflow.apache.org/),
+[Prefect](https://www.prefect.io/), [Dagster](https://dagster.io/),
+[Spark](https://spark.apache.org/), or [Dask](https://dask.org/).
 
 ---
 
 ## Key Features
 
-- **Type-Safe Task Composition** - Complete type checking support with `mypy`, `pyright`, `pyrefly`, and `ty`. Your IDE catches errors before runtime.
-
-- **Fluent API** - Chain operations naturally with `.then()`, `.map()`, `.join()`. Build complex pipelines with readable code.
-
-- **Lightweight Core** - No mandatory infrastructure—runs anywhere Python runs. Optional plugins add capabilities when you need them.
-
-- **Async Execution** - Built-in support for threading and multiprocessing backends. Run tasks in parallel without changing your code structure.
-
-- **Composable Patterns** - Mix and match patterns: Inline pipelines, fan-out/fan-in, map-reduce, parameter sweeps, pairwise operations.
-
-- **Testable** - Pure functions make DAGs easy to test and debug. No mocking infrastructure or database connections.
-
-- **CLI Support** - Define pipelines once, run them from the command line with argument parsing included.
+- **Eager Execution:** Tasks return real values immediately. No graph construction step, no deferred evaluation.
+- **Lightweight Core:** No mandatory infrastructure. Optional plugins add capabilities when needed.
+- **Type-Safe Composition:** Complete type checking with `mypy`, `pyright`, `pyrefly`, and `ty`. Errors are caught before runtime.
+- **Concurrent Execution:** Built-in threading and multiprocessing backends. Run tasks in parallel without changing code structure.
+- **Fan-Out with `map_tasks`:** Distribute work across items with `map_tasks` and `gather_tasks` for sync and async fan-out patterns.
+- **Caching:** Skip recomputation when inputs haven't changed. Configure per-task with TTL and custom hash functions.
+- **Dataset Storage:** Save and load intermediate results with pluggable serialization formats.
+- **Plugin System:** Lifecycle hooks are available for task execution. Backend workers can pass events to the coordinator process.
+- **Testable:** Tasks are plain functions. Test them directly without mocking infrastructure.
+- **CLI Integration:** Discover and run workflows from the command line.
 
 ---
 
@@ -113,141 +113,86 @@ Daglite complements these excellent tools. Think of it like Flask vs Django—we
 
 ### Tasks
 
-Functions decorated with `@task` become composable DAG nodes:
+The `@task` decorator marks a function as a composable unit of work:
 
 ```python
+from daglite import task
+
 @task
 def process_data(input: str, param: int = 10) -> dict:
-    """Tasks are just functions with explicit inputs/outputs."""
     return {"result": input * param}
+
+# Tasks execute eagerly — this returns the result directly
+result = process_data(input="hello", param=5)
 ```
 
-### Lazy Evaluation
+### Sessions
 
-Tasks return futures—they don't execute until you call `evaluate()`:
-
-```python
-# Create a future (lazy evaluation)
-future = process_data(input="hello", param=5)
-
-# Execute when ready
-result = evaluate(future)
-```
-
-### Composition Patterns
-
-| Pattern | Method | Use Case |
-|---------|--------|----------|
-| Inline | `()` + `.then()` | Chain dependent operations |
-| Cartesian | `.product()` | Parameter sweeps, all combinations |
-| Pairwise | `.zip()` | Element-wise operations |
-| Transform | `.map()` | Apply function to each element |
-| Reduce | `.join()` | Aggregate sequence to single value |
-| Partial | `.partial()` | Fix parameters, reuse tasks |
-
----
-
-## Common Patterns
-
-### Inline Pipeline
+A `session` provides a managed execution context with backend selection, caching,
+dataset storage, and plugin support:
 
 ```python
-@task
-def load_config(path: str) -> dict:
-    return json.load(open(path))
-
-@task
-def init_model(config: dict) -> Model:
-    return Model(**config)
-
-@task
-def train(model: Model, data: pd.DataFrame) -> Model:
-    model.fit(data)
-    return model
-
-# Chain operations
-result = evaluate(
-    load_config(path="config.json")
-    .then(init_model)
-    .then(train, data=training_data)
-)
-```
-
-### Parallel Fan-Out
-
-```python
-@task
-def fetch_user(user_id: int) -> dict:
-    return api.get(f"/users/{user_id}")
-
-@task
-def save_all(users: list[dict]) -> None:
-    db.bulk_insert(users)
-
-# Process multiple users in parallel
-result = evaluate(
-    fetch_user.product(user_id=[1, 2, 3, 4, 5])
-    .join(save_all)
-)
-```
-
-### Map-Reduce
-
-```python
-@task
-def square(x: int) -> int:
-    return x ** 2
+from daglite import task, session, map_tasks
 
 @task
 def double(x: int) -> int:
     return x * 2
 
+with session(backend="thread"):
+    results = map_tasks(double, [1, 2, 3, 4])
+    # [2, 4, 6, 8]
+```
+
+### Workflows
+
+The `@workflow` decorator creates a named entry point that automatically manages
+its own session. Workflows are also discoverable by the CLI:
+
+```python
+from daglite import task, workflow
+
 @task
-def sum_all(values: list[int]) -> int:
-    return sum(values)
+def add(x: int, y: int) -> int:
+    return x + y
 
-# Fan-out, transform, reduce
-result = evaluate(
-    square.product(x=[1, 2, 3, 4])
-    .map(double)
-    .join(sum_all)
-)
-# Result: 60 = (2 + 8 + 18 + 32)
+@task
+def multiply(x: int, factor: int) -> int:
+    return x * factor
+
+@workflow
+def compute(x: int, y: int, factor: int = 10) -> int:
+    s = add(x=x, y=y)
+    return multiply(x=s, factor=factor)
+
+compute(2, 3)  # 50
 ```
 
-### Async Execution
+### Fan-Out
+
+Use `map_tasks` to distribute work across a backend, or `gather_tasks` for
+async fan-out:
 
 ```python
-# Run DAG with threading backend
-result = evaluate(my_dag, use_async=True)
+from daglite import task, session, map_tasks
 
-# Per-task backends
-@task(backend_name="threading")
-def io_bound_task(url: str) -> bytes:
-    return requests.get(url).content
+@task
+def fetch_user(user_id: int) -> dict:
+    return api.get(f"/users/{user_id}")
 
-@task(backend_name="multiprocessing")
-def cpu_bound_task(data: np.ndarray) -> np.ndarray:
-    return expensive_computation(data)
+with session(backend="thread"):
+    users = map_tasks(fetch_user, [1, 2, 3, 4, 5])
 ```
 
-### CLI Pipelines
+### CLI
 
-```python
-from daglite import pipeline
-
-@pipeline
-def ml_pipeline(model_path: str, data_path: str, epochs: int = 10):
-    """Train a machine learning model."""
-    data = load_data(path=data_path)
-    model = train_model(data=data, epochs=epochs)
-    return save_model(model=model, path=model_path)
-```
-
-Run from command line:
+Discover and run workflows from the command line:
 
 ```bash
-daglite run ml_pipeline --model-path model.pkl --data-path data.csv --epochs 20
+# List available workflows in a module
+daglite list myproject.workflows
+
+# Run a workflow with arguments
+daglite run myproject.workflows.compute --param x=2 --param y=3
 ```
 
 ---
@@ -256,7 +201,7 @@ daglite run ml_pipeline --model-path model.pkl --data-path data.csv --epochs 20
 
 Full documentation is available at **[cswartzvi.github.io/daglite](https://cswartzvi.github.io/daglite/)**
 
-- [Getting Started Guide](https://cswartzvi.github.io/daglite/getting-started/)
+- [Getting Started](https://cswartzvi.github.io/daglite/getting-started/)
 - [User Guide](https://cswartzvi.github.io/daglite/user-guide/tasks/)
 - [Plugins](https://cswartzvi.github.io/daglite/plugins/)
 - [API Reference](https://cswartzvi.github.io/daglite/api-reference/)
@@ -264,36 +209,27 @@ Full documentation is available at **[cswartzvi.github.io/daglite](https://cswar
 
 ---
 
-## Community
+## Contributing
 
-### 🤝 Contributing
+Contributions are welcome. Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-### 💬 Discussions
-
-Join the conversation on [GitHub Discussions](https://github.com/cswartzvi/daglite/discussions).
-
-### 🐛 Issues
-
-Found a bug or have a feature request? [Open an issue](https://github.com/cswartzvi/daglite/issues).
+- [GitHub Discussions](https://github.com/cswartzvi/daglite/discussions)
+- [Issue Tracker](https://github.com/cswartzvi/daglite/issues)
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT License: see [LICENSE](LICENSE) for details.
 
 ---
 
 ## Acknowledgments
 
-Inspired by the design patterns and philosophies of:
+Inspired by the design patterns of:
 
-- [Apache Airflow](https://airflow.apache.org/) - DAG orchestration at scale
-- [Prefect](https://www.prefect.io/) - Modern workflow design
-- [Dagster](https://dagster.io/) - Data pipeline architecture
-- [Dask](https://dask.org/) - Lazy evaluation and graph execution
-- [itertools](https://docs.python.org/3/library/itertools.html) - Composable Python operations
-
-Each of these projects excels in their domain. Daglite aims to complement them by providing a lightweight alternative for local, type-safe workflows.
+- [Apache Airflow](https://airflow.apache.org/): DAG orchestration at scale
+- [Prefect](https://www.prefect.io/): Modern workflow automation
+- [Dagster](https://dagster.io/): Data pipeline architecture
+- [Dask](https://dask.org/): Parallel and distributed computing
+- [itertools](https://docs.python.org/3/library/itertools.html): Composable Python operations
