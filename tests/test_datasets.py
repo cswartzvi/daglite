@@ -1,4 +1,4 @@
-"""Tests for the dataset integration: store resolution, task decorator wiring, and session plumbing."""
+"""Tests for the dataset integration: store resolution, task decorator, and session plumbing."""
 
 from __future__ import annotations
 
@@ -179,13 +179,13 @@ class TestSessionDatasetStore:
             assert ctx.dataset_store is not None
             assert isinstance(ctx.dataset_store, DatasetStore)
 
-    def test_session_with_datasetstore(self, tmp_path: Path) -> None:
+    def test_session_with_dataset_store(self, tmp_path: Path) -> None:
         store = DatasetStore(str(tmp_path))
         with session(dataset_store=store) as ctx:
             assert ctx.dataset_store is store
 
     def test_session_no_dataset_store(self) -> None:
-        with session() as ctx:
+        with session():
             pass  # Just ensure it doesn't crash
 
     def test_task_inherits_session_store(self, tmp_path: Path) -> None:
