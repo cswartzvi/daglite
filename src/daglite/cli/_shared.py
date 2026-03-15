@@ -4,15 +4,13 @@ import inspect
 import types
 import typing
 import warnings
-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 import click
 
 from daglite.plugins.manager import has_plugin
 from daglite.plugins.manager import register_plugins
-
-if TYPE_CHECKING:
-    from daglite.workflows import _BaseWorkflow as Workflow
+from daglite.workflows import BaseWorkflow
 
 
 def setup_cli_plugins() -> None:
@@ -78,7 +76,7 @@ def parse_param_value(value: str, param_type: type | None) -> Any:
 
 
 def parse_workflow_params(
-    workflow_obj: "Workflow[Any, Any]", param: tuple[str, ...]
+    workflow_obj: BaseWorkflow[Any, Any], param: tuple[str, ...]
 ) -> dict[str, Any]:
     """
     Parse and validate `--param` strings against a workflow's signature.

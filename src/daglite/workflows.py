@@ -131,7 +131,7 @@ def workflow(
 # region Load
 
 
-def load_workflow(workflow_path: str) -> Workflow:
+def load_workflow(workflow_path: str) -> BaseWorkflow:
     """
     Load a workflow from a module path.
 
@@ -178,7 +178,7 @@ def load_workflow(workflow_path: str) -> Workflow:
 
 
 @dataclass(frozen=True)
-class _BaseWorkflow(Generic[P, R]):
+class BaseWorkflow(Generic[P, R]):
     """
     Shared base for sync and async workflow types.
 
@@ -236,7 +236,7 @@ class _BaseWorkflow(Generic[P, R]):
 
 
 @dataclass(frozen=True)
-class SyncWorkflow(_BaseWorkflow[P, R]):
+class SyncWorkflow(BaseWorkflow[P, R]):
     """
     Workflow wrapping a synchronous function.
 
@@ -251,7 +251,7 @@ class SyncWorkflow(_BaseWorkflow[P, R]):
 
 
 @dataclass(frozen=True)
-class AsyncWorkflow(_BaseWorkflow[P, R]):
+class AsyncWorkflow(BaseWorkflow[P, R]):
     """
     Workflow wrapping an async coroutine function.
 
@@ -270,7 +270,3 @@ class AsyncWorkflow(_BaseWorkflow[P, R]):
             if inspect.isawaitable(result):
                 return await result
             return result
-
-
-Workflow = SyncWorkflow[..., Any] | AsyncWorkflow[..., Any]
-"""Union of sync and async workflow types."""
