@@ -3,7 +3,7 @@ name: Deploy Documentation
 on:
   push:
     branches:
-      - main
+      - "**"
   pull_request:
     branches:
       - main
@@ -15,7 +15,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages-${{ github.ref }}"
+  group: "docs-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -34,15 +34,15 @@ jobs:
         run: uv sync --all-extras --dev --group docs
 
       - name: Build documentation
-        run: uv run zensical build --clean
+        run: uv run --group docs zensical build --clean
 
       - name: Upload Pages artifact (main deploy)
-        if: github.event_name != 'pull_request'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
-      - name: Upload PR preview artifact
+      - name: Upload docs artifact (PR validation)
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
@@ -50,7 +50,7 @@ jobs:
           path: ./site
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -62,7 +62,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   preview:
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     permissions:
       contents: write
     runs-on: ubuntu-latest
@@ -80,18 +80,18 @@ jobs:
         run: uv sync --all-extras --dev --group docs
 
       - name: Build documentation
-        run: uv run zensical build --clean
+        run: uv run --group docs zensical build --clean
 
-      - name: Publish PR preview under gh-pages/pr-preview/<PR_NUMBER>
+      - name: Publish branch preview under gh-pages/previews/<branch>
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./site
-          destination_dir: pr-preview/${{ github.event.number }}
+          destination_dir: previews/${{ github.ref_name }}
           keep_files: true
 
       - name: Add preview URL to workflow summary
         run: |
-          echo "### PR docs preview" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/${{ github.event.number }}/" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Branch docs preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/previews/${{ github.ref_name }}/" >> "$GITHUB_STEP_SUMMARY"
