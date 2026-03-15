@@ -27,40 +27,41 @@ class CounterPlugin:
 
     Usage:
         counter = CounterPlugin()
-        result = evaluate(task(...), plugins=[counter])
+        with session(plugins=[counter]):
+            my_task(1, 2)
         assert counter.before_node_count == 1
     """
 
     def __init__(self):
         """Initialize all counters to zero."""
-        self.before_graph_count = 0
-        self.after_graph_count = 0
+        self.before_session_count = 0
+        self.after_session_count = 0
         self.before_node_count = 0
         self.after_node_count = 0
         self.on_error_count = 0
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count):
-        """Count before_graph_execute invocations."""
-        self.before_graph_count += 1
+    def before_session_start(self, session_id):
+        """Count before_session_start invocations."""
+        self.before_session_count += 1
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration):
-        """Count after_graph_execute invocations."""
-        self.after_graph_count += 1
+    def after_session_end(self, session_id, duration):
+        """Count after_session_end invocations."""
+        self.after_session_count += 1
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Count before_node_execute invocations."""
         self.before_node_count += 1
 
     @hook_impl
-    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, result, duration, reporter=None):
         """Count after_node_execute invocations."""
         self.after_node_count += 1
 
     @hook_impl
-    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, error, duration, reporter=None):
         """Count on_node_error invocations."""
         self.on_error_count += 1
 
@@ -70,99 +71,52 @@ class ParameterCapturePlugin:
     Plugin that captures all hook parameters for validation.
 
     Use this plugin when you need to verify that hooks receive correct
-    parameters during execution. It stores all captured data in lists
-    for post-execution assertions.
-
-    Usage:
-        capture = ParameterCapturePlugin()
-        result = evaluate(task(...), plugins=[capture])
-        assert capture.graph_starts[0]["node_count"] == 1
-        assert capture.node_executions[0]["inputs"] == {"x": 2, "y": 3}
+    parameters during execution.
     """
 
     def __init__(self):
         """Initialize empty capture lists."""
-        self.graph_starts = []
-        self.graph_ends = []
-        self.node_executions = []
+        self.session_starts = []
+        self.session_ends = []
+        self.node_starts = []
         self.node_results = []
         self.node_errors = []
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count):
-        """Capture graph start parameters."""
-        self.graph_starts.append(
-            {
-                "root_id": root_id,
-                "node_count": node_count,
-            }
-        )
+    def before_session_start(self, session_id):
+        """Capture session start parameters."""
+        self.session_starts.append({"session_id": session_id})
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration):
-        """Capture graph end parameters."""
-        self.graph_ends.append(
-            {
-                "root_id": root_id,
-                "result": result,
-                "duration": duration,
-            }
-        )
+    def after_session_end(self, session_id, duration):
+        """Capture session end parameters."""
+        self.session_ends.append({"session_id": session_id, "duration": duration})
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Capture node execution parameters."""
-        self.node_executions.append(
-            {
-                "key": metadata.key,
-                "metadata": metadata,
-                "inputs": inputs,
-            }
-        )
+        self.node_starts.append({"metadata": metadata})
 
     @hook_impl
-    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, result, duration, reporter=None):
         """Capture node result parameters."""
-        self.node_results.append(
-            {
-                "key": metadata.key,
-                "metadata": metadata,
-                "inputs": inputs,
-                "result": result,
-                "duration": duration,
-            }
-        )
+        self.node_results.append({"metadata": metadata, "result": result, "duration": duration})
 
     @hook_impl
-    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, error, duration, reporter=None):
         """Capture node error parameters."""
-        self.node_errors.append(
-            {
-                "key": metadata.key,
-                "metadata": metadata,
-                "inputs": inputs,
-                "error": error,
-                "duration": duration,
-            }
-        )
+        self.node_errors.append({"metadata": metadata, "error": error, "duration": duration})
 
 
 class OrderTrackingPlugin:
     """
     Plugin that tracks the order of hook invocations.
 
-    Use this plugin when you need to verify that hooks are called in the
-    correct order (e.g., before_graph -> before_node -> after_node -> after_graph).
-
     Usage:
         tracker = OrderTrackingPlugin()
-        result = evaluate(task(...), plugins=[tracker])
-        assert tracker.call_order == [
-            "before_graph",
-            "before_node",
-            "after_node",
-            "after_graph"
-        ]
+        with session(plugins=[tracker]):
+            my_task(1, 2)
+        assert "before_node" in tracker.call_order[0]
     """
 
     def __init__(self):
@@ -170,42 +124,37 @@ class OrderTrackingPlugin:
         self.call_order = []
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count):
-        """Record before_graph call."""
-        self.call_order.append("before_graph")
+    def before_session_start(self, session_id):
+        """Record before_session call."""
+        self.call_order.append("before_session")
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration):
-        """Record after_graph call."""
-        self.call_order.append("after_graph")
+    def after_session_end(self, session_id, duration):
+        """Record after_session call."""
+        self.call_order.append("after_session")
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Record before_node call."""
-        self.call_order.append(f"before_node:{metadata.key}")
+        self.call_order.append(f"before_node:{metadata.name}")
 
     @hook_impl
-    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, result, duration, reporter=None):
         """Record after_node call."""
-        self.call_order.append(f"after_node:{metadata.key}")
+        self.call_order.append(f"after_node:{metadata.name}")
 
     @hook_impl
-    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, error, duration, reporter=None):
         """Record on_error call."""
-        self.call_order.append(f"on_error:{metadata.key}")
+        self.call_order.append(f"on_error:{metadata.name}")
 
 
 class ErrorRaisingPlugin:
     """
     Plugin that raises errors in hooks for testing error handling.
 
-    Use this plugin to test that the system correctly handles plugin errors
-    without breaking execution.
-
     Usage:
         error_plugin = ErrorRaisingPlugin(raise_in="before_node")
-        result = evaluate(task(...), plugins=[error_plugin])
-        # Should handle error gracefully
     """
 
     def __init__(self, raise_in: str | None = None):
@@ -213,42 +162,36 @@ class ErrorRaisingPlugin:
         Initialize plugin with specified hook to raise errors in.
 
         Args:
-            raise_in: Which hook should raise an error. One of:
-                - "before_graph"
-                - "after_graph"
-                - "before_node"
-                - "after_node"
-                - "on_error"
-                - None (no errors)
+            raise_in: Which hook should raise an error.
         """
         self.raise_in = raise_in
 
     @hook_impl
-    def before_graph_execute(self, root_id, node_count):
+    def before_session_start(self, session_id):
         """Raise error if configured."""
-        if self.raise_in == "before_graph":
-            raise RuntimeError("Test error in before_graph_execute")
+        if self.raise_in == "before_session":
+            raise RuntimeError("Test error in before_session_start")
 
     @hook_impl
-    def after_graph_execute(self, root_id, result, duration):
+    def after_session_end(self, session_id, duration):
         """Raise error if configured."""
-        if self.raise_in == "after_graph":
-            raise RuntimeError("Test error in after_graph_execute")
+        if self.raise_in == "after_session":
+            raise RuntimeError("Test error in after_session_end")
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Raise error if configured."""
         if self.raise_in == "before_node":
             raise RuntimeError("Test error in before_node_execute")
 
     @hook_impl
-    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, result, duration, reporter=None):
         """Raise error if configured."""
         if self.raise_in == "after_node":
             raise RuntimeError("Test error in after_node_execute")
 
     @hook_impl
-    def on_node_error(self, metadata, inputs, error, duration, reporter=None):
+    def on_node_error(self, metadata, error, duration, reporter=None):
         """Raise error if configured."""
         if self.raise_in == "on_error":
             raise RuntimeError("Test error in on_node_error")
@@ -261,9 +204,6 @@ class SerializablePlugin:
     """
     Plugin that supports serialization via to_config/from_config.
 
-    Use this plugin to test plugin serialization and deserialization.
-    This pattern follows the daglite serialization protocol.
-
     Usage:
         plugin = SerializablePlugin(threshold=0.7, name="test")
         config = plugin.to_config()
@@ -272,25 +212,11 @@ class SerializablePlugin:
     """
 
     def __init__(self, threshold: float = 0.5, name: str = "default"):
-        """
-        Initialize serializable plugin.
-
-        Args:
-            threshold: Example configuration parameter
-            name: Example string parameter
-        """
         self.threshold = threshold
         self.name = name
         self.call_count = 0  # Runtime state (not serialized)
 
     def to_config(self) -> dict[str, Any]:
-        """
-        Serialize plugin configuration.
-
-        Returns:
-            Dictionary with serializable configuration parameters.
-            Note: call_count is NOT included (runtime state).
-        """
         return {
             "threshold": self.threshold,
             "name": self.name,
@@ -298,44 +224,22 @@ class SerializablePlugin:
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "SerializablePlugin":
-        """
-        Deserialize plugin from configuration.
-
-        Args:
-            config: Configuration dictionary from to_config()
-
-        Returns:
-            New plugin instance with restored configuration.
-        """
         return cls(**config)
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Track hook calls (runtime state)."""
         self.call_count += 1
 
 
 class AnotherSerializablePlugin:
-    """
-    Another serializable plugin for testing multiple plugins.
-
-    Use this when you need to test systems with multiple different plugins
-    registered simultaneously.
-    """
+    """Another serializable plugin for testing multiple plugins."""
 
     def __init__(self, multiplier: int = 2, enabled: bool = True):
-        """
-        Initialize plugin with configuration.
-
-        Args:
-            multiplier: Example integer parameter
-            enabled: Example boolean parameter
-        """
         self.multiplier = multiplier
         self.enabled = enabled
 
     def to_config(self) -> dict[str, Any]:
-        """Serialize configuration."""
         return {
             "multiplier": self.multiplier,
             "enabled": self.enabled,
@@ -343,26 +247,18 @@ class AnotherSerializablePlugin:
 
     @classmethod
     def from_config(cls, config: dict[str, Any]) -> "AnotherSerializablePlugin":
-        """Deserialize from configuration."""
         return cls(**config)
 
     @hook_impl
-    def after_node_execute(self, metadata, inputs, result, duration, reporter=None):
+    def after_node_execute(self, metadata, result, duration, reporter=None):
         """Example hook implementation."""
         pass
 
 
 class NonSerializablePlugin:
-    """
-    Plugin that does NOT support serialization.
-
-    Use this plugin to test that the system correctly handles plugins
-    without serialization support (should skip them during serialization).
-
-    This plugin intentionally does not implement to_config/from_config.
-    """
+    """Plugin that does NOT support serialization."""
 
     @hook_impl
-    def before_node_execute(self, metadata, inputs):
+    def before_node_execute(self, metadata, reporter=None):
         """Example hook implementation."""
         pass

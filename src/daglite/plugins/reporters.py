@@ -4,11 +4,11 @@ import abc
 import logging
 import threading
 from multiprocessing import Queue as MultiprocessingQueue
-from typing import Any, Callable
+from typing import Any, Callable, Hashable
 
 from typing_extensions import override
 
-from daglite.plugins.events import Event
+from daglite.plugins.events import PluginEvent
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +31,13 @@ class EventReporter(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def report(self, event_type: str, data: dict[str, Any]) -> None:
+    def report(self, event_type: Hashable, event_data: dict[str, Any]) -> None:
         """
-        Send event from worker to coordinator.
+        Send event, with data, from worker to coordinator.
 
         Args:
-            event_type: Type of event (e.g., "cache_hit", "progress")
-            data: Event payload data
+            event_type: Type of event; must be hashable.
+            event_data: Event data to send to coordinator.
         """
         ...
 
@@ -50,10 +50,10 @@ class DirectEventReporter(EventReporter):
     immediately via callback. Thread-safe for use in ThreadPoolExecutor.
 
     Args:
-        callback: Function to call with :class:`Event` when reporting an event.
+        callback: Function to call with :class:`PluginEvent` when reporting an event.
     """
 
-    def __init__(self, callback: Callable[[Event], None]):
+    def __init__(self, callback: Callable[[PluginEvent], None]):
         self._callback = callback
         self._lock = threading.Lock()
 
@@ -63,8 +63,8 @@ class DirectEventReporter(EventReporter):
         return True
 
     @override
-    def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = Event(type=event_type, data=data)
+    def report(self, event_type: Hashable, event_data: dict[str, Any]) -> None:
+        event = PluginEvent(type=event_type, data=event_data)
         try:
             with self._lock:
                 self._callback(event)
@@ -92,14 +92,9 @@ class ProcessEventReporter(EventReporter):
     def is_direct(self) -> bool:
         return False
 
-    @property
-    def queue(self) -> MultiprocessingQueue:
-        """Get the underlying multiprocessing queue."""
-        return self._queue
-
     @override
-    def report(self, event_type: str, data: dict[str, Any]) -> None:
-        event = Event(type=event_type, data=data)
+    def report(self, event_type: Hashable, event_data: dict[str, Any]) -> None:
+        event = PluginEvent(type=event_type, data=event_data)
         try:
             self._queue.put(event)
         except Exception as e:
@@ -131,6 +126,5 @@ class RemoteEventReporter(EventReporter):  # pragma: no cover
         return False
 
     @override
-    def report(self, event_type: str, data: dict[str, Any]) -> None:
-        """Send event via network."""
+    def report(self, event_type: Hashable, event_data: dict[str, Any]) -> None:
         raise NotImplementedError("RemoteReporter not yet implemented")

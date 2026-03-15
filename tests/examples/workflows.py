@@ -1,25 +1,42 @@
-"""Example workflows for testing."""
+"""
+Reusable workflow definitions for daglite tests.
 
-from daglite import task
+This module provides canonical ``@workflow``-decorated functions used across
+unit, integration, and type-assertion tests.
+"""
+
+from __future__ import annotations
+
 from daglite import workflow
 
-
-@task
-def add(x: int, y: int) -> int:
-    """Add two numbers."""
-    return x + y
-
-
-@task
-def multiply(x: int, factor: int) -> int:
-    """Multiply a number by a factor."""
-    return x * factor
+from .tasks import add
+from .tasks import async_add
+from .tasks import failing_task
+from .tasks import multiply
 
 
-@task
-def failing_task(x: int) -> int:
-    """A task that always raises an exception."""
-    raise RuntimeError(f"Intentional failure with input: {x}")
+@workflow
+def sync_workflow(x: int, y: int) -> int:
+    """Sync workflow for type assertions."""
+    return add(x=x, y=y)
+
+
+@workflow(name="custom_sync_workflow")
+def named_sync_workflow(x: int, y: int) -> int:
+    """Sync workflow with custom name — exercises decorator-with-kwargs path."""
+    return add(x=x, y=y)
+
+
+@workflow
+async def async_workflow(x: int, y: int) -> int:
+    """Async workflow for type assertions."""
+    return await async_add(x=x, y=y)
+
+
+@workflow(name="custom_async_workflow")
+async def named_async_workflow(x: int, y: int) -> int:
+    """Async workflow with custom name — exercises decorator-with-kwargs path."""
+    return await async_add(x=x, y=y)
 
 
 @workflow
@@ -35,7 +52,7 @@ def math_workflow(x: int, y: int, factor: int = 2):
         factor: Multiplication factor (default: 2).
 
     Returns:
-        TaskFuture[int]: The result of (x + y) * factor.
+        The result of (x + y) * factor.
     """
     sum_result = add(x=x, y=y)
     return multiply(x=sum_result, factor=factor)
@@ -54,7 +71,7 @@ def untyped_workflow(x, y):  # noqa: ANN001
         y: Second number (untyped).
 
     Returns:
-        TaskFuture: The result of adding x and y (will be string concatenation!).
+        The result of adding x and y.
     """
     # Note: Since x and y are untyped strings from CLI, we need to handle them
     # This is intentionally problematic to demonstrate the issue

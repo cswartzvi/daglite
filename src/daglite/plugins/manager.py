@@ -10,7 +10,7 @@ from pluggy import PluginManager
 from daglite.plugins.base import isinstance_event_handler_plugin
 from daglite.plugins.base import isinstance_serializable_plugin
 from daglite.plugins.base import issubclass_serializable_plugin
-from daglite.plugins.registry import EventRegistry
+from daglite.plugins.events import EventRegistry
 
 from .hooks.markers import HOOK_NAMESPACE
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 _PLUGIN_MANAGER: PluginManager | None = None
 
 
-# region API
+# region Public API
 
 
 def register_plugins(*plugins: Any, _plugin_manager: PluginManager | None = None) -> None:
@@ -50,8 +50,8 @@ def has_plugin(*plugin_types: type) -> bool:
     given types.
 
     Hookspec classes are excluded — only plugin *instances* are checked.  Uses
-    ``isinstance``, so subclasses match: checking for ``LifecycleLoggingPlugin``
-    also detects a registered ``RichLifecycleLoggingPlugin``.
+    `isinstance`, so subclasses match: checking for `LifecycleLoggingPlugin`
+    also detects a registered `RichLifecycleLoggingPlugin`.
 
     Args:
         plugin_types: One or more types to check against.
@@ -65,23 +65,15 @@ def has_plugin(*plugin_types: type) -> bool:
     )
 
 
-def reset_global_plugin_manager() -> None:
-    """
-    Reset the global plugin manager to its initial (empty) state.
-
-    This is intended for use in tests to ensure plugin state does not leak
-    between test cases.  It should not be called in production code.
-    """
-    global _PLUGIN_MANAGER
-    _PLUGIN_MANAGER = None
+# region Internal API
 
 
-def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginManager:
+def build_plugin_manager(plugins: Any | list[Any], registry: EventRegistry) -> PluginManager:
     """
     Creates a new plugin manager with both global and execution-specific plugins.
 
     This is the canonical way to create a PluginManager for a specific execution context,
-    ensuring that both global and execution-specific plugins are registered, and that event
+    ensuring that both global and execution-specific plugins are registered.
 
     Args:
         plugins: Additional plugin implementations to register.
@@ -90,6 +82,8 @@ def build_plugin_manager(plugins: list[Any], registry: EventRegistry) -> PluginM
     Returns:
         A new PluginManager with global + execution-specific plugins.
     """
+    plugins = plugins if isinstance(plugins, list) else [plugins]
+
     # Create new manager with hook specs
     new_manager = _create_plugin_manager()
 
@@ -141,7 +135,7 @@ def deserialize_plugin_manager(plugin_configs: dict[str, Any]) -> PluginManager:
     """
     plugin_manager = _create_plugin_manager()
 
-    for class_path, plugin_configs in plugin_configs.items():
+    for class_path, plugin_config in plugin_configs.items():
         plugin_class = _resolve_class_from_path(class_path)
 
         if plugin_class is None:
@@ -153,10 +147,26 @@ def deserialize_plugin_manager(plugin_configs: dict[str, Any]) -> PluginManager:
             logger.warning(f"Plugin class '{class_path}' is not serializable.")
             continue
 
-        plugin_instance = plugin_class.from_config(plugin_configs)
+        plugin_instance = plugin_class.from_config(plugin_config)
         plugin_manager.register(plugin_instance)
 
     return plugin_manager
+
+
+def create_null_plugin_manager() -> PluginManager:
+    """Create a PluginManager with no registered plugins."""
+    return _create_plugin_manager()
+
+
+def reset_global_plugin_manager() -> None:
+    """
+    Reset the global plugin manager to its initial (empty) state.
+
+    This is intended for use in tests to ensure plugin state does not leak
+    between test cases.  It should not be called in production code.
+    """
+    global _PLUGIN_MANAGER
+    _PLUGIN_MANAGER = None
 
 
 # region Helpers
@@ -179,14 +189,12 @@ def _get_global_plugin_manager() -> PluginManager:
 
 def _create_plugin_manager() -> PluginManager:
     """Create a new PluginManager instance and register daglite's hook specs."""
-    from .hooks.specs import CoordinatorSideNodeSpecs
-    from .hooks.specs import GraphSpec
+    from .hooks.specs import SessionLifecycleSpecs
     from .hooks.specs import WorkerSideNodeSpecs
 
     manager = PluginManager(HOOK_NAMESPACE)
+    manager.add_hookspecs(SessionLifecycleSpecs)
     manager.add_hookspecs(WorkerSideNodeSpecs)
-    manager.add_hookspecs(CoordinatorSideNodeSpecs)
-    manager.add_hookspecs(GraphSpec)
 
     # Enable plugin hook tracing if configured
     from daglite.settings import get_global_settings

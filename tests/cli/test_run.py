@@ -257,7 +257,7 @@ class TestRunCommand:
                 "--param",
                 "y=10",
                 "--settings",
-                "datastore_store=/tmp/test_store",
+                "dataset_store=/tmp/test_store",
             ],
         )
         assert result.exit_code == 0
@@ -379,7 +379,7 @@ class TestSetupCliPlugins:
     def test_skips_registration_when_plugin_already_present(self):
         """Calling setup_cli_plugins twice must not re-register the plugin."""
         from daglite.cli._shared import setup_cli_plugins
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+        from daglite.logging.plugin import LifecycleLoggingPlugin
         from daglite.plugins.manager import has_plugin
         from daglite.plugins.manager import register_plugins
 
@@ -457,3 +457,12 @@ class TestParseParamValue:
 
         result = parse_param_value("test", UnconvertibleType)
         assert result == "test"  # Falls back to string
+
+    def test_run_async_workflow(self):
+        """Test running an async workflow through the CLI (exercises asyncio.run path)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli,
+            ["run", "tests.examples.workflows.async_workflow", "--param", "x=3", "--param", "y=4"],
+        )
+        assert result.exit_code == 0
