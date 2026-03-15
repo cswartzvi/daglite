@@ -36,16 +36,16 @@ def main(argv: list[str] | None = None) -> None:
     if argv and argv[0] == "run":
         if len(argv) == 1 or argv[1] in HELP_FLAGS:
             app(["run", "--help"])
-            return
 
-        target = argv[1]
-        wf_args = argv[2:]
-        try:
-            run_workflow(target, wf_args)
-        except Exception as e:
-            print_run_error(e)
-            raise SystemExit(2)
-        return
+        else:
+            target = argv[1]
+            wf_args = argv[2:]
+            try:
+                run_workflow(target, wf_args)
+            except Exception as e:
+                print_run_error(e)
+                raise SystemExit(2)
+        return  # pragma: no cover
 
     app(argv)
 
