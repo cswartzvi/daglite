@@ -81,8 +81,10 @@ class BackendManager:
 
     def deactivate(self, token: Token[BackendManager | None]) -> None:
         """Stop backends and restore the previous manager."""
-        self.stop()
-        self._active.reset(token)
+        try:
+            self.stop()
+        finally:
+            self._active.reset(token)
 
     @classmethod
     def _get_global(cls) -> BackendManager:
