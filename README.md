@@ -197,7 +197,7 @@ daglite describe myproject.workflows:compute
 # Run a workflow with arguments
 daglite run myproject.workflows:compute --x 2 --y 3
 
-# Filesystem paths are also supported
+# Filesystem paths are also supported (directory must be importable from CWD)
 daglite run path/to/workflows.py:compute --x 2 --y 3
 ```
 

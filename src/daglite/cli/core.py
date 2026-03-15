@@ -9,7 +9,6 @@ def main(argv: list[str] | None = None) -> None:
     """Entry point for the Daglite CLI."""
 
     import daglite
-    from daglite.cli._shared import HELP_FLAGS
     from daglite.cli._shared import print_run_error
     from daglite.cli.cmds.cmd_describe import describe_workflow
     from daglite.cli.cmds.cmd_list import list_workflows
@@ -33,9 +32,13 @@ def main(argv: list[str] | None = None) -> None:
     # Special handling for 'run': the first positional arg is the workflow
     # target and everything after it becomes workflow-specific arguments
     # parsed by a per-workflow cyclopts App (see build_workflow_app).
+    # Anything starting with "-" (e.g. --help, --version) is delegated back
+    # to the main app so meta-flags behave consistently across commands.
     if argv and argv[0] == "run":
-        if len(argv) == 1 or argv[1] in HELP_FLAGS:
+        if len(argv) == 1:
             app(["run", "--help"])
+        elif argv[1].startswith("-"):
+            app(argv)
 
         else:
             target = argv[1]

@@ -140,6 +140,24 @@ class TestRunCommand:
             )
         assert exc_info.value.code == 0
 
+    def test_run_version_flag(self, capsys):
+        """Test that ``daglite run --version`` shows version instead of treating it as target."""
+        import daglite
+
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "--version"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert daglite.__version__ in out
+
+    def test_run_short_help_flag(self, capsys):
+        """Test that ``daglite run -h`` shows help."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "-h"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "Run a workflow target" in out
+
 
 class TestDescribeCommand:
     """Tests for the describe command."""
@@ -315,6 +333,18 @@ class TestFilepathToModule:
         from daglite.cli._shared import _filepath_to_module
 
         assert _filepath_to_module(".\\tests\\examples\\workflows.py") == "tests.examples.workflows"
+
+    def test_windows_drive_letter_no_attr(self):
+        """Drive-letter colon (C:\\...) should not be split as a target separator."""
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("C:\\proj\\workflows.py") == "proj.workflows"
+
+    def test_windows_drive_letter_with_attr(self):
+        """Drive-letter path with :attr suffix should be split correctly."""
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("C:\\proj\\workflows.py:my_wf") == "proj.workflows:my_wf"
 
 
 class TestNormalizeTokens:

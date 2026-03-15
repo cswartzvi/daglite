@@ -82,7 +82,7 @@ def parse_settings_overrides(settings: tuple[str, ...]) -> dict[str, Any]:
         `DagliteSettings` constructor call.
 
     Raises:
-        click.BadParameter: For malformed entries, unknown names, or bad values.
+        ValueError: For malformed entries, unknown names, or bad values.
     """
     from daglite.settings import DagliteSettings
 
@@ -255,9 +255,15 @@ def _filepath_to_module(spec: str) -> str:
     If *spec* doesn't look like a filesystem path it is returned unchanged.
     """
     # Split off an optional ":attr" suffix before processing the path part.
+    # Use rsplit so Windows drive-letter colons (e.g. C:\dir\file.py) are
+    # not consumed; only split when the right-hand side is a Python identifier.
     attr_suffix = ""
     if ":" in spec:
-        path_part, attr_suffix = spec.split(":", 1)
+        left, right = spec.rsplit(":", 1)
+        if right.isidentifier():
+            path_part, attr_suffix = left, right
+        else:
+            path_part = spec
     else:
         path_part = spec
 
@@ -269,9 +275,11 @@ def _filepath_to_module(spec: str) -> str:
     path_part = path_part.rstrip("/").rstrip("\\")
     if path_part.endswith(".py"):
         path_part = path_part[:-3]
-    # Strip leading "./"
+    # Strip leading "./" or Windows drive-letter prefix (e.g. C:\)
     if path_part.startswith("./") or path_part.startswith(".\\"):
         path_part = path_part[2:]
+    elif len(path_part) >= 2 and path_part[0].isalpha() and path_part[1] == ":":
+        path_part = path_part[2:].lstrip("/").lstrip("\\")
 
     module_path = path_part.replace("/", ".").replace("\\", ".")
     if attr_suffix:
