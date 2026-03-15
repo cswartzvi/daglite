@@ -23,6 +23,12 @@ from .examples.tasks import async_double
 from .examples.tasks import double
 
 
+@task(dataset="mapped_{map_index}.pkl")
+def emit_with_mapped_dataset_name(x: int) -> int:
+    """Pickle-safe module-level task used by process backend map-index integration tests."""
+    return x
+
+
 @pytest.fixture()
 def temp_cache_dir():
     """Temporary directory for on-disk caching."""
@@ -413,13 +419,13 @@ class TestMapInSession:
     def test_process_backend_preserves_map_index(self) -> None:
         """Process-backed mapped calls preserve per-item ``map_index`` context."""
 
-        @task(dataset="mapped_{map_index}.pkl")
-        def emit(x: int) -> int:
-            return x
-
         with tempfile.TemporaryDirectory() as tmpdir:
             with session(backend="process", dataset_store=tmpdir):
-                results = map_tasks(emit, [1, 2, 3], backend="process")
+                results = map_tasks(
+                    emit_with_mapped_dataset_name,
+                    [1, 2, 3],
+                    backend="process",
+                )
 
             files = sorted(Path(tmpdir).glob("mapped_*.pkl"))
             assert [path.name for path in files] == [
