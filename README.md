@@ -185,14 +185,20 @@ with session(backend="thread"):
 
 ### CLI
 
-Discover and run workflows from the command line:
+Discover, describe, and run workflows from the command line:
 
 ```bash
 # List available workflows in a module
 daglite list myproject.workflows
 
+# Describe a workflow's parameters
+daglite describe myproject.workflows:compute
+
 # Run a workflow with arguments
-daglite run myproject.workflows.compute --param x=2 --param y=3
+daglite run myproject.workflows:compute --x 2 --y 3
+
+# Filesystem paths are also supported
+daglite run path/to/workflows.py:compute --x 2 --y 3
 ```
 
 ---
