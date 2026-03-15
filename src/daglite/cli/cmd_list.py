@@ -1,4 +1,4 @@
-"""CLI ``list`` command for discovering workflows in a module."""
+"""CLI `list` command for discovering workflows in a module."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from pathlib import Path
 
 import click
 
-from daglite.workflows import Workflow
+from daglite.workflows import _BaseWorkflow as Workflow
 
 
 def _find_workflows_in_module(module_path: str) -> list[tuple[str, Workflow]]:
-    """Import *module_path* and return ``(dotted_path, workflow)`` for every Workflow found."""
+    """Import *module_path* and return `(dotted_path, workflow)` for every Workflow found."""
     cwd = str(Path.cwd())
     if cwd not in sys.path:  # pragma: no cover
         sys.path.insert(0, cwd)
