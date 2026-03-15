@@ -1,9 +1,9 @@
 """
 Background processor for dataset save requests from workers.
 
-The ``DatasetProcessor`` extends ``BackgroundQueueProcessor`` to drain save
-requests from IPC sources (e.g. ``multiprocessing.Queue`` instances used by
-``ProcessDatasetReporter``) and writes them using the ``DatasetStore`` carried
+The `DatasetProcessor` extends `BackgroundQueueProcessor` to drain save
+requests from IPC sources (e.g. `multiprocessing.Queue` instances used by
+`ProcessDatasetReporter`) and writes them using the `DatasetStore` carried
 within each request.
 
 For direct reporters the save happens inline, so the processor only needs to
@@ -28,13 +28,13 @@ class DatasetProcessor(BackgroundQueueProcessor):
     Background processor for draining worker → coordinator dataset save requests.
 
     Unlike the initial implementation, the processor does **not** own a single
-    ``DatasetStore``.  Each save request arriving through the queue carries its
+    `DatasetStore`.  Each save request arriving through the queue carries its
     own store reference, so different output configs can target different stores
     without ambiguity.
 
     Args:
         hook: Optional pluggy `HookRelay` for firing `before_dataset_save`
-            and ``after_dataset_save`` hooks.  Passed from the engine since the
+            and `after_dataset_save` hooks.  Passed from the engine since the
             processor's daemon thread does not inherit the worker's context vars.
     """
 
@@ -42,13 +42,9 @@ class DatasetProcessor(BackgroundQueueProcessor):
         super().__init__(name="DatasetProcessor")
         self._hook = hook
 
-    # -- abstract implementation -------------------------------------------
-
     def _handle_item(self, item: Any) -> None:
         """Process a single save request received from a worker."""
         self._handle_request(item)
-
-    # -- internal helpers --------------------------------------------------
 
     def _handle_request(self, request: DatasetSaveRequest) -> None:
         """
@@ -64,6 +60,7 @@ class DatasetProcessor(BackgroundQueueProcessor):
                 value=request.value,
                 format=request.format,
                 options=request.options,
+                metadata=request.metadata,
             )
             if self._hook:
                 self._hook.before_dataset_save(**hook_kwargs)

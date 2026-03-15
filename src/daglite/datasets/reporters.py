@@ -4,12 +4,12 @@ Dataset reporter implementations for different backend types.
 Dataset reporters handle persisting task outputs (via DatasetStore) back to the
 coordinator.  The design mirrors the event reporter hierarchy:
 
-* **DirectDatasetReporter** – for inline / threaded backends where the store
+* **DirectDatasetReporter** - for inline / threaded backends where the store
   is directly accessible in the same process.
-* **ProcessDatasetReporter** – for multiprocessing backends that need to push
-  save requests across a ``multiprocessing.Queue`` so the coordinator can
+* **ProcessDatasetReporter** - for multiprocessing backends that need to push
+  save requests across a `multiprocessing.Queue` so the coordinator can
   write them.
-* **RemoteDatasetReporter** – placeholder for future distributed backends.
+* **RemoteDatasetReporter** - placeholder for future distributed backends.
 
 The *store* is passed per-save rather than held by the reporter, because
 different output configs may target different stores.  For local drivers the
@@ -28,9 +28,8 @@ from typing import TYPE_CHECKING, Any
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from pluggy import HookRelay
-
     from daglite.datasets.store import DatasetStore
+    from daglite.tasks import TaskMetadata
 
 from daglite.datasets.events import DatasetSaveRequest
 
@@ -47,7 +46,7 @@ class DatasetReporter(abc.ABC):
         Indicates whether this reporter saves datasets directly via the store.
 
         Non-direct reporters require serialization and IPC, while direct reporters can
-        access the ``DatasetStore`` directly (e.g., in the same process or thread).
+        access the `DatasetStore` directly (e.g., in the same process or thread).
 
         Returns:
             True if this reporter saves directly, False if it uses IPC/serialization.
@@ -63,6 +62,7 @@ class DatasetReporter(abc.ABC):
         *,
         format: str | None = None,
         options: dict[str, Any] | None = None,
+        metadata: TaskMetadata | None = None,
     ) -> None:
         """
         Save a dataset output from a worker.
@@ -70,9 +70,10 @@ class DatasetReporter(abc.ABC):
         Args:
             key: Storage key/path for the output.
             value: The Python object to persist.
-            store: The ``DatasetStore`` to write to.
-            format: Optional serialization format hint (e.g. ``"pickle"``).
+            store: The `DatasetStore` to write to.
+            format: Optional serialization format hint (e.g. `"pickle"`).
             options: Additional options passed to the Dataset's save method.
+            metadata: Task metadata for the originating task, or ``None``.
         """
         ...
 
@@ -81,8 +82,8 @@ class DirectDatasetReporter(DatasetReporter):
     """
     Direct reporter for inline and threaded backends.
 
-    Saves are performed immediately through the supplied ``DatasetStore`` in
-    the current process.  Thread-safe for use in ``ThreadPoolExecutor``.
+    Saves are performed immediately through the supplied `DatasetStore` in
+    the current process.  Thread-safe for use in `ThreadPoolExecutor`.
     """
 
     def __init__(self) -> None:
@@ -102,40 +103,32 @@ class DirectDatasetReporter(DatasetReporter):
         *,
         format: str | None = None,
         options: dict[str, Any] | None = None,
+        metadata: TaskMetadata | None = None,
     ) -> None:
-        hook = self._get_hook()
+        from daglite._resolvers import resolve_hook
+
+        hook = resolve_hook()
         with self._lock:
-            if hook:
-                hook.before_dataset_save(key=key, value=value, format=format, options=options)
+            hook_kw = dict(key=key, value=value, format=format, options=options, metadata=metadata)
+            hook.before_dataset_save(**hook_kw)
             store.save(key, value, format=format, options=options)
-            if hook:
-                hook.after_dataset_save(key=key, value=value, format=format, options=options)
-
-    @staticmethod
-    def _get_hook() -> HookRelay | None:
-        """Attempt to retrieve the plugin hook from the execution context."""
-        try:
-            from daglite.backends.context import get_plugin_manager
-
-            return get_plugin_manager().hook
-        except RuntimeError:
-            return None
+            hook.after_dataset_save(**hook_kw)
 
 
 class ProcessDatasetReporter(DatasetReporter):
     """
-    Queue-based reporter for ``ProcessPoolBackend``.
+    Queue-based reporter for `ProcessPoolBackend`.
 
-    Workers push save requests onto a ``multiprocessing.Queue``.  A background
-    thread on the coordinator (managed by ``DatasetProcessor``) consumes the
+    Workers push save requests onto a `multiprocessing.Queue`.  A background
+    thread on the coordinator (managed by `DatasetProcessor`) consumes the
     queue and performs the actual writes.
 
     The raw *value* and *store* are placed on the queue as-is; the
-    ``multiprocessing.Queue`` handles pickling transparently.  Avoid explicit
-    ``pickle.dumps`` here to prevent double-serialization.
+    `multiprocessing.Queue` handles pickling transparently.  Avoid explicit
+    `pickle.dumps` here to prevent double-serialization.
 
     Args:
-        queue: ``multiprocessing.Queue`` for sending save requests to the coordinator.
+        queue: `multiprocessing.Queue` for sending save requests to the coordinator.
     """
 
     def __init__(self, queue: MultiprocessingQueue) -> None:
@@ -160,6 +153,7 @@ class ProcessDatasetReporter(DatasetReporter):
         *,
         format: str | None = None,
         options: dict[str, Any] | None = None,
+        metadata: TaskMetadata | None = None,
     ) -> None:
         request = DatasetSaveRequest(
             key=key,
@@ -167,6 +161,7 @@ class ProcessDatasetReporter(DatasetReporter):
             store=store,
             format=format,
             options=options,
+            metadata=metadata,
         )
         self._queue.put(request)
 
@@ -202,6 +197,7 @@ class RemoteDatasetReporter(DatasetReporter):  # pragma: no cover
         *,
         format: str | None = None,
         options: dict[str, Any] | None = None,
+        metadata: TaskMetadata | None = None,
     ) -> None:
         """Send dataset save request via network."""
         raise NotImplementedError("RemoteDatasetReporter not yet implemented")
