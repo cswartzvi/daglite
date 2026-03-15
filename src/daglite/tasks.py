@@ -1,54 +1,110 @@
+"""Defines daglite task decorator, task types, and metadata."""
+
 from __future__ import annotations
 
 import abc
+import functools
 import inspect
+import logging
 import sys
+import time
 from collections.abc import Callable
-from collections.abc import Iterable
-from collections.abc import Mapping
+from collections.abc import Coroutine
+from contextlib import AsyncExitStack
+from contextlib import ExitStack
 from dataclasses import dataclass
 from dataclasses import field
-from dataclasses import fields
-from functools import cached_property
-from inspect import Signature
-from typing import TYPE_CHECKING, Any, Generic, ParamSpec, TypeVar, overload
+from typing import (
+    Any,
+    AsyncIterator,
+    Generic,
+    Iterator,
+    ParamSpec,
+    Protocol,
+    TypeVar,
+    overload,
+)
+from uuid import UUID
+from uuid import uuid4
 
-from typing_extensions import Self, override
+from pluggy import HookRelay
+from typing_extensions import override
 
-from daglite._typing import MapMode
-from daglite._validation import check_invalid_map_params
-from daglite._validation import check_invalid_params
-from daglite._validation import check_missing_params
-from daglite._validation import check_overlap_params
-from daglite._validation import resolve_positional_args
+from daglite._context import TaskContext
+from daglite._resolvers import resolve_backend
+from daglite._resolvers import resolve_cache_store
+from daglite._resolvers import resolve_dataset_reporter
+from daglite._resolvers import resolve_dataset_store
+from daglite._resolvers import resolve_event_reporter
+from daglite._resolvers import resolve_hook
+from daglite._resolvers import resolve_map_index
+from daglite._resolvers import resolve_parent_id
+from daglite._templates import parse_template
+from daglite._templates import resolve_template
+from daglite.cache.core import CACHE_MISS
+from daglite.cache.core import CacheHashFn
+from daglite.cache.core import default_cache_hash
+from daglite.cache.store import CacheStore
 from daglite.datasets.store import DatasetStore
-from daglite.exceptions import ParameterError
 from daglite.exceptions import TaskError
+from daglite.plugins.reporters import EventReporter
 
-# NOTE: Tasks are the building blocks of daglite DAGs, however the fluent API for composing
-# DAGs allows for tasks to accept downstream types as parameters. To avoid circular imports,
-# all downstream types used in type annotations are imported within TYPE_CHECKING blocks.
-# If methods within this file need to use downstream types at runtime, they should be imported
-# locally within those methods.
-if TYPE_CHECKING:
-    from daglite.futures import MapTaskFuture
-    from daglite.futures import TaskFuture
-    from daglite.futures.iter_future import IterTaskFuture
-else:
-    MapTaskFuture = object
-    TaskFuture = object
-    IterTaskFuture = object
-
+logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 R = TypeVar("R")
 
+# Built-in template variables available in name and dataset key templates.
+_TEMPLATE_VAR_MAP_INDEX = "map_index"
+_TEMPLATE_VAR_ITER_INDEX = "iter_index"
+_BUILTIN_TEMPLATE_VARS = {_TEMPLATE_VAR_MAP_INDEX, _TEMPLATE_VAR_ITER_INDEX}
 
-# region Decorator
+
+# region Task decorator
+
+
+class _TaskDecorator(Protocol):
+    """Return type for keyword-args form of `task()`."""
+
+    @overload
+    def __call__(  # type: ignore[overload-overlap]
+        self, func: Callable[P, AsyncIterator[R]], /
+    ) -> AsyncTaskStream[P, R]: ...
+
+    @overload
+    def __call__(  # type: ignore[overload-overlap]
+        self, func: Callable[P, Iterator[R]], /
+    ) -> SyncTaskStream[P, R]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, Coroutine[Any, Any, R]], /) -> AsyncTask[P, R]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, R], /) -> SyncTask[P, R]: ...
+
+    def __call__(self, func: Any, /) -> Any: ...
 
 
 @overload
-def task(func: Callable[P, R], /) -> Task[P, R]: ...
+def task(  # type: ignore[overload-overlap]
+    func: Callable[P, AsyncIterator[R]], /
+) -> AsyncTaskStream[P, R]: ...
+
+
+@overload
+def task(  # type: ignore[overload-overlap]
+    func: Callable[P, Iterator[R]], /
+) -> SyncTaskStream[P, R]: ...
+
+
+@overload
+def task(  # type: ignore[overload-overlap]
+    func: Callable[P, Coroutine[Any, Any, R]], /
+) -> AsyncTask[P, R]: ...
+
+
+@overload
+def task(func: Callable[P, R], /) -> SyncTask[P, R]: ...
 
 
 @overload
@@ -56,14 +112,17 @@ def task(
     *,
     name: str | None = None,
     description: str | None = None,
-    backend_name: str | None = None,
-    retries: int | None = None,
+    backend: str | None = None,
+    retries: int = 0,
     timeout: float | None = None,
     cache: bool = False,
+    cache_store: CacheStore | str | None = None,
     cache_ttl: int | None = None,
-    cache_hash: Callable[..., str] | None = None,
-    store: DatasetStore | str | None = None,
-) -> Callable[[Callable[P, R]], Task[P, R]]: ...
+    cache_hash: CacheHashFn | None = None,
+    dataset: str | None = None,
+    dataset_store: DatasetStore | str | None = None,
+    dataset_format: str | None = None,
+) -> _TaskDecorator: ...
 
 
 def task(  # noqa: D417
@@ -71,543 +130,666 @@ def task(  # noqa: D417
     *,
     name: str | None = None,
     description: str | None = None,
-    backend_name: str | None = None,
-    retries: int | None = None,
+    backend: str | None = None,
+    retries: int = 0,
     timeout: float | None = None,
     cache: bool = False,
+    cache_store: CacheStore | str | None = None,
     cache_ttl: int | None = None,
-    cache_hash: Callable[..., str] | None = None,
-    store: DatasetStore | str | None = None,
+    cache_hash: CacheHashFn | None = None,
+    dataset: str | None = None,
+    dataset_store: DatasetStore | str | None = None,
+    dataset_format: str | None = None,
 ) -> Any:
     """
-    Decorator to convert a Python function into a daglite `Task`.
+    Creates a daglite task from a sync or async function.
 
-    Tasks are the building blocks of daglite DAGs. They wrap plain Python functions (both sync
-    and async) and provide methods for composition and execution.
+    The decorated function executes immediately on call (no futures, no graph).
 
-    This is the recommended way for users to create tasks. Users should **not** directly
-    instantiate the `Task` class.
+    When called inside an active session or workflow it emits events, fires hooks, participates
+    in caching, and can interact with dataset stores.
 
     Args:
-        name: Custom name for the task. Defaults to the function's `__name__`. For lambda functions,
-            defaults to "unnamed_task".
-        description: Task description. Defaults to the function's docstring.
-        backend_name: Name of the backend to use for this task. If not provided, uses the default
-            global settings backend.
-        retries: Number of times to retry the task on failure. Defaults to 0 (no retries).
-        timeout: Maximum execution time in seconds. Must be non-negative if provided.
-            If None, no timeout is enforced.
-        cache: Whether to enable hash-based caching for this task. When True, the task's output
-            will be cached based on a hash of its function source and input parameters.
-            Defaults to False.
-        cache_ttl: Time-to-live for cached results in seconds. If None, cached results never expire.
-            Only used when cache=True.
-        cache_hash: Custom hash function with signature ``(func, inputs) -> str`` used to
-            compute the cache key. If None, the built-in ``default_cache_hash`` is used.
-            Only relevant when cache=True.
-        store: Default output store for all `.save()` calls on this task. Can be a DatasetStore
-            instance or a string path (e.g., directory) to be used for to create a dataset store.
-            If None, the default store will be used.
+        name: Custom name of the task. Can include `{param}` placeholders for argument values and
+            (`{map_index}` for the current map iteration index (if applicable). Defaults to the
+            function's `__name__` if not provided. Cannot contain period (`.`) characters.
+
+        description: Description of the task. Defaults to the function's docstring if not provided.
+
+        backend: Backend name for parallel operations. If `None`, inherits from either the active
+            session or the default settings backend.
+
+        retries: Number of automatic task retries on failure.
+
+        timeout: Max execution time in seconds.
+
+        cache: Indicates whether the task participates in caching. Possible values include
+            * `False` (default) — no caching.
+            * `True` — use the session's cache store (if any).
+            * `str` — path to a file based cache store for this task.
+            * `CacheStore` instance — use the provided store for this task.
+
+        cache_ttl: Cache time-to-live (TTL) in seconds. This parameter ignored if cache is `False`
+            or a store with its own TTL is provided.
+
+        cache_hash: Custom `(func, inputs) -> str` hash function. The default hash function uses
+            the function's qualified name and the bound arguments to produce a stable hash. A
+            custom hash function can be provided to override this behavior, for example to ignore
+            certain arguments or to use a different hashing algorithm. This parameter is ignored if
+            caching is disabled.
 
     Returns:
-        Either a `Task` (when used as `@task`) or a decorator function (when used as `@task()`).
-
-    Examples:
-        >>> from daglite import task
-
-        Basic usage with synchronous function
-        >>> @task
-        ... def add(x: int, y: int) -> int:
-        ...     return x + y
-        >>> add.name
-        'add'
-
-        Custom parameters
-        >>> @task(name="custom_add")
-        ... def add_nums(x: int, y: int) -> int:
-        ...     return x + y
-        >>> add_nums.name
-        'custom_add'
-
-        Lambda functions
-        >>> double = task(lambda x: x * 2, name="double")
-        >>> double.name
-        'double'
+        A sync or async eager task callable with the original signature.
     """
-    from daglite.datasets.store import DatasetStore
 
-    def decorator(fn: Any) -> Any:
+    def decorator(
+        fn: Callable[..., Any],
+    ) -> (
+        SyncTask[Any, Any]
+        | AsyncTask[Any, Any]
+        | SyncTaskStream[Any, Any]
+        | AsyncTaskStream[Any, Any]
+    ):
         if inspect.isclass(fn) or not callable(fn):
             raise TypeError("`@task` can only be applied to callable functions.")
 
-        is_async = inspect.iscoroutinefunction(fn)
+        _name = name if name is not None else getattr(fn, "__name__", "unnamed_task")
+        _description = description if description is not None else getattr(fn, "__doc__", "") or ""
 
-        # Store original function in module namespace for pickling (multiprocessing backend)
-        if hasattr(fn, "__module__") and hasattr(fn, "__name__"):
+        # Validate name template at decoration time.
+        name_placeholders = parse_template(_name)
+        if name_placeholders:
+            param_names = set(inspect.signature(fn).parameters) | _BUILTIN_TEMPLATE_VARS
+            unknown = name_placeholders - param_names
+            if unknown:
+                raise ValueError(
+                    f"Name template '{_name}' references {unknown} which won't be available "
+                    f"at runtime. Available placeholders: {sorted(param_names)}."
+                )
+
+        # Validate dataset key template at decoration time.
+        if dataset:
+            ds_placeholders = parse_template(dataset)
+            if ds_placeholders:
+                param_names = set(inspect.signature(fn).parameters) | _BUILTIN_TEMPLATE_VARS
+                unknown = ds_placeholders - param_names
+                if unknown:
+                    raise ValueError(
+                        f"Dataset template '{dataset}' references {unknown} which won't be "
+                        f"available at runtime. Available placeholders: {sorted(param_names)}."
+                    )
+
+        # Store original function in module namespace for pickling (process backend)
+        if hasattr(fn, "__module__") and hasattr(fn, "__name__"):  # pragma: no branch
             module = sys.modules.get(fn.__module__)
             if module is not None:  # pragma: no branch
                 private_name = f"__{fn.__name__}_func__"
                 setattr(module, private_name, fn)
                 fn.__qualname__ = private_name
 
-        actual_store = DatasetStore(store) if isinstance(store, str) else store
+        # Resolve task based on function type
+        is_sync_gen = inspect.isgeneratorfunction(fn)
+        is_async_gen = inspect.isasyncgenfunction(fn)
+        if is_sync_gen or is_async_gen:
+            if cache:
+                raise ValueError("Caching is not supported for generator tasks.")
+            if retries > 0:
+                raise ValueError("Retries are not supported for generator tasks.")
+            if timeout is not None:
+                raise ValueError("Timeouts are not supported for generator tasks.")
+            if is_sync_gen:
+                cls = SyncTaskStream
+            else:
+                cls = AsyncTaskStream
+        elif inspect.iscoroutinefunction(fn):
+            cls = AsyncTask
+        else:
+            cls = SyncTask
 
-        return Task(
+        return cls(
             func=fn,
-            name=name if name is not None else getattr(fn, "__name__", "unnamed_task"),
-            description=description if description is not None else getattr(fn, "__doc__", ""),
-            backend_name=backend_name,
-            is_async=is_async,
-            retries=retries if retries is not None else 0,
+            name=_name,
+            description=_description,
+            backend=backend,
+            retries=retries,
             timeout=timeout,
             cache=cache,
+            cache_store=cache_store,
             cache_ttl=cache_ttl,
-            cache_hash=cache_hash,
-            store=actual_store,
+            cache_hash_fn=cache_hash,
+            dataset=dataset,
+            dataset_store=dataset_store,
+            dataset_format=dataset_format,
         )
 
     if func is not None:
-        # Used as @task (without parentheses)
         return decorator(func)
-
     return decorator
 
 
-# region Tasks
+# region Task types
 
 
 @dataclass(frozen=True)
-class BaseTask(abc.ABC, Generic[P, R]):
-    """Base class for all tasks, providing common functionality for task composition."""
+class TaskMetadata:
+    """Lightweight metadata describing the currently executing task."""
+
+    id: UUID
+    """Unique identifier for this task invocation."""
 
     name: str
-    """Name of the task."""
+    """Human-readable task name."""
 
-    description: str
-    """Description of the task."""
+    backend: str
+    """Name of the backend used to execute this task."""
 
-    backend_name: str | None
-    """Name of backend to use for this task."""
+    inputs: dict[str, object] = field(default_factory=dict, kw_only=True)
+    """Dictionary of input values passed to the task."""
+
+    description: str | None = field(default=None, kw_only=True)
+    """Optional description of the task."""
+
+    map_index: int | None = field(default=None, kw_only=True)
+    """Current map iteration index, if applicable."""
+
+    parent_id: UUID | None = field(default=None, kw_only=True)
+    """Unique identifier of the parent task, if any."""
+
+    is_async: bool = field(default=False, kw_only=True)
+    """Whether the task is an async coroutine function."""
+
+    is_generator: bool = field(default=False, kw_only=True)
+    """Whether the task is a generator function (sync or async)."""
+
+
+@dataclass
+class _TaskExecutionData:
+    """Resolved context for a task call."""
+
+    metadata: TaskMetadata
+    hook: HookRelay
+    event_reporter: EventReporter | None  # Needed for hook calls
+    cache_store: CacheStore | None
+    dataset_store: DatasetStore | None
+
+
+@dataclass(frozen=True)
+class _BaseTask(abc.ABC, Generic[P, R]):
+    """Shared fields and helpers for sync and async eager tasks."""
+
+    func: Callable[..., Any]
+    """Wrapped user function."""
+
+    name: str
+    """Human-readable task name."""
+
+    description: str | None = None
+    """Task description (from docstring or explicit)."""
+
+    backend: str | None = None
+    """Preferred backend for parallel operations."""
 
     retries: int = field(default=0, kw_only=True)
-    """Number of times to retry the task on failure."""
+    """Number of automatic retries on failure."""
 
     timeout: float | None = field(default=None, kw_only=True)
-    """Maximum execution time in seconds. If None, no timeout is enforced."""
+    """Max execution time in seconds."""
 
     cache: bool = field(default=False, kw_only=True)
-    """Whether to enable hash-based caching for this task."""
+    """Indicates how the task participates in caching."""
+
+    cache_store: CacheStore | str | None = field(default=None, kw_only=True)
+    """Optional cache store override for this task."""
 
     cache_ttl: int | None = field(default=None, kw_only=True)
-    """Time-to-live for cached results in seconds. If None, cached results never expire."""
+    """Cache time-to-live (TTL) in seconds."""
 
-    cache_hash: Callable[..., str] | None = field(default=None, kw_only=True)
-    """Custom hash function ``(func, inputs) -> str`` for computing the cache key."""
+    cache_hash_fn: CacheHashFn | None = field(default=None, kw_only=True)
+    """Custom `(func, bound_args) -> str` hash function`."""
 
-    store: DatasetStore | None = field(default=None, kw_only=True)
-    """Default dataset store for `.save()` calls on this task."""
+    dataset: str | None = field(default=None, kw_only=True)
+    """Output dataset key. Supports `{param}` and `{map_index}` template placeholders."""
 
-    def __post_init__(self) -> None:
-        if self.retries < 0:
-            raise ParameterError(
-                f"Task '{self.name}' has invalid retries={self.retries}. Must be non-negative."
-            )
-        if self.timeout is not None and self.timeout < 0:
-            raise ParameterError(
-                f"Task '{self.name}' has invalid timeout={self.timeout}. Must be non-negative."
-            )
-        if self.cache_ttl is not None and self.cache_ttl < 0:
-            raise ParameterError(
-                f"Task '{self.name}' has invalid cache_ttl={self.cache_ttl}. Must be non-negative."
-            )
+    dataset_store: DatasetStore | str | None = field(default=None, kw_only=True)
+    """Per-task dataset store override. String paths create a file-based store."""
 
-    @cached_property
+    dataset_format: str | None = field(default=None, kw_only=True)
+    """Serialization format hint for dataset output (e.g. `"pickle"`, `"pandas/csv"`)."""
+
+    @property
     @abc.abstractmethod
-    def signature(self) -> Signature:
-        """Signature of the underlying task function."""
+    def is_async(self) -> bool:
+        """Whether the wrapped function is a coroutine function."""
         raise NotImplementedError()
 
-    def with_options(
-        self,
-        *,
-        name: str | None = None,
-        description: str | None = None,
-        backend_name: str | None = None,
-        retries: int | None = None,
-        timeout: float | None = None,
-        cache: bool | None = None,
-        cache_ttl: int | None = None,
-        store: DatasetStore | None = None,
-    ) -> Self:
-        """
-        Create a new task with updated options.
-
-        Args:
-            name: New name for the task. If `None`, keeps the existing name.
-            description: New description for the task. If `None`, keeps the existing description.
-            backend_name: New backend name for the task. If `None`, keeps the existing backend name.
-            retries: New number of retries for the task. If `None`, keeps the existing retries.
-            timeout: New timeout for the task. If `None`, keeps the existing timeout.
-            cache: Whether to enable caching for the task. If `None`, keeps the existing setting.
-            cache_ttl: Time-to-live for cached results. If `None`, keeps the existing cache_ttl.
-            store: Default dataset store for the task. If `None`, keeps the existing store.
-
-        Returns:
-            A new `BaseTask` instance with updated options.
-        """
-
-        name = name if name is not None else self.name
-        description = description if description is not None else self.description
-        backend_name = backend_name if backend_name is not None else self.backend_name
-        new_retries = retries if retries is not None else self.retries
-        new_timeout = timeout if timeout is not None else self.timeout
-        new_cache = cache if cache is not None else self.cache
-        new_cache_ttl = cache_ttl if cache_ttl is not None else self.cache_ttl
-        new_store = store if store is not None else self.store
-
-        # Collect the remaining fields (assumes this is a dataclass)
-        remaining_fields = {
-            f.name: getattr(self, f.name)
-            for f in fields(self)
-            if f.name
-            not in {
-                "name",
-                "description",
-                "backend_name",
-                "retries",
-                "timeout",
-                "cache",
-                "cache_ttl",
-                "store",
-            }
-        }
-
-        return type(self)(
-            name=name,
-            description=description,
-            backend_name=backend_name,
-            retries=new_retries,
-            timeout=new_timeout,
-            cache=new_cache,
-            cache_ttl=new_cache_ttl,
-            store=new_store,
-            **remaining_fields,
-        )
-
+    @property
     @abc.abstractmethod
-    def __call__(
-        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
-    ) -> "TaskFuture[R]":
-        """
-        Creates a task future by binding values to the parameters of this task.
-
-        This does NOT execute the task immediately; it returns a future object representing
-        evaluation results. See `daglite.engine.evaluate` or `daglite.engine.evaluate_async` for
-        more details on evaluating task futures.
-
-        Supports both positional and keyword arguments. Positional arguments are resolved
-        to keyword arguments using the task function's parameter names.
-
-        Args:
-            *args: Positional arguments resolved to parameters by position.
-            **kwargs: Keyword arguments matching the task function's parameters. Must include
-                all required parameters. Can include `TaskFuture` objects.
-
-        Returns:
-            A `TaskFuture` representing the execution of this task with the provided parameters.
-
-        Examples:
-            >>> from daglite import task
-            >>> @task
-            ... def add(x: int, y: int) -> int:
-            ...     return x + y
-
-            Future creation (keyword or positional)
-            >>> add(x=1, y=2)  # doctest: +ELLIPSIS
-            TaskFuture(...)
-            >>> add(1, 2)  # doctest: +ELLIPSIS
-            TaskFuture(...)
-
-            Future evaluation
-            >>> add(x=1, y=2).run()
-            3
-
-            Connecting upstream task futures
-            >>> @task
-            ... def multiply(x: int, factor: int) -> int:
-            ...     return x * factor
-            >>> future_add = add(x=2, y=3)
-            >>> future_multiply = multiply(x=future_add, factor=10)
-            >>> future_multiply.run()
-            50
-
-        """
+    def is_generator(self) -> bool:
+        """Whether the wrapped function is a generator function (sync or async)."""
         raise NotImplementedError()
 
-    @abc.abstractmethod
-    def map(
-        self, *, map_mode: MapMode = "zip", **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]
-    ) -> MapTaskFuture[R]:
-        """
-        Create a fan-out operation by applying this task to mapped sequences.
+    @functools.cached_property
+    def _name_placeholders(self) -> frozenset[str]:
+        """Placeholder names found in `name`, or empty frozenset if none."""
+        return parse_template(self.name)
 
-        Args:
-            map_mode: Whether to use "product" (Cartesian product) or "zip" (element-wise zip) for
-                the fan-out operation. Defaults to "zip". If "zip" is used, all sequences must have
-                the same length or an error is raised.
-            **kwargs: Keyword arguments where values are sequences. Each sequence element will be
-                combined with elements from other sequences (based on the map_mode) and passed as
-                parameters to this task.
-
-        Returns:
-            A `MapTaskFuture` representing the fan-out execution of this task.
-
-        Examples:
-            >>> from daglite import task
-            >>> @task
-            ... def combine(x: int, y: int) -> int:
-            ...     return x + y
-
-            Zip mode (default) - All sequences provided:
-            >>> future = combine.map(x=[1, 2, 3], y=[10, 20, 30])
-            >>> future.run()
-            [11, 22, 33]
-
-            Zip mode (default) - Fixed scalar parameter with single sequence:
-            >>> future = combine.partial(y=10).map(x=[1, 2, 3])
-            >>> future.run()
-            [11, 12, 13]
-
-            Product mode - All sequences provided:
-            >>> future = combine.map(x=[1, 2], y=[10, 20], map_mode="product")
-            >>> future.run()
-            [11, 21, 12, 22]
-
-            Product mode - Fixed scalar parameter with single sequence:
-            >>> future = combine.partial(y=10).map(x=[1, 2, 3], map_mode="product")
-            >>> future.run()
-            [11, 12, 13]
-        """
-        raise NotImplementedError()
-
-
-@dataclass(frozen=True)
-class Task(BaseTask[P, R]):
-    """
-    Wraps a Python function as a composable task in a DAG.
-
-    Users should **not** directly instantiate this class, use the `@task` decorator instead.
-    """
-
-    func: Callable[P, R]
-    """Task function to be wrapped into a Task."""
-
-    is_async: bool = False
-    """Whether this task's function is an async coroutine function."""
-
-    def __post_init__(self) -> None:
-        super().__post_init__()
-        # Detect if function is async and update is_async field
-        if inspect.iscoroutinefunction(self.func):
-            object.__setattr__(self, "is_async", True)
-
-    @cached_property
-    @override
-    def signature(self) -> Signature:
+    @functools.cached_property
+    def signature(self) -> inspect.Signature:
+        """Signature of the underlying function."""
         return inspect.signature(self.func)
 
-    @override
-    def __call__(
-        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
-    ) -> TaskFuture[R]:
-        kwargs = resolve_positional_args(self.signature, args, kwargs, self.name)
-        return self.partial()(**kwargs)
+    def _bind_args(self, args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Resolve positional + keyword args to a flat dict for hashing."""
+        try:
+            ba = self.signature.bind(*args, **kwargs)
+            ba.apply_defaults()
+            return dict(ba.arguments)
+        except TypeError:
+            return kwargs
 
-    def partial(self, **kwargs: Any) -> PartialTask[P, R]:
+    def _compute_cache_key(self, bound: dict[str, Any]) -> str:
+        hash_fn = self.cache_hash_fn or default_cache_hash
+        return hash_fn(self.func, bound)
+
+    def _resolve_name(
+        self, bound: dict[str, Any], *, map_index: int | None = None, iter_index: int | None = None
+    ) -> str:
+        """Returns the task name with resolved placeholders and optional map index."""
+        if self._name_placeholders:
+            template_vars = self._build_template_vars(
+                bound, map_index=map_index, iter_index=iter_index
+            )
+            resolved = resolve_template(self.name, template_vars)
+
+            # If the template did NOT consume {map_index}, append [index] suffix.
+            if map_index is not None and _TEMPLATE_VAR_MAP_INDEX not in self._name_placeholders:
+                return f"{resolved}[{map_index}]"
+
+            return resolved
+        if map_index is not None:
+            return f"{self.name}[{map_index}]"
+        return self.name
+
+    def _resolve_dataset_key(
+        self,
+        bound: dict[str, Any],
+        *,
+        map_index: int | None = None,
+        iter_index: int | None = None,
+    ) -> str | None:
+        """Resolve the dataset output key with template placeholders, or `None` if unset."""
+        if self.dataset is None:
+            return None
+        template_vars = self._build_template_vars(bound, map_index=map_index, iter_index=iter_index)
+        return resolve_template(self.dataset, template_vars)
+
+    def _build_template_vars(
+        self, bound: dict[str, Any], *, map_index: int | None = None, iter_index: int | None = None
+    ) -> dict[str, Any]:
+        """Merge bound args with any non-None built-in template variables."""
+        template_vars = {**bound}
+        if map_index is not None:
+            template_vars[_TEMPLATE_VAR_MAP_INDEX] = map_index
+        if iter_index is not None:  # pragma: no cover - reserved for future streaming iteration
+            template_vars[_TEMPLATE_VAR_ITER_INDEX] = iter_index
+        return template_vars
+
+    def _try_save_dataset(
+        self,
+        metadata: TaskMetadata,
+        result: Any,
+        store: DatasetStore | None,
+        hook: HookRelay,
+    ) -> None:
         """
-        Partially apply some parameters of this task, returning a "partial" task.
+        Save the task result to the dataset store if a dataset key is configured.
 
-        Similar to `functools.partial`, but for daglite tasks. This creates a reusable task
-        template with some parameters already fixed. It also allows users to create tasks with a
-        mix of scalar and mapped parameters.
+        When a `DatasetReporter` is available (i.e. inside a session), the save is routed through
+        the reporter so that process/remote backends push the write back to the coordinator.
+        Otherwise falls back to a direct store write with hook dispatch.
+        """
+        if self.dataset is None or store is None:
+            return
+
+        key = self._resolve_dataset_key(metadata.inputs, map_index=metadata.map_index)
+        if key is None:  # pragma: no cover - defensive; dataset is set but key resolves to None
+            return
+
+        fmt = self.dataset_format
+
+        # Prefer the reporter (handles coordinator routing + hooks internally).
+        reporter = resolve_dataset_reporter()
+        if reporter is not None:
+            reporter.save(key, result, store, format=fmt, metadata=metadata)
+        else:
+            # Bare call outside a session — save directly with hook dispatch.
+            hook_kw = dict(key=key, value=result, format=fmt, options=None, metadata=metadata)
+            hook.before_dataset_save(**hook_kw)
+            store.save(key, result, format=fmt)
+            hook.after_dataset_save(**hook_kw)
+
+    def _prepare_execution_data(self, *args, **kwargs) -> _TaskExecutionData:
+        """
+        Prepare the task call by resolving metadata, hooks, and stores.
 
         Args:
-            **kwargs: Keyword arguments to be fixed for this task. Can include literals, variables,
-                or even `TaskFuture` objects.
+            *args: Positional arguments passed to the task.
+            **kwargs: Keyword arguments passed to the task.
 
         Returns:
-            A `PartialTask` with the specified parameters fixed.
-
-        Examples:
-            >>> from daglite import task
-            >>> @task
-            ... def score(x: int, y: int, z: int) -> float:
-            ...     return (x + y) / z
-
-            Create a partial task with `y` and `z` fixed
-            >>> seed = 42
-            >>> base = score.partial(y=seed, z=0.5)
-
-            Use the partial task with only the remaining parameter
-            >>> base(x=1)  # doctest: +ELLIPSIS
-            TaskFuture(...)
-            >>> base.map(x=[1, 2, 3, 4])  # doctest: +ELLIPSIS
-            MapTaskFuture(...)
+            _CallData DTO containing resolved metadata, hook, event reporter, cache store, and
+            dataset store.
         """
-        check_invalid_params(self.signature, kwargs, self.name)
-        return PartialTask(
-            name=self.name,
+        task_id = uuid4()
+        parent_id = resolve_parent_id()
+        map_index = resolve_map_index()
+
+        inputs = self._bind_args(args, kwargs)
+        name = self._resolve_name(inputs, map_index=map_index)
+
+        backend = resolve_backend()
+        hook = resolve_hook()
+        reporter = resolve_event_reporter()
+        cache_store = resolve_cache_store(self.cache, self.cache_store)
+        ds_store = resolve_dataset_store(self.dataset_store) if self.dataset is not None else None
+
+        metadata = TaskMetadata(
+            id=task_id,
+            name=name,
+            backend=backend,
             description=self.description,
-            task=self,
-            fixed_kwargs=dict(kwargs),
-            backend_name=self.backend_name,
-            retries=self.retries,
-            timeout=self.timeout,
-            store=self.store,
-            cache=self.cache,
-            cache_ttl=self.cache_ttl,
-            cache_hash=self.cache_hash,
+            inputs=inputs,
+            parent_id=parent_id,
+            map_index=map_index,
+            is_async=self.is_async,
+            is_generator=self.is_generator,
         )
 
-    @override
-    def map(self, *, map_mode: MapMode = "zip", **kwargs: Any) -> MapTaskFuture[R]:
-        # Create a PartialTask with no fixed params, then call map
-        return self.partial().map(**kwargs, map_mode=map_mode)
-
-    def iter(self, *args: Any, **kwargs: Any) -> IterTaskFuture[R]:
-        """
-        Creates a lazy iterator that yields items one at a time.
-
-        Args:
-            *args: Positional arguments resolved to parameters by position.
-            **kwargs: Keyword arguments matching the task function's parameters.
-
-        Returns:
-            An `IterTaskFuture` representing the lazy iterator invocation.
-        """
-        kwargs = resolve_positional_args(self.signature, args, kwargs, self.name)
-        return self.partial().iter(**kwargs)
+        return _TaskExecutionData(
+            metadata=metadata,
+            hook=hook,
+            event_reporter=reporter,
+            cache_store=cache_store,
+            dataset_store=ds_store,
+        )
 
 
 @dataclass(frozen=True)
-class PartialTask(BaseTask[P, R]):
+class SyncTask(_BaseTask[P, R]):
     """
-    A task with one or more parameters partially applied to specific values.
+    Eager task wrapping a synchronous function.
 
-    This creates a reusable task template that can be called multiple times with different values
-    for the remaining parameters. Similar to `functools.partial`.
-
-    Users should **not** directly instantiate this class, use `Task.partial()` instead.
+    Calling an instance executes the function immediately and returns its result. When an execution
+    context is active, events are emitted and hooks are fired.
     """
 
-    task: Task[Any, R]
-    """The underlying task to be called."""
-
-    fixed_kwargs: Mapping[str, Any]
-    """The parameters already bound in this PartialTask; can contain other TaskFutures."""
-
-    @cached_property
+    @property
     @override
-    def signature(self) -> Signature:
-        return self.task.signature
+    def is_async(self) -> bool:
+        return False
 
+    @property
     @override
-    def __call__(
-        self, *args: Any | TaskFuture[Any], **kwargs: Any | TaskFuture[Any]
-    ) -> TaskFuture[R]:
-        from daglite.futures import TaskFuture
+    def is_generator(self) -> bool:
+        return False
 
-        # Resolve positional args against unbound parameters (those not already fixed)
-        unbound_params = [
-            name for name in self.signature.parameters if name not in self.fixed_kwargs
-        ]
-        unbound_sig = self.signature.replace(
-            parameters=[self.signature.parameters[name] for name in unbound_params]
-        )
-        kwargs = resolve_positional_args(unbound_sig, args, kwargs, self.name)
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:  # noqa: D102
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
 
-        merged = {**self.fixed_kwargs, **kwargs}
-
-        check_invalid_params(self.signature, merged, self.name)
-        check_missing_params(self.signature, merged, self.name)
-        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
-
-        return TaskFuture(
-            task=self.task, kwargs=merged, backend_name=self.backend_name, task_store=self.store
-        )
-
-    def iter(self, **kwargs: Any) -> IterTaskFuture[R]:
-        """
-        Create a lazy iterator that yields items one at a time.
-
-        Args:
-            **kwargs: Keyword arguments for the remaining unbound parameters.
-
-        Returns:
-            An `IterTaskFuture` representing the lazy iterator invocation.
-        """
-        from daglite.futures.iter_future import IterTaskFuture
-
-        if not inspect.isgeneratorfunction(self.task.func) or not inspect.isgeneratorfunction(
-            self.task.func
-        ):
-            raise TaskError(
-                f"Task '{self.task.name}' cannot be used with .iter() because its function "
-                f"does not return a generator."
+        with ExitStack() as stack:
+            t0 = time.perf_counter()
+            context = TaskContext(
+                metadata=metadata,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
+                timestamp=t0,
             )
+            stack.enter_context(context)
 
-        merged = {**self.fixed_kwargs, **kwargs}
-        check_invalid_params(self.signature, merged, self.name)
-        check_missing_params(self.signature, merged, self.name)
-        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
-        return IterTaskFuture(
-            task=self.task,
-            kwargs=merged,
-            backend_name=self.backend_name,
-            task_store=self.store,
-        )
+            cache_key, cached = self._try_cache_hit(metadata.inputs, data.cache_store)
+            if cached is not CACHE_MISS:
+                hook.on_cache_hit(**common, key=cache_key, value=cached)
+                return cached
 
+            hook.before_node_execute(**common)
+
+            last_error = None
+            for attempt in range(1 + self.retries):
+                if attempt > 0:
+                    hook.before_node_retry(**common, error=last_error, attempt=attempt)
+                try:
+                    result = self.func(*args, **kwargs)
+                    elapsed = time.perf_counter() - t0
+                    self._try_write_cache(cache_key, result, data.cache_store)
+                    self._try_save_dataset(metadata, result, data.dataset_store, hook)
+
+                    hook.after_node_execute(**common, duration=elapsed, result=result)
+                    if attempt > 0:
+                        hook.after_node_retry(**common, attempt=attempt, succeeded=True)
+                    return result
+
+                except Exception as exc:
+                    if attempt > 0:
+                        hook.after_node_retry(**common, attempt=attempt, succeeded=False)
+                    last_error = exc
+
+            # All attempts failed; fire the error hook and raise the last exception.
+            elapsed = time.perf_counter() - t0
+            msg = f"Task {metadata.name!r} failed"
+            msg += f" after {1 + self.retries} attempts" if self.retries > 0 else ""
+            error = TaskError(msg + " with error: " + str(last_error))
+            hook.on_node_error(**common, error=last_error, duration=elapsed)
+            raise error from last_error
+
+    def _try_cache_hit(
+        self, inputs: dict[str, Any], store: CacheStore | None
+    ) -> tuple[str | None, Any]:
+        """Attempts lookup cached value; result is (None, CACHE_MISS) on miss."""
+        if not self.cache or store is None:
+            return None, CACHE_MISS
+
+        cache_key = self._compute_cache_key(inputs)
+        cached = store.get(cache_key)
+        return cache_key, cached
+
+    def _try_write_cache(self, key: str | None, result: Any, store: CacheStore | None) -> bool:
+        """Attempts to write the result to the cache if caching is enabled."""
+        if not self.cache or store is None or key is None:
+            return False
+
+        store.put(key, result, ttl=self.cache_ttl)
+        return True
+
+
+@dataclass(frozen=True)
+class SyncTaskStream(_BaseTask[P, R]):
+    """Task wrapping a sync generator; yields items lazily."""
+
+    @property
     @override
-    def map(
-        self, *, map_mode: MapMode = "zip", **kwargs: Iterable[Any] | TaskFuture[Iterable[Any]]
-    ) -> MapTaskFuture[R]:
-        from daglite.futures import MapTaskFuture
-        from daglite.futures.base import BaseTaskFuture
-        from daglite.futures.iter_future import IterTaskFuture
+    def is_async(self) -> bool:
+        return False
 
-        merged = {**self.fixed_kwargs, **kwargs}
+    @property
+    @override
+    def is_generator(self) -> bool:
+        return True
 
-        check_invalid_params(self.signature, merged, self.name)
-        check_missing_params(self.signature, merged, self.name)
-        check_overlap_params(dict(self.fixed_kwargs), kwargs, self.name)
-        check_invalid_map_params(self.signature, kwargs, self.name)
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Iterator[R]:  # noqa: D102
+        return self._stream(*args, **kwargs)
 
-        # Validate: .iter() sources cannot be mixed with other mapped arguments
-        iter_kwargs = {k for k, v in kwargs.items() if isinstance(v, IterTaskFuture)}
-        if iter_kwargs and len(kwargs) > len(iter_kwargs):
-            raise ParameterError(
-                f"`.iter()` must be the only mapped argument for task '{self.name}'. "
-                f"Cannot mix iter source with other mapped arguments."
+    def _stream(self, *args: Any, **kwargs: Any) -> Iterator[Any]:
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
+
+        with ExitStack() as stack:
+            t0 = time.perf_counter()
+            context = TaskContext(
+                metadata=metadata,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
+                timestamp=t0,
             )
+            stack.enter_context(context)
 
-        if map_mode == "zip":
-            len_details = {
-                len(val)  # type: ignore
-                for val in kwargs.values()
-                if not isinstance(val, BaseTaskFuture)
-            }
-            if len(len_details) > 1:
-                raise ParameterError(
-                    f"Mixed lengths for task '{self.name}', pairwise fan-out with `map` in 'zip' "
-                    f"mode requires all sequences to have the same length. Found lengths: "
-                    f"{sorted(len_details)}"
-                )
+            hook.before_node_execute(**common)
 
-        return MapTaskFuture(
-            task=self.task,
-            mode=map_mode,
-            fixed_kwargs=self.fixed_kwargs,
-            mapped_kwargs=dict(kwargs),
-            backend_name=self.backend_name,
-            task_store=self.store,
-        )
+            try:
+                for index, item in enumerate(self.func(*args, **kwargs)):
+                    hook.node_iteration(**common, index=index)
+                    yield item
+
+                elapsed = time.perf_counter() - t0
+                hook.after_node_execute(**common, duration=elapsed, result=None)
+
+            except Exception as exc:
+                elapsed = time.perf_counter() - t0
+                hook.on_node_error(**common, error=exc, duration=elapsed)
+                raise TaskError(f"Task {metadata.name!r} failed with error: {exc}") from exc
+
+
+@dataclass(frozen=True)
+class AsyncTask(_BaseTask[P, R]):
+    """
+    Eager task wrapping an async coroutine function.
+
+    Calling an instance returns a coroutine that the caller must `await`. When an execution context
+    is active, events are emitted and hooks are fired.
+    """
+
+    @property
+    @override
+    def is_async(self) -> bool:
+        return True
+
+    @property
+    @override
+    def is_generator(self) -> bool:
+        return False
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, R]:  # noqa: D102
+        return self._run(*args, **kwargs)
+
+    async def _run(self, *args: Any, **kwargs: Any) -> R:
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
+
+        async with AsyncExitStack() as stack:
+            t0 = time.perf_counter()
+            context = TaskContext(
+                metadata=metadata,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
+                timestamp=t0,
+            )
+            stack.enter_context(context)
+
+            cache_key, cached = await self._try_cache_hit(metadata.inputs, data.cache_store)
+            if cached is not CACHE_MISS:
+                hook.on_cache_hit(**common, key=cache_key, value=cached)
+                return cached
+
+            hook.before_node_execute(**common)
+
+            last_error = None
+            for attempt in range(1 + self.retries):
+                if attempt > 0:
+                    hook.before_node_retry(**common, error=last_error, attempt=attempt)
+                try:
+                    result = await self.func(*args, **kwargs)
+                    elapsed = time.perf_counter() - t0
+                    await self._try_write_cache(cache_key, result, data.cache_store)
+                    self._try_save_dataset(metadata, result, data.dataset_store, hook)
+
+                    hook.after_node_execute(**common, duration=elapsed, result=result)
+                    if attempt > 0:
+                        hook.after_node_retry(**common, attempt=attempt, succeeded=True)
+                    return result
+
+                except Exception as exc:
+                    if attempt > 0:
+                        hook.after_node_retry(**common, attempt=attempt, succeeded=False)
+                    last_error = exc
+
+            # All attempts failed; fire the error hook and raise the last exception.
+            elapsed = time.perf_counter() - t0
+            msg = f"Task {metadata.name!r} failed"
+            msg += f" after {1 + self.retries} attempts" if self.retries > 0 else ""
+            error = TaskError(msg + " with error: " + str(last_error))
+            hook.on_node_error(**common, error=last_error, duration=elapsed)
+            raise error from last_error
+
+    async def _try_cache_hit(
+        self, inputs: dict[str, Any], store: CacheStore | None
+    ) -> tuple[str | None, Any]:
+        """Attempts lookup cached value; result is (None, CACHE_MISS) on miss."""
+        if not self.cache or store is None:
+            return None, CACHE_MISS
+
+        cache_key = self._compute_cache_key(inputs)
+        cached = store.get(cache_key)
+        return cache_key, cached
+
+    async def _try_write_cache(
+        self, key: str | None, result: Any, store: CacheStore | None
+    ) -> bool:
+        """Attempts to write the result to the cache if caching is enabled."""
+        if not self.cache or store is None or key is None:
+            return False
+
+        store.put(key, result, ttl=self.cache_ttl)
+        return True
+
+
+@dataclass(frozen=True)
+class AsyncTaskStream(_BaseTask[P, R]):
+    """Task wrapping an async generator; yields items lazily."""
+
+    @property
+    @override
+    def is_async(self) -> bool:
+        return True
+
+    @property
+    @override
+    def is_generator(self) -> bool:
+        return True
+
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> AsyncIterator[R]:  # noqa: D102
+        return self._stream(*args, **kwargs)
+
+    async def _stream(self, *args: Any, **kwargs: Any) -> AsyncIterator[Any]:
+        data = self._prepare_execution_data(*args, **kwargs)
+        metadata, hook = data.metadata, data.hook
+        common = {"metadata": metadata, "reporter": data.event_reporter}
+
+        async with AsyncExitStack() as stack:
+            t0 = time.perf_counter()
+            context = TaskContext(
+                metadata=metadata,
+                cache_store=data.cache_store,
+                dataset_store=data.dataset_store,
+                timestamp=t0,
+            )
+            stack.enter_context(context)
+
+            hook.before_node_execute(**common)
+
+            try:
+                index = 0
+                async for item in self.func(*args, **kwargs):
+                    hook.node_iteration(**common, index=index)
+                    yield item
+                    index += 1
+
+                elapsed = time.perf_counter() - t0
+                hook.after_node_execute(**common, duration=elapsed, result=None)
+
+            except Exception as exc:
+                elapsed = time.perf_counter() - t0
+                hook.on_node_error(**common, error=exc, duration=elapsed)
+                raise TaskError(f"Task {metadata.name!r} failed with error: {exc}") from exc
