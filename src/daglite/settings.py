@@ -68,7 +68,7 @@ class DagliteSettings:
         default_factory=lambda: os.getenv("DAGLITE_CACHE_STORE") or ".cache"
     )
     """
-    Default cache store for caching tasks (defaults to None, which means caching is disabled).
+    Default cache store for caching tasks (defaults to ".cache").
 
     Can be a `CacheStore` instance, a string path (which will be used to create a `CacheStore`
     with a `FileDriver`), or None to disable caching. Can also be set via the `DAGLITE_CACHE_STORE`
