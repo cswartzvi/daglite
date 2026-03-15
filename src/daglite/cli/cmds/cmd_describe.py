@@ -27,9 +27,6 @@ def describe_workflow(target: str, *rest: str):
         raise SystemExit(2) from e
 
     tokens = normalize_tokens(rest)
-    if tokens and tokens[0] == "--":
-        tokens = tokens[1:]
-
     if tokens:
         try:
             bound = validate_workflow_args(target, tokens)
@@ -49,7 +46,15 @@ def _print_describe_help(target: str) -> None:
     wf_app.help_print()
 
 
-def _print_workflow_suggestions(root: str) -> None:
+def _print_workflow_suggestions(target: str) -> None:
+    # Extract the module portion from the target spec.
+    if ":" in target:
+        root = target.split(":", 1)[0]
+    elif "." in target:
+        root = target.rsplit(".", 1)[0]
+    else:
+        return
+
     try:
         workflows = discover_workflows(root)
     except ModuleNotFoundError:
