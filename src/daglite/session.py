@@ -194,7 +194,9 @@ def _resolve_cache_store(cache: str | CacheStore | None, settings: Any) -> Cache
     from daglite.cache.store import CacheStore
 
     if cache is None:
-        return None
+        cache = getattr(settings, "cache_store", None)
+        if cache is None:
+            return None
 
     if isinstance(cache, CacheStore):
         return cache

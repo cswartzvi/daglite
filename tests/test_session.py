@@ -98,14 +98,21 @@ class TestSessionCache:
 
     def test_cache_store_none(self) -> None:
         with session(cache_store=None) as ctx:
-            assert ctx.cache_store is None
+            # Falls back to settings.cache_store (defaults to ".cache")
+            assert ctx.cache_store is not None
 
 
 class TestResolveCacheStore:
     """Tests for the ``_resolve_cache_store`` helper."""
 
-    def test_none_returns_none(self) -> None:
+    def test_none_falls_back_to_settings(self) -> None:
         settings = DagliteSettings()
+        result = _resolve_cache_store(None, settings)
+        # Falls back to settings.cache_store (defaults to ".cache")
+        assert isinstance(result, CacheStore)
+
+    def test_none_returns_none_when_settings_unset(self) -> None:
+        settings = DagliteSettings(cache_store=None)
         assert _resolve_cache_store(None, settings) is None
 
     def test_cache_store_instance_passthrough(self, tmp_path: Path) -> None:
