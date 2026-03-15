@@ -4,8 +4,10 @@ import logging.config
 import os
 from collections.abc import Hashable
 from pathlib import Path
-from typing import Any, override
+from typing import Any
 from uuid import UUID
+
+from typing_extensions import override
 
 from daglite.logging.core import DEFAULT_LOGGER_NAME_TASKS
 from daglite.logging.core import LOGGER_EVENT

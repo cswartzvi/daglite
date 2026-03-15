@@ -8,11 +8,11 @@ from contextvars import Token
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import fields
-from typing import TYPE_CHECKING, Any, ClassVar, override
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 from uuid import uuid4
 
-from typing_extensions import Self
+from typing_extensions import Self, override
 
 if TYPE_CHECKING:
     from daglite.cache.store import CacheStore

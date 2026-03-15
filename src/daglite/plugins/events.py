@@ -5,7 +5,9 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from dataclasses import field
-from typing import Any, Callable, Hashable, override
+from typing import Any, Callable, Hashable
+
+from typing_extensions import override
 
 from daglite._processor import BackgroundQueueProcessor
 

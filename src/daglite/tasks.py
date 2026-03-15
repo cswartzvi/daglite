@@ -23,12 +23,12 @@ from typing import (
     Protocol,
     TypeVar,
     overload,
-    override,
 )
 from uuid import UUID
 from uuid import uuid4
 
 from pluggy import HookRelay
+from typing_extensions import override
 
 from daglite._context import TaskContext
 from daglite._resolvers import resolve_backend
