@@ -47,14 +47,14 @@ class CentralizedLoggingPlugin(EventHandlerPlugin):
         """
         registry.register(LOGGER_EVENT, self._handle_log_event)
 
-    def _handle_log_event(self, event_type: Hashable, event_dta: dict[str, Any]) -> None:
+    def _handle_log_event(self, event_type: Hashable, event_data: dict[str, Any]) -> None:
         """Handles log event from worker."""
 
-        logger_name = event_dta.get("name", "daglite")
-        level = event_dta.get("level", "INFO")
-        message = event_dta.get("message", "")
-        exc_info_str = event_dta.get("exc_info")
-        all_extra = event_dta.get("extra", {})
+        logger_name = event_data.get("name", "daglite")
+        level = event_data.get("level", "INFO")
+        message = event_data.get("message", "")
+        exc_info_str = event_data.get("exc_info")
+        all_extra = event_data.get("extra", {})
 
         # Filter based on the plugin's configured minimum level
         log_level = getattr(logging, level, logging.INFO)
