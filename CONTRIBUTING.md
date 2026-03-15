@@ -189,7 +189,7 @@ Documentation improvements are always welcome! You can:
 - Write tutorials or guides
 - Improve API documentation
 
-Documentation is in the `docs/` directory and uses [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/).
+Documentation is in the `docs/` directory and uses [Zensical](https://zensical.org/docs/).
 
 ### Building Documentation Locally
 
@@ -198,7 +198,7 @@ Documentation is in the `docs/` directory and uses [Material for MkDocs](https:/
 uv pip install -e ".[docs]"
 
 # Serve docs locally
-mkdocs serve
+zensical serve
 
 # Open http://127.0.0.1:8000 in your browser
 ```

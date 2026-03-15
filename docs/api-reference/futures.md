@@ -1,27 +1,8 @@
 # Futures
 
-Task futures and fluent operations.
+This page was previously generated through MkDocs plugin infrastructure and is now a placeholder during the Zensical migration.
 
-## TaskFuture
-
-::: daglite.futures.TaskFuture
-    options:
-      show_root_heading: true
-      show_source: false
-      members:
-        - then
-        - then_product
-        - then_zip
-
-## MapTaskFuture
-
-::: daglite.futures.MapTaskFuture
-    options:
-      show_root_heading: true
-      show_source: false
-      members:
-        - map
-        - join
-        - then
-        - then_product
-        - then_zip
+## TODO
+- Define canonical objects/functions to document.
+- Choose render strategy for signatures and examples.
+- Add review checklist to keep reference synchronized with source.
