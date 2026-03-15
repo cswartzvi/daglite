@@ -1,4 +1,4 @@
-"""CLI ``run`` command for executing workflows."""
+"""CLI `run` command for executing workflows."""
 
 from __future__ import annotations
 
@@ -77,15 +77,17 @@ def run(
     params = parse_workflow_params(workflow_obj, param)
 
     # Apply settings overrides
-    settings_dict: dict[str, Any] = {"default_backend": backend}
+    settings_dict: dict[str, Any] = {"backend": backend}
     settings_dict.update(parse_settings_overrides(settings))
     set_global_settings(DagliteSettings(**settings_dict))
 
     # Execute the workflow
     try:
-        if parallel:
-            asyncio.run(workflow_obj.run_async(**params))  # type: ignore[call-arg]
+        from daglite.workflows import AsyncWorkflow
+
+        if isinstance(workflow_obj, AsyncWorkflow):
+            asyncio.run(workflow_obj(**params))  # type: ignore[call-arg]
         else:
-            workflow_obj.run(**params)  # type: ignore[call-arg]
+            workflow_obj(**params)  # type: ignore[call-arg]
     except Exception as e:
         raise click.ClickException(f"Workflow execution failed: {e}") from e

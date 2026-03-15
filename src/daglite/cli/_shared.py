@@ -4,15 +4,13 @@ import inspect
 import types
 import typing
 import warnings
-from typing import TYPE_CHECKING, Any, Union, get_args, get_origin
+from typing import Any, Union, get_args, get_origin
 
 import click
 
 from daglite.plugins.manager import has_plugin
 from daglite.plugins.manager import register_plugins
-
-if TYPE_CHECKING:
-    from daglite.workflows import Workflow
+from daglite.workflows import BaseWorkflow
 
 
 def setup_cli_plugins() -> None:
@@ -25,14 +23,13 @@ def setup_cli_plugins() -> None:
     """
     try:
         from daglite_rich.logging import RichLifecycleLoggingPlugin
-        from daglite_rich.progress import RichProgressPlugin
 
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+        from daglite.logging.plugin import LifecycleLoggingPlugin
 
         if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(RichLifecycleLoggingPlugin(), RichProgressPlugin())
+            register_plugins(RichLifecycleLoggingPlugin())
     except ImportError:  # pragma: no cover – only reached when daglite-rich is not installed
-        from daglite.plugins.builtin.logging import LifecycleLoggingPlugin
+        from daglite.logging.plugin import LifecycleLoggingPlugin
 
         if not has_plugin(LifecycleLoggingPlugin):
             register_plugins(LifecycleLoggingPlugin())
@@ -78,7 +75,9 @@ def parse_param_value(value: str, param_type: type | None) -> Any:
             return value
 
 
-def parse_workflow_params(workflow_obj: "Workflow[Any]", param: tuple[str, ...]) -> dict[str, Any]:
+def parse_workflow_params(
+    workflow_obj: BaseWorkflow[Any, Any], param: tuple[str, ...]
+) -> dict[str, Any]:
     """
     Parse and validate `--param` strings against a workflow's signature.
 

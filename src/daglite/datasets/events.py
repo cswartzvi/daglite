@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from daglite.datasets.store import DatasetStore
+    from daglite.tasks import TaskMetadata
 
 
 @dataclass(frozen=True)
@@ -18,9 +19,10 @@ class DatasetSaveRequest:
     Attributes:
         key: Storage key/path for the output.
         value: The Python object to persist.
-        store: The ``DatasetStore`` to write to.
-        format: Optional serialization format hint (e.g. ``"pickle"``).
+        store: The `DatasetStore` to write to.
+        format: Optional serialization format hint (e.g. `"pickle"`).
         options: Additional options passed to the Dataset's save method.
+        metadata: Task metadata for the originating task, or ``None``.
 
     Examples:
         >>> from daglite.datasets.store import DatasetStore
@@ -39,3 +41,4 @@ class DatasetSaveRequest:
     store: DatasetStore
     format: str | None = None
     options: dict[str, Any] | None = None
+    metadata: TaskMetadata | None = None

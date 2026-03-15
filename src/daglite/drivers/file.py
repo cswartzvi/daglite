@@ -62,8 +62,8 @@ class FileDriver(Driver):
         """
         Return True only for local file paths.
 
-        Plain paths (no protocol) and the ``file`` protocol are considered
-        local.  All other protocols (e.g. ``s3``, ``gcs``) are remote.
+        Plain paths (no protocol) and the `file` protocol are considered
+        local.  All other protocols (e.g. `s3`, `gcs`) are remote.
         """
         return self._protocol in ("", "file")
 
@@ -121,7 +121,7 @@ class FileDriver(Driver):
 
         # Write data
         with self.fs.open(path, "wb") as f:
-            f.write(data)  # type: ignore
+            f.write(data)  # pyright: ignore
 
         return path
 
@@ -133,7 +133,7 @@ class FileDriver(Driver):
             raise KeyError(f"Key '{key}' not found")
 
         with self.fs.open(path, "rb") as f:
-            return f.read()  # type: ignore[return-value]
+            return f.read()  # pyright: ignore
 
     @override
     def exists(self, key: str) -> bool:

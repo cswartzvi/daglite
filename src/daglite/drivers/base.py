@@ -64,11 +64,11 @@ class Driver(ABC):
         """
         Whether this driver accesses local storage.
 
-        Returns ``True`` for drivers that persist to the local filesystem (or
-        other resources only reachable from the coordinator), ``False`` for
+        Returns `True` for drivers that persist to the local filesystem (or
+        other resources only reachable from the coordinator), `False` for
         remote/network storage (S3, GCS, …) accessible from any worker.
 
-        Subclasses for remote drivers should override this to return ``False``.
+        Subclasses for remote drivers should override this to return `False`.
         """
         return True  # pragma: no cover
 

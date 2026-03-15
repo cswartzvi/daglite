@@ -101,6 +101,9 @@ mypy_path = "/src:extras/rich/src" # Add new plugins here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
+[tool.pyrefly]
+search-path = [".", "src"]
+
 [tool.pyrefly.errors]
 invalid-param-spec = false
 
@@ -120,9 +123,6 @@ exclude = [
     "**/.pytest_cache",
     "**/.mypy_cache",
     "**/.ruff_cache",
-    "./tests/contracts/typing/assert_type_mypy.py",
-    "./tests/contracts/typing/assert_type_pyrefly.py",
-    "./tests/contracts/typing/assert_type_ty.py",
 
 ]
 typeCheckingMode = "standard"

@@ -1,4 +1,4 @@
-"""@workflow decorator and Workflow class for multi-sink task networks."""
+"""@workflow decorator and Workflow class for eager task entry points."""
 
 from __future__ import annotations
 
@@ -7,22 +7,40 @@ import inspect
 import sys
 import typing
 from collections.abc import Callable
-from collections.abc import Iterator
-from collections.abc import Mapping
-from collections.abc import ValuesView
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generic, ItemsView, ParamSpec, overload
-from uuid import UUID
-
-from daglite.exceptions import AmbiguousResultError
-from daglite.futures.base import BaseTaskFuture
+from typing import Any, Generic, ParamSpec, Protocol, TypeVar, overload
 
 P = ParamSpec("P")
+R = TypeVar("R")
+
+
+# region Decorator
+
+
+class _WorkflowDecorator(Protocol):
+    """Return type for keyword-args form of `workflow()`."""
+
+    @overload
+    def __call__(  # type: ignore[overload-overlap]
+        self, func: Callable[P, Coroutine[Any, Any, R]], /
+    ) -> AsyncWorkflow[P, R]: ...
+
+    @overload
+    def __call__(self, func: Callable[P, R], /) -> SyncWorkflow[P, R]: ...
+
+    def __call__(self, func: Any, /) -> Any: ...
 
 
 @overload
-def workflow(func: Callable[P, Any]) -> Workflow[P]: ...
+def workflow(  # type: ignore[overload-overlap]
+    func: Callable[P, Coroutine[Any, Any, R]], /
+) -> AsyncWorkflow[P, R]: ...
+
+
+@overload
+def workflow(func: Callable[P, R], /) -> SyncWorkflow[P, R]: ...
 
 
 @overload
@@ -30,25 +48,27 @@ def workflow(
     *,
     name: str | None = None,
     description: str | None = None,
-) -> Callable[[Callable[P, Any]], Workflow[P]]: ...
+) -> _WorkflowDecorator: ...
 
 
 def workflow(
-    func: Callable[P, Any] | None = None,
+    func: Any = None,
     *,
     name: str | None = None,
     description: str | None = None,
-) -> Workflow[P] | Callable[[Callable[P, Any]], Workflow[P]]:
+) -> Any:
     """
-    Decorator to convert a Python function into a daglite `Workflow`.
+    Decorator to convert a Python function into a daglite workflow.
 
-    Workflows are **multi-sink entry points** for DAG execution. They wrap a function that builds a
-    task graph returning one or more `BaseTaskFuture` objects (as a single future, tuple, or list)
-    and provide convenient methods to evaluate the entire graph in one pass:
+    Workflows are **named entry points** that wrap a function calling `@task`-decorated functions.
+    Tasks execute eagerly inside the workflow — they run immediately and return real values.
 
-    - Call the workflow to invoke the underlying function (returns the raw futures).
-    - Use `.run()` / `.run_async()` to build and evaluate in one step, returning a `WorkflowResult`
-      indexable by task name or UUID.
+    Calling a workflow sets up a managed session that provides backend, cache, plugin, and event
+    infrastructure. Sync workflows return the result directly; async workflows return a coroutine
+    that the caller must `await`.
+
+    Note that workflows cannot wrap generator functions. Use `@task` for generator functions or
+    collect results inside the workflow.
 
     Args:
         func: The function to wrap. When used without parentheses (`@workflow`), this is
@@ -57,8 +77,8 @@ def workflow(
         description: Workflow description.  Defaults to the function's docstring.
 
     Returns:
-        Either a `Workflow` (when used as `@workflow`) or a decorator function (when used as
-        `@workflow()`).
+        A `SyncWorkflow` or `AsyncWorkflow` (when used as `@workflow`) or a decorator function
+        (when used as `@workflow()`).
 
     Examples:
         >>> from daglite import task, workflow
@@ -69,34 +89,38 @@ def workflow(
         ... def mul(x: int, y: int) -> int:
         ...     return x * y
 
-        Single-sink workflow
+        Single-value workflow
         >>> @workflow
         ... def my_workflow(x: int, y: int):
         ...     return add(x=x, y=y)
-        >>> result = my_workflow.run(2, 3)
-        >>> result["add"]
+        >>> my_workflow(2, 3)
         5
 
-        Multi-sink workflow
+        Multi-step workflow
         >>> @workflow
-        ... def dual_workflow(x: int, y: int):
-        ...     return add(x=x, y=y), mul(x=x, y=y)
-        >>> result = dual_workflow.run(2, 3)
-        >>> result["add"], result["mul"]
-        (5, 6)
+        ... def chain_workflow(x: int, y: int):
+        ...     a = add(x=x, y=y)
+        ...     return mul(x=a, y=10)
+        >>> chain_workflow(2, 3)
+        50
     """
 
-    def decorator(fn: Callable[P, Any]) -> Workflow[P]:
+    def decorator(fn: Callable[..., Any]) -> SyncWorkflow[Any, Any] | AsyncWorkflow[Any, Any]:
         if inspect.isclass(fn) or not callable(fn):
             raise TypeError("`@workflow` can only be applied to callable functions.")
 
-        return Workflow(
-            func=fn,
-            name=name if name is not None else getattr(fn, "__name__", "unnamed_workflow"),
-            description=description
-            if description is not None
-            else getattr(fn, "__doc__", "") or "",
-        )
+        if inspect.isgeneratorfunction(fn) or inspect.isasyncgenfunction(fn):
+            raise TypeError(
+                "`@workflow` cannot wrap generator functions. Use `@task` for generator functions "
+                "or collect results inside the workflow."
+            )
+
+        _name = name if name is not None else getattr(fn, "__name__", "unnamed_workflow")
+        _description = description if description is not None else getattr(fn, "__doc__", "") or ""
+
+        if inspect.iscoroutinefunction(fn):
+            return AsyncWorkflow(func=fn, name=_name, description=_description)
+        return SyncWorkflow(func=fn, name=_name, description=_description)
 
     if func is not None:
         return decorator(func)
@@ -104,7 +128,10 @@ def workflow(
     return decorator
 
 
-def load_workflow(workflow_path: str) -> Workflow[Any]:
+# region Load
+
+
+def load_workflow(workflow_path: str) -> BaseWorkflow:
     """
     Load a workflow from a module path.
 
@@ -139,7 +166,7 @@ def load_workflow(workflow_path: str) -> Workflow[Any]:
 
     workflow_obj = getattr(module, attr_name)
 
-    if not isinstance(workflow_obj, Workflow):
+    if not isinstance(workflow_obj, (SyncWorkflow, AsyncWorkflow)):
         raise TypeError(
             f"'{workflow_path}' is not a Workflow. Did you forget to use the @workflow decorator?"
         )
@@ -147,19 +174,18 @@ def load_workflow(workflow_path: str) -> Workflow[Any]:
     return workflow_obj
 
 
+# region Workflow types
+
+
 @dataclass(frozen=True)
-class Workflow(Generic[P]):
+class BaseWorkflow(Generic[P, R]):
     """
-    Entry point for building and running a multi-sink task graph.
+    Shared base for sync and async workflow types.
 
-    Users should **not** directly instantiate this class — use the `@workflow` decorator instead.
+    Workflows are **named entry points** for running a multi-task function
+    with full session infrastructure (backend, cache, plugins, events).
 
-    A workflow wraps a function that accepts parameters and returns one or more `BaseTaskFuture`
-    objects (single future, tuple, or list).  Workflows can be invoked two ways:
-
-    1. **Call** — `workflow(...)` returns the raw future(s) for manual handling.
-    2. **Run** — `workflow.run(...)` / `workflow.run_async(...)` builds and evaluates the DAG in a
-       single step, returning a `WorkflowResult`.
+    Users should **not** directly instantiate workflow classes — use the `@workflow` decorator.
     """
 
     func: Callable[P, Any]
@@ -171,68 +197,6 @@ class Workflow(Generic[P]):
     description: str
     """Description of the workflow."""
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Any:
-        """Call the underlying workflow function, returning the raw future(s)."""
-        return self.func(*args, **kwargs)
-
-    def _collect_futures(self, raw: Any) -> list[BaseTaskFuture]:
-        """Normalize the decorated function's return value to a list of futures."""
-        if isinstance(raw, BaseTaskFuture):
-            return [raw]
-        if isinstance(raw, (tuple, list)):
-            futures = list(raw)
-            if not futures:
-                raise TypeError(
-                    "@workflow function must return one or more BaseTaskFuture "
-                    "objects; received an empty tuple/list."
-                )
-            for idx, item in enumerate(futures):
-                if not isinstance(item, BaseTaskFuture):
-                    raise TypeError(
-                        "@workflow function must return only BaseTaskFuture objects; "
-                        f"element at index {idx} has invalid type "
-                        f"{type(item).__name__!r}."
-                    )
-            return futures
-        raise TypeError(
-            "@workflow function must return a BaseTaskFuture or a non-empty "
-            f"tuple/list of them, got {type(raw).__name__!r}."
-        )
-
-    def run(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:
-        """
-        Build and evaluate the workflow synchronously.
-
-        Cannot be called from within an async context. Use `.run_async()` instead.
-
-        Args:
-            *args: Positional arguments forwarded to the workflow function.
-            **kwargs: Keyword arguments forwarded to the workflow function.
-
-        Returns:
-            A `WorkflowResult` containing the evaluated outputs of all sink nodes.
-        """
-        from daglite.engine import evaluate_workflow
-
-        futures = self._collect_futures(self.func(*args, **kwargs))
-        return evaluate_workflow(futures)
-
-    async def run_async(self, *args: P.args, **kwargs: P.kwargs) -> WorkflowResult:
-        """
-        Build and evaluate the workflow asynchronously.
-
-        Args:
-            *args: Positional arguments forwarded to the workflow function.
-            **kwargs: Keyword arguments forwarded to the workflow function.
-
-        Returns:
-            A `WorkflowResult` containing the evaluated outputs of all sink nodes.
-        """
-        from daglite.engine import evaluate_workflow_async
-
-        futures = self._collect_futures(self.func(*args, **kwargs))
-        return await evaluate_workflow_async(futures)
-
     @property
     def signature(self) -> inspect.Signature:
         """Get the signature of the underlying workflow function."""
@@ -242,9 +206,9 @@ class Workflow(Generic[P]):
         """
         Extract parameter names and their type annotations from the workflow function.
 
-        Uses ``typing.get_type_hints`` rather than the raw ``inspect.Signature``
-        so that stringified annotations (produced by ``from __future__ import
-        annotations``) are resolved to their actual types.
+        Uses `typing.get_type_hints` rather than the raw `inspect.Signature`
+        so that stringified annotations (produced by `from __future__ import
+        annotations`) are resolved to their actual types.
 
         Returns:
             Dictionary mapping parameter names to their type annotations. If a parameter has no
@@ -272,128 +236,37 @@ class Workflow(Generic[P]):
 
 
 @dataclass(frozen=True)
-class WorkflowResult(Mapping[str, Any]):
+class SyncWorkflow(BaseWorkflow[P, R]):
     """
-    Holds the evaluated outputs of a `@workflow`, indexable by task name or UUID.
+    Workflow wrapping a synchronous function.
 
-    Access results by name (`result["task_name"]`) or by UUID (`result[uuid]`). If two sink nodes
-    share the same name, name-based lookup raises `AmbiguousResultError`; UUID-based lookup always
-    works.
+    Calling an instance sets up a `session`, executes the function, and returns its result.
     """
 
-    _results: dict[UUID, Any]
-    """Primary store: UUID → result value."""
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:  # noqa: D102
+        from daglite.session import session
 
-    _by_name: dict[str, list[UUID]]
-    """Secondary index: task name → list of UUIDs (typically one, but may be many)."""
-
-    @classmethod
-    def build(cls, results: dict[UUID, Any], name_for: dict[UUID, str]) -> WorkflowResult:
-        """Build a WorkflowResult from raw results and a uuid→name mapping."""
-        by_name: dict[str, list[UUID]] = {}
-        for uid, name in name_for.items():
-            by_name.setdefault(name, []).append(uid)
-        return cls(_results=results, _by_name=by_name)
-
-    def __getitem__(self, key: str | UUID) -> Any:
-        if isinstance(key, UUID):
-            try:
-                return self._results[key]
-            except KeyError:
-                raise KeyError(f"No workflow output with UUID {key!r}")
-        uuids = self._by_name.get(key)
-        if not uuids:
-            raise KeyError(f"No workflow output named {key!r}")
-        if len(uuids) > 1:
-            raise AmbiguousResultError(
-                f"Multiple sink nodes named {key!r}: {uuids}. "
-                f"Use a UUID to disambiguate: result[uuid]"
-            )
-        return self._results[uuids[0]]
-
-    def single(self, name: str) -> Any:
-        """
-        Return the result for `name`, asserting there is exactly one.
-
-        Equivalent to `result[name]` — raises `AmbiguousResultError` if multiple sinks share this
-        name, or `KeyError` if none do. The method name makes the intent explicit when reading code.
-
-        Args:
-            name: Task name or alias to look up.
-
-        Returns:
-            The evaluated output of the single matching sink node.
-
-        Raises:
-            KeyError: If no sink with this name exists.
-            AmbiguousResultError: If multiple sinks share this name.
-        """
-        return self[name]
-
-    def all(self, name: str) -> list[Any]:
-        """
-        Return all results for `name` as a list.
-
-        Unlike `result[name]`, this never raises `AmbiguousResultError`. Useful for fan-out
-        patterns where multiple sink nodes intentionally share the same name and you want all of
-        their values.
-
-        Args:
-            name: Task name or alias to look up.
-
-        Returns:
-            A list of evaluated outputs for all matching sink nodes. Returns an empty list if no
-            sink with this name exists.
-        """
-        return [self._results[uid] for uid in self._by_name.get(name, [])]
-
-    def values(self) -> ValuesView[Any]:
-        """Iterate over all results in name-index order, expanding duplicate-named sinks."""
-        return _WorkflowValuesView(self)
-
-    def items(self) -> ItemsView[str, Any]:
-        """
-        Iterate over (name, value) pairs, expanding duplicate-named sinks.
-
-        Unlike `result[name]`, this never raises `AmbiguousResultError`. Duplicate-named sinks each
-        appear as a separate `(name, value)` pair.
-        """
-        return _WorkflowItemsView(self)
-
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._by_name)
-
-    def __len__(self) -> int:
-        return len(self._by_name)
-
-    def __repr__(self) -> str:
-        names = list(self._by_name)
-        return f"WorkflowResult({names})"
+        with session():
+            return self.func(*args, **kwargs)
 
 
-class _WorkflowValuesView(ValuesView[Any]):
-    """ValuesView that expands duplicate-named sinks instead of raising."""
+@dataclass(frozen=True)
+class AsyncWorkflow(BaseWorkflow[P, R]):
+    """
+    Workflow wrapping an async coroutine function.
 
-    _mapping: WorkflowResult  # type: ignore[assignment]
+    Calling an instance returns a coroutine that sets up an `async_session`, executes the function,
+    and returns its result.
+    """
 
-    def __iter__(self) -> Iterator[Any]:
-        for uuids in self._mapping._by_name.values():
-            for uid in uuids:
-                yield self._mapping._results[uid]
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> Coroutine[Any, Any, R]:  # noqa: D102
+        return self._run(*args, **kwargs)
 
-    def __len__(self) -> int:
-        return len(self._mapping._results)
+    async def _run(self, *args: Any, **kwargs: Any) -> R:
+        from daglite.session import async_session
 
-
-class _WorkflowItemsView(ItemsView[str, Any]):
-    """ItemsView that expands duplicate-named sinks instead of raising."""
-
-    _mapping: WorkflowResult  # type: ignore[assignment]
-
-    def __iter__(self) -> Iterator[tuple[str, Any]]:
-        for name, uuids in self._mapping._by_name.items():
-            for uid in uuids:
-                yield name, self._mapping._results[uid]
-
-    def __len__(self) -> int:
-        return len(self._mapping._results)
+        async with async_session():
+            result = self.func(*args, **kwargs)
+            if inspect.isawaitable(result):
+                return await result
+            return result

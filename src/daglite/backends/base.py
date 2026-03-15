@@ -1,94 +1,66 @@
+"""Abstract base class for task execution backends."""
+
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Any, Awaitable
+from collections.abc import Callable
+from concurrent.futures import Future
+from typing import Any, ClassVar
 
-from pluggy import PluginManager
 from typing_extensions import final
 
-from daglite._typing import Submission
-
-if TYPE_CHECKING:
-    from daglite.cache.store import CacheStore
-    from daglite.datasets.processor import DatasetProcessor
-    from daglite.datasets.reporters import DatasetReporter
-    from daglite.plugins.processor import EventProcessor
-    from daglite.plugins.reporters import EventReporter
-else:
-    CacheStore = object
-    DatasetProcessor = object
-    DatasetReporter = object
-    EventProcessor = object
-    EventReporter = object
+from daglite._context import BackendContext
+from daglite._context import SessionContext
+from daglite._context import SubmitContext
+from daglite.settings import get_global_settings
 
 
 class Backend(abc.ABC):
-    """Abstract base class for task execution backends."""
+    """
+    Abstract base class for task execution backends.
 
-    plugin_manager: PluginManager
-    event_processor: EventProcessor
-    event_reporter: EventReporter
-    dataset_processor: DatasetProcessor
-    dataset_reporter: DatasetReporter | None
-    cache_store: CacheStore | None
+    A backend defines *how* task calls are executed — sequentially, across threads, across
+    processes, or on a remote cluster. Custom backends can be registered with the `BackendManager`
+    to extend daglite.
+
+    Subclasses **must** implement `_submit`.
+
+    Lifecycle:
+
+    1. `start(session)` — called once when the backend is first requested inside a session.
+    2. `submit(func, args, kwargs)` — called to dispatch work.
+    3. `stop()` — called when the session exits.
+    """
+
+    name: ClassVar[str]
+
     _started: bool = False
 
-    @abc.abstractmethod
-    def _get_event_reporter(self) -> EventReporter:
-        """Gets the event reporter for this backend."""
-        raise NotImplementedError()
-
-    @abc.abstractmethod
-    def _get_dataset_reporter(self) -> DatasetReporter | None:
-        """Gets the dataset reporter for this backend."""
-        return None
+    # region Lifecycle
 
     @final
-    def start(
-        self,
-        plugin_manager: PluginManager,
-        event_processor: EventProcessor,
-        dataset_processor: DatasetProcessor,
-        cache_store: CacheStore | None = None,
-    ) -> None:
+    def start(self, session: SessionContext | None) -> None:
         """
-        Start any global backend resources.
-
-        Subclasses should NOT override this method. Instead, override ``_start()``.
+        Initialise backend resources (thread pools, process pools, queues, etc.).
 
         Args:
-            plugin_manager: Plugin manager for hook execution
-            event_processor: Event processor for event handling
-            dataset_processor: Dataset processor for persisting outputs
-            cache_store: Optional cache store for built-in task result caching
+            session: Active session context carrying event/plugin infrastructure and settings.
         """
         if self._started:  # pragma: no cover
             raise RuntimeError("Backend is already started.")
 
-        self.plugin_manager = plugin_manager
-        self.event_processor = event_processor
-        self.dataset_processor = dataset_processor
-        self.cache_store = cache_store
-        self.event_reporter = self._get_event_reporter()
-        self.dataset_reporter = self._get_dataset_reporter()
-        self._start()
+        self._session = session
+        self._settings = session.settings if session else get_global_settings()
+        self._backend_context = BackendContext.from_session(self.name)
+        self._start(context=self._backend_context)
         self._started = True
 
-    def _start(self) -> None:
-        """
-        Set up any per-execution-context resources.
-
-        Subclasses may override this to set up context-specific resources.
-        """
-        pass  # pragma: no cover
+    def _start(self, *, context: BackendContext) -> None:
+        """Subclass hook for creating per-backend resources."""
 
     @final
     def stop(self) -> None:
-        """
-        Clean up any global backend resources.
-
-        Subclasses should NOT override this method. Instead, override ``_stop()``.
-        """
+        """Releases backend resources."""
         if not self._started:  # pragma: no cover
             return
 
@@ -96,23 +68,56 @@ class Backend(abc.ABC):
         self._started = False
 
     def _stop(self) -> None:
-        """
-        Clean up any per-execution-context resources.
+        """Subclass hook for cleaning up per-backend resources."""
 
-        Subclasses may override this to clean up context-specific resources.
-        """
-        pass  # pragma: no cover
+    # region Execution
 
-    @abc.abstractmethod
-    def submit(self, func: Submission, timeout: float | None = None) -> Awaitable[Any]:
+    @final
+    def submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any] | None = None,
+        *,
+        map_index: int | None = None,
+    ) -> Future[Any]:
         """
-        Submit a callable for execution in the backend.
+        Submit a single task call and return a `Future` for its result.
+
+        This is the fundamental execution primitive. Backends that wrap thread pools,
+        process pools, or remote clusters implement this to dispatch one unit of work.
 
         Args:
-            func: A parameterless async coroutine to execute.
-            timeout: Maximum execution time in seconds. If None, no timeout is enforced.
+            func: A callable to be executed on the backend.
+            args: Positional arguments for the callable.
+            kwargs: Optional keyword arguments for the callable.
+            map_index: Optional index of the item in a fan-out map operation.
 
         Returns:
-            An awaitable that resolves to the result of the callable.
+            A `concurrent.futures.Future` whose `.result()` yields the task return value.
         """
-        raise NotImplementedError()
+        submit_context = SubmitContext(map_index=map_index)
+        return self._submit(func, args, kwargs or {}, context=submit_context)
+
+    @abc.abstractmethod
+    def _submit(
+        self,
+        func: Callable[..., Any],
+        args: tuple[Any, ...],
+        kwargs: dict[str, Any],
+        *,
+        context: SubmitContext,
+    ) -> Future[Any]:
+        """
+        Subclass hook for dispatching a single task call.
+
+        Args:
+            func: A callable to be executed on the backend.
+            args: Positional arguments for the callable.
+            kwargs: Keyword arguments for the callable.
+            context: Per-submission dynamic context (e.g. map index).
+
+        Returns:
+            A `concurrent.futures.Future` whose `.result()` yields the task return value.
+        """
+        ...

@@ -68,14 +68,14 @@ class TestDirectDatasetReporterHooks:
         store = MagicMock()
         mock_hook = MagicMock()
 
-        with patch.object(reporter, "_get_hook", return_value=mock_hook):
+        with patch("daglite._resolvers.resolve_hook", return_value=mock_hook):
             reporter.save("k.pkl", {"v": 1}, store, format="pickle", options={"x": 1})
 
         mock_hook.before_dataset_save.assert_called_once_with(
-            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}
+            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}, metadata=None
         )
         mock_hook.after_dataset_save.assert_called_once_with(
-            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}
+            key="k.pkl", value={"v": 1}, format="pickle", options={"x": 1}, metadata=None
         )
 
     def test_hooks_bracket_store_save(self):
@@ -89,25 +89,10 @@ class TestDirectDatasetReporterHooks:
         store.save.side_effect = lambda *a, **kw: order.append("save")
         mock_hook.after_dataset_save.side_effect = lambda **kw: order.append("after")
 
-        with patch.object(reporter, "_get_hook", return_value=mock_hook):
+        with patch("daglite._resolvers.resolve_hook", return_value=mock_hook):
             reporter.save("k", "v", store)
 
         assert order == ["before", "save", "after"]
-
-    def test_no_hooks_when_no_plugin_manager(self):
-        """When _get_hook returns None, save still works without hooks."""
-        reporter = DirectDatasetReporter()
-        store = MagicMock()
-
-        with patch.object(reporter, "_get_hook", return_value=None):
-            reporter.save("k", "v", store, format="text")
-
-        store.save.assert_called_once()
-
-    def test_get_hook_returns_none_outside_context(self):
-        """_get_hook returns None when no execution context is set."""
-        reporter = DirectDatasetReporter()
-        assert reporter._get_hook() is None
 
 
 class TestProcessDatasetReporter:

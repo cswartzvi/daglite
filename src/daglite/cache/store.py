@@ -54,12 +54,14 @@ class CacheStore:
             >>> import tempfile
             >>> store = CacheStore(tempfile.mkdtemp())
         """
-        if isinstance(driver, str):
-            from daglite.drivers import FileDriver
+        from daglite.drivers import FileDriver
 
-            self._driver = FileDriver(driver)
-        else:
-            self._driver = driver
+        self._driver = FileDriver(driver) if isinstance(driver, str) else driver
+
+    @property
+    def base_path(self) -> str:
+        """Base path of the underlying driver."""
+        return getattr(self._driver, "base_path", "")
 
     @property
     def is_local(self) -> bool:
@@ -70,14 +72,14 @@ class CacheStore:
         """
         Retrieve cached value by hash key.
 
-        Returns ``CACHE_MISS`` on a cache miss or TTL expiry. Expired entries are
+        Returns `CACHE_MISS` on a cache miss or TTL expiry. Expired entries are
         automatically cleaned up.
 
         Args:
             hash_key: SHA256 hash digest string.
 
         Returns:
-            Cached value if found and not expired, ``CACHE_MISS`` otherwise.
+            Cached value if found and not expired, `CACHE_MISS` otherwise.
         """
         data_key = self._hash_to_key(hash_key)
         meta_key = f"{data_key}.meta.json"
@@ -86,7 +88,7 @@ class CacheStore:
             return CACHE_MISS
 
         # Check TTL from metadata sidecar
-        if self._driver.exists(meta_key):
+        if self._driver.exists(meta_key):  # pragma: no branch
             try:
                 meta_bytes = self._driver.load(meta_key)
                 metadata = json.loads(meta_bytes.decode("utf-8"))
@@ -163,7 +165,7 @@ class CacheStore:
             Sharded key path (e.g., "ab/cdef1234...").
 
         Raises:
-            ValueError: If ``hash_key`` is too short to shard safely or
+            ValueError: If `hash_key` is too short to shard safely or
                 contains non-hex characters.
         """
         # Validate that hash_key is long enough so that the suffix is non-empty.

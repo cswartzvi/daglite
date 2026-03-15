@@ -1,5 +1,5 @@
 """Task execution backends for DagLite."""
 
-from daglite.backends.manager import BackendManager
+from daglite.backends.base import Backend
 
-__all__ = ["BackendManager"]
+__all__ = ["Backend"]
