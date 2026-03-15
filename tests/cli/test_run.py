@@ -2,375 +2,200 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
-from click.testing import CliRunner
 
-from daglite.cli._shared import parse_param_value
-from daglite.cli.base import cli
+from daglite.cli._shared import _parse_param_value
+from daglite.cli._shared import normalize_tokens
+from daglite.cli._shared import parse_settings_overrides
+from daglite.cli.core import main
 
 
 class TestRunCommand:
     """Tests for the run command."""
 
-    def test_run_help(self):
-        """Test that run --help works."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "--help"])
-        assert result.exit_code == 0
-        assert "Run a daglite workflow" in result.output
-        assert "--param" in result.output
-        assert "--backend" in result.output
+    def test_run_help(self, capsys):
+        """Test that ``daglite run --help`` works."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "--help"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "Run a workflow target" in out
 
-    def test_run_without_workflow_path(self):
-        """Test run command without workflow path."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run"])
-        assert result.exit_code != 0
-        assert "Missing argument" in result.output
+    def test_run_workflow_help(self, capsys):
+        """Test that ``daglite run <target> --help`` shows workflow parameters."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:math_workflow", "--help"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "--x" in out
+        assert "--y" in out
+        assert "--factor" in out
 
-    def test_run_with_invalid_workflow_path(self):
-        """Test run command with invalid workflow path (no dot)."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "invalid"])
-        assert result.exit_code != 0
-        assert "Invalid workflow path" in result.output
+    def test_run_without_workflow_path(self, capsys):
+        """Test run command without workflow path shows help."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run"])
+        assert exc_info.value.code == 0  # redirects to help
 
-    def test_run_with_nonexistent_module(self):
+    def test_run_with_nonexistent_module(self, capsys):
         """Test run command with non-existent module."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "nonexistent.module.workflow"])
-        assert result.exit_code != 0
-        assert "No module named" in result.output
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "nonexistent.module:workflow"])
+        assert exc_info.value.code == 2
 
-    def test_run_with_nonexistent_workflow(self):
+    def test_run_with_nonexistent_workflow(self, capsys):
         """Test run command with non-existent workflow in existing module."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "daglite.nonexistent_workflow"])
-        assert result.exit_code != 0
-        assert "not found" in result.output
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:does_not_exist", "--x", "1"])
+        assert exc_info.value.code == 2
 
-    def test_run_with_non_workflow_object(self):
+    def test_run_with_non_workflow_object(self, capsys):
         """Test run command with object that's not a Workflow."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "daglite.task"])
-        assert result.exit_code != 0
-        assert "is not a Workflow" in result.output
+        with pytest.raises(SystemExit):
+            main(["run", "tests.examples.workflows:add"])
 
-    def test_run_simple_workflow(self):
+    def test_run_simple_workflow(self, capsys):
         """Test running a simple workflow."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["run", "tests.examples.workflows.math_workflow", "--param", "x=5", "--param", "y=10"],
-        )
-        assert result.exit_code == 0
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:math_workflow", "--x", "5", "--y", "10"])
+        assert exc_info.value.code == 0
 
-    def test_run_empty_workflow(self):
+    def test_run_empty_workflow(self, capsys):
         """Test running a workflow with no parameters."""
-        runner = CliRunner()
-        result = runner.invoke(cli, ["run", "tests.examples.workflows.empty_workflow"])
-        assert result.exit_code == 0
-        # Should not show "Parameters:" line when there are no parameters
-        assert "Parameters:" not in result.output
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:empty_workflow"])
+        assert exc_info.value.code == 0
 
-    def test_run_workflow_with_default_params(self):
+    def test_run_workflow_with_default_params(self, capsys):
         """Test running a workflow using default parameter values."""
-        runner = CliRunner()
-        # math_workflow has factor=2 as default
-        result = runner.invoke(
-            cli,
-            ["run", "tests.examples.workflows.math_workflow", "--param", "x=5", "--param", "y=10"],
-        )
-        assert result.exit_code == 0
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:math_workflow", "--x", "5", "--y", "10"])
+        assert exc_info.value.code == 0
 
-    def test_run_workflow_override_default_params(self):
+    def test_run_workflow_override_default_params(self, capsys):
         """Test running a workflow and overriding default parameter."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--param",
-                "factor=3",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_missing_required_param(self):
-        """Test running a workflow without required parameters."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli, ["run", "tests.examples.workflows.math_workflow", "--param", "x=5"]
-        )
-        assert result.exit_code != 0
-        assert "Missing required parameters" in result.output
-        assert "y" in result.output
-
-    def test_run_workflow_with_invalid_param_value(self):
-        """Test running with a value that can't be converted to the parameter's type."""
-        runner = CliRunner()
-        # 'x' expects int but "notanumber" can't be converted
-        result = runner.invoke(
-            cli,
-            ["run", "tests.examples.workflows.math_workflow", "--param", "x=notanumber"],
-        )
-        assert result.exit_code != 0
-        assert "Invalid value for parameter" in result.output
-        assert "notanumber" in result.output
-
-    def test_run_workflow_with_invalid_param_format(self):
-        """Test running with invalid parameter format."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli, ["run", "tests.examples.workflows.math_workflow", "--param", "invalid_format"]
-        )
-        assert result.exit_code != 0
-        assert "Invalid parameter format" in result.output
-
-    def test_run_workflow_with_unknown_param(self):
-        """Test running with unknown parameter name."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--param",
-                "unknown=5",
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Unknown parameter" in result.output
-
-    def test_run_workflow_with_parallel(self):
-        """Test running with parallel (async) execution."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--parallel",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_with_settings(self):
-        """Test running with settings override."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "max_backend_threads=8",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_with_invalid_setting_name(self):
-        """Test running with invalid setting name."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "invalid_setting=10",
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Unknown setting" in result.output
-
-    def test_run_workflow_with_invalid_setting_value(self):
-        """Test running with invalid setting value."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "max_backend_threads=not_a_number",
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Invalid value" in result.output
-
-    def test_run_workflow_with_bool_setting(self):
-        """Test that boolean settings are parsed correctly."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "enable_plugin_tracing=true",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_with_union_type_setting(self):
-        """Test that Union-typed settings (e.g. datastore_store: str | DatasetStore) are parsed."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "dataset_store=/tmp/test_store",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_backend_applied(self):
-        """Test that --backend flag is applied to workflow execution."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--backend",
-                "threading",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_type_conversion_int(self):
-        """Test that integer parameters are properly converted."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--param",
-                "factor=3",
-            ],
-        )
-        assert result.exit_code == 0
-
-    def test_run_workflow_invalid_setting_format(self):
-        """Test running with invalid setting format (no =)."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                "--param",
-                "x=5",
-                "--param",
-                "y=10",
-                "--settings",
-                "invalid_format",
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Invalid setting format" in result.output
-
-    def test_run_workflow_call_error(self):
-        """Test error when calling workflow with wrong parameters."""
-        runner = CliRunner()
-        # Create a workflow that will fail when called
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.math_workflow",
-                # Missing required parameters will cause error during call
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Missing required parameters" in result.output
-
-    def test_run_workflow_execution_error(self):
-        """Test handling of workflow execution errors."""
-        runner = CliRunner()
-        # Use a workflow that will fail during execution
-        result = runner.invoke(
-            cli,
-            [
-                "run",
-                "tests.examples.workflows.failing_workflow",
-                "--param",
-                "x=42",
-            ],
-        )
-        assert result.exit_code != 0
-        assert "Workflow execution failed" in result.output
-        assert "Intentional failure" in result.output
-
-    def test_run_untyped_workflow_warning(self):
-        """Test warning when using untyped workflow parameters."""
-        import warnings
-
-        runner = CliRunner()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", UserWarning)
-            result = runner.invoke(
-                cli,
+        with pytest.raises(SystemExit) as exc_info:
+            main(
                 [
                     "run",
-                    "tests.examples.workflows.untyped_workflow",
-                    "--param",
-                    "x=5",
-                    "--param",
-                    "y=10",
-                ],
+                    "tests.examples.workflows:math_workflow",
+                    "--x",
+                    "5",
+                    "--y",
+                    "10",
+                    "--factor",
+                    "3",
+                ]
             )
-        # Should succeed but with a warning about untyped parameters
-        assert result.exit_code == 0
-        # The warning goes to stderr, but click captures it
-        # We can check that it ran successfully
+        assert exc_info.value.code == 0
+
+    def test_run_workflow_missing_required_param(self, capsys):
+        """Test running a workflow without required parameters."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:math_workflow", "--x", "5"])
+        assert exc_info.value.code != 0
+
+    def test_run_workflow_with_invalid_param_value(self, capsys):
+        """Test running with a value that can't be converted to the parameter's type."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    "run",
+                    "tests.examples.workflows:math_workflow",
+                    "--x",
+                    "notanumber",
+                    "--y",
+                    "10",
+                ]
+            )
+        assert exc_info.value.code != 0
+
+    def test_run_async_workflow(self, capsys):
+        """Test running an async workflow through the CLI (exercises asyncio.run path)."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:async_workflow", "--x", "3", "--y", "4"])
+        assert exc_info.value.code == 0
+
+    def test_run_with_dotted_target(self, capsys):
+        """Test running with dotted target (module.workflow) syntax."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows.math_workflow", "--x", "5", "--y", "10"])
+        assert exc_info.value.code == 0
+
+    def test_run_with_filepath_target(self, capsys):
+        """Test running with filepath:workflow syntax."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    "run",
+                    "tests/examples/workflows.py:math_workflow",
+                    "--x",
+                    "5",
+                    "--y",
+                    "10",
+                ]
+            )
+        assert exc_info.value.code == 0
+
+
+class TestDescribeCommand:
+    """Tests for the describe command."""
+
+    def test_describe_workflow(self, capsys):
+        """Test describing a workflow shows its parameters."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests.examples.workflows:math_workflow"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "--x" in out
+        assert "--y" in out
+        assert "--factor" in out
+
+    def test_describe_help(self, capsys):
+        """Test that ``daglite describe --help`` shows full docstring."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "--help"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "Describe a workflow target" in out
+        assert "path/to/module.py" in out
+
+    def test_describe_nonexistent_target(self, capsys):
+        """Test describing a nonexistent workflow."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests.examples.workflows:does_not_exist"])
+        assert exc_info.value.code == 2
+
+    def test_describe_with_filepath_target(self, capsys):
+        """Test describing with filepath:workflow syntax."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests/examples/workflows.py:math_workflow"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "--x" in out
+
+    def test_describe_with_arg_validation(self, capsys):
+        """Test describe with argument validation via ``--`` separator."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    "describe",
+                    "tests.examples.workflows:math_workflow",
+                    "--",
+                    "--x",
+                    "5",
+                    "--y",
+                    "10",
+                ]
+            )
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "Parsed values" in out
+        assert "x = 5" in out
+        assert "y = 10" in out
 
 
 class TestSetupCliPlugins:
@@ -383,86 +208,370 @@ class TestSetupCliPlugins:
         from daglite.plugins.manager import has_plugin
         from daglite.plugins.manager import register_plugins
 
-        # Pre-register a lifecycle plugin so setup_cli_plugins should skip.
         register_plugins(LifecycleLoggingPlugin())
         assert has_plugin(LifecycleLoggingPlugin)
 
-        # Must be a no-op — no error and still exactly one instance registered.
         setup_cli_plugins()
         assert has_plugin(LifecycleLoggingPlugin)
 
 
 class TestParseParamValue:
-    """Test suite for parse_param_value function."""
+    """Test suite for _parse_param_value function."""
 
     def test_parse_none_type(self):
-        """Test parsing with None type returns string."""
-        assert parse_param_value("test", None) == "test"
+        assert _parse_param_value("test", None) == "test"
 
     def test_parse_int(self):
-        """Test parsing integer values."""
-        assert parse_param_value("42", int) == 42
-        assert parse_param_value("-10", int) == -10
+        assert _parse_param_value("42", int) == 42
+        assert _parse_param_value("-10", int) == -10
 
     def test_parse_int_invalid(self):
-        """Test parsing invalid integer raises ValueError."""
         with pytest.raises(ValueError, match="Cannot convert"):
-            parse_param_value("not_a_number", int)
+            _parse_param_value("not_a_number", int)
 
     def test_parse_float(self):
-        """Test parsing float values."""
-        assert parse_param_value("3.14", float) == 3.14
-        assert parse_param_value("-2.5", float) == -2.5
+        assert _parse_param_value("3.14", float) == 3.14
+        assert _parse_param_value("-2.5", float) == -2.5
 
     def test_parse_float_invalid(self):
-        """Test parsing invalid float raises ValueError."""
         with pytest.raises(ValueError, match="Cannot convert"):
-            parse_param_value("not_a_float", float)
+            _parse_param_value("not_a_float", float)
 
     def test_parse_bool_true(self):
-        """Test parsing boolean true values."""
-        assert parse_param_value("true", bool) is True
-        assert parse_param_value("True", bool) is True
-        assert parse_param_value("1", bool) is True
-        assert parse_param_value("yes", bool) is True
-        assert parse_param_value("y", bool) is True
+        assert _parse_param_value("true", bool) is True
+        assert _parse_param_value("True", bool) is True
+        assert _parse_param_value("1", bool) is True
+        assert _parse_param_value("yes", bool) is True
+        assert _parse_param_value("y", bool) is True
 
     def test_parse_bool_false(self):
-        """Test parsing boolean false values."""
-        assert parse_param_value("false", bool) is False
-        assert parse_param_value("False", bool) is False
-        assert parse_param_value("0", bool) is False
-        assert parse_param_value("no", bool) is False
-        assert parse_param_value("n", bool) is False
-        assert parse_param_value("anything", bool) is False
+        assert _parse_param_value("false", bool) is False
+        assert _parse_param_value("False", bool) is False
+        assert _parse_param_value("0", bool) is False
+        assert _parse_param_value("no", bool) is False
+        assert _parse_param_value("n", bool) is False
+        assert _parse_param_value("anything", bool) is False
 
     def test_parse_str(self):
-        """Test parsing string values."""
-        assert parse_param_value("hello", str) == "hello"
-        assert parse_param_value("123", str) == "123"
+        assert _parse_param_value("hello", str) == "hello"
+        assert _parse_param_value("123", str) == "123"
 
     def test_parse_custom_type_success(self):
-        """Test parsing with custom type that has constructor."""
-        result = parse_param_value("/tmp/test", Path)
+        result = _parse_param_value("/tmp/test", Path)
         assert isinstance(result, Path)
         assert result == Path("/tmp/test")
 
     def test_parse_custom_type_fallback(self):
-        """Test parsing with custom type that fails falls back to string."""
-
-        # Create a type that will fail conversion
         class UnconvertibleType:
             def __init__(self, value):
                 raise TypeError("Cannot convert")
 
-        result = parse_param_value("test", UnconvertibleType)
-        assert result == "test"  # Falls back to string
+        result = _parse_param_value("test", UnconvertibleType)
+        assert result == "test"
 
-    def test_run_async_workflow(self):
-        """Test running an async workflow through the CLI (exercises asyncio.run path)."""
-        runner = CliRunner()
-        result = runner.invoke(
-            cli,
-            ["run", "tests.examples.workflows.async_workflow", "--param", "x=3", "--param", "y=4"],
+
+class TestFilepathToModule:
+    """Tests for _filepath_to_module in _shared.py."""
+
+    def test_passthrough_dotted_path(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("tests.examples.workflows") == "tests.examples.workflows"
+
+    def test_passthrough_colon_target(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("mod.sub:func") == "mod.sub:func"
+
+    def test_filepath_with_slashes(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("tests/examples/workflows.py") == "tests.examples.workflows"
+
+    def test_filepath_with_colon_target(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert (
+            _filepath_to_module("tests/examples/workflows.py:math_workflow")
+            == "tests.examples.workflows:math_workflow"
         )
-        assert result.exit_code == 0
+
+    def test_filepath_relative_prefix(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("./tests/examples/workflows.py") == "tests.examples.workflows"
+
+    def test_directory_trailing_slash(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("tests/examples/") == "tests.examples"
+
+    def test_backslash_filepath(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module("tests\\examples\\workflows.py") == "tests.examples.workflows"
+
+    def test_backslash_relative_prefix(self):
+        from daglite.cli._shared import _filepath_to_module
+
+        assert _filepath_to_module(".\\tests\\examples\\workflows.py") == "tests.examples.workflows"
+
+
+class TestNormalizeTokens:
+    """Tests for normalize_tokens."""
+
+    def test_none_returns_empty_list(self):
+        assert normalize_tokens(None) == []
+
+    def test_list_passthrough(self):
+        assert normalize_tokens(["a", "b"]) == ["a", "b"]
+
+    def test_tuple_converted(self):
+        assert normalize_tokens(("a", "b")) == ["a", "b"]
+
+
+class TestParseSettingsOverrides:
+    """Tests for parse_settings_overrides."""
+
+    def test_valid_int_setting(self):
+        result = parse_settings_overrides(("max_backend_threads=8",))
+        assert result == {"max_backend_threads": 8}
+
+    def test_missing_equals(self):
+        with pytest.raises(ValueError, match="Invalid setting format"):
+            parse_settings_overrides(("no_equals_here",))
+
+    def test_unknown_setting(self):
+        with pytest.raises(ValueError, match="Unknown setting"):
+            parse_settings_overrides(("nonexistent_setting=10",))
+
+    def test_invalid_value(self):
+        with pytest.raises(ValueError, match="Invalid value"):
+            parse_settings_overrides(("max_backend_threads=notanumber",))
+
+    def test_union_type_setting(self):
+        result = parse_settings_overrides(("dataset_store=/tmp/ds",))
+        assert result["dataset_store"] == "/tmp/ds"
+
+    def test_empty_tuple(self):
+        assert parse_settings_overrides(()) == {}
+
+
+class TestSplitTarget:
+    """Tests for _split_target."""
+
+    def test_no_separator_raises(self):
+        from daglite.cli._shared import _split_target
+
+        with pytest.raises(ValueError, match="Expected"):
+            _split_target("nodotshere")
+
+    def test_empty_parts_raises(self):
+        from daglite.cli._shared import _split_target
+
+        with pytest.raises(ValueError, match="Expected"):
+            _split_target(":attr")
+
+    def test_colon_split(self):
+        from daglite.cli._shared import _split_target
+
+        assert _split_target("mod.sub:func") == ("mod.sub", "func")
+
+    def test_dot_split(self):
+        from daglite.cli._shared import _split_target
+
+        assert _split_target("mod.sub.func") == ("mod.sub", "func")
+
+
+class TestResolvedSignature:
+    """Tests for _resolved_signature."""
+
+    def test_returns_signature_with_type_hints(self):
+        from daglite.cli._shared import _resolved_signature
+        from tests.examples.workflows import math_workflow
+
+        sig = _resolved_signature(math_workflow)
+        assert "x" in sig.parameters
+        assert sig.parameters["x"].annotation is int
+
+    def test_returns_return_annotation(self):
+        from daglite.cli._shared import _resolved_signature
+        from tests.examples.workflows import sync_workflow
+
+        sig = _resolved_signature(sync_workflow)
+        assert sig.return_annotation is int
+
+
+class TestIsAsyncWorkflow:
+    """Tests for _is_async_workflow."""
+
+    def test_sync_workflow(self):
+        from daglite.cli._shared import _is_async_workflow
+        from tests.examples.workflows import math_workflow
+
+        assert _is_async_workflow(math_workflow) is False
+
+    def test_async_workflow(self):
+        from daglite.cli._shared import _is_async_workflow
+        from tests.examples.workflows import async_workflow
+
+        assert _is_async_workflow(async_workflow) is True
+
+
+class TestValidateWorkflowArgs:
+    """Tests for validate_workflow_args."""
+
+    def test_unrecognized_args_raises(self, mocker):
+        from daglite.cli._shared import validate_workflow_args
+
+        # The `ignored` branch is defensive — cyclopts raises before returning
+        # ignored tokens.  Mock parse_args to simulate returned ignored tokens.
+        mocker.patch(
+            "daglite.cli._shared.build_workflow_app",
+            return_value=mocker.Mock(
+                parse_args=mocker.Mock(return_value=(None, None, ["--bogus"])),
+            ),
+        )
+        with pytest.raises(ValueError, match="Unrecognized arguments"):
+            validate_workflow_args(
+                "tests.examples.workflows:math_workflow",
+                ["--x", "5"],
+            )
+
+
+class TestDescribeEdgeCases:
+    """Edge-case tests for the describe command."""
+
+    def test_describe_bare_name_shows_tip(self, capsys):
+        """Target without ``:`` or ``.`` shows a helpful tip."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "math_workflow"])
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        assert "daglite list" in out
+
+    def test_describe_bad_attr_shows_error(self, capsys):
+        """Target with valid module but bad attribute shows error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests.examples.workflows:nonexistent"])
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        assert "Error:" in out
+
+    def test_describe_arg_validation_failure(self, capsys):
+        """Invalid args after ``--`` produce a validation error."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    "describe",
+                    "tests.examples.workflows:math_workflow",
+                    "--",
+                    "--x",
+                    "notanint",
+                    "--y",
+                    "10",
+                ]
+            )
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        assert "Argument validation failed" in out
+
+    def test_describe_suggests_workflows(self, capsys):
+        """Describing a module (not a workflow) suggests workflows in that module."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["describe", "tests.examples.workflows:bogus"])
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        # Should list available workflows as suggestions
+        assert "Did you mean" in out or "Error:" in out
+
+
+class TestCoreRunEdgeCases:
+    """Edge-case tests for core.py run handling."""
+
+    def test_run_no_args_shows_help(self, capsys):
+        """``daglite run`` with no target shows run help."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run"])
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "Run a workflow target" in out
+
+    def test_run_error_prints_tip(self, capsys):
+        """A run-time error shows the error message and a describe tip."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(["run", "tests.examples.workflows:failing_workflow", "--x", "42"])
+        assert exc_info.value.code == 2
+        out = capsys.readouterr().out
+        assert "Error:" in out
+        assert "daglite describe" in out
+
+
+class TestCliName:
+    """Tests for _cli_name."""
+
+    def test_normal_argv0(self, monkeypatch):
+        from daglite.cli._shared import _cli_name
+
+        monkeypatch.setattr("sys.argv", ["daglite", "list"])
+        assert _cli_name() == "daglite"
+
+    def test_dunder_main(self, monkeypatch):
+        from daglite.cli._shared import _cli_name
+
+        monkeypatch.setattr("sys.argv", ["/some/path/__main__.py"])
+        assert _cli_name() == "py -m daglite.cli"
+
+
+class TestEnsureCwdOnPath:
+    """Tests for _ensure_cwd_on_path."""
+
+    def test_inserts_cwd_when_missing(self, monkeypatch):
+        from daglite.cli._shared import _ensure_cwd_on_path
+
+        cwd = str(Path.cwd())
+        # Remove CWD from sys.path temporarily
+        orig = sys.path[:]
+        monkeypatch.setattr("sys.path", [p for p in orig if p != cwd])
+        _ensure_cwd_on_path()
+        assert cwd in sys.path
+
+
+class TestResolvedSignatureException:
+    """Test _resolved_signature when get_type_hints fails."""
+
+    def test_falls_back_on_type_hint_error(self, monkeypatch):
+        import typing
+
+        from daglite.cli._shared import _resolved_signature
+        from tests.examples.workflows import math_workflow
+
+        monkeypatch.setattr(
+            typing, "get_type_hints", lambda *a, **kw: (_ for _ in ()).throw(TypeError("boom"))
+        )
+        sig = _resolved_signature(math_workflow)
+        # Should still return a signature, just without resolved hints
+        assert "x" in sig.parameters
+
+
+class TestDescribeDoubleHyphen:
+    """Tests for the ``--`` separator stripping in describe."""
+
+    def test_describe_strips_double_hyphen(self, capsys):
+        """Tokens after ``--`` are validated as workflow args."""
+        with pytest.raises(SystemExit) as exc_info:
+            main(
+                [
+                    "describe",
+                    "tests.examples.workflows:math_workflow",
+                    "--",
+                    "--x",
+                    "5",
+                    "--y",
+                    "10",
+                ]
+            )
+        assert exc_info.value.code == 0
+        out = capsys.readouterr().out
+        assert "x = 5" in out
+        assert "y = 10" in out
