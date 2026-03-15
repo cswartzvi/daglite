@@ -61,7 +61,7 @@ class TestResolveKey:
         assert result == "{split}_data"
 
 
-class TestFormatInference:
+class TestDataFormatInference:
     """Dataset format is inferred from the file extension."""
 
     def test_txt_extension_infers_text(self, tmp_path: Path) -> None:
@@ -70,15 +70,59 @@ class TestFormatInference:
         loaded = store.load("note.txt", str)
         assert loaded == "hello world"
 
+    def test_txt_extension_with_explicit_format(self, tmp_path: Path) -> None:
+        store = DatasetStore(str(tmp_path))
+        store.save("explicit.txt", "explicit", format="text")
+        loaded = store.load("explicit.txt", str, format="text")
+        assert loaded == "explicit"
+
     def test_pkl_extension_infers_pickle(self, tmp_path: Path) -> None:
         store = DatasetStore(str(tmp_path))
         store.save("data.pkl", {"a": 1})
         loaded = store.load("data.pkl", dict)
         assert loaded == {"a": 1}
 
+    def test_pkl_extension_with_explicit_format(self, tmp_path: Path) -> None:
+        store = DatasetStore(str(tmp_path))
+        store.save("explicit.pkl", {"b": 2}, format="pickle")
+        loaded = store.load("explicit.pkl", dict, format="pickle")
+        assert loaded == {"b": 2}
 
-class TestTrySaveDataset:
-    """Test the _try_save_dataset helper on _BaseTask."""
+
+class TestDatasetStoreIntegration:
+    """Verify that DatasetStore can save and load datasets."""
+
+    def test_save_resolves_store_from_session(self, tmp_path: Path) -> None:
+        """``save_dataset`` without explicit ``store=`` picks up the session store."""
+        store = DatasetStore(str(tmp_path))
+        with session(dataset_store=store):
+            save_dataset("implicit.pkl", [1, 2, 3])
+
+        assert store.exists("implicit.pkl")
+        assert store.load("implicit.pkl", list) == [1, 2, 3]
+
+    def test_load_resolves_store_from_session(self, tmp_path: Path) -> None:
+        """``load_dataset`` without explicit ``store=`` picks up the session store."""
+        store = DatasetStore(str(tmp_path))
+        store.save("pre.pkl", "hello")
+
+        with session(dataset_store=store):
+            result = load_dataset("pre.pkl", str)
+
+        assert result == "hello"
+
+    def test_bare_task_with_dataset_saves_directly(self, tmp_path: Path) -> None:
+        """A task with ``dataset=`` called outside a session saves via the direct path."""
+        store = DatasetStore(str(tmp_path))
+
+        @task(dataset="bare.pkl", dataset_store=store)
+        def produce(x: int) -> int:
+            return x * 10
+
+        result = produce(x=7)
+        assert result == 70
+        assert store.exists("bare.pkl")
+        assert store.load("bare.pkl", int) == 70
 
     def test_noop_when_no_dataset(self, tmp_path: Path) -> None:
         """Should silently return when task has no dataset configured."""
@@ -132,46 +176,6 @@ class TestTrySaveDataset:
         assert store.exists("greeting.txt")
         loaded = store.load("greeting.txt", str)
         assert loaded == "Hello, Alice!"
-
-
-class TestResolveDatasetStore:
-    """Exercises ``resolve_dataset_store`` from the session context chain."""
-
-    def test_save_resolves_store_from_session(self, tmp_path: Path) -> None:
-        """``save_dataset`` without explicit ``store=`` picks up the session store."""
-        store = DatasetStore(str(tmp_path))
-        with session(dataset_store=store):
-            save_dataset("implicit.pkl", [1, 2, 3])
-
-        assert store.exists("implicit.pkl")
-        assert store.load("implicit.pkl", list) == [1, 2, 3]
-
-    def test_load_resolves_store_from_session(self, tmp_path: Path) -> None:
-        """``load_dataset`` without explicit ``store=`` picks up the session store."""
-        store = DatasetStore(str(tmp_path))
-        store.save("pre.pkl", "hello")
-
-        with session(dataset_store=store):
-            result = load_dataset("pre.pkl", str)
-
-        assert result == "hello"
-
-    def test_bare_task_with_dataset_saves_directly(self, tmp_path: Path) -> None:
-        """A task with ``dataset=`` called outside a session saves via the direct path."""
-        store = DatasetStore(str(tmp_path))
-
-        @task(dataset="bare.pkl", dataset_store=store)
-        def produce(x: int) -> int:
-            return x * 10
-
-        result = produce(x=7)
-        assert result == 70
-        assert store.exists("bare.pkl")
-        assert store.load("bare.pkl", int) == 70
-
-
-class TestSessionDatasetStore:
-    """The session() context manager should set dataset_store on SessionContext."""
 
     def test_session_with_string_store(self, tmp_path: Path) -> None:
         store_path = str(tmp_path / "datasets")
