@@ -121,6 +121,15 @@ class TestTaskLoggerAdapter:
         assert msg == "hello"
         assert "extra" in kwargs
 
+    def test_process_includes_map_index_in_key(self) -> None:
+        mock_meta = Mock(id=uuid4(), map_index=3)
+        mock_meta.name = "my_task"
+        base = logging.getLogger("test.adapter.mapped")
+        adapter = _TaskLoggerAdapter(base, {})
+        with patch("daglite.logging.core.resolve_task_metadata", return_value=mock_meta):
+            _, kwargs = adapter.process("hello", {})
+        assert kwargs["extra"]["daglite_task_key"] == "my_task[3]"
+
 
 class TestReporterHandler:
     def test_emit_basic_log(self) -> None:
