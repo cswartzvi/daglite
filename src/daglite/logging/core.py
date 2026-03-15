@@ -77,7 +77,7 @@ def get_logger(name: str | None = None) -> logging.LoggerAdapter:
         ...     format="%(daglite_task_name)s [%(levelname)s] %(message)s", level=logging.INFO
         ... )
     """
-    if resolve_task_metadata() is not None:
+    if name is None and resolve_task_metadata() is not None:
         name = DEFAULT_LOGGER_NAME_TASKS
 
     if name is None:
@@ -209,9 +209,12 @@ class _TaskLoggerAdapter(logging.LoggerAdapter):
 
         meta = resolve_task_metadata()
         if meta is not None:
+            key = meta.name
+            if meta.map_index is not None:
+                key = f"{meta.name}[{meta.map_index}]"
             extra.setdefault(TASK_EXTRA_ID, str(meta.id))
             extra.setdefault(TASK_EXTRA_NAME, meta.name)
-            extra.setdefault(TASK_EXTRA_KEY, meta.name)
+            extra.setdefault(TASK_EXTRA_KEY, key)
         else:
             extra.setdefault(TASK_EXTRA_ID, "")
             extra.setdefault(TASK_EXTRA_NAME, "")
