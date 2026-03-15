@@ -194,6 +194,18 @@ class BackendContext(SerializableContext):
     def to_dict(self) -> dict[str, Any]:
         from daglite.plugins.manager import serialize_plugin_manager
 
+        def _store_path(store: Any) -> str | None:
+            path = getattr(store, "base_path", None)
+            if isinstance(path, str) and path:
+                return path
+
+            driver = getattr(store, "_driver", None)
+            driver_path = getattr(driver, "base_path", None)
+            if isinstance(driver_path, str) and driver_path:
+                return driver_path
+
+            return None
+
         data = super().to_dict()
 
         # Reporters depend on execution context and are never serialized.
@@ -206,9 +218,9 @@ class BackendContext(SerializableContext):
 
         # Dehydrate stores to path strings (JSON-safe, works for local and remote via fsspec).
         if self.cache_store is not None:
-            data["cache_store"] = self.cache_store.base_path
+            data["cache_store"] = _store_path(self.cache_store)
         if self.dataset_store is not None:
-            data["dataset_store"] = self.dataset_store.base_path
+            data["dataset_store"] = _store_path(self.dataset_store)
 
         return data
 
