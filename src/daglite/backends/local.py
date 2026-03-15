@@ -14,6 +14,7 @@ from uuid import UUID
 from typing_extensions import override
 
 from daglite._context import BackendContext
+from daglite._context import SubmitContext
 from daglite.backends.base import Backend
 
 
@@ -34,11 +35,11 @@ class InlineBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        context: BackendContext,
+        submit_context: SubmitContext,
     ) -> Future[Any]:
         fut: Future[Any] = Future()
         try:
-            with context:
+            with SubmitContext(map_index=submit_context.map_index):
                 fut.set_result(func(*args, **kwargs))
         except BaseException as exc:
             fut.set_exception(exc)
@@ -53,7 +54,7 @@ class ThreadBackend(Backend):
     _executor: ThreadPoolExecutor
 
     @override
-    def _start(self) -> None:
+    def _start(self, *, context: BackendContext) -> None:
         self._executor = ThreadPoolExecutor(
             max_workers=self._settings.max_backend_threads,
         )
@@ -69,13 +70,13 @@ class ThreadBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        context: BackendContext,
+        submit_context: SubmitContext,
     ) -> Future[Any]:
         def _run() -> Any:
-            with context:
+            with SubmitContext(map_index=submit_context.map_index):
                 return func(*args, **kwargs)
 
-        # copy_context() captures the BackendContext so the worker thread sees it.
+        # copy_context() preserves active session/task contextvars for the worker call.
         return self._executor.submit(contextvars.copy_context().run, _run)
 
 
@@ -113,16 +114,16 @@ class ProcessBackend(Backend):
         return get_context("fork")  # pragma: no cover
 
     @override
-    def _start(self) -> None:
+    def _start(self, *, context: BackendContext) -> None:
         self._mp_context = self._determine_mp_context()
         self._has_session = self._session is not None
 
         if self._has_session:
-            self._start_with_session()
+            self._start_with_session(context)
         else:
             self._start_bare()  # pragma: no cover - bare process backend
 
-    def _start_with_session(self) -> None:
+    def _start_with_session(self, context: BackendContext) -> None:
         """Set up the process pool with full session infrastructure (events, plugins, cache)."""
 
         assert self._session is not None
@@ -142,8 +143,8 @@ class ProcessBackend(Backend):
                 self._dataset_queue
             )
 
-        # Build a BackendContext from the session and serialize it to a JSON-safe dict.
-        context_data = BackendContext.from_session(backend=self.name).to_dict()
+        # Serialize static backend context once for process workers.
+        context_data = context.to_dict()
 
         payload = _ProcessPayload(
             context_data=context_data,
@@ -198,9 +199,10 @@ class ProcessBackend(Backend):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        context: BackendContext,
+        submit_context: SubmitContext,
     ) -> Future[Any]:
-        return self._executor.submit(func, *args, **kwargs)
+        submit_ctx = _ProcessSubmitContext(map_index=submit_context.map_index)
+        return self._executor.submit(_process_submit, func, args, kwargs, submit_ctx)
 
 
 @dataclass
@@ -210,6 +212,24 @@ class _ProcessPayload:
     context_data: dict[str, Any]
     event_queue: Any
     dataset_queue: Any
+
+
+@dataclass(frozen=True)
+class _ProcessSubmitContext:
+    """Per-submission context overrides for process worker calls."""
+
+    map_index: int | None
+
+
+def _process_submit(
+    func: Callable[..., Any],
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+    submit_ctx: _ProcessSubmitContext,
+) -> Any:
+    """Run one submitted callable with per-call backend context overrides."""
+    with SubmitContext(map_index=submit_ctx.map_index):
+        return func(*args, **kwargs)
 
 
 def _process_initializer(payload: _ProcessPayload) -> None:  # pragma: no cover

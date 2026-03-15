@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+from typing import Any, cast
 
 import pytest
 
 from daglite._context import BackendContext
+from daglite._context import SubmitContext
 from daglite.cache.store import CacheStore
 from daglite.datasets.store import DatasetStore
 
@@ -59,6 +61,34 @@ class TestBackendContextSerialization:
         assert data["cache_store"] == cache_path
         assert data["dataset_store"] == ds_path
 
+    def test_to_dict_uses_driver_base_path_fallback(self) -> None:
+        class _Driver:
+            base_path = "/tmp/driver-path"
+
+        class _Store:
+            base_path = None
+            _driver = _Driver()
+
+        ctx = BackendContext(backend="thread", cache_store=cast(Any, _Store()))
+        data = ctx.to_dict()
+
+        assert data["cache_store"] == "/tmp/driver-path"
+
+    def test_to_dict_store_path_fallback_can_return_none(self) -> None:
+        class _Store:
+            base_path = None
+            _driver = object()
+
+        ctx = BackendContext(
+            backend="thread",
+            cache_store=cast(Any, _Store()),
+            dataset_store=cast(Any, _Store()),
+        )
+        data = ctx.to_dict()
+
+        assert data["cache_store"] is None
+        assert data["dataset_store"] is None
+
     def test_to_dict_none_stores_stay_none(self):
         ctx = BackendContext(backend="inline")
         data = ctx.to_dict()
@@ -72,14 +102,12 @@ class TestBackendContextSerialization:
             backend="process",
             cache_store=CacheStore(cache_path),
             dataset_store=DatasetStore(ds_path),
-            map_index=3,
         )
         data = original.to_dict()
 
         restored = BackendContext.from_dict(data)
 
         assert restored.backend == "process"
-        assert restored.map_index == 3
         assert restored.event_reporter is None
         assert restored.dataset_reporter is None
         assert isinstance(restored.cache_store, CacheStore)
@@ -141,7 +169,6 @@ class TestBackendContextSerialization:
             backend="process",
             cache_store=CacheStore(cache_path),
             dataset_store=DatasetStore(ds_path),
-            map_index=5,
         )
         data = ctx.to_dict()
 
@@ -150,9 +177,17 @@ class TestBackendContextSerialization:
 
         restored = BackendContext.from_dict(wire)
         assert restored.backend == "process"
-        assert restored.map_index == 5
         assert isinstance(restored.cache_store, CacheStore)
         assert isinstance(restored.dataset_store, DatasetStore)
+
+
+class TestSubmitContext:
+    """SubmitContext guards and dynamic field visibility."""
+
+    def test_submit_context_exposes_map_index(self) -> None:
+        with SubmitContext(map_index=7):
+            assert SubmitContext._get() is not None
+            assert SubmitContext._get().map_index == 7  # type: ignore[union-attr]
 
 
 class TestContextGuards:

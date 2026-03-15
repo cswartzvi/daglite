@@ -11,6 +11,7 @@ from typing_extensions import final
 
 from daglite._context import BackendContext
 from daglite._context import SessionContext
+from daglite._context import SubmitContext
 from daglite.settings import get_global_settings
 
 
@@ -50,10 +51,11 @@ class Backend(abc.ABC):
 
         self._session = session
         self._settings = session.settings if session else get_global_settings()
-        self._start()
+        self._backend_context = BackendContext.from_session(self.name)
+        self._start(context=self._backend_context)
         self._started = True
 
-    def _start(self) -> None:
+    def _start(self, *, context: BackendContext) -> None:
         """Subclass hook for creating per-backend resources."""
 
     @final
@@ -94,8 +96,8 @@ class Backend(abc.ABC):
         Returns:
             A `concurrent.futures.Future` whose `.result()` yields the task return value.
         """
-        context = BackendContext.from_session(self.name, map_index=map_index)
-        return self._submit(func, args, kwargs or {}, context=context)
+        submit_context = SubmitContext(map_index=map_index)
+        return self._submit(func, args, kwargs or {}, submit_context=submit_context)
 
     @abc.abstractmethod
     def _submit(
@@ -104,7 +106,7 @@ class Backend(abc.ABC):
         args: tuple[Any, ...],
         kwargs: dict[str, Any],
         *,
-        context: BackendContext,
+        submit_context: SubmitContext,
     ) -> Future[Any]:
         """
         Subclass hook for dispatching a single task call.
@@ -113,7 +115,7 @@ class Backend(abc.ABC):
             func: A callable to be executed on the backend.
             args: Positional arguments for the callable.
             kwargs: Keyword arguments for the callable.
-            context: Context containing session-level and task-level information.
+            submit_context: Per-submission dynamic context (e.g. map index).
 
         Returns:
             A `concurrent.futures.Future` whose `.result()` yields the task return value.

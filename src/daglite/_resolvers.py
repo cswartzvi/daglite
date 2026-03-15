@@ -11,6 +11,7 @@ from pluggy import PluginManager
 
 from daglite._context import BackendContext
 from daglite._context import SessionContext
+from daglite._context import SubmitContext
 from daglite._context import TaskContext
 
 if TYPE_CHECKING:
@@ -56,11 +57,12 @@ def resolve_map_index() -> int | None:
     """
     Resolve the map index from the active context chain.
 
-    Resolution order: ``TaskContext`` → ``BackendContext`` → ``SessionContext``.
+    Resolution order: ``SubmitContext``.
     """
-    submit_ctx = BackendContext._get()
-    map_index = submit_ctx.map_index if submit_ctx is not None else None
-    return map_index
+    submit_ctx = SubmitContext._get()
+    if submit_ctx is None:
+        return None
+    return submit_ctx.map_index
 
 
 def resolve_backend() -> str:

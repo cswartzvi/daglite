@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
+from daglite._resolvers import _resolve_from_chain
 from daglite._resolvers import resolve_cache_store
 from daglite._resolvers import resolve_dataset_store
 from daglite.cache.store import CacheStore
@@ -48,3 +49,13 @@ class TestResolveDatasetStore:
         with patch("daglite.settings.get_global_settings", return_value=mock_settings):
             result = resolve_dataset_store(store=None)
         assert isinstance(result, DatasetStore)
+
+
+class TestFirstNonNone:
+    """Unit tests for helper branch behavior."""
+
+    def test_continues_when_value_is_none(self) -> None:
+        first = type("First", (), {"backend": None})()
+        second = type("Second", (), {"backend": "thread"})()
+
+        assert _resolve_from_chain("backend", first, second, default="inline") == "thread"

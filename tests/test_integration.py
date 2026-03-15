@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -361,6 +362,36 @@ class TestMapInSession:
             results = map_tasks(double, [10, 20, 30])
         assert results == [20, 40, 60]
 
+    def test_thread_backend_many_items(self) -> None:
+        """Thread fan-out handles many items without context re-entry errors."""
+
+        @task
+        def slow_double(x: int) -> int:
+            import time
+
+            time.sleep(0.01)
+            return x * 2
+
+        values = list(range(20))
+        with session(backend="thread"):
+            results = map_tasks(slow_double, values)
+
+        assert results == [x * 2 for x in values]
+
+    def test_session_backend_used_by_default(self) -> None:
+        """When backend is omitted, ``map_tasks`` uses the session default backend."""
+
+        @task
+        def backend_name(x: int) -> str:
+            from daglite._resolvers import resolve_backend
+
+            return resolve_backend()
+
+        with session(backend="thread"):
+            results = map_tasks(backend_name, [1, 2, 3])
+
+        assert results == ["thread", "thread", "thread"]
+
     def test_override_backend(self) -> None:
         """Explicit ``backend`` on ``map_tasks`` overrides the session."""
         with session(backend="inline"):
@@ -378,6 +409,25 @@ class TestMapInSession:
                 return await gather_tasks(async_double, [1, 2, 3])
 
         assert asyncio.run(_run()) == [2, 4, 6]
+
+    def test_process_backend_preserves_map_index(self) -> None:
+        """Process-backed mapped calls preserve per-item ``map_index`` context."""
+
+        @task(dataset="mapped_{map_index}.pkl")
+        def emit(x: int) -> int:
+            return x
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with session(backend="process", dataset_store=tmpdir):
+                results = map_tasks(emit, [1, 2, 3], backend="process")
+
+            files = sorted(Path(tmpdir).glob("mapped_*.pkl"))
+            assert [path.name for path in files] == [
+                "mapped_0.pkl",
+                "mapped_1.pkl",
+                "mapped_2.pkl",
+            ]
+            assert results == [1, 2, 3]
 
 
 # region Error propagation

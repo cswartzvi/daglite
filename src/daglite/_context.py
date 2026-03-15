@@ -144,6 +144,16 @@ class TaskContext(BaseContext):
 
 
 @dataclass
+class SubmitContext(BaseContext):
+    """Per-submission dynamic execution context (e.g. map index)."""
+
+    __var__ = ContextVar("submit_dynamic_context", default=None)
+
+    map_index: int | None = None
+    """Index of the current map iteration, or `None` if not inside a map."""
+
+
+@dataclass
 class BackendContext(SerializableContext):
     """
     Execution context for coordinating task submission to a backend.
@@ -164,9 +174,6 @@ class BackendContext(SerializableContext):
     event_reporter: EventReporter | None = None
     """A reporter for sending events to the event processor, or `None` outside a session."""
 
-    map_index: int | None = None
-    """Index of the current map iteration, or `None` if not inside a map."""
-
     cache_store: CacheStore | None = None
     """A cache store override for this task, or `None` to inherit from the session."""
 
@@ -177,12 +184,11 @@ class BackendContext(SerializableContext):
     """A reporter for saving datasets, or `None` outside a session."""
 
     @classmethod
-    def from_session(cls, backend: str | None = None, map_index: int | None = None) -> Self:
+    def from_session(cls, backend: str | None = None) -> Self:
         """Creates a `BackendContext` from the active session context."""
         session = SessionContext._get()
         return cls(
             backend=backend,
-            map_index=map_index,
             cache_store=session.cache_store if session else None,
             dataset_store=session.dataset_store if session else None,
             dataset_reporter=session.dataset_reporter if session else None,

@@ -6,6 +6,9 @@ from concurrent.futures import Future
 
 import pytest
 
+from daglite._context import SubmitContext
+from daglite.backends.local import _process_submit
+from daglite.backends.local import _ProcessSubmitContext
 from daglite.backends.manager import BackendManager
 from daglite.session import session
 
@@ -44,3 +47,22 @@ class TestBackendSubmit:
         fut = started_backend.submit(_boom, (1,))
         with pytest.raises(ValueError, match="kaboom"):
             fut.result(timeout=10)
+
+
+class TestProcessSubmitHelpers:
+    """Direct tests for process helper wrappers that run in subprocesses in integration runs."""
+
+    def test_process_submit_enters_submit_context(self) -> None:
+        def _read_map_index() -> int | None:
+            current = SubmitContext._get()
+            return current.map_index if current is not None else None
+
+        result = _process_submit(
+            _read_map_index,
+            (),
+            {},
+            _ProcessSubmitContext(map_index=9),
+        )
+
+        assert result == 9
+        assert SubmitContext._get() is None

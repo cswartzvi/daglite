@@ -12,7 +12,7 @@ from collections.abc import Iterable
 from collections.abc import Iterator
 from typing import Any, TypeVar, overload
 
-from daglite._context import BackendContext
+from daglite._context import SubmitContext
 from daglite._resolvers import resolve_dataset_reporter
 from daglite._resolvers import resolve_dataset_store
 from daglite._resolvers import resolve_hook
@@ -348,9 +348,8 @@ def _make_backend_callable(func: Callable[..., Any], func_name: str) -> Callable
 
 
 async def _async_indexed_call(task: Callable[..., Any], index: int, args: tuple[Any, ...]) -> Any:
-    """Await *task* with a `BackendContext` carrying the `map_index`."""
-    ctx = BackendContext.from_session(map_index=index)
-    with ctx:
+    """Await *task* with a `SubmitContext` carrying the `map_index`."""
+    with SubmitContext(map_index=index):
         if getattr(task, "is_generator", False):
             return [item async for item in task(*args)]
         return await task(*args)

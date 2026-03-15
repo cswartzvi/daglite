@@ -125,7 +125,10 @@ class BackendManager:
         from daglite.exceptions import BackendError
 
         if not backend_name:
-            backend_name = self._settings.backend
+            backend_name = self._session.backend if self._session else self._settings.backend
+
+        # At this point a backend name must be resolved from session or settings.
+        assert backend_name is not None
 
         if backend_name not in self._backends:
             try:
