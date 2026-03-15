@@ -17,15 +17,15 @@ class EventHandlerPlugin(Protocol):
     2. Use reporter in worker-side hooks to send events back to coordinator
 
     Examples:
-    >>> from daglite.plugins.events import PluginEvent
+    >>> from typing import Hashable
     >>> from daglite.plugins.hooks.markers import hook_impl
     >>> class ProgressPlugin:
     ...     def register_event_handlers(self, registry):
-    ...         registry.on("progress", self._update_progress)
+    ...         registry.register("progress", self._update_progress)
     ...
-    ...     def _update_progress(self, event: PluginEvent):
+    ...     def _update_progress(self, event_type: Hashable, event_data: dict[str, Any]):
     ...         # Coordinator-side handler
-    ...         print(f"Progress: {event.data['percent']}%")
+    ...         print(f"Progress: {event_data['percent']}%")
     ...
     ...     @hook_impl
     ...     def after_node_execute(self, node_id, result, reporter=None):
