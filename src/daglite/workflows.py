@@ -12,8 +12,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Generic, ParamSpec, Protocol, TypeVar, overload
 
+from typing_extensions import TypeAlias
+
 P = ParamSpec("P")
 R = TypeVar("R")
+Workflow: TypeAlias = "SyncWorkflow[P, R] | AsyncWorkflow[P, R]"
 
 
 # region Decorator
