@@ -87,6 +87,9 @@ jobs:
 
   preview-cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    permissions:
+      contents: write
+      deployments: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,3 +104,32 @@ jobs:
           git add -A
           git diff --cached --quiet || git commit -m "Clean up docs preview for PR #${{ github.event.pull_request.number }}"
           git push
+
+      - name: Deactivate and remove deployment environment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const envName = `docs-preview-pr-${{ github.event.pull_request.number }}`;
+            try {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment: envName,
+              });
+              for (const deployment of deployments) {
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: deployment.id,
+                  state: 'inactive',
+                });
+              }
+              await github.rest.repos.deleteAnEnvironment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: envName,
+              });
+              console.log(`Cleaned up environment: ${envName}`);
+            } catch (e) {
+              console.log(`Environment cleanup skipped: ${e.message}`);
+            }
