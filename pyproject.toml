@@ -46,6 +46,7 @@ test = [
     "ty",
 ]
 docs = [
+    "mkdocstrings[python]>=0.29",
     "zensical>=0.0.24",
 ]
 repl = ["ipython"]
