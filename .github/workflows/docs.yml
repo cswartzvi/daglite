@@ -8,9 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
 concurrency:
   group: "docs-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}"
@@ -34,45 +32,48 @@ jobs:
       - name: Build documentation
         run: uv run --group docs zensical build --clean
 
-      - name: Upload Pages artifact
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./site
-
-      - name: Upload preview artifact
-        if: github.event_name == 'pull_request'
+      - name: Upload docs artifact
         uses: actions/upload-artifact@v4
         with:
-          name: docs-preview-site
+          name: docs-site
           path: ./site
 
   deploy:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
-
-  preview:
-    if: github.event_name == 'pull_request'
-    permissions:
-      contents: write
-      pull-requests: write
     runs-on: ubuntu-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download preview artifact
+      - name: Download docs artifact
         uses: actions/download-artifact@v4
         with:
-          name: docs-preview-site
+          name: docs-site
+          path: ./site
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          keep_files: true
+          exclude_assets: "previews/**"
+
+  preview:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: "docs-preview-pr-${{ github.event.pull_request.number }}"
+      url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/previews/pr-${{ github.event.pull_request.number }}/"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site
           path: ./site
 
       - name: Deploy preview to gh-pages
@@ -84,41 +85,8 @@ jobs:
           destination_dir: previews/pr-${{ github.event.pull_request.number }}
           keep_files: true
 
-      - name: Comment preview URL on PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const previewUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/previews/pr-${context.issue.number}/`;
-            const marker = '<!-- docs-preview-comment -->';
-            const body = `${marker}\n### 📄 Docs Preview\n\n${previewUrl}`;
-
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            const existing = comments.find(c => c.body.includes(marker));
-
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: existing.id,
-                body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body,
-              });
-            }
-
   preview-cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
-    permissions:
-      contents: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
