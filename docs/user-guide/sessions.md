@@ -1,3 +1,3 @@
-# Pipelines & CLI
+# Sessions
 
-<!-- TODO: Pipeline class, CLI commands (run, list, describe) -->
+<!-- TODO: Session context, async_session, eager evaluation -->

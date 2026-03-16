@@ -1,3 +1,3 @@
 # Composers
 
-<!-- TODO: Composing tasks into DAGs, dependencies -->
+<!-- TODO: gather_tasks, map_tasks, load_dataset, save_dataset -->

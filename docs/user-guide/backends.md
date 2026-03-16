@@ -1,3 +1,3 @@
-# Evaluation
+# Backends
 
-<!-- TODO: Eager vs lazy evaluation, session context -->
+<!-- TODO: Execution backends, local/thread/process -->

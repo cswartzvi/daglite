@@ -1,3 +1,3 @@
-# Streaming
+# Workflows
 
-<!-- TODO: Generator tasks, streaming results -->
+<!-- TODO: @workflow decorator, CLI-discoverable entrypoints -->
