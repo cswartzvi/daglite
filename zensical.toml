@@ -35,6 +35,17 @@ accent = "indigo"
 toggle.icon = "lucide/moon"
 toggle.name = "Switch to light mode"
 
+[[project.plugins]]
+mkdocstrings.handlers.python.options.docstring_style = "google"
+mkdocstrings.handlers.python.options.show_source = true
+mkdocstrings.handlers.python.options.show_root_heading = true
+mkdocstrings.handlers.python.options.show_root_full_path = false
+mkdocstrings.handlers.python.options.show_symbol_type_heading = true
+mkdocstrings.handlers.python.options.show_signature_annotations = true
+mkdocstrings.handlers.python.options.separate_signature = true
+mkdocstrings.handlers.python.options.line_length = 100
+mkdocstrings.handlers.python.paths = ["src"]
+
 [[project.extra.social]]
 icon = "fontawesome/brands/github"
 link = "https://github.com/cswartzvi/daglite"
