@@ -3,10 +3,8 @@ name: Deploy Documentation
 on:
   push:
     branches:
-      - "**"
-  pull_request:
-    branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -15,7 +13,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "docs-${{ github.ref }}"
+  group: "docs-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -36,13 +34,13 @@ jobs:
       - name: Build documentation
         run: uv run --group docs zensical build --clean
 
-      - name: Upload Pages artifact (main deploy)
+      - name: Upload Pages artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./site
 
-      - name: Upload docs artifact (PR validation)
+      - name: Upload preview artifact
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
@@ -62,36 +60,76 @@ jobs:
         uses: actions/deploy-pages@v4
 
   preview:
-    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
+    if: github.event_name == 'pull_request'
     permissions:
       contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
     needs: build
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv and set the python version
-        uses: astral-sh/setup-uv@v6
+      - name: Download preview artifact
+        uses: actions/download-artifact@v4
         with:
-          enable-cache: true
-          python-version: "3.13"
+          name: docs-preview-site
+          path: ./site
 
-      - name: Install dependencies
-        run: uv sync --all-extras --dev --group docs
-
-      - name: Build documentation
-        run: uv run --group docs zensical build --clean
-
-      - name: Publish branch preview under gh-pages/previews/<branch>
+      - name: Deploy preview to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./site
-          destination_dir: previews/${{ github.ref_name }}
+          destination_dir: previews/pr-${{ github.event.pull_request.number }}
           keep_files: true
 
-      - name: Add preview URL to workflow summary
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const previewUrl = `https://${context.repo.owner}.github.io/${context.repo.repo}/previews/pr-${context.issue.number}/`;
+            const marker = '<!-- docs-preview-comment -->';
+            const body = `${marker}\n### 📄 Docs Preview\n\n${previewUrl}`;
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  preview-cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Remove preview directory
         run: |
-          echo "### Branch docs preview" >> "$GITHUB_STEP_SUMMARY"
-          echo "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/previews/${{ github.ref_name }}/" >> "$GITHUB_STEP_SUMMARY"
+          rm -rf "previews/pr-${{ github.event.pull_request.number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Clean up docs preview for PR #${{ github.event.pull_request.number }}"
+          git push
