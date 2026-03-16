@@ -1,14 +1,17 @@
 # API Reference
 
-The API reference pages are currently placeholders while Daglite transitions from MkDocs + mkdocstrings to Zensical.
+Overview of the daglite public API.
 
-## Current status
-
-- Core API pages exist as migration stubs.
-- Detailed symbols and signatures will be restored after selecting a Zensical-compatible generation strategy.
-
-## Next steps
-
-- Define the long-term API docs generation approach.
-- Reintroduce module/class/function detail incrementally.
-- Add CI checks to prevent API-reference drift.
+::: daglite
+    options:
+      show_root_heading: false
+      show_submodules: false
+      members:
+        - task
+        - workflow
+        - session
+        - async_session
+        - gather_tasks
+        - map_tasks
+        - load_dataset
+        - save_dataset
