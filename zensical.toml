@@ -1,0 +1,94 @@
+[project]
+site_name = "Daglite"
+site_description = "Lightweight, type-safe Python framework for building DAGs"
+site_author = "Charles Swartzviaduct"
+site_url = "https://cswartzvi.github.io/daglite"
+repo_name = "cswartzvi/daglite"
+repo_url = "https://github.com/cswartzvi/daglite"
+edit_uri = "edit/main/docs/"
+nav = [
+  {"Home" = "index.md"},
+  {"Getting Started" = [
+    {"Installation" = "getting-started/installation.md"},
+    {"Build Task" = "getting-started/build-task.md"},
+    {"Build Workflow" = "getting-started/build-workflow.md"},
+    {"Run Workflow" = "getting-started/run-workflow.md"},
+  ]},
+  {"User Guide" = [
+    {"Tasks" = "user-guide/tasks.md"},
+    {"Workflows" = "user-guide/workflows.md"},
+    {"Composers" = "user-guide/composers.md"},
+    {"Sessions" = "user-guide/sessions.md"},
+    {"Backends" = "user-guide/backends.md"},
+    {"CLI Reference" = "user-guide/cli.md"},
+  ]},
+  {"Plugins" = [
+    {"Built-in" = "plugins/built-in.md"},
+    {"Creating Plugins" = "plugins/creating.md"},
+  ]},
+  {"Examples" = [
+    {"Overview" = "examples/index.md"},
+    {"ETL Pipeline" = "examples/etl-pipeline.md"},
+    {"ML Workflow" = "examples/ml-workflow.md"},
+    {"Data Processing" = "examples/data-processing.md"},
+  ]},
+  {"API Reference" = [
+    {"Overview" = "api-reference/index.md"},
+    {"Tasks" = "api-reference/tasks.md"},
+    {"Workflows" = "api-reference/workflows.md"},
+    {"Composers" = "api-reference/futures.md"},
+    {"Sessions" = "api-reference/sessions.md"},
+    {"Backends" = "api-reference/backend.md"},
+    {"Datasets" = "api-reference/datasets.md"},
+    {"Settings" = "api-reference/settings.md"},
+    {"Logging" = "api-reference/logging.md"},
+  ]},
+]
+extra_javascript = [
+  "javascripts/mathjax.js",
+  "https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js",
+]
+
+[project.theme]
+language = "en"
+features = [
+  "navigation.tabs",
+  "navigation.tabs.sticky",
+  "navigation.tracking",
+  "navigation.top",
+  "search.highlight",
+  "content.code.copy",
+]
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.plugins]]
+mkdocstrings.handlers.python.options.docstring_style = "google"
+mkdocstrings.handlers.python.options.show_source = true
+mkdocstrings.handlers.python.options.show_root_heading = true
+mkdocstrings.handlers.python.options.show_root_full_path = false
+mkdocstrings.handlers.python.options.show_symbol_type_heading = true
+mkdocstrings.handlers.python.options.show_signature_annotations = true
+mkdocstrings.handlers.python.options.separate_signature = true
+mkdocstrings.handlers.python.options.line_length = 100
+mkdocstrings.handlers.python.paths = ["src"]
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/cswartzvi/daglite"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/daglite/"

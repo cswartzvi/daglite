@@ -4,16 +4,15 @@ on:
   push:
     branches:
       - main
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  group: "docs-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}"
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -31,20 +30,111 @@ jobs:
         run: uv sync --all-extras --dev --group docs
 
       - name: Build documentation
-        run: uv run mkdocs build --strict
+        run: uv run --group docs zensical build --clean
 
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: docs-site
           path: ./site
 
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     runs-on: ubuntu-latest
     needs: build
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site
+          path: ./site
+
       - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          keep_files: true
+          exclude_assets: "previews/**"
+
+  preview:
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      deployments: write
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: "docs-preview-pr-${{ github.event.pull_request.number }}"
+      url: "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/previews/pr-${{ github.event.pull_request.number }}/"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-site
+          path: ./site
+
+      - name: Deploy preview to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          destination_dir: previews/pr-${{ github.event.pull_request.number }}
+          keep_files: true
+
+  preview-cleanup:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write
+      deployments: write
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+
+      - name: Remove preview directory
+        run: |
+          rm -rf "previews/pr-${{ github.event.pull_request.number }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Clean up docs preview for PR #${{ github.event.pull_request.number }}"
+          git push
+
+      - name: Deactivate and remove deployment environment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const envName = `docs-preview-pr-${{ github.event.pull_request.number }}`;
+            try {
+              const { data: deployments } = await github.rest.repos.listDeployments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment: envName,
+              });
+              for (const deployment of deployments) {
+                await github.rest.repos.createDeploymentStatus({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  deployment_id: deployment.id,
+                  state: 'inactive',
+                });
+              }
+              await github.rest.repos.deleteAnEnvironment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: envName,
+              });
+              console.log(`Cleaned up environment: ${envName}`);
+            } catch (e) {
+              console.log(`Environment cleanup skipped: ${e.message}`);
+            }
