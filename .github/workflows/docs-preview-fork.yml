@@ -112,7 +112,7 @@ jobs:
           message: |
             📚 **Docs preview**
 
-            [View preview](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/)
+            [https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/)
 
             _This preview was published manually by a maintainer._
 
