@@ -65,7 +65,6 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@v3
         with:
           header: daglite-docs-preview
-          recreate: true
           message: |
             🧹 **Docs preview removed**
 
