@@ -38,8 +38,35 @@ jobs:
         run: uv run --group docs zensical build --clean
 
       - name: Deploy PR preview
+        if: github.event.action != 'closed'
+        id: preview
         uses: rossjrw/pr-preview-action@v1
         with:
           source-dir: ./site
           preview-branch: gh-pages
           umbrella-dir: pr-preview
+          comment: false
+
+      - name: Create or update preview comment
+        if: github.event.action != 'closed'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: daglite-docs-preview
+          recreate: true
+          message: |
+            📚 **Docs preview**
+
+            [View preview](${{ steps.preview.outputs.preview-url }})
+
+            _Updates automatically when new commits are pushed to this PR._
+
+      - name: Update preview comment on close
+        if: github.event.action == 'closed'
+        uses: marocchino/sticky-pull-request-comment@v3
+        with:
+          header: daglite-docs-preview
+          recreate: true
+          message: |
+            🧹 **Docs preview removed**
+
+            The preview for this PR was removed because the pull request was closed.
