@@ -23,8 +23,6 @@ jobs:
 
     outputs:
       pr_number: ${{ steps.pr.outputs.number }}
-      head_repo: ${{ steps.pr.outputs.head_repo }}
-      head_ref: ${{ steps.pr.outputs.head_ref }}
 
     steps:
       - name: Read PR metadata
@@ -106,14 +104,15 @@ jobs:
           keep_files: true
 
       - name: Create or update sticky preview comment
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           number: ${{ needs.build-fork-preview.outputs.pr_number }}
           header: daglite-docs-preview
+          recreate: true
           message: |
-            📚 Docs preview for fork PR #${{ needs.build-fork-preview.outputs.pr_number }}
+            📚 **Docs preview**
 
-            https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/
+            [View preview](https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/)
 
             _This preview was published manually by a maintainer._
 
@@ -145,9 +144,12 @@ jobs:
           git push
 
       - name: Update sticky preview comment
-        uses: marocchino/sticky-pull-request-comment@v2
+        uses: marocchino/sticky-pull-request-comment@v3
         with:
           number: ${{ github.event.pull_request.number }}
           header: daglite-docs-preview
+          recreate: true
           message: |
-            🧹 Docs preview for fork PR #${{ github.event.pull_request.number }} has been removed because the pull request was closed.
+            🧹 **Docs preview removed**
+
+            The preview for this PR was removed because the pull request was closed.
