@@ -1,0 +1,46 @@
+name: Docs Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: docs-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  docs-preview:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        if: github.event.action != 'closed'
+        uses: actions/checkout@v4
+
+      - name: Install uv and set Python version
+        if: github.event.action != 'closed'
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        if: github.event.action != 'closed'
+        run: uv sync --all-extras --dev --group docs
+
+      - name: Build documentation
+        if: github.event.action != 'closed'
+        run: uv run --group docs zensical build --clean
+
+      - name: Deploy PR preview
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: ./site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
+          pages-base-path: .
