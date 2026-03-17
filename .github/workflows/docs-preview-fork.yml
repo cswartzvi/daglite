@@ -10,18 +10,21 @@ on:
   pull_request_target:
     types: [closed]
 
-permissions:
-  contents: write
-  pull-requests: write
-
 concurrency:
   group: docs-preview-fork-${{ github.event_name == 'workflow_dispatch' && inputs.pr_number || github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
-  deploy-fork-preview:
+  build-fork-preview:
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    outputs:
+      pr_number: ${{ steps.pr.outputs.number }}
+      head_repo: ${{ steps.pr.outputs.head_repo }}
+      head_ref: ${{ steps.pr.outputs.head_ref }}
 
     steps:
       - name: Read PR metadata
@@ -72,24 +75,45 @@ jobs:
       - name: Build documentation
         run: uv run --group docs zensical build --clean
 
+      - name: Upload built docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fork-docs-site-pr-${{ inputs.pr_number }}
+          path: ./site
+
+  deploy-fork-preview:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build-fork-preview
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Download built docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: fork-docs-site-pr-${{ needs.build-fork-preview.outputs.pr_number }}
+          path: ./site
+
       - name: Deploy preview to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_branch: gh-pages
           publish_dir: ./site
-          destination_dir: pr-preview/pr-${{ inputs.pr_number }}
+          destination_dir: pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}
           keep_files: true
 
       - name: Create or update sticky preview comment
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          number: ${{ inputs.pr_number }}
+          number: ${{ needs.build-fork-preview.outputs.pr_number }}
           header: daglite-docs-preview
           message: |
-            📚 Docs preview for fork PR #${{ inputs.pr_number }}
+            📚 Docs preview for fork PR #${{ needs.build-fork-preview.outputs.pr_number }}
 
-            https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ inputs.pr_number }}/
+            https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ needs.build-fork-preview.outputs.pr_number }}/
 
             _This preview was published manually by a maintainer._
 
@@ -98,6 +122,9 @@ jobs:
         github.event.action == 'closed' &&
         github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
 
     steps:
       - name: Check out gh-pages branch
