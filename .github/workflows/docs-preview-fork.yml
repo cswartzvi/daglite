@@ -1,0 +1,126 @@
+name: Docs Preview for Fork PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: docs-preview-fork-${{ github.event_name == 'workflow_dispatch' && inputs.pr_number || github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy-fork-preview:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Read PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          set -euo pipefail
+
+          pr_json="$(gh api repos/${{ github.repository }}/pulls/${PR_NUMBER})"
+
+          echo "number=$(jq -r '.number' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+          echo "state=$(jq -r '.state' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+          echo "head_repo=$(jq -r '.head.repo.full_name' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+          echo "head_ref=$(jq -r '.head.ref' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+          echo "is_fork=$(jq -r '(.head.repo.full_name != .base.repo.full_name)' <<< "$pr_json")" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse non-fork PRs
+        if: steps.pr.outputs.is_fork != 'true'
+        run: |
+          echo "PR #${{ inputs.pr_number }} is not from a fork."
+          echo "Use the automatic docs preview workflow instead."
+          exit 1
+
+      - name: Refuse closed PR
+        if: steps.pr.outputs.state != 'open'
+        run: |
+          echo "PR #${{ inputs.pr_number }} is not open."
+          exit 1
+
+      - name: Check out fork PR head
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ steps.pr.outputs.head_repo }}
+          ref: ${{ steps.pr.outputs.head_ref }}
+          persist-credentials: false
+
+      - name: Install uv and set Python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev --group docs
+
+      - name: Build documentation
+        run: uv run --group docs zensical build --clean
+
+      - name: Deploy preview to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./site
+          destination_dir: pr-preview/pr-${{ inputs.pr_number }}
+          keep_files: true
+
+      - name: Create or update sticky preview comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          number: ${{ inputs.pr_number }}
+          header: daglite-docs-preview
+          message: |
+            📚 Docs preview for fork PR #${{ inputs.pr_number }}
+
+            https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/pr-preview/pr-${{ inputs.pr_number }}/
+
+            _This preview was published manually by a maintainer._
+
+  cleanup-fork-preview:
+    if: github.event_name == 'pull_request_target' &&
+        github.event.action == 'closed' &&
+        github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out gh-pages branch
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: gh-pages
+
+      - name: Remove preview directory
+        run: |
+          set -euo pipefail
+          rm -rf "gh-pages/pr-preview/pr-${{ github.event.pull_request.number }}"
+          cd gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Remove docs preview for fork PR #${{ github.event.pull_request.number }}"
+          git push
+
+      - name: Update sticky preview comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          number: ${{ github.event.pull_request.number }}
+          header: daglite-docs-preview
+          message: |
+            🧹 Docs preview for fork PR #${{ github.event.pull_request.number }} has been removed because the pull request was closed.
