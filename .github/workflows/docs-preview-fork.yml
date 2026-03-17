@@ -108,7 +108,6 @@ jobs:
         with:
           number: ${{ needs.build-fork-preview.outputs.pr_number }}
           header: daglite-docs-preview
-          recreate: true
           message: |
             📚 **Docs preview**
 
@@ -148,7 +147,6 @@ jobs:
         with:
           number: ${{ github.event.pull_request.number }}
           header: daglite-docs-preview
-          recreate: true
           message: |
             🧹 **Docs preview removed**
 
