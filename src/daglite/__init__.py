@@ -1,6 +1,6 @@
 """Daglite: Lightweight Python framework for building eager task pipelines."""
 
-__version__ = "0.8.0"
+__version__ = "0.9.0b6"
 
 import daglite.datasets.builtin  # noqa: F401  ensure builtins are registered
 from daglite import backends
