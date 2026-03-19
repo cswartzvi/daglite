@@ -17,18 +17,17 @@ dependencies = [
     "cyclopts>=4.10.0",
     "fsspec>=2026.1.0",
     "pluggy>=1.6.0",
+    "rich>=14.3.3",
     "typing-extensions>=4.15.0", # For Python 3.10 compatibility
 ]
 
 [project.scripts]
 daglite = "daglite.cli.core:main"
 
-[project.optional-dependencies] # Add new plugins here
-rich = ["daglite-rich"]
+[project.optional-dependencies] # Add new extras here
 
 [dependency-groups]
 dev = [
-    "daglite-rich",
     "nox",
     "pandas-stubs",
     "poethepoet",
@@ -75,9 +74,8 @@ fail_under = 0
 [tool.coverage.run]
 source_pkgs = [
     "daglite",
-    "daglite_rich",
-] # Add new plugins here
-omit = ["tests/contracts/typing/*.py"]
+] # Add new extras here
+omit = ["tests/typing/*.py"]
 branch = true
 sigterm = true
 relative_files = true
@@ -95,7 +93,7 @@ show_error_codes = true
 warn_unreachable = true
 warn_no_return = true
 warn_unused_ignores = true
-mypy_path = "/src:extras/rich/src" # Add new plugins here
+mypy_path = "/src" # Add new extras here
 
 # --- tool.pyrefly ---  # currently only used in CI for type checking
 
@@ -108,9 +106,8 @@ invalid-param-spec = false
 # --- tool.pyright ---
 
 [tool.pyright]
-executionEnvironments = [ # Add new plugins here
+executionEnvironments = [ # Add new extras here
     { root = "src" },
-    { root = "extras/rich/src" },
 ]
 include = ["src", "extras/*/src", "tests", "extras/*/tests"]
 exclude = [
@@ -216,7 +213,7 @@ attr = "daglite.__version__"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"daglite" = ["py.typed", "plugins/builtin/logging.json"]
+"daglite" = ["py.typed", "logging/logging.json"]
 
 # --- tool.ty ---  # currently only used in CI for type checking
 
@@ -228,9 +225,8 @@ unused-ignore-comment = "error"
 [tool.uv]
 default-groups = ["dev", "test"]
 
-[tool.uv.sources] # Add new plugins here
+[tool.uv.sources] # Add new extras here
 daglite = { workspace = true }
-daglite-rich = { workspace = true }
 
-[tool.uv.workspace]
-members = ["extras/*"]
+# [tool.uv.workspace]
+# members = ["extras/*"]

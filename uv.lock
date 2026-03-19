@@ -11,12 +11,6 @@ resolution-markers = [
     "python_full_version < '3.11'",
 ]
 
-[manifest]
-members = [
-    "daglite",
-    "daglite-rich",
-]
-
 [[package]]
 name = "appnope"
 version = "0.1.4"
@@ -338,12 +332,8 @@ dependencies = [
     { name = "cyclopts" },
     { name = "fsspec" },
     { name = "pluggy" },
+    { name = "rich" },
     { name = "typing-extensions" },
-]
-
-[package.optional-dependencies]
-rich = [
-    { name = "daglite-rich" },
 ]
 
 [package.dev-dependencies]
@@ -382,16 +372,15 @@ test = [
 requires-dist = [
     { name = "cloudpickle", specifier = ">=3.0" },
     { name = "cyclopts", specifier = ">=4.10.0" },
-    { name = "daglite-rich", marker = "extra == 'rich'", editable = "extras/rich" },
     { name = "fsspec", specifier = ">=2026.1.0" },
     { name = "pluggy", specifier = ">=1.6.0" },
+    { name = "rich", specifier = ">=14.3.3" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
-provides-extras = ["rich"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "daglite-rich", editable = "extras/rich" },
+    { name = "daglite-rich" },
     { name = "nox" },
     { name = "pandas-stubs" },
     { name = "poethepoet" },
@@ -417,16 +406,15 @@ test = [
 
 [[package]]
 name = "daglite-rich"
-source = { editable = "extras/rich" }
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "daglite" },
     { name = "rich" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "daglite", editable = "." },
-    { name = "rich" },
+sdist = { url = "https://files.pythonhosted.org/packages/d7/b0/9a6e3c91c60c50988666df88375887a8ec2bb091651de585477f73143c87/daglite_rich-0.4.0.tar.gz", hash = "sha256:6ffb6d3d348a17084b5e310eae77b98c1cd9f9fc1aead41dbff24f5085e129ce", size = 6684, upload-time = "2026-02-09T04:28:59.989Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8a/4c/2f2fb6b8a7c2f83efbdded396783500ef66c095e567af13e83bdd2b4cb1d/daglite_rich-0.4.0-py3-none-any.whl", hash = "sha256:e5443e02666ead43a9adb39a19b26ea60241569898553702b6404ef35c35488c", size = 4962, upload-time = "2026-02-09T04:28:58.486Z" },
 ]
 
 [[package]]

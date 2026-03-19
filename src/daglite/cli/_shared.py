@@ -28,28 +28,13 @@ HELP_FLAGS = ["-h", "--help"]
 
 
 def setup_cli_plugins() -> None:
-    """
-    Auto-register output plugins for CLI runs.
-
-    Prefers daglite-rich (progress bars + rich logging) when installed;
-    falls back to the builtin LifecycleLoggingPlugin.  Skips registration
-    if the user has already registered a compatible plugin.
-    """
+    """Auto-register output plugins for CLI runs."""
+    from daglite.logging.plugin import LifecycleLoggingPlugin
     from daglite.plugins.manager import has_plugin
     from daglite.plugins.manager import register_plugins
 
-    try:
-        from daglite_rich.logging import RichLifecycleLoggingPlugin
-
-        from daglite.logging.plugin import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(RichLifecycleLoggingPlugin())
-    except ImportError:  # pragma: no cover – only reached when daglite-rich is not installed
-        from daglite.logging.plugin import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(LifecycleLoggingPlugin())
+    if not has_plugin(LifecycleLoggingPlugin):
+        register_plugins(LifecycleLoggingPlugin())
 
 
 def normalize_tokens(tokens: list[str] | tuple[str, ...] | None) -> list[str]:
