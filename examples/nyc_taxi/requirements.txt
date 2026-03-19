@@ -1,0 +1,7 @@
+# Extra dependencies for the NYC Taxi example
+# Install alongside daglite: pip install daglite -r examples/nyc_taxi/requirements.txt
+
+httpx>=0.27          # async HTTP client for gather_tasks download stage
+pandas>=2.0
+pyarrow>=14.0        # parquet support for pandas
+scikit-learn>=1.4
