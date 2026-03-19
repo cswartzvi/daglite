@@ -28,7 +28,6 @@ daglite = "daglite.cli.core:main"
 
 [dependency-groups]
 dev = [
-    "daglite-rich",
     "nox",
     "pandas-stubs",
     "poethepoet",
