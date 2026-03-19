@@ -76,7 +76,7 @@ fail_under = 0
 source_pkgs = [
     "daglite",
 ] # Add new extras here
-omit = ["tests/contracts/typing/*.py"]
+omit = ["tests/typing/*.py"]
 branch = true
 sigterm = true
 relative_files = true
@@ -214,7 +214,7 @@ attr = "daglite.__version__"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"daglite" = ["py.typed", "plugins/builtin/logging.json"]
+"daglite" = ["py.typed", "logging/logging.json"]
 
 # --- tool.ty ---  # currently only used in CI for type checking
 
