@@ -35,21 +35,12 @@ def setup_cli_plugins() -> None:
     falls back to the builtin LifecycleLoggingPlugin.  Skips registration
     if the user has already registered a compatible plugin.
     """
+    from daglite.logging.plugin import LifecycleLoggingPlugin
     from daglite.plugins.manager import has_plugin
     from daglite.plugins.manager import register_plugins
 
-    try:
-        from daglite_rich.logging import RichLifecycleLoggingPlugin
-
-        from daglite.logging.plugin import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(RichLifecycleLoggingPlugin())
-    except ImportError:  # pragma: no cover – only reached when daglite-rich is not installed
-        from daglite.logging.plugin import LifecycleLoggingPlugin
-
-        if not has_plugin(LifecycleLoggingPlugin):
-            register_plugins(LifecycleLoggingPlugin())
+    if not has_plugin(LifecycleLoggingPlugin):
+        register_plugins(LifecycleLoggingPlugin())
 
 
 def normalize_tokens(tokens: list[str] | tuple[str, ...] | None) -> list[str]:
