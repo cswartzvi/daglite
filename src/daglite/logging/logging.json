@@ -2,32 +2,50 @@
   "version": 1,
   "disable_existing_loggers": false,
   "formatters": {
-    "default": {
-      "format": "%(asctime)s | %(levelname)-8s | %(name)s - %(message)s",
+    "rich_default": {
+      "format": "%(message)s",
+      "datefmt": "[%X]"
+    },
+    "rich_task": {
+      "format": "Task '%(daglite_task_key)s' - %(message)s",
+      "datefmt": "[%X]"
+    },
+    "file_detailed": {
+      "format": "%(asctime)s | %(levelname)-8s | %(name)s:%(lineno)d - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
     },
-    "task": {
+    "file_task_detailed": {
       "format": "%(asctime)s | %(levelname)-8s | Task '%(daglite_task_key)s' - %(message)s",
       "datefmt": "%Y-%m-%d %H:%M:%S"
     }
   },
   "handlers": {
-    "console": {
-      "class": "logging.StreamHandler",
+    "rich_console": {
+      "class": "rich.logging.RichHandler",
       "level": "INFO",
-      "formatter": "default",
-      "stream": "ext://sys.stdout"
+      "formatter": "rich_default",
+      "rich_tracebacks": true,
+      "tracebacks_show_locals": false,
+      "show_time": true,
+      "show_level": true,
+      "show_path": true,
+      "markup": true
     },
-    "console_task": {
-      "class": "logging.StreamHandler",
+    "rich_console_task": {
+      "class": "rich.logging.RichHandler",
       "level": "INFO",
-      "formatter": "task",
-      "stream": "ext://sys.stdout"
+      "formatter": "rich_task",
+      "rich_tracebacks": true,
+      "tracebacks_show_locals": false,
+      "show_time": true,
+      "show_level": true,
+      "show_path": false,
+      "markup": true
     },
     "file": {
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
-      "formatter": "default",
+      "formatter": "file_detailed",
       "filename": "run.log",
       "mode": "a",
       "encoding": "utf-8",
@@ -38,7 +56,7 @@
     "file_task": {
       "class": "logging.handlers.RotatingFileHandler",
       "level": "DEBUG",
-      "formatter": "task",
+      "formatter": "file_task_detailed",
       "filename": "run.log",
       "mode": "a",
       "encoding": "utf-8",
@@ -55,17 +73,17 @@
     },
     "daglite.lifecycle": {
       "level": "DEBUG",
-      "handlers": ["console", "file"],
+      "handlers": ["rich_console", "file"],
       "propagate": false
     },
     "daglite.tasks": {
       "level": "DEBUG",
-      "handlers": ["console_task", "file_task"],
+      "handlers": ["rich_console_task", "file_task"],
       "propagate": false
     }
   },
   "root": {
     "level": "WARNING",
-    "handlers": ["console"]
+    "handlers": ["rich_console"]
   }
 }
