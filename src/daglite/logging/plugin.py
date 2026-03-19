@@ -127,49 +127,57 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
     """
     Plugin that logs session and task lifecycle events.
 
+    If the `DAGLITE_DEBUG` environment variable is set (any truthy value), the base `daglite`
+    logger is configured with the `file` handler so that internal debug logs (logs outside of
+    `daglite.lifecycle` and `daglite.tasks`) are written to `run.log`. By default these are
+    suppressed.
+
     Args:
-        name: Optional logger name to use (default: "daglite").
+        name: Optional logger name to use.
         level: Optional minimum log level to handle on coordinator side (default: INFO).
+        daglite_debug: Optional flag whether or not internal debug daglite logs are included in
+            the logs. Can also be control by environment variable `DAGLITE_DEBUG`. Ignored if
+            either `config` or `config_path` is specified.
+        config: Optional override for the logging configuration dictionary.
+        config_path: Optional override for the logging configuration filepath.
     """
 
     def __init__(
         self,
         name: str | None = None,
         level: int = logging.INFO,
+        daglite_debug: bool = False,
         config: dict[str, Any] | None = None,
+        config_path: str | Path | None = None,
     ):
         super().__init__(level=level)
-        self._logger = get_logger(name)
+        self._name = name
+        self._level = level
+        self._daglite_debug = daglite_debug
+        self._config = config
+        self._config_path = config_path
+        self._user_specified = any(var is not None for var in [self._config, self._config_path])
 
-        # Set logger level to ensure debug messages aren't filtered out.
-        self._logger.logger.setLevel(level)
-
-        # Load logging config if not provided
-        config = config if config is not None else self._load_default_config()
-        self._apply_logging_config(config)
+        self._logger = get_logger(self._name)
+        self._logger.logger.setLevel(self._level)  # Ensure debug messages aren't filtered out.
+        self._loaded_config = self._load_config() if self._config is None else self._config
+        self._apply_logging_config(self._loaded_config)
 
     @property
-    def _config_path(self) -> Path:
+    def _default_config_path(self) -> Path:
         """Path to the default logging configuration file."""
         return Path(__file__).parent / "logging.json"
 
-    def _load_default_config(self) -> dict[str, Any]:
-        """
-        Load default logging configuration from :attr:`_config_path`.
-
-        If the `DAGLITE_DEBUG` environment variable is set (any truthy value), the base `daglite`
-        logger is configured with the `file` handler so that internal debug logs (logs outside of
-        `daglite.lifecycle` and `daglite.tasks`) are written to `run.log`. By default these are
-        suppressed.
-        """
-        config_path = self._config_path
+    def _load_config(self) -> dict[str, Any]:
+        """Load logging configuration from either the user provided config file or the default."""
+        config_path = Path(self._config_path or self._default_config_path)
         if config_path.exists():
             with open(config_path) as f:
                 config = json.load(f)
         else:  # pragma: no cover
             raise FileNotFoundError(f"Default logging configuration not found at {config_path}")
 
-        if os.environ.get("DAGLITE_DEBUG"):
+        if not self._user_specified and (self._daglite_debug or os.environ.get("DAGLITE_DEBUG")):
             loggers = config.get("loggers", {})
             if "daglite" in loggers and "daglite.lifecycle" in loggers:  # pragma: no branch
                 loggers["daglite"]["handlers"] = loggers["daglite.lifecycle"]["handlers"]
@@ -182,7 +190,7 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
 
     @override
     def to_config(self) -> dict[str, Any]:
-        return {}
+        return {}  # Use defaults when serializing for workers
 
     @classmethod
     @override
@@ -200,6 +208,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
 
     # region Session hooks
 
+    # NOTE: The session hooks should fire on the coordinator side
+
     @hook_impl
     def before_session_start(self, session_id: UUID) -> None:
         self._logger.info(f"Starting session {session_id}")
@@ -209,6 +219,8 @@ class LifecycleLoggingPlugin(CentralizedLoggingPlugin, SerializablePlugin):
         self._logger.info(f"Session {session_id} completed in {format_duration(duration)}")
 
     # region Node hooks
+
+    # NOTE: The node hooks should fire on worker side
 
     @hook_impl
     def before_node_execute(
