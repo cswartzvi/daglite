@@ -28,13 +28,7 @@ HELP_FLAGS = ["-h", "--help"]
 
 
 def setup_cli_plugins() -> None:
-    """
-    Auto-register output plugins for CLI runs.
-
-    Prefers daglite-rich (progress bars + rich logging) when installed;
-    falls back to the builtin LifecycleLoggingPlugin.  Skips registration
-    if the user has already registered a compatible plugin.
-    """
+    """Auto-register output plugins for CLI runs."""
     from daglite.logging.plugin import LifecycleLoggingPlugin
     from daglite.plugins.manager import has_plugin
     from daglite.plugins.manager import register_plugins
