@@ -332,6 +332,7 @@ dependencies = [
     { name = "cyclopts" },
     { name = "fsspec" },
     { name = "pluggy" },
+    { name = "rich" },
     { name = "typing-extensions" },
 ]
 
@@ -373,6 +374,7 @@ requires-dist = [
     { name = "cyclopts", specifier = ">=4.10.0" },
     { name = "fsspec", specifier = ">=2026.1.0" },
     { name = "pluggy", specifier = ">=1.6.0" },
+    { name = "rich", specifier = ">=14.3.3" },
     { name = "typing-extensions", specifier = ">=4.15.0" },
 ]
 
